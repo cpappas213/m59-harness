@@ -124,6 +124,16 @@ export function fakeClient(spec = {}) {
     stand:  () => { sent.push(['stand']); },
     requestInventory: () => { sent.push(['requestInventory']); },
     roomContents:     () => { sent.push(['roomContents']); },
+    // Item-level mutations: record the packet, change nothing. A test that
+    // wants the inventory or purse to move must say so, exactly as the server
+    // would have to.
+    get:    (id) => { sent.push(['get', id]); },
+    drop:   (ids) => { sent.push(['drop', ids]); },
+    buy:    (id) => { sent.push(['buy', id]); },
+    offer:  (toId, items) => { sent.push(['offer', toId, items]); },
+    acceptOffer: () => { sent.push(['acceptOffer']); },
+    deposit:  (n) => { sent.push(['deposit', n]); },
+    withdraw: (n) => { sent.push(['withdraw', n]); },
     // Resolves immediately: a test that wants to model a timeout says so by
     // overriding it. Defaulting to a real wait would make every suite slow and
     // would test setTimeout rather than the code.

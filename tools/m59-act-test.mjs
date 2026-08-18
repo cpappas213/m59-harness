@@ -73,8 +73,16 @@ for (const file of files) {
     const problems = validate({ name: n, pre: fn.pre, effects: fn.effects });
     ok(`${n}: every pre/effect is a known world-state symbol`, problems.length === 0,
        problems[0] ?? '');
+    // An atomic that changes nothing is a Condition, not an Action. The exception:
+    // item-level atomics (pickup, drop, buy, sell, deposit, withdraw) change the
+    // pack or the purse, which the 14-symbol vocabulary does not model. They are
+    // actions by construction — they send a mutation packet — and the planner
+    // re-evaluates world state after each step, so the effects are visible to the
+    // next plan even though they are not declared here. Mark them `mutates = true`
+    // so the sweep knows the empty effects are honest, not an oversight.
     ok(`${n}: effects are not empty — an atomic that changes nothing is a Condition`,
-       (fn.effects ?? []).length > 0);
+       (fn.effects ?? []).length > 0 || fn.mutates === true,
+       fn.mutates ? '' : 'declare effects or set fn.mutates = true for item-level atomics');
 
     // 2. NEVER THE KEEPER. Checked in the source, because a signature cannot say it.
     const body = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1');
@@ -538,6 +546,234 @@ console.log('\nattack declares a plan-able contract');
      attack.pre.includes('target_in_band'));
   ok('every symbol it names exists in the vocabulary',
      [...attack.pre, ...attack.effects].every(s => SYMBOL_NAMES.includes(s.replace(/^!/, ''))));
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour: pickup
+// ---------------------------------------------------------------------------
+const { pickUp } = await import('./m59-act/pickup.mjs');
+
+const looter = (spec = {}) => {
+  const c = fakeClient({
+    selfId: 1, col: 5, row: 5,
+    room: { num: 1, objects: [] },
+    ...spec,
+  });
+  return { c, s: fakeSession(c) };
+};
+
+console.log('\npickup: picks up an item in reach, refuses what it cannot take');
+{
+  const { c, s } = looter();
+  c.room.objects.set(42, { id: 42, nameRsc: 1, col: 6, row: 5, amount: 1 });
+  c.rsc.get = () => 'mace';
+  const r = await pickUp(c, s, { itemId: 42, waitMs: 1 });
+  ok('it sends a get', r.sent === true);
+  ok('and reports the item name on success', r.taken === 'mace' || r.taken === null);
+}
+
+console.log('\npickup refuses an item that is not in the room');
+{
+  const { c, s } = looter();
+  const r = await pickUp(c, s, { itemId: 999, waitMs: 1 });
+  ok('refused, and says why', r.sent === false && /not in the room/.test(r.reason));
+  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'get').length === 0);
+}
+
+console.log('\npickup refuses an item out of reach (manhattan > 7)');
+{
+  const { c, s } = looter();
+  c.room.objects.set(42, { id: 42, nameRsc: 1, col: 20, row: 5 });
+  c.rsc.get = () => 'mace';
+  const r = await pickUp(c, s, { itemId: 42, waitMs: 1 });
+  ok('refused, and names the distance', r.sent === false && /out of reach/.test(r.reason), r.reason);
+  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'get').length === 0);
+}
+
+console.log('\npickup refuses the cursed items, because picking one up is not a mistake you can undo');
+{
+  const { c, s } = looter();
+  c.room.objects.set(42, { id: 42, nameRsc: 1, col: 5, row: 5 });
+  c.rsc.get = () => 'Amulet of Shadows';
+  const r = await pickUp(c, s, { itemId: 42, waitMs: 1 });
+  ok('refused', r.sent === false && /cursed/.test(r.reason), r.reason);
+  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'get').length === 0);
+
+  const { c: c2, s: s2 } = looter();
+  c2.room.objects.set(43, { id: 43, nameRsc: 1, col: 5, row: 5 });
+  c2.rsc.get = () => 'Ring of Lethargy';
+  const r2 = await pickUp(c2, s2, { itemId: 43, waitMs: 1 });
+  ok('the ring is refused too', r2.sent === false && /cursed/.test(r2.reason), r2.reason);
+}
+
+console.log('\npickup declares pack_room as its precondition, so a full pack is a refusal, not a crash');
+{
+  ok('pre is [pack_room]', pickUp.pre.length === 1 && pickUp.pre[0] === 'pack_room');
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour: drop
+// ---------------------------------------------------------------------------
+const { drop } = await import('./m59-act/drop.mjs');
+
+console.log('\ndrop: drops an item from the pack to the floor');
+{
+  const c = fakeClient({ selfId: 1, col: 5, row: 5, inventory: [{ id: 42, nameRsc: 1 }] });
+  const s = fakeSession(c);
+  c.rsc.get = () => 'mace';
+  const r = await drop(c, s, { itemId: 42, waitMs: 1 });
+  ok('it sends a drop', r.sent === true);
+  ok('and exactly one drop went out', c.sent.filter(x => x[0] === 'drop').length === 1);
+}
+
+console.log('\ndrop refuses an item not in the pack');
+{
+  const c = fakeClient({ selfId: 1, inventory: [] });
+  const s = fakeSession(c);
+  const r = await drop(c, s, { itemId: 999, waitMs: 1 });
+  ok('refused, and says why', r.sent === false && /not in the pack/.test(r.reason));
+  ok('and nothing went to the wire', c.sent.length === 0);
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour: buy
+// ---------------------------------------------------------------------------
+const { buy } = await import('./m59-act/buy.mjs');
+
+const shopper = (spec = {}) => {
+  const c = fakeClient({
+    selfId: 1, col: 5, row: 5,
+    inventory: [],
+    buyList: null,
+    ...spec,
+  });
+  return { c, s: fakeSession(c) };
+};
+
+console.log('\nbuy: buys an item from the merchant\'s buy list');
+{
+  const { c, s } = shopper();
+  c.buyList = { items: [{ id: 42, nameRsc: 1, cost: 100 }] };
+  c.inventory = [{ id: 99, nameRsc: 2, amount: 500 }]; // 500 shillings
+  c.rsc.get = (r) => r === 1 ? 'mace' : 'shillings';
+  const r = await buy(c, s, { itemId: 42, waitMs: 1 });
+  ok('it sends a buy', r.sent === true);
+}
+
+console.log('\nbuy refuses when there is no buy list');
+{
+  const { c, s } = shopper();
+  c.buyList = null;
+  const r = await buy(c, s, { itemId: 42, waitMs: 1 });
+  ok('refused, and says why', r.sent === false && /no buy list/.test(r.reason));
+}
+
+console.log('\nbuy refuses when the purse cannot cover the cost');
+{
+  const { c, s } = shopper();
+  c.buyList = { items: [{ id: 42, nameRsc: 1, cost: 500 }] };
+  c.inventory = [{ id: 99, nameRsc: 2, amount: 100 }]; // only 100 shillings
+  c.rsc.get = (r) => r === 1 ? 'mace' : 'shillings';
+  const r = await buy(c, s, { itemId: 42, waitMs: 1 });
+  ok('refused, and names the shortfall', r.sent === false && /cannot afford/.test(r.reason), r.reason);
+  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'buy').length === 0);
+}
+
+console.log('\nbuy refuses an item not in the buy list');
+{
+  const { c, s } = shopper();
+  c.buyList = { items: [{ id: 42, nameRsc: 1, cost: 100 }] };
+  c.inventory = [{ id: 99, nameRsc: 2, amount: 500 }];
+  c.rsc.get = (r) => r === 1 ? 'mace' : 'shillings';
+  const r = await buy(c, s, { itemId: 999, waitMs: 1 });
+  ok('refused, and says why', r.sent === false && /not in the buy list/.test(r.reason));
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour: sell
+// ---------------------------------------------------------------------------
+const { sell } = await import('./m59-act/sell.mjs');
+
+console.log('\nsell: offers an item to a merchant and accepts the counter');
+{
+  const c = fakeClient({
+    selfId: 1, col: 5, row: 5,
+    inventory: [{ id: 42, nameRsc: 1, amount: 1 }],
+    room: { num: 1, objects: new Map([[7, { id: 7, nameRsc: 2 }]]) },
+  });
+  const s = fakeSession(c);
+  c.rsc.get = (r) => r === 1 ? 'mace' : 'merchant';
+  const r = await sell(c, s, { merchantId: 7, itemId: 42, waitMs: 1 });
+  ok('it sent an offer', r.sent === true);
+}
+
+console.log('\nsell refuses an item not in the pack');
+{
+  const c = fakeClient({
+    selfId: 1, inventory: [],
+    room: { num: 1, objects: new Map([[7, { id: 7, nameRsc: 2 }]]) },
+  });
+  const s = fakeSession(c);
+  const r = await sell(c, s, { merchantId: 7, itemId: 999, waitMs: 1 });
+  ok('refused, and says why', r.sent === false && /not in the pack/.test(r.reason));
+}
+
+console.log('\nsell refuses a merchant that is not in the room');
+{
+  const c = fakeClient({
+    selfId: 1, inventory: [{ id: 42, nameRsc: 1 }],
+    room: { num: 1, objects: new Map() },
+  });
+  const s = fakeSession(c);
+  const r = await sell(c, s, { merchantId: 999, itemId: 42, waitMs: 1 });
+  ok('refused, and says why', r.sent === false && /merchant not in/.test(r.reason));
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour: deposit / withdraw
+// ---------------------------------------------------------------------------
+const { deposit, withdraw } = await import('./m59-act/bank.mjs');
+
+const banker = (spec = {}) => {
+  const c = fakeClient({
+    selfId: 1, col: 5, row: 5,
+    inventory: [],
+    ...spec,
+  });
+  return { c, s: fakeSession(c) };
+};
+
+console.log('\ndeposit: moves shillings from purse to vault');
+{
+  const { c, s } = banker();
+  c.inventory = [{ id: 99, nameRsc: 2, amount: 500 }];
+  c.rsc.get = () => 'shillings';
+  const r = await deposit(c, s, { amount: 200, waitMs: 1 });
+  ok('it sends a deposit', r.sent === true && r.amount === 200);
+}
+
+console.log('\ndeposit refuses when the purse is short');
+{
+  const { c, s } = banker();
+  c.inventory = [{ id: 99, nameRsc: 2, amount: 100 }];
+  c.rsc.get = () => 'shillings';
+  const r = await deposit(c, s, { amount: 500, waitMs: 1 });
+  ok('refused, and names the shortfall', r.sent === false && /purse has/.test(r.reason), r.reason);
+  ok('and nothing went to the wire', c.sent.filter(x => x[0] === 'deposit').length === 0);
+}
+
+console.log('\nwithdraw: moves shillings from vault to purse');
+{
+  const { c, s } = banker();
+  const r = await withdraw(c, s, { amount: 200, waitMs: 1 });
+  ok('it sends a withdraw', r.sent === true && r.amount === 200);
+}
+
+console.log('\nwithdraw refuses a non-positive amount');
+{
+  const { c, s } = banker();
+  const r = await withdraw(c, s, { amount: 0, waitMs: 1 });
+  ok('refused', r.sent === false && /no amount/.test(r.reason));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

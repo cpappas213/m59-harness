@@ -115,9 +115,17 @@ async function main() {
   // and returns undefined, so awaiting is harmless but `.catch()` on it throws --
   // which is exactly what happened on the first live run, after login, in a line the
   // offline suite never executed because no test chained onto them.
+  //
+  // stats(1) is the group-1 request: health, mana, vigor. The server does NOT push
+  // stats on its own after login -- the client must ask. Without it, vitals() has
+  // no vigor and the world state reads vigor_ok / can_rest_higher as ASSUMED.
+  try { c.stats(1); } catch { /* the socket will say so */ }
   try { c.requestInventory(); } catch { /* the socket will say so */ }
   try { c.requestSpells?.(); } catch { /* likewise */ }
-  await new Promise(r => setTimeout(r, 1500));
+  // The stats round-trip takes longer than the inventory on a remote server.
+  // 1500ms was enough for inventory but not for the BP_STAT group-1 reply,
+  // which means the pre-read saw no vigor and fell back to ASSUMED.
+  await new Promise(r => setTimeout(r, 3000));
 
   // A minimal session: a pass-through pacer and no mover. See the header for why
   // there is deliberately no `step`.
@@ -157,6 +165,7 @@ async function main() {
     const r = await stepPlan(c, session, p, { index: i });
     if (r.done) break;
     console.log(`  ${r.action}: ${JSON.stringify(r.result)}`);
+    try { c.stats(1); } catch { /* ignore */ }
     try { c.requestInventory(); } catch { /* ignore */ }
     await new Promise(r2 => setTimeout(r2, 900));
   }
