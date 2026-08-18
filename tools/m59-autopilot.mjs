@@ -6867,15 +6867,18 @@ export class Autopilot {
     // weapon, because those are preconditions, not goals.
     // ------------------------------------------------------------------
     if (this.policy && this.policy.useGOAP === true) {
-      // Safety first: Underworld and arming are not plan-able. The GOAP
-      // planner cannot plan a character out of the Underworld or into a
-      // weapon, because those are preconditions, not goals. Call the
-      // existing safety shells; they return true when they handled the
-      // situation, in which case the planner does not run.
       const room = s.world?.room ?? c?.room;
       // Underworld: the GOAP keeper handles it internally (in_underworld
-      // symbol + escape_underworld atomic). No need to call passUnderworld
-      // separately. The GOAP keeper's pass() will plan the escape.
+      // symbol + escape_underworld atomic). BUT the client's room may be
+      // stale after a reconnect, so the autopilot also checks the broker's
+      // room tracking. If the broker says Underworld but the client doesn't,
+      // the legacy passUnderworld handles it.
+      const roomName = room?.name ?? '';
+      const isUnderworld = /underworld/i.test(roomName) || room?.id === 6;
+      if (isUnderworld) {
+        const r = await this.passUnderworld({ s, c, room, v: c.vitals?.() ?? {} });
+        if (r) return;
+      }
       if (c && typeof c.armed === 'function' && !c.armed()) {
         const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
         if (r) return;
