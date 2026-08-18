@@ -14177,6 +14177,23 @@ function heroSnapshot(name) {
       faction_status: factionStatus,
       room: room ? { num: room.num, name: room.name } : null,
       position: me ? { col: me.col, row: me.row } : null,
+      // ROOM VIEW: the room's dimensions, the character's position, and
+      // every object in the room (NPCs, players, items, exits). This lets
+      // the hero page render a visual map of where the character is and
+      // what's around it.
+      room_view: (c?.room?.objects && c.room.objects.size) ? {
+        cols: c.room.cols ?? 50,
+        rows: c.room.rows ?? 48,
+        self: me ? { col: me.col, row: me.row } : null,
+        objects: [...c.room.objects.values()].map(o => ({
+          id: o.id,
+          name: c.rsc?.get?.(o.nameRsc) ?? 'unknown',
+          col: o.col,
+          row: o.row,
+          is_player: !!(o.flags & 0x04),  // OF.PLAYER
+          is_self: o.id === c.selfId,
+        })),
+      } : null,
       vitals: c.vitals?.() ?? {},
       stats,
       stamina: stats.stamina ?? null,

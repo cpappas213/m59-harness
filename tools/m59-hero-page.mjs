@@ -90,6 +90,12 @@ const STYLE = `
   .goap-step { display:inline-block; background:var(--line); border-radius:4px;
     padding:.15rem .55rem; font-family:ui-monospace,monospace; font-size:.85rem; }
   .goap-arrow { color:var(--accent); margin:0 .4rem; font-weight:700; }
+  .room-grid { display:grid; gap:1px; background:var(--line); border:1px solid var(--line);
+    border-radius:4px; padding:2px; margin-top:.4rem; }
+  .room-cell { width:8px; height:8px; background:var(--bg); border-radius:1px; }
+  .room-cell.self { background:#4a9; }
+  .room-cell.npc { background:#a75; }
+  .room-cell.player { background:#a44; }
 `;
 
 // Render the GOAP plan: the goal the planner is chasing, the chain of
@@ -115,6 +121,39 @@ function renderGoap(g) {
     <div class="card" style="grid-column:span 3"><div class="k">world state when it planned</div>
       <div class="sm" style="margin-top:.3rem;font-family:ui-monospace,monospace">${esc(g.ws ?? '—')}</div></div>
   </div>`;
+}
+
+// Render a top-down room view: a grid of cells with colored markers.
+// Green = self, orange = NPC, red = player. Shows where the character
+// is standing relative to everything else in the room.
+function renderRoomView(rv) {
+  if (!rv || !rv.objects || !rv.objects.length) return '';
+  const { cols, rows, self, objects } = rv;
+  if (!cols || !rows) return '';
+  // Build a set of positions for O(1) lookup.
+  const cells = new Map();
+  for (const o of objects) {
+    if (o.col == null || o.row == null) continue;
+    const key = `${o.col},${o.row}`;
+    if (o.is_self) cells.set(key, 'self');
+    else if (o.is_player && !cells.has(key)) cells.set(key, 'player');
+    else if (!cells.has(key)) cells.set(key, 'npc');
+  }
+  let grid = `<div class="room-grid" style="grid-template-columns:repeat(${cols},8px)">`;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cls = cells.get(`${c},${r}`) ?? '';
+      grid += `<div class="room-cell ${cls}" title="${c},${r}${cls ? ' ' + cls : ''}"></div>`;
+    }
+  }
+  grid += '</div>';
+  const count = (type) => objects.filter(o => o.is_self ? type === 'self' : o.is_player ? type === 'player' : type === 'npc').length;
+  const legend = `<div class="sm" style="margin-top:.3rem">
+    <span class="room-cell self" style="display:inline-block;vertical-align:middle"></span> self${self ? ` (${self.col},${self.row})` : ''} ·
+    <span class="room-cell npc" style="display:inline-block;vertical-align:middle"></span> ${count('npc')} npc ·
+    <span class="room-cell player" style="display:inline-block;vertical-align:middle"></span> ${count('player')} player ·
+    ${cols}×${rows} grid</div>`;
+  return `<h2>Room</h2>${grid}${legend}`;
 }
 
 export function renderHero(h, { localhost = false } = {}) {
@@ -268,6 +307,8 @@ export function renderHero(h, { localhost = false } = {}) {
     <div class="card"><div class="k">stamina</div><div class="val">${h.stamina ?? '—'}</div>
       <div class="sm">${h.ceiling != null ? `lifetime cap ${h.ceiling} health` : ''}</div></div>
   </div>
+
+  ${h.room_view ? renderRoomView(h.room_view) : ''}
 
   <h2>GOAP plan</h2>
   ${h.goap ? renderGoap(h.goap) : '<p class="dim">Not running the GOAP keeper.</p>'}
