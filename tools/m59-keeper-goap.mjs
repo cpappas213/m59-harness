@@ -133,16 +133,139 @@ export class GOAPKeeper {
     if (here === to)
       return { sent: false, reason: 'already there' };
 
-    // Use the broker's travel() directly. The broker handles
-    // routing internally (BFS, hazard avoidance, etc.). We just
-    // tell it the destination room number.
+    // Use the broker's travel() first. The broker handles routing
+    // internally (BFS, hazard avoidance, exit walking, etc.).
+    let travelResult;
     try {
-      const r = await this.session.travel(to, { maxHops: 3 });
-      if (r?.arrived)
+      travelResult = await this.session.travel(to, { maxHops: 3 });
+      if (travelResult?.arrived)
         return { sent: true, reason: null };
-      return { sent: false, reason: r?.reason ?? 'travel refused' };
     } catch (e) {
-      return { sent: false, reason: e.message };
+      travelResult = { arrived: false, reason: e.message };
+    }
+
+    // Broker travel failed. Try a brute force exit: send raw
+    // moveToSquare commands toward and PAST the room boundary.
+    // The server clips movement to the wall and triggers the
+    // room change when the character crosses an edge opening.
+    const bruteResult = await this._bruteForceExit(to);
+    if (bruteResult?.sent)
+      return bruteResult;
+
+    return { sent: false, reason: travelResult?.reason ?? 'travel refused' };
+  }
+
+  /**
+   * Brute force exit: when the broker's travel() can't get the
+   * character to an exit square (local grid says wall), send raw
+   * moveToSquare commands toward and past the boundary. The
+   * server handles collision and will trigger the room change
+   * when the character crosses an edge opening.
+   */
+  async _bruteForceExit(to) {
+    const c = this.client;
+    const world = this.session?.world;
+    const room = world?.room;
+    if (!room || !c)
+      return { sent: false, reason: 'no room data' };
+
+    // Find an exit from the current room to the destination.
+    // Use the map's edge exits (more reliable than world.exits()
+    // which requires the character to be in a valid position).
+    const { loadMap } = await import('./m59-map.mjs');
+    const map = loadMap();
+    const roomNum = room.num ?? room.id;
+    const mapRoom = map?.rooms?.[roomNum];
+    if (!mapRoom)
+      return { sent: false, reason: 'room not in map' };
+
+    // Find the edge exit to the destination room.
+    const exit = (mapRoom.edgeExits ?? []).find(e => e.to === to);
+    if (!exit)
+      return { sent: false, reason: `no edge exit to room ${to}` };
+
+    // Get the character's current position (kod 1-based).
+    const me = c.self;
+    const myCol = me?.col ?? 1;
+    const myRow = me?.row ?? 1;
+    const rows = mapRoom.rows ?? 1;
+    const cols = mapRoom.cols ?? 1;
+    const dir = exit.leaveName;
+
+    // Determine the target square: one past the boundary.
+    // The server clips movement to the wall and triggers the
+    // room change when the character crosses the edge opening.
+    let targetCol, targetRow;
+    if (dir === 'east') {
+      targetCol = cols;       // one past the last col (0-based: cols-1)
+      targetRow = myRow;      // stay on the same row
+    } else if (dir === 'west') {
+      targetCol = 0;          // or -1, but 0 is the first col
+      targetRow = myRow;
+    } else if (dir === 'north') {
+      targetCol = myCol;
+      targetRow = 0;
+    } else if (dir === 'south') {
+      targetCol = myCol;
+      targetRow = rows;
+    } else {
+      return { sent: false, reason: `unknown exit direction: ${dir}` };
+    }
+
+    // Check the exit condition (row> or row<).
+    // The condition is on the row where the character exits.
+    if (exit.condition) {
+      const { name, threshold } = exit.condition;
+      const exitRow = targetRow; // the row we'll be at when exiting
+      if (name === 'row>' && exitRow <= (threshold ?? 0))
+        return { sent: false, reason: `exit condition row>${threshold} not met (row ${exitRow})` };
+      if (name === 'row<' && exitRow >= (threshold ?? 999))
+        return { sent: false, reason: `exit condition row<${threshold} not met (row ${exitRow})` };
+    }
+
+    console.error(`[goap] brute force exit: ${dir} to room ${to}, from (${myCol},${myRow}) to (${targetCol},${targetRow})`);
+
+    try {
+      // Send the move command. The server will clip the movement
+      // and trigger the room change if the character crosses an
+      // edge opening.
+      c.moveToSquare(targetCol, targetRow, 18);
+
+      // Wait for the room to change (up to 10 seconds).
+      const startRoom = c.room?.id;
+      const { events } = await c.waitFor({
+        kinds: 'room-entered',
+        timeoutMs: 10000,
+      });
+
+      const entered = events.find(e => e.kind === 'room-entered');
+      if (entered && c.room?.id !== startRoom) {
+        console.error(`[goap] brute force exit SUCCESS: entered ${c.room?.name ?? 'new room'}`);
+        return { sent: true, reason: null };
+      }
+
+      // Room didn't change. Try one more step further past the boundary.
+      console.error(`[goap] brute force exit: room didn't change, trying further`);
+      let target2Col = targetCol, target2Row = targetRow;
+      if (dir === 'east') target2Col = cols + 1;
+      else if (dir === 'west') target2Col = 0;
+      else if (dir === 'north') target2Row = 0;
+      else if (dir === 'south') target2Row = rows + 1;
+
+      c.moveToSquare(target2Col, target2Row, 18);
+      const { events: events2 } = await c.waitFor({
+        kinds: 'room-entered',
+        timeoutMs: 10000,
+      });
+      const entered2 = events2.find(e => e.kind === 'room-entered');
+      if (entered2 && c.room?.id !== startRoom) {
+        console.error(`[goap] brute force exit SUCCESS (2nd try): entered ${c.room?.name ?? 'new room'}`);
+        return { sent: true, reason: null };
+      }
+
+      return { sent: false, reason: `brute force exit failed: room didn't change after moving to (${targetCol},${targetRow}) and (${target2Col},${target2Row})` };
+    } catch (e) {
+      return { sent: false, reason: 'brute force exit error: ' + e.message };
     }
   }
 
