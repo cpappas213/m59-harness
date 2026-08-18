@@ -28,10 +28,12 @@ const ok = (what, cond) => { if (cond) pass++; else { fail++; console.log(`  FAI
 // The smallest thing that can stand in for a Session: a chain of rooms 1..N, a
 // scripted list of hop outcomes, and the two helpers travel() reaches for.
 // ---------------------------------------------------------------------------
-function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0 } = {}) {
+function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
+                      detour = null, barred = null } = {}) {
   const s = {
     name: 'test',
     at: startAt,
+    routeAvoids: [],
     movementGeneration: 0,
     reads: 0,
     noteTransit: () => {},
@@ -47,13 +49,17 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0 } = {}) {
         const n = rooms[s.at];
         return n == null ? null : { num: n, name: `room ${n}` };
       },
-      route(to) {
+      route(to, { avoid } = {}) {
+        s.routeAvoids.push(avoid ? [...avoid] : null);
         const here = rooms[s.at];
         if (here == null) return { found: false, reason: 'start is outside the room grid' };
         const idx = rooms.indexOf(to);
         if (idx < 0) return { found: false, reason: 'no route' };
         if (idx === s.at) return { found: true, hops: [] };
-        const next = rooms[s.at + (idx > s.at ? 1 : -1)];
+        let next = rooms[s.at + (idx > s.at ? 1 : -1)];
+        // A detour that exists only when the direct neighbour is barred, so the test can
+        // tell "routed around it" from "gave up on it".
+        if (avoid?.has(Number(next)) && detour != null) next = detour;
         return { found: true, hops: [{ to: next, to_name: `room ${next}` }] };
       },
       exits: () => {
@@ -62,7 +68,13 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0 } = {}) {
       },
     },
     // Each call consumes one scripted outcome; `true` moves us on, `false` refuses.
-    async leaveViaAny() {
+    async leaveViaAny(candidates) {
+      // A room the server will not let this character into answers the same way every
+      // time, whatever we do first — which is the point of the barring.
+      const to = candidates?.[0]?.to;
+      if (barred && barred.has(Number(to)))
+        return { left: false,
+                 reason: 'Your guardian angel holds you back and prevents you from entering here.' };
       const outcome = script.length ? script.shift() : true;
       if (outcome === 'vanish') { s.at = null; return { left: false, reason: 'coordinates went off grid' }; }
       if (outcome) { s.at += 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
@@ -93,7 +105,16 @@ for (; i < src.length; i++) {
 const travelSrc = src.slice(start, end);
 ok('it is the version with the resume loop', travelSrc.includes('maxStumbles'));
 ok('and it is a whole method', travelSrc.trim().endsWith('}'));
-const travel = new Function('orderExits', `return ({ ${travelSrc} }).travel`)((c) => c);
+// THE LIFTED METHOD'S FREE IDENTIFIERS HAVE TO BE HANDED IN, exactly as
+// m59-collision-test does for validateFineTarget: a module-scope symbol that is fine in
+// the broker is a ReferenceError here, which is the good direction — it says the harness
+// has fallen behind rather than quietly testing something else. `BARRED_ON_ENTRY` is the
+// real regex, not a stub, because what it matches IS the behaviour under test.
+const BARRED_ON_ENTRY = /guardian angel holds you back/i;
+const UNREACHABLE_EXIT =
+  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
+const travel = new Function('orderExits', 'BARRED_ON_ENTRY', 'UNREACHABLE_EXIT',
+  `return ({ ${travelSrc} }).travel`)((c) => c, BARRED_ON_ENTRY, UNREACHABLE_EXIT);
 
 
 // ---------------------------------------------------------------------------
@@ -173,6 +194,95 @@ console.log('cancellation still wins, because it is the survival path');
   const r = await travel.call(s, 3, {});
   ok('a cancelled movement stops the journey', r.cancelled === true);
   ok('and it does not report arrival', r.arrived !== true);
+}
+
+// ---------------------------------------------------------------------------
+// A DOOR THAT WILL NEVER OPEN IS NOT A STICKY DOORWAY.
+//
+// `Player.CanEnterRoom` refuses a GuildHall outright to anyone without
+// PFLAG_PKILL_ENABLE (player.kod, resource `player_no_enter`). That is a fact about the
+// CHARACTER, not about the moment, so the ordinary re-settle-and-retry reproduces it
+// exactly and spends the whole patience budget doing so. Measured on the arena fleet:
+// Delta spent two attempts and 43 seconds being refused by The Old Dwarven Hall with a
+// baby spider chewing on it, and the journey then failed with the hall still the only
+// route it would consider.
+console.log('a room the server bars is routed around, not retried');
+{
+  // room 3 is a guild hall this character may not enter; 9 is the way round.
+  const s = fakeSession({ rooms: [1, 2, 3, 4], detour: 9, barred: new Set([3]) });
+  // Once barred, the fake offers 9 instead of 3 and the journey completes through it.
+  const rooms9 = [1, 2, 9, 4];
+  const s2 = fakeSession({ rooms: rooms9, detour: null });
+  const r = await travel.call(s, 4, {});
+  ok('the barred room is recorded on the journey log',
+     (r.log || []).some(e => e.barred === 3), JSON.stringify(r.log));
+  ok('and the very next plan is asked to avoid it',
+     s.routeAvoids.some(a => a && a.includes(3)), JSON.stringify(s.routeAvoids));
+  // The barring itself must not be charged to patience — asserted against the LOG rather
+  // than the final count, because anything the journey does afterwards has its own budget
+  // and would make this assertion about the fixture instead of about the refusal.
+  ok('the refusal is never recorded as a stumble',
+     !(r.log || []).some(e => e.stumble && BARRED_ON_ENTRY.test(e.reason ?? '')),
+     JSON.stringify((r.log || []).filter(e => e.stumble)));
+  ok('and it is barred BEFORE any patience is spent',
+     (() => { const b = (r.log || []).findIndex(e => e.barred === 3);
+              const f = (r.log || []).findIndex(e => e.stumble);
+              return b >= 0 && (f < 0 || b < f); })(),
+     JSON.stringify(r.log));
+  ok('a journey that still cannot get there says which rooms were barred',
+     r.arrived === true || (Array.isArray(r.barred_rooms) && r.barred_rooms.includes(3)),
+     JSON.stringify({ arrived: r.arrived, barred_rooms: r.barred_rooms }));
+
+  // AND IT MUST NOT BAR THE DESTINATION ITSELF: asked to walk INTO a hall it cannot
+  // enter, the honest answer is to fail, not to route around the place it was sent to.
+  const dest = fakeSession({ rooms: [1, 2, 3], barred: new Set([3]) });
+  const rd = await travel.call(dest, 3, {});
+  ok('being sent INTO a barred room fails rather than barring the destination',
+     rd.arrived !== true && !(dest.barredRooms?.has?.(3)),
+     JSON.stringify({ arrived: rd.arrived, barred: [...(dest.barredRooms ?? [])] }));
+}
+
+// ---------------------------------------------------------------------------
+// A DOOR YOU CANNOT REACH FROM THIS SIDE OF THE ROOM IS NOT A DOOR YOU RETRY.
+//
+// `findPath` plans over ROOMS, so a hop A -> B -> C assumes B can be crossed from the door
+// A left you at to the door C wants. Measured in West Merchant Way: entering from Marion
+// at 20,1 or 24,1, the exit to Deep Forest of Farol at 49,70 is unreachable — the only
+// route between them needs a 1280-unit climb in one step against a limit of 384. The room
+// graph is right that 545 connects to 556; it just does not connect FROM THERE.
+console.log('a doorway this side of the room cannot reach is replanned around');
+{
+  // Every attempt on the 2 -> 3 doorway reports the walk never got there.
+  const s = fakeSession({ rooms: [1, 2, 3, 4] });
+  s.leaveViaAny = async (candidates) => {
+    if (Number(candidates?.[0]?.to) === 3)
+      return { left: false, reason: 'every square for that exit refused (4 tried)' };
+    s.at += 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } };
+  };
+  const r = await travel.call(s, 4, {});
+  ok('the unreachable doorway is named on the log',
+     (r.log || []).some(e => e.unreachable_exit === 3), JSON.stringify(r.log).slice(0, 300));
+  ok('and the next plan is asked to avoid it',
+     s.routeAvoids.some(a => a && a.includes(3)), JSON.stringify(s.routeAvoids));
+  ok('it is recorded once, not once per attempt',
+     (r.log || []).filter(e => e.unreachable_exit === 3).length === 1,
+     JSON.stringify((r.log || []).filter(e => e.unreachable_exit)));
+
+  // AND IT IS PER JOURNEY, NEVER PER SESSION. "I cannot reach that door from where I am
+  // standing" stops being true the moment the character stands somewhere else; remembering
+  // it for the session would delete a good door from the map for ever.
+  ok('the session keeps no memory of it',
+     !s.barredRooms || !s.barredRooms.has(3),
+     JSON.stringify([...(s.barredRooms ?? [])]));
+
+  // The destination itself is never avoided — asked to walk INTO a room whose doorway we
+  // cannot reach, the honest answer is to fail rather than to route around the target.
+  const dest = fakeSession({ rooms: [1, 2, 3] });
+  dest.leaveViaAny = async () => ({ left: false, reason: 'every square for that exit refused (4 tried)' });
+  const rd = await travel.call(dest, 3, {});
+  ok('being sent to a room whose doorway is unreachable fails honestly',
+     rd.arrived !== true && !dest.routeAvoids.some(a => a && a.includes(3)),
+     JSON.stringify({ arrived: rd.arrived, avoids: dest.routeAvoids }));
 }
 
 console.log(`\n${pass + fail} assertions: ${pass} passed, ${fail} failed`);

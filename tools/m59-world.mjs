@@ -19,7 +19,8 @@
 // a person or an agent can look at.
 
 import { sharedRoomGeometry } from './m59-roo.mjs';
-import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE } from './m59-map.mjs';
+import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE,
+         AVOID_IN_TRANSIT } from './m59-map.mjs';
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
@@ -883,10 +884,18 @@ export class World {
   // A route to another room, expressed as things to do rather than rooms to be in.
   // Each leg says which square to stand on and which mechanism to use, because the
   // two mechanisms are not interchangeable and getting it wrong produces silence.
-  route(toRoomNum) {
+  route(toRoomNum, { avoid = null } = {}) {
     const room = this.room;
     if (!room) return { found: false, reason: 'current room is not in the graph' };
-    const r = findPath(this.map, room.num, toRoomNum);
+    // A CALLER MAY ADD TO THE AVOID SET, NEVER REPLACE IT. `AVOID_IN_TRANSIT` is this
+    // repository's standing opinion about the world; a caller's set is what THIS character
+    // has learned the hard way — a doorway the server actually refused it. Overwriting the
+    // first with the second would quietly route the fleet back through the rooms the map
+    // module exists to keep it out of.
+    const merged = avoid?.size
+      ? new Set([...AVOID_IN_TRANSIT, ...avoid])
+      : AVOID_IN_TRANSIT;
+    const r = findPath(this.map, room.num, toRoomNum, { avoid: merged });
     if (!r.found) return r;
     return {
       found: true,

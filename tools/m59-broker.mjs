@@ -348,6 +348,17 @@ const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
 // quietly readmit the sliding this is meant to avoid. Loosening it does not make walks
 // succeed, it makes them skip ground nothing checked.
 const PIVOT_ARRIVE_WITHIN = Number(process.env.M59_PIVOT_ARRIVE_WITHIN || 64);
+// REFUSALS THAT ARE ABOUT THE CHARACTER RATHER THAN THE MOMENT, so retrying can only
+// reproduce them. `player_no_enter` (player.kod) is a GuildHall turning away anyone
+// without PFLAG_PKILL_ENABLE. Matched on the server's own words because there is no code
+// on the wire: it arrives as ordinary prose, exactly like a merchant's refusal.
+const BARRED_ON_ENTRY = /guardian angel holds you back/i;
+// A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
+// never got there. `leaveViaAny` has already tried every square the room publishes for
+// that destination, so this is the room saying "not from here", and the answer is another
+// door rather than another attempt at this one.
+const UNREACHABLE_EXIT =
+  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
 // Fine-positioning at a boundary opening before the outward step that actually crosses.
 // Both are deliberately small: this is a nudge onto the opening, and the crossing does
 // not depend on hitting it exactly. See leaveVia's edge branch.
@@ -5000,6 +5011,10 @@ class Session {
     const journeyId = `${this.name}-${Date.now().toString(36)}`;
     let enteredAt = Date.now();
     let hops = 0, stumbles = 0, totalStumbles = 0;
+    // Doors this journey has already found it cannot reach from where it was standing.
+    // See the note on UNREACHABLE_EXIT below for why this is per-journey and the barred
+    // set is per-session.
+    const avoidThisJourney = new Set();
 
     // Let the position settle and the room re-publish itself, then try again from
     // wherever we actually are. Returns false when the patience is spent.
@@ -5033,12 +5048,17 @@ class Session {
       if (here.num === toRoomNum)
         return { arrived: true, room: { num: here.num, name: here.name }, hops, stumbles: totalStumbles, log };
 
-      const route = this.world.route(toRoomNum);
+      const route = this.world.route(toRoomNum, {
+        avoid: avoidThisJourney.size || this.barredRooms?.size
+          ? new Set([...(this.barredRooms ?? []), ...avoidThisJourney])
+          : null,
+      });
       if (!route.found) {
         // A route failure right after an arrival is the transient one. A route failure
         // that survives re-reading the room is real, and is reported as it always was.
         if (await stumble(route.reason || 'no route')) continue;
-        return { arrived: false, log, reason: route.reason || 'no route', stumbles: totalStumbles };
+        return { arrived: false, log, reason: route.reason || 'no route', stumbles: totalStumbles,
+                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
       }
       const nextHop = route.hops[0];
 
@@ -5067,7 +5087,8 @@ class Session {
         // usually one we asked about too early.
         if (await stumble('cannot find the exit to ' + nextHop.to_name + ' from here')) continue;
         return { arrived: false, log, stumbles: totalStumbles,
-                 reason: 'cannot find the exit to ' + nextHop.to_name + ' from here' };
+                 reason: 'cannot find the exit to ' + nextHop.to_name + ' from here',
+                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
       }
 
       // Split so the record can say whether the time went on DECIDING or on DOING. Above
@@ -5125,8 +5146,73 @@ class Session {
       // already tried every square this room publishes for that destination; re-settling and
       // re-planning is what turns the second attempt into the one that works.
       if (!r.left) {
+        // A DOOR THAT WILL NEVER OPEN FOR THIS CHARACTER IS NOT A STICKY DOORWAY, AND
+        // RETRYING IT IS THE WHOLE FAILURE.
+        //
+        // `Player.CanEnterRoom` (player.kod, resource `player_no_enter`) refuses a
+        // GuildHall outright to anyone without PFLAG_PKILL_ENABLE:
+        //
+        //   if IsClass(oRoom,&GuildHall) AND NOT CheckPlayerFlag(PFLAG_PKILL_ENABLE)
+        //      MsgSendUser(player_no_enter); return FALSE;
+        //
+        // That is a property of the character, not of the moment, so re-settling and
+        // asking again gets the identical refusal for ever. Measured on the arena fleet:
+        // Delta spent two full attempts and 43 seconds being told this by The Old Dwarven
+        // Hall, with a baby spider chewing on it throughout, and the journey then failed
+        // with the hall still on the only route it would consider.
+        //
+        // So the refusal TEACHES THE ROUTER instead of being retried. The room goes into a
+        // per-session barred set, the next plan routes around it, and the patience is not
+        // spent — this is new information, which is exactly the case the stumble budget
+        // should not be charged for.
+        //
+        // SESSION-SCOPED, because the answer is per character: a guildmate walks into the
+        // same hall freely, and PK-enable arrives on its own at base max health 30. It is
+        // a PREFERENCE in the router, so a barred room that is the ONLY way somewhere is
+        // still attempted and still fails honestly, rather than the journey silently
+        // becoming impossible.
+        // AND THE OTHER HALF: THE DOOR WE CANNOT REACH FROM THIS SIDE OF THE ROOM.
+        //
+        // `findPath` plans over ROOMS, so a hop A -> B -> C assumes B can be crossed from
+        // the door A left you at to the door C wants. Frequently it cannot. West Merchant
+        // Way is the measured case: entering from Marion at 20,1 or 24,1, the exit to Deep
+        // Forest of Farol at 49,70 is UNREACHABLE — the only route between them needs a
+        // 1280-unit climb in one step against a limit of 384, so it is not a modelling
+        // artifact, it is a wall of rock. The room graph says 545 connects to 556 and it
+        // does; it just does not connect to it FROM HERE.
+        //
+        // The right algorithm is to plan over exits rather than rooms, where an edge exists
+        // between the door you came in and the door you want only if the two are in the
+        // same region. That is a change to the most load-bearing function in the
+        // repository and the regions are already baked for it. Until then this is the
+        // cheap half that recovers the journey: the door we could not reach is avoided for
+        // the REST OF THIS JOURNEY ONLY and the route is replanned, so the character
+        // leaves 545 by a door it can actually walk to instead of failing at this one.
+        //
+        // JOURNEY-SCOPED, NOT SESSION-SCOPED, and that is the difference from the bar
+        // above. "This character may never enter a guild hall" is true tomorrow; "I cannot
+        // reach that door from where I am standing" stops being true the moment it stands
+        // somewhere else, and a session-long memory of it would delete good doors from the
+        // map for ever.
+        if (UNREACHABLE_EXIT.test(why) && nextHop.to != null && nextHop.to !== toRoomNum
+            && !avoidThisJourney.has(Number(nextHop.to))) {
+          avoidThisJourney.add(Number(nextHop.to));
+          log.push({ unreachable_exit: nextHop.to, name: nextHop.to_name, reason: why,
+                     note: 'cannot reach that doorway from this side of the room — replanning ' +
+                           'a way out that does not use it' });
+          if (await stumble(why)) continue;
+          return { arrived: false, log, reason: why, stumbles: totalStumbles };
+        }
+        if (BARRED_ON_ENTRY.test(why) && nextHop.to != null && nextHop.to !== toRoomNum) {
+          (this.barredRooms ??= new Set()).add(Number(nextHop.to));
+          log.push({ barred: nextHop.to, name: nextHop.to_name, reason: why,
+                     note: 'the server refuses this character entry, so it is off the map ' +
+                           'for this session and the route is being replanned around it' });
+          continue;
+        }
         if (await stumble(why)) continue;
-        return { arrived: false, log, reason: why, stumbles: totalStumbles };
+        return { arrived: false, log, reason: why, stumbles: totalStumbles,
+                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
       }
       hops++;
       stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
