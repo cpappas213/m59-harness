@@ -1,0 +1,95 @@
+#!/usr/bin/env node
+// m59-act/scavenge.mjs -- THE SCAVENGE ATOMIC. Fight the weakest
+// creature in the room to loot money or items.
+//
+// This is the "punch rats" fallback: when a character is unarmed,
+// broke, and can't cast create weapon, the only way to get money
+// is to fight something weak and loot what it drops.
+//
+// WHAT THE ATOMIC DOES:
+//   1. Finds the weakest hostile in the room (lowest max HP).
+//   2. Refuses if the target is above the character's level band
+//      (fighting a level 50 fungus beast with bare fists is not
+//      scavenging, it is suicide).
+//   3. Delegates to the legacy fight() for the actual combat.
+//   4. After the fight, picks up any dropped items.
+//
+// CONTRACT: (client, session) -> { sent, killed, reason }
+//   - sent: true when the fight was started
+//   - killed: true when the target died
+//   - reason: null on success, a description of what went wrong
+
+/**
+ * @param {object} client  - the M59Client
+ * @param {object} session - the broker session (has .fight, .step, etc.)
+ */
+export async function scavenge(client, session) {
+  if (!client || !session)
+    return { sent: false, killed: false, reason: 'no client or session' };
+
+  const room = client?.room;
+  if (!room) return { sent: false, killed: false, reason: 'no room' };
+
+  // Find hostiles in the room.
+  const objects = room.objects;
+  const list = objects instanceof Map
+    ? [...objects.values()]
+    : Array.isArray(objects) ? objects : [];
+
+  const hostiles = list.filter(o => {
+    const can = o.can ?? [];
+    return (o.is_player === false || !o.is_player)
+      && can.includes('attack')
+      && !/friendly|pet|tame/i.test(o.name ?? '');
+  });
+
+  if (!hostiles.length)
+    return { sent: false, killed: false, reason: 'no hostiles in the room' };
+
+  // Pick the weakest (lowest max HP, or lowest HP as a fallback).
+  const myLevel = client?.vitals?.()?.health?.max ?? 20;
+  const weak = hostiles
+    .filter(h => {
+      const hp = h.max_health ?? h.health ?? null;
+      return hp == null || hp <= myLevel * 1.5;
+    })
+    .sort((a, b) => (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+
+  const target = weak ?? hostiles.sort((a, b) =>
+    (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+
+  const targetName = client?.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
+  const targetHp = target.max_health ?? target.health ?? '?';
+  const tooStrong = targetHp > myLevel * 2;
+
+  if (tooStrong)
+    return { sent: false, killed: false,
+      reason: `weakest hostile (${targetName} hp=${targetHp}) is still above the band (my level=${myLevel})` };
+
+  // Delegate to the legacy fight method. The session (autopilot)
+  // has a fight() that handles the full combat loop.
+  if (session.fight && typeof session.fight === 'function') {
+    const r = await session.fight(target.id ?? target.obj_id, { maxRounds: 30 });
+    return {
+      sent: true,
+      killed: r?.killed ?? r?.won ?? false,
+      reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+    };
+  }
+
+  // Fallback: no fight method on the session. This is the case for
+  // the standalone goap-run. Refuse.
+  return { sent: false, killed: false, reason: 'no fight method on session (broker required)' };
+}
+
+// Precondition: there is a target in the room. The planner only plans
+// scavenge when has_target is true.
+scavenge.pre = ['has_target'];
+
+// Effect: optimistically, the fight produced loot. The next pass
+// re-evaluates has_loot from the actual inventory.
+scavenge.effects = ['has_loot'];
+
+scavenge.atomic = 'scavenge';
+scavenge.mutates = true;  // sends combat packets; the room and inventory change
+scavenge.cost = 3;        // a fight is expensive: time, risk, vigor

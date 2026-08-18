@@ -115,5 +115,6 @@ export function groundedCasts(client, table = SPELL_EFFECTS) {
 // matters: 2 elderberry AND 2 herbs per casting, which is why has_reagents is the
 // per-character minimum of the pair and never the sum.
 export const SPELL_EFFECTS = {
-  'create food': { pre: ['has_reagents'], effects: ['has_food', '!has_reagents'] },
+  'create food':  { pre: ['has_reagents'], effects: ['has_food', '!has_reagents'] },
+  'create weapon': { pre: [], effects: ['armed'] },
 };

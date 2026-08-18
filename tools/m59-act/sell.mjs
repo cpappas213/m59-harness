@@ -93,10 +93,7 @@ export async function sell(client, session, { merchantId, itemId, waitMs = 1500 
   return { sent: true, sold: name, price, reason: null };
 }
 
-sell.pre     = [];   // the item and merchant checks are local and specific;
-                     // the vocabulary does not model per-item "sellable" or
-                     // per-merchant "present" symbols.
-sell.effects = [];   // the item leaves the pack and the purse rises. Neither is
-                     // a vocabulary symbol (see buy.atomic).
+sell.pre     = ['at_shop'];  // need a merchant in the room to sell to
+sell.effects = ['has_money'];  // selling produces money (coarse gate)
 sell.atomic  = 'sell';
 sell.mutates = true;  // sends mutation packets (BP_REQ_OFFER + BP_ACCEPT_OFFER);

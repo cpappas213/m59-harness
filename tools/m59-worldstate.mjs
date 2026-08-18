@@ -309,6 +309,24 @@ export const SYMBOLS = {
       return /underworld/i.test(name);
     },
   },
+
+  has_loot: {
+    describe: 'the pack has items that are not food, money, or reagents (sellable loot)',
+    whenUnknown: false,
+    why_unknown: 'a wrong false just delays a sell trip; a wrong true wastes a walk to a shop',
+    produce: ({ client }) => {
+      const inv = client?.inventory;
+      if (!Array.isArray(inv) || !inv.length) return false;
+      return inv.some(o => {
+        const name = client?.rsc?.get?.(o.nameRsc) ?? o.name ?? o.nameRsc ?? '';
+        const lower = name.toLowerCase();
+        if (/shilling|gold|silver|copper/i.test(lower)) return false;
+        if (/bread|cheese|stew|apple|peach|bun|cake|pie|porridge|rice|meat|fish|salad|egg|ham|bacon|sausage|roast|kebab|bowl|plate|loaf|torta|pasta|noodles|sushi|burger|sandwich|pizza|dough|flour|milk|juice|water|beer|wine|ale|cider|potion|drink|food/i.test(lower)) return false;
+        if (/elderberry|herb|mushroom|reagent/i.test(lower)) return false;
+        return true;
+      });
+    },
+  },
 };
 
 export const SYMBOL_NAMES = Object.freeze(Object.keys(SYMBOLS));

@@ -172,23 +172,29 @@ export class GOAPKeeper {
       .map(([k,v]) => `${k}=${v}`).join(' ');
     const who = this.policy.agent ?? this.session?.s?.name ?? this.session?.name ?? '?';
 
-    // 2. Is the goal already satisfied? If so, do nothing (or pick a
-    //    secondary goal). For now: idle.
-    if (ws[this.goal] === true && ws.in_underworld !== true) {
-      this.note('goap idle', { goal: this.goal, reason: 'goal already satisfied', pass: this._passCount });
-      console.error(`[goap] ${who} pass ${this._passCount} goal=${this.goal} ${wsSummary} [idle: goal satisfied]`);
-      return { acted: false, action: null, reason: `goal ${this.goal} already satisfied` };
+    // 2. GOAL STACK. Try goals in priority order. The first goal that
+    //    is NOT satisfied becomes the effective goal. This is the
+    //    "what should I be doing right now" question.
+    //
+    //    Priority: survival (underworld) > safety (armed) > sustenance
+    //    (has_food) > primary goal (vigor_ok or configured).
+    const goalStack = [
+      { goal: '!in_underworld', when: ws.in_underworld === true },
+      { goal: 'armed',         when: ws.armed === false },
+      { goal: 'has_food',      when: ws.has_food === false },
+      { goal: 'has_money',     when: ws.has_money === false && ws.has_loot === true },
+      { goal: this.goal,       when: ws[this.goal] !== true },
+    ];
+    const active = goalStack.find(g => g.when);
+
+    if (!active) {
+      // All goals satisfied. Idle.
+      this.note('goap idle', { goal: this.goal, reason: 'all goals satisfied', pass: this._passCount });
+      console.error(`[goap] ${who} pass ${this._passCount} goal=${this.goal} ${wsSummary} [idle: all goals satisfied]`);
+      return { acted: false, action: null, reason: 'all goals satisfied' };
     }
 
-    // 2b. If in the Underworld, the goal is to escape. Override the
-    //     normal goal with !in_underworld and inject the escape atomic.
-    let effectiveGoal = this.goal;
-    if (ws.in_underworld === true) {
-      effectiveGoal = '!in_underworld';
-    }
-
-    // Visible log: every GOAP pass is logged to the broker console so the
-    // journal (in-memory, lost on restart) is not the only record.
+    const effectiveGoal = active.goal;
     console.error(`[goap] ${who} pass ${this._passCount} goal=${effectiveGoal} ${wsSummary}`);
 
     // 3. Plan.
@@ -200,19 +206,34 @@ export class GOAPKeeper {
       // Inject the escape_underworld atomic.
       const { escapeUnderworldAtomic } = await import('./m59-act/escape-underworld.mjs');
       extra.push(escapeUnderworldAtomic);
-    } else if (ws.at_shop === false && ws.has_money === true) {
-      const here = c.room?.num;
-      if (here != null) {
-        const shop = nearestShop(here);
-        if (shop) {
-          const travelToShop = (client, session) => {
-            return this._travelOneHop(shop.to);
-          };
-          travelToShop.atomic = 'travel_to';
-          travelToShop.pre = [];
-          travelToShop.effects = ['at_shop'];
-          travelToShop.cost = 1;
-          extra = [travelToShop];
+    } else {
+      // Inject scavenge when the character is unarmed and there are
+      // hostiles in the room. This is the "punch rats" fallback:
+      // fight a weak creature to loot money.
+      if (ws.armed === false && ws.has_target === true) {
+        const { scavenge } = await import('./m59-act/scavenge.mjs');
+        extra.push(scavenge);
+      }
+      // Inject travel_to when we need to get to a shop. This covers
+      // two cases: (1) we need money (has_money=false, has_loot=true)
+      // to sell, and (2) we need food (has_food=false, has_money=true)
+      // to buy.
+      const needsShop = (ws.at_shop === false && ws.has_money === true)
+                      || (ws.at_shop === false && ws.has_loot === true && ws.has_money === false);
+      if (needsShop) {
+        const here = c.room?.num;
+        if (here != null) {
+          const shop = nearestShop(here);
+          if (shop) {
+            const travelToShop = (client, session) => {
+              return this._travelOneHop(shop.to);
+            };
+            travelToShop.atomic = 'travel_to';
+            travelToShop.pre = [];
+            travelToShop.effects = ['at_shop'];
+            travelToShop.cost = 1;
+            extra.push(travelToShop);
+          }
         }
       }
     }
