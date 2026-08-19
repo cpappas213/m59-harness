@@ -1096,10 +1096,55 @@ export function findPath(map, fromNum, toNum,
       if (shortest.found) {
         const budget = shortest.hops.length * DETOUR_FACTOR + DETOUR_SLACK;
         const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing, blocked);
-        // Only worth reporting as a different route when it actually is one.
-        if (safest.found) return { ...safest,
-          shortest_hops: shortest.hops.length,
-          detoured: safest.hops.length > shortest.hops.length };
+        // A DETOUR HAS TO BE WORTH WHAT IT COSTS, AND THE BOTTLENECK SEARCH CANNOT SEE THE
+        // COST AT ALL.
+        //
+        // `safestPath` minimises the worst room and breaks ties on hops, so ANY improvement
+        // in the bottleneck — one rating point — buys the whole budget, which is twice the
+        // shortest route plus two. That is not a hypothetical: measured across 870 routable
+        // pairs of the rooms this fleet travels between, 37% take a danger detour and they
+        // cost 704 extra hops between them, a mean of +2.19 rooms each.
+        //
+        // The fleet's main road is the case that shows why it matters. The Flatlands to Tos
+        // is THREE hops — 584 -> 585 -> 586 -> 50 — and the router was returning SEVEN, out
+        // through Main gate to Cor Noth, Cor Noth, both halves of The King's Way and the
+        // Western border of the Twisted Wood, to drop the worst room from 750 to 510. It
+        // bought a 32% reduction in the worst SINGLE generator for 2.3x the rooms: 27
+        // seconds of optimal walking became 76.
+        //
+        // And an extra room is not free danger-wise either, which is the part the minimax
+        // misses. Every additional room is another floor to cross, another doorway to fumble
+        // at, and everything living in it — the CLAUDE.md note on 534 says exactly this
+        // about a room that is deadly "because of how many things gang up in it, not because
+        // its worst single generator is remarkable". The seven-hop detour above runs through
+        // 587, where 19 of 85 prod deaths happened in eight hours and where a naked runner
+        // was measured taking five minutes to cross a room it walks in forty seconds when
+        // nothing is in the way.
+        //
+        // So the length of a detour must be PROPORTIONATE to the danger it actually removes.
+        // A route that halves the bottleneck may be half again as long; one that shaves a
+        // few points may not wander at all. A reduction of ~1 (avoiding something lethal for
+        // something harmless) still gets the old doubling, which is the case the budget was
+        // written for.
+        if (safest.found) {
+          const worstOf = hops => hops.reduce((max, h) => Math.max(max, dangerOf(table, h.to)),
+                                              dangerOf(table, fromNum));
+          const worstShort = worstOf(shortest.hops), worstSafe = worstOf(safest.hops);
+          const bought = worstShort > 0 ? (worstShort - worstSafe) / worstShort : 0;
+          const extra = safest.hops.length - shortest.hops.length;
+          // At least one hop is always allowed, so a one-room sidestep around something
+          // genuinely worse is never refused on arithmetic.
+          const allowed = Math.max(1, Math.ceil(shortest.hops.length * bought));
+          if (extra > allowed) return { ...shortest,
+            shortest_hops: shortest.hops.length, detoured: false,
+            detour_declined: { extra_hops: extra, allowed, worst_taken: worstShort,
+                               worst_avoided: worstSafe,
+                               why: `a ${extra}-hop detour to reduce the worst room by ` +
+                                    `${Math.round(bought * 100)}% is not proportionate` } };
+          return { ...safest,
+            shortest_hops: shortest.hops.length,
+            detoured: safest.hops.length > shortest.hops.length };
+        }
         return shortest;
       }
     }
