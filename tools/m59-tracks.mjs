@@ -26,6 +26,7 @@ import { fileURLToPath } from 'node:url';
 import { readSamples, segments, straighten, squareOf, roomIndex, resolveRoom,
          TRAILS_DIR, WALKS_DIR } from './m59-trails.mjs';
 import { UNDERWORLD_PORTALS } from './m59-underworld.mjs';
+import { protocolToClient } from './m59-roo.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const TRACKS_FILE = process.env.M59_TRACKS ||
@@ -140,9 +141,22 @@ export function crossings(samples, { joinWithinMs = 15000, neighbours = null } =
  */
 export function comb(crossingList, geoFor = () => null) {
   const best = new Map();
+  // Every straightened walk per key, kept so the good halves can be stitched together —
+  // see stitch(). The fastest whole walk is still what the entry is BUILT from, because it
+  // decides where the crossing starts and ends; the stitch only improves the middle.
+  const seenWalks = new Map();
   for (const c of crossingList) {
     const key = trackKey(c.room, c.cameFrom, c.goingTo);
     const had = best.get(key);
+    {
+      const geo = geoFor(c.room);
+      const pts = straighten(geo, c.points);
+      if (pts.length >= 2) {
+        const list = seenWalks.get(key) ?? [];
+        list.push({ points: pts, ms: c.ms });
+        seenWalks.set(key, list);
+      }
+    }
     if (had && had.ms <= c.ms) { had.seen++; continue; }
     const geo = geoFor(c.room);
     const points = straighten(geo, c.points);
@@ -179,7 +193,113 @@ export function comb(crossingList, geoFor = () => null) {
                     samples: c.points.length, seen: (had?.seen ?? 0) + 1,
                     straightened: geo ? true : false });
   }
+  // STITCH, WHERE THERE IS ANYTHING TO STITCH. A key seen once is its own best walk; a key
+  // seen several times can usually be beaten by neither of them alone.
+  for (const [key, entry] of best) {
+    const walks = (seenWalks.get(key) ?? []).sort((a, b) => a.ms - b.ms);
+    if (walks.length < 2) continue;
+    const geo = geoFor(entry.room);
+    const sewn = stitch(walks.map(w => w.points), geo);
+    if (!sewn || sewn.length < 2) continue;
+    const length = pts => { let n = 0; for (let i = 1; i < pts.length; i++)
+      n += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return n; };
+    // Only if it is actually shorter than the best single walk. A stitch that ties is not
+    // worth preferring: the walked one has been ridden and this one has not.
+    if (length(sewn) < length(entry.waypoints) * 0.98) {
+      entry.stitched_from = walks.length;
+      entry.walked_length = Math.round(length(entry.waypoints));
+      entry.waypoints = sewn.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
+      entry.stitched_length = Math.round(length(sewn));
+    }
+  }
   return best;
+}
+
+/**
+ * Build one good crossing out of several imperfect ones.
+ *
+ * KEEPING THE FASTEST WHOLE WALK CANNOT REACH NEAR-OPTIMAL, and that is not a tuning
+ * problem, it is arithmetic: if every observed crossing wanders somewhere different, the
+ * best of them still wanders. Waiting for one lucky perfect run is the only way that ever
+ * improves, and on a route walked ten times a day with monsters in it that run may never
+ * come.
+ *
+ * So the good halves are stitched instead. Every point anybody reached in this room, on any
+ * crossing between these two doors, becomes a node; consecutive points on the same walk
+ * become edges, because a body actually made that move. Then — and this is the stitching —
+ * every pair of points from DIFFERENT walks is offered an edge, and kept only if a raycast
+ * against the baked BSP says a body can make it. The shortest path through the union is a
+ * route nobody has walked end to end and every leg of which is either something somebody
+ * walked or something the geometry proves.
+ *
+ * IT CANNOT INVENT A TRAVERSAL. That is the whole argument for doing this here rather than
+ * planning: an original leg was accepted by the mover at the time, and a stitched leg has to
+ * pass the same trace the mover enforces. What it can do is skip the wandering, because a
+ * shortcut between two walks is exactly the wander that both of them took.
+ */
+export function stitch(walks, geo, { arriveWithin = 40 } = {}) {
+  const usable = (walks ?? []).filter(w => Array.isArray(w) && w.length >= 2);
+  if (usable.length < 2) return usable[0] ?? null;
+  if (!geo?.collisionReady || typeof geo.traceFineMoveClient !== 'function') return null;
+
+  // One node per distinct point, snapped so two walks over the same ground share it.
+  const SNAP = 16;
+  const key = p => Math.round(p.x / SNAP) + ',' + Math.round(p.y / SNAP);
+  const nodes = [], byKey = new Map();
+  const nodeOf = p => {
+    const k = key(p);
+    if (byKey.has(k)) return byKey.get(k);
+    byKey.set(k, nodes.length); nodes.push({ x: p.x, y: p.y });
+    return nodes.length - 1;
+  };
+  const edges = new Map();                       // from -> Map(to -> cost)
+  const link = (a, b) => {
+    if (a === b) return;
+    const cost = Math.hypot(nodes[a].x - nodes[b].x, nodes[a].y - nodes[b].y);
+    const row = edges.get(a) ?? new Map();
+    if (!(row.get(b) <= cost)) row.set(b, cost);
+    edges.set(a, row);
+  };
+  const walked = usable.map(w => w.map(nodeOf));
+  for (const path of walked) for (let i = 1; i < path.length; i++) link(path[i - 1], path[i]);
+
+  // THE STITCH. Cross-walk shortcuts, proved rather than assumed.
+  const lands = (a, b) => {
+    const t = geo.traceFineMoveClient(protocolToClient(nodes[a].x), protocolToClient(nodes[a].y),
+                                      protocolToClient(nodes[b].x), protocolToClient(nodes[b].y),
+                                      { slide: true });
+    if (!t) return false;
+    return Math.hypot(t.x - protocolToClient(nodes[b].x), t.y - protocolToClient(nodes[b].y)) <= arriveWithin;
+  };
+  const MAX_NODES_FOR_STITCH = Number(process.env.M59_STITCH_MAX_NODES || 160);
+  if (nodes.length <= MAX_NODES_FOR_STITCH) {
+    for (let a = 0; a < nodes.length; a++) for (let b = 0; b < nodes.length; b++) {
+      if (a === b) continue;
+      if (edges.get(a)?.has(b)) continue;
+      if (lands(a, b)) link(a, b);
+    }
+  }
+
+  // Enter where the walks entered, leave where they left. Both ends are taken from the
+  // FASTEST walk, so a stitched route still starts and finishes where a traveller does.
+  const start = walked[0][0], goal = walked[0][walked[0].length - 1];
+  const dist = new Array(nodes.length).fill(Infinity), prev = new Array(nodes.length).fill(-1);
+  dist[start] = 0;
+  const seen = new Set();
+  for (;;) {
+    let at = -1, best = Infinity;
+    for (let i = 0; i < nodes.length; i++) if (!seen.has(i) && dist[i] < best) { best = dist[i]; at = i; }
+    if (at < 0 || at === goal) break;
+    seen.add(at);
+    for (const [to, cost] of (edges.get(at) ?? new Map())) {
+      if (dist[at] + cost < dist[to]) { dist[to] = dist[at] + cost; prev[to] = at; }
+    }
+  }
+  if (!Number.isFinite(dist[goal])) return null;
+  const out = [];
+  for (let at = goal; at !== -1; at = prev[at]) out.push({ x: Math.round(nodes[at].x), y: Math.round(nodes[at].y) });
+  out.reverse();
+  return out.length >= 2 ? out : null;
 }
 
 export function loadTracks(file = TRACKS_FILE) {
