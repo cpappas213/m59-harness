@@ -34,12 +34,21 @@ function frac(v) {
 import { wanderAway } from '../m59-wander.mjs';
 import { affordances, OF } from '../m59-parse.mjs';
 
-export async function scavenge(client, session) {
+export async function scavenge(client, session, opts = {}) {
   if (!client || !session)
     return { sent: false, killed: false, reason: 'no client or session' };
 
   const room = client?.room;
   if (!room) return { sent: false, killed: false, reason: 'no room' };
+
+  // Threat ceiling: the GOAP keeper passes this so the scavenge uses the
+  // same band definition as the planner (myLevel + threatBand). Without it,
+  // fall back to myLevel * 2 (the old, looser check). This was the bug:
+  // the GOAP said the rat was out of band (ceiling=20) but the scavenge's
+  // own check (20*2=40) said it was fine, so the character walked toward
+  // a mob it should have been running from.
+  const myLevel = client?.vitals?.()?.health?.max ?? 20;
+  const ceiling = opts.threatCeiling ?? myLevel * 2;
 
   // Find hostiles in the room.
   const objects = room.objects;
@@ -66,26 +75,47 @@ export async function scavenge(client, session) {
     return { sent: false, killed: false, reason: 'no hostiles in the room' };
   }
 
-  // Pick the weakest (lowest max HP, or lowest HP as a fallback).
-  const myLevel = client?.vitals?.()?.health?.max ?? 20;
+  // Pick the weakest hostile that is WITHIN THE CEILING. The ceiling is
+  // the same one the GOAP uses for target_in_band (myLevel + threatBand).
+  // A mob above the ceiling is not prey — it is a threat. The character
+  // should be running from it, not walking toward it to "scavenge."
+  //
+  // WHEN max_health IS UNKNOWN: the wire protocol does not always send
+  // max_health on room objects. If we treat unknown HP as "in band", every
+  // mob passes the filter and the character walks toward whatever is
+  // nearest — including a level 50 fungus beast. Instead, when HP is
+  // unknown, defer to the GOAP's target_in_band symbol (computed from
+  // the threat ceiling). If the GOAP says the target is out of band,
+  // so are all mobs of unknown HP.
   const hpFrac = frac(client?.vitals?.()?.health);
-  const weak = hostiles
-    .filter(h => {
-      const hp = h.max_health ?? h.health ?? null;
-      return hp == null || hp <= myLevel * 1.5;
-    })
-    .sort((a, b) => (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+  const goapInBand = opts.targetInBand ?? null; // from GOAP world state
+  const inBand = hostiles.filter(h => {
+    const hp = h.max_health ?? h.health ?? null;
+    if (hp != null) return hp <= ceiling;
+    // Unknown HP: only allow if the GOAP explicitly says the target is in band,
+    // or if we have no GOAP info (standalone use, not under GOAP).
+    if (goapInBand == null) return true; // no GOAP: be permissive
+    return goapInBand; // GOAP says in-band or not
+  });
+  const weak = inBand.length
+    ? inBand.sort((a, b) => (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0]
+    : null;
 
-  const target = weak ?? hostiles.sort((a, b) =>
-    (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+  // If NO hostile is in band, the character should not be fighting
+  // anything in this room. Refuse so the GOAP falls through to
+  // healthy/flee/travel.
+  if (!weak) {
+    const strongest = hostiles.sort((a, b) =>
+      (b.max_health ?? b.health ?? 0) - (a.max_health ?? a.health ?? 0))[0];
+    const sName = client?.rsc?.get?.(strongest.nameRsc) ?? 'creature';
+    return { sent: false, killed: false,
+      reason: `all hostiles in the room are above the band (weakest: ${sName} hp=${strongest.max_health ?? strongest.health ?? '?'} > ceiling ${ceiling})` };
+  }
+
+  const target = weak;
 
   const targetName = client?.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
   const targetHp = target.max_health ?? target.health ?? '?';
-  const tooStrong = targetHp > myLevel * 2;
-
-  if (tooStrong)
-    return { sent: false, killed: false,
-      reason: `weakest hostile (${targetName} hp=${targetHp}) is still above the band (my level=${myLevel})` };
 
   // PVP GATE: if the target is a player, only fight if we can take
   // them on. The character runs from players unless it is armed,
