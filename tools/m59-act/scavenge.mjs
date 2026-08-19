@@ -227,75 +227,29 @@ export async function scavenge(client, session, opts = {}) {
   // Max 3 pull attempts before giving up and doing a normal approach.
   const { fight: doFight } = await import('../m59-skills.mjs');
   const foeId = target.id ?? target.obj_id ?? null;
-  const mePos2 = client?.self;
+  // Use the session's fresh client for position, not the stale client
+  // that was passed in. The session's client has the latest MOVE
+  // confirmations from the server.
+  const sClient = session.need();
+  const mePos2 = sClient.self;
   const targetDist = mePos2 && target.col != null && target.row != null
     ? Math.hypot(target.col - mePos2.col, target.row - mePos2.row)
     : null;
 
-  // If the target is already in reach (<= 3 cells), fight in place.
-  // 30 rounds is enough to kill an in-band mob. If the mob survives
-  // 30 rounds, it's out of our damage range — disengage and let
-  // the GOAP re-plan (travel to a weaker mob, rest, etc).
-  if (targetDist != null && targetDist <= 3) {
-    const r = await doFight(session, {
-      target: targetName, preferId: foeId,
-      rounds: 30, swingsPerRound: 4, holdPosition: true, reach: 3,
-    });
-    return {
-      sent: true,
-      killed: r?.killed ?? r?.won ?? false,
-      reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
-    };
-  }
-
-  // Target is more than 3 cells away. Walk to it using fine-grid
-  // movement (moveTo with x,y) instead of moveToSquare (which snaps
-  // to cell centers and can get stuck in corridors). Fine-grid
-  // movement allows sub-cell positioning and handles narrow passages.
-  {
-    const c = session.need();
-    let meNow = c.self;
-    let foeNow = c.room.objects.get(foeId);
-    if (meNow && foeNow) {
-      for (let step = 0; step < 60; step++) {
-        const mx = meNow?.x ?? 0;
-        const my = meNow?.y ?? 0;
-        const fx = foeNow?.x ?? 0;
-        const fy = foeNow?.y ?? 0;
-        const dx = fx - mx;
-        const dy = fy - my;
-        const dist = Math.hypot(dx, dy) / 1024; // in cells
-        if (dist <= 3) break; // in reach
-        // Walk one cell (1024 fine-grid units) toward the target
-        const stepSize = 1024;
-        const distRaw = Math.hypot(dx, dy);
-        if (distRaw === 0) break;
-        const sx = Math.round((dx / distRaw) * stepSize);
-        const sy = Math.round((dy / distRaw) * stepSize);
-        const nx = mx + sx;
-        const ny = my + sy;
-        try {
-          await c.moveTo(nx, ny);
-        } catch { break; }
-        await new Promise(res => setTimeout(res, 200));
-        // Re-read position and target
-        const c2 = session.need();
-        meNow = c2.self;
-        foeNow = c2.room.objects.get(foeId);
-        if (!foeNow) break; // target gone
-      }
-    }
-    // Now fight in place (target should be in reach or we walked as close as we could)
-    const r = await doFight(session, {
-      target: targetName, preferId: foeId,
-      rounds: 30, swingsPerRound: 4, holdPosition: true, reach: 3,
-    });
-    return {
-      sent: true,
-      killed: r?.killed ?? r?.won ?? false,
-      reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
-    };
-  }
+  // Fight the target. Use holdPosition: false so the fight skill
+  // can walk to the target if it's out of reach. This is more
+  // reliable than our own distance check which uses potentially
+  // stale positions. The fight skill reads fresh positions from
+  // the server and handles approach on its own.
+  const r = await doFight(session, {
+    target: targetName, preferId: foeId,
+    rounds: 30, swingsPerRound: 4, holdPosition: false, reach: 3,
+  });
+  return {
+    sent: true,
+    killed: r?.killed ?? r?.won ?? false,
+    reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+  };
 }
 
 // No precondition: scavenge is always available. When there is no
