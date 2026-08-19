@@ -37,6 +37,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { elideLoops } from './m59-roo.mjs';
+import { fleetName } from './m59-fleetpath.mjs';
+
+// WHICH FLEET, ASKED THE ONE WAY THIS REPOSITORY ASKS IT.
+//
+// This module used to read the environment directly with a literal fallback, which is
+// its own argv/env reading — the exact mistake CLAUDE.md already records against the
+// tithe book, where "a broker started with no --fleet but a recorded substrate/fleet-default
+// wrote default-t14 while the tool read prod-t14". It happened again here and was visible on
+// disk: the prod broker is started with `--fleet prod` as a COMMAND LINE argument, not an
+// environment variable, so every trail it recorded went into `default.jsonl` — 14 MB of prod
+// under a name no tool would ever look for.
+//
+// `fleetName` is the resolver every other fleet tool uses: --fleet, then M59_FLEET, then
+// substrate/fleet-default, then the unnamed fleet. One answer, one place.
+const FLEET = () => fleetName() || 'default';
+
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const TRIPS_DIR = process.env.M59_TRIPS_DIR || path.join(HERE, '..', 'substrate', 'trips');
@@ -49,13 +65,13 @@ export const MAX_HP_LOST = Number(process.env.M59_TRIP_MAX_HP || 0);
 // walk that went wrong in a way the gate above did not catch.
 export const MIN_STEPS = 2, MAX_STEPS = 200;
 
-export function tripsFile(fleet = process.env.M59_FLEET || 'default') {
+export function tripsFile(fleet = FLEET()) {
   return path.join(TRIPS_DIR, String(fleet).replace(/[^\w.-]/g, '_') + '.json');
 }
 
 let book = null, bookFleet = null, saveTimer = null;
 
-export function loadTrips(fleet = process.env.M59_FLEET || 'default') {
+export function loadTrips(fleet = FLEET()) {
   if (book && bookFleet === fleet) return book;
   bookFleet = fleet;
   try { book = JSON.parse(fs.readFileSync(tripsFile(fleet), 'utf8')).trips ?? {}; }
@@ -99,7 +115,7 @@ export function simplify(squares, { pull = null } = {}) {
  * book is an accelerator over the existing router, never a replacement for it, so a fleet
  * with an empty book behaves exactly as one that has never heard of this file.
  */
-export function recallTrip(room, to, from, { fleet = process.env.M59_FLEET || 'default' } = {}) {
+export function recallTrip(room, to, from, { fleet = FLEET() } = {}) {
   const trips = loadTrips(fleet);
   return trips[tripKey(room, to, from)] ?? trips[tripKey(room, to)] ?? null;
 }
@@ -109,7 +125,7 @@ export function recallTrip(room, to, from, { fleet = process.env.M59_FLEET || 'd
  */
 export function recordTrip({ room, to, from = null, squares, stand_on = null,
                              stumbles = 0, hp_lost = 0, ms = null, pull = null,
-                             fleet = process.env.M59_FLEET || 'default' } = {}) {
+                             fleet = FLEET() } = {}) {
   try {
     if (!Number.isFinite(room) || !Number.isFinite(to)) return null;
     if (stumbles > MAX_STUMBLES || hp_lost > MAX_HP_LOST) return null;
@@ -157,7 +173,7 @@ const invokedDirectly = process.argv[1] &&
   path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
   const arg = n => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : undefined; };
-  const fleet = arg('--fleet') ?? process.env.M59_FLEET ?? 'default';
+  const fleet = arg('--fleet') ?? FLEET();
   const trips = loadTrips(fleet);
   const rows = Object.entries(trips);
   if (process.argv.includes('--json')) { console.log(JSON.stringify({ fleet, trips }, null, 2)); }

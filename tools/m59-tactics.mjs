@@ -32,6 +32,22 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fleetName } from './m59-fleetpath.mjs';
+
+// WHICH FLEET, ASKED THE ONE WAY THIS REPOSITORY ASKS IT.
+//
+// This module used to read the environment directly with a literal fallback, which is
+// its own argv/env reading — the exact mistake CLAUDE.md already records against the
+// tithe book, where "a broker started with no --fleet but a recorded substrate/fleet-default
+// wrote default-t14 while the tool read prod-t14". It happened again here and was visible on
+// disk: the prod broker is started with `--fleet prod` as a COMMAND LINE argument, not an
+// environment variable, so every trail it recorded went into `default.jsonl` — 14 MB of prod
+// under a name no tool would ever look for.
+//
+// `fleetName` is the resolver every other fleet tool uses: --fleet, then M59_FLEET, then
+// substrate/fleet-default, then the unnamed fleet. One answer, one place.
+const FLEET = () => fleetName() || 'default';
+
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const TACTICS_DIR = process.env.M59_TACTICS_DIR || path.join(HERE, '..', 'substrate', 'tactics');
@@ -65,7 +81,7 @@ export const TRIGGERS = Object.freeze({
 
 let buffer = [], flushTimer = null;
 
-export function tacticsFile(fleet = process.env.M59_FLEET || 'default') {
+export function tacticsFile(fleet = FLEET()) {
   return path.join(TACTICS_DIR, String(fleet).replace(/[^\w.-]/g, '_') + '.jsonl');
 }
 
@@ -105,7 +121,7 @@ export function recordTactic(row = {}) {
   } catch { return null; }
 }
 
-export function flushTactics(fleet = process.env.M59_FLEET || 'default') {
+export function flushTactics(fleet = FLEET()) {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (!buffer.length) return 0;
   const rows = buffer; buffer = [];
@@ -116,7 +132,7 @@ export function flushTactics(fleet = process.env.M59_FLEET || 'default') {
   } catch { return 0; }
 }
 
-export function readTactics({ fleet = process.env.M59_FLEET || 'default', hours = 24 } = {}) {
+export function readTactics({ fleet = FLEET(), hours = 24 } = {}) {
   let text = '';
   try { text = fs.readFileSync(tacticsFile(fleet), 'utf8'); } catch { return []; }
   const since = Date.now() - hours * 3600000;
@@ -173,7 +189,7 @@ const invokedDirectly = process.argv[1] &&
   path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
 if (invokedDirectly) {
   const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
-  const fleet = arg('--fleet') ?? process.env.M59_FLEET ?? 'default';
+  const fleet = arg('--fleet') ?? FLEET();
   const hours = Number(arg('--hours') ?? 24);
   const rows = readTactics({ fleet, hours });
   const table = summarise(rows);

@@ -40,6 +40,22 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { KOD_FINENESS, protocolToClient } from './m59-roo.mjs';
+import { fleetName } from './m59-fleetpath.mjs';
+
+// WHICH FLEET, ASKED THE ONE WAY THIS REPOSITORY ASKS IT.
+//
+// This module used to read the environment directly with a literal fallback, which is
+// its own argv/env reading — the exact mistake CLAUDE.md already records against the
+// tithe book, where "a broker started with no --fleet but a recorded substrate/fleet-default
+// wrote default-t14 while the tool read prod-t14". It happened again here and was visible on
+// disk: the prod broker is started with `--fleet prod` as a COMMAND LINE argument, not an
+// environment variable, so every trail it recorded went into `default.jsonl` — 14 MB of prod
+// under a name no tool would ever look for.
+//
+// `fleetName` is the resolver every other fleet tool uses: --fleet, then M59_FLEET, then
+// substrate/fleet-default, then the unnamed fleet. One answer, one place.
+const FLEET = () => fleetName() || 'default';
+
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const TRAILS_DIR = process.env.M59_TRAILS_DIR || path.join(HERE, '..', 'substrate', 'trails');
@@ -71,7 +87,7 @@ export const REJOIN_MS = Number(process.env.M59_TRAIL_REJOIN_MS || 120000);
 // not walk.
 export const MAX_WIRE_PER_SECOND = Number(process.env.M59_TRAIL_MAX_SPEED || 640);
 
-export function trailsFile(fleet = process.env.M59_FLEET || 'default') {
+export function trailsFile(fleet = FLEET()) {
   return path.join(TRAILS_DIR, String(fleet).replace(/[^\w.-]/g, '_') + '.jsonl');
 }
 
@@ -85,7 +101,7 @@ let buffer = [], timer = null, lastOf = new Map();
  * than at read time, because the server re-reports a standing body indefinitely and a
  * ledger of somebody standing still is most of the file.
  */
-export function recordSeen(row = {}, { fleet = process.env.M59_FLEET || 'default' } = {}) {
+export function recordSeen(row = {}, { fleet = FLEET() } = {}) {
   try {
     const id = row.id ?? row.name ?? null;
     if (id == null || !Number.isFinite(row.x) || !Number.isFinite(row.y)) return false;
@@ -121,7 +137,7 @@ export function recordSeen(row = {}, { fleet = process.env.M59_FLEET || 'default
   } catch { return false; }
 }
 
-export function flushTrails(fleet = process.env.M59_FLEET || 'default') {
+export function flushTrails(fleet = FLEET()) {
   if (timer) { clearTimeout(timer); timer = null; }
   if (!buffer.length) return 0;
   const rows = buffer; buffer = [];
