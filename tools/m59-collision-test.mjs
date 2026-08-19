@@ -24,6 +24,7 @@ import {
 } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
+import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { BP, M59Client } from './m59-client.mjs';
 import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
 import {
@@ -1014,7 +1015,11 @@ ok('and with no collision model it declines to prove anything',
 for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
-  { CLIENT_FINENESS, KOD_FINENESS, blocksMovement });
+  { CLIENT_FINENESS, KOD_FINENESS, blocksMovement,
+    // The declared-mutable list, as the real functions: both are pure lookups over a frozen
+    // table in a module that imports without taking the fleet lock, so stubbing them would
+    // be testing a different rule from the one that ships.
+    isMutableGeometry, mutableBecause });
 // `noteGeometryDrift` is stubbed rather than lifted: this suite is about what the
 // collision contract DECIDES, and where the broker files the resulting drift record is
 // not that question. The decision itself is asserted below, off `validateFineTarget`,
@@ -1637,6 +1642,34 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
   setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now() });
   ok('a record with no expiry still blocks, because unknown is not finished',
      tryMove().reason === 'collision_geometry_changed');
+
+  // ...UNLESS THE ROOM IS ONE WE HAVE DECLARED TO BE PERMANENTLY IN MOTION.
+  //
+  // The rule above is the safe reading and the right one for a room that is not supposed to
+  // change. In the Cragged Mountains, the Arena of Kraanan, Castle Brax and North Barloque
+  // it is a cage: those rooms animate constantly, the unnarrowed record is never absent, and
+  // a character can never leave. Reproduced on the only road to Castle Victoria — 7 refusals
+  // in 35s, the leg completing 0 times out of 3. See m59-mutable.mjs for the failure
+  // direction, which is a relaxation and is stated there rather than hidden here.
+  {
+    const mutable = fakeBrokerSession(twoSides(), { roomId: 598 });
+    mutable.session.client.room.collisionInvalidated = { kind: 'BP_SECTOR_MOVE', at: Date.now() };
+    const moved = validateFineTarget.call(mutable.session, clientToWire(3072), clientToWire(2048));
+    ok('a room declared to have moving geometry is not caged by an unnarrowed animation',
+       moved.reason !== 'collision_geometry_changed',
+       JSON.stringify({ reason: moved.reason }));
+
+    // AND THE RELAXATION IS ONLY EVER THE UNNARROWED CASE. A packet that NAMES its sector
+    // still refuses a move through that sector, in these rooms exactly as in every other —
+    // which is the whole of "do not care about the change unless you are travelling it".
+    const named = fakeBrokerSession(twoSides(), { roomId: 598 });
+    named.session.client.room.collisionInvalidated =
+      { kind: 'BP_SECTOR_MOVE', sector: 1, at: Date.now(), until: Date.now() + 10_000 };
+    const stillRefused = validateFineTarget.call(named.session, clientToWire(3072), clientToWire(2048));
+    ok('but a NAMED moving sector still refuses a move through it, mutable room or not',
+       stillRefused.reason === 'collision_geometry_changed',
+       JSON.stringify({ reason: stillRefused.reason }));
+  }
 
   // AND IT BLOCKS THE SECTOR THAT MOVED, NOT THE ROOM. Bounding the refusal in TIME only
   // helps while animations are rare. The Temple of Qor door in room 598 cycles faster than

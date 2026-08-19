@@ -47,6 +47,7 @@ import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPat
 import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
+import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -2846,6 +2847,22 @@ class Session {
         };
         touches = inSector((wx - KOD_FINENESS) * scale0, (wy - KOD_FINENESS) * scale0)
                || inSector((x - KOD_FINENESS) * scale0, (y - KOD_FINENESS) * scale0);
+      }
+      // A ROOM WE HAVE DECLARED TO BE PERMANENTLY IN MOTION DOES NOT GET TO CAGE US.
+      //
+      // Everywhere else, a record that does not name its sector reads as "we do not know
+      // which part moved, so refuse the whole room" — the safe reading, and the right one
+      // when a room is not supposed to change at all. In the Cragged Mountains, the Arena
+      // of Kraanan, Castle Brax and North Barloque it is not caution, it is a cage: those
+      // rooms are ALWAYS animating, so the unnarrowed record is permanent and the character
+      // can never leave. See m59-mutable.mjs for the list and for the failure direction.
+      //
+      // Only the UNNARROWED case is relaxed. When the packet names its sector the ordinary
+      // narrowing still applies and still refuses a move that really does cross the part
+      // that moved, in these rooms exactly as in every other — which is the whole of "do
+      // not care about the change unless you are travelling through it".
+      if (touches && !Number.isInteger(invalidated.sector) && isMutableGeometry(c.room.id)) {
+        touches = false;
       }
       if (touches) return {
         available: false, moved: false, blocked: true,

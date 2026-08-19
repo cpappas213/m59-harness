@@ -35,6 +35,7 @@
 // `save game` and restarts — which object ids do not (see NEXT-STEPS trap 8).
 
 import net from 'node:net';
+import { isMutableGeometry, MUTABLE_TRANSIT_PENALTY } from './m59-mutable.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
@@ -930,7 +931,21 @@ export function roomDanger({ refresh = false } = {}) {
 // A room nothing is known about rates 0 — NOT "unknown, therefore avoid". Most of the
 // world's rooms generate nothing and are the safe ones; treating silence as hazardous
 // would make every town square look like a battlefield and route around all of them.
-const dangerOf = (danger, room) => danger.get(Number(room)) ?? 0;
+// A ROOM WHOSE GEOMETRY MOVES IS HARDER TO WALK RELIABLY, WHICH IS A DIFFERENT AXIS FROM
+// WHAT LIVES IN IT — AND IT IS PRICED HERE ANYWAY, DELIBERATELY.
+//
+// Keeping it separate would mean a second bottleneck search and a second budget, for a
+// preference the operator described in one sentence: never route over those spots unless
+// you have to. That is exactly what a small addition to this number already expresses, and
+// it inherits the property that matters — `findPath` walks through a soft hazard when there
+// is no other way, which is required here, because the only road to Castle Victoria runs
+// through the Cragged Mountains and there is no alternative at all.
+//
+// It is small (120 against room ratings of 390-750) so it can break a tie and cannot buy a
+// detour of its own; the proportionate-detour rule above then prices any wandering it does
+// suggest. See m59-mutable.mjs for the list, the citations and the failure direction.
+const dangerOf = (danger, room) => (danger.get(Number(room)) ?? 0)
+  + (isMutableGeometry(room) ? MUTABLE_TRANSIT_PENALTY : 0);
 
 // HOW FAR OUT OF ITS WAY A CHARACTER MAY GO TO AVOID A ROOM.
 //
