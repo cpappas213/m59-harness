@@ -45,6 +45,8 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
   from './m59-map.mjs';
 import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
+import { recordTactic } from './m59-tactics.mjs';
+import { recordCrossing } from './m59-crossings.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -4898,6 +4900,9 @@ class Session {
   // report what each said.
   async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const tried = [];
+    // Captured before the first attempt, because a successful crossing changes the room out
+    // from under us and the book has to be told which room the door was IN.
+    const roomBefore = Number(this.world?.room?.num ?? this.client?.room?.id ?? NaN);
     // HOW MANY FULL ROOM-WALKS ONE DOORWAY IS WORTH.
     //
     // Every candidate after the first is another walk across the room to another square on
@@ -4957,9 +4962,39 @@ class Session {
         break;
       }
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
+      const askedAt = Date.now();
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
-      if (r.left) return { ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
-                           ...(tried.length ? { tried } : {}) };
+      if (r.left) {
+        // THE DOOR HAS NOT MOVED, SO IT SHOULD BE WRITTEN DOWN — AND THIS IS NOT YET THE
+        // PLACE THAT CAN DO IT HONESTLY.
+        //
+        // `exits()` already ranks a square somebody was OBSERVED crossing at above every
+        // derived candidate, and nothing but a human's proxy walk log has ever written to
+        // that book — so the fleet crosses these boundaries hundreds of times a day and
+        // re-derives the door on every one of them. Recording its own successes is exactly
+        // the right idea.
+        //
+        // The first attempt at it was WRONG and is left here as a warning rather than as
+        // code. Recording at this point produced pairs like `574>574` and `587>587`, and a
+        // square of 115,88 in a room that is 55x67 — the ARRIVAL coordinate in the room we
+        // had just entered. By the time a crossing has succeeded, both the room and the
+        // position have moved on, so this site can see neither the door it used nor the
+        // side it used it from. Being wrong here is not a wasted walk: the learned book is
+        // merged into the operator's observed evidence and OUTRANKS every derived
+        // candidate, so a fictitious door would be preferred over the real one for ever.
+        //
+        // What it needs is the room and the crossing square captured BEFORE the move, by
+        // the code that actually sends it — `leaveVia` — and confirmed against the room we
+        // land in, which is the same discipline `m59-crossings.json` already applies to the
+        // operator's logs. Until then the fleet re-derives, which is slow and correct.
+        if (tried.length)
+          recordTactic({ character: this.character ?? null, room: roomBefore ?? null,
+                         tactic: 'needle_backoff', trigger: 'door_refused', worked: true,
+                         ms: Date.now() - askedAt,
+                         note: `crossed on attempt ${tried.length + 1}` });
+        return { ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
+                 ...(tried.length ? { tried } : {}) };
+      }
       if (isTerminalMovementReason(r.reason))
         return { ...r, left: false, used_exit: exit, ...(tried.length ? { tried } : {}) };
       // BLOCKED BY A BODY AT A ONE-SQUARE DOOR: the next candidate is this candidate, so
@@ -5006,6 +5041,14 @@ class Session {
           const backed = await this.retreatAlongBreadcrumbs(
             { maxCrumbs: narrowBackoffCrumbs, movementGeneration, controlToken }).catch(() => null);
           tried[tried.length - 1].backed_off = backed?.steps ?? 0;
+          recordTactic({ character: this.character ?? null, room: roomBefore,
+                         tactic: 'needle_backoff', trigger: 'body_blocked',
+                         // Not known to have worked yet — the NEXT attempt says that, and a
+                         // tactic that reports its own success is the failure this ledger
+                         // exists to make visible.
+                         worked: false, ms: narrowWaitMs,
+                         hp_lost: r.damage_while_blocked ?? 0,
+                         note: `backed off ${backed?.steps ?? 0} crumb(s)` });
           await new Promise(resolve => setTimeout(resolve, narrowWaitMs));
           index--;                      // the same square, later — that is the whole point
           continue;

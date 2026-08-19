@@ -50,6 +50,14 @@ node_modules/
 # which is where most of this fleet's deaths happen and where nothing else is looking.
 # One server's characters and their bad afternoons, so not reference data.
 /substrate/hits/
+
+# Every row names a character and says where it was stuck — same rule as the hits ledger.
+/substrate/tactics/
+
+# The fleet's own recorded walks and the doors it learned — both name characters and
+# positions, and both are this machine's history rather than anything a clone should carry.
+/substrate/trips/
+/substrate/m59-crossings-learned.json
 # One JSON per character: every point of MAXIMUM HEALTH it has earned, and the creature
 # and room that paid for it. Caught from the server's own announcement — "You suddenly
 # feel a little tougher.", player.kod:144 — rather than inferred from a five-minute

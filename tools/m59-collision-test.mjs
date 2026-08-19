@@ -3,8 +3,18 @@
 //
 //   node tools/m59-collision-test.mjs
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
+// THE INSTRUMENTS WRITE TO DISK, AND A TEST MUST NEVER WRITE TO THE FLEET'S OWN BOOKS.
+// A live broker reads both of these; a suite that appended to them would be teaching the
+// running fleet doors that only exist in a fixture.
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-'));
+  process.env.M59_TACTICS_DIR = join(scratch, 'tactics');
+  process.env.M59_CROSSINGS_LEARNED = join(scratch, 'crossings-learned.json');
+}
 import { createHash } from 'node:crypto';
 import {
   CLIENT_FINENESS, COLLISION_VERSION, DEFAULT_ROO_DIRS, KOD_FINENESS,
@@ -12,6 +22,8 @@ import {
   RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, setWallHeights,
   sharedRoomGeometry,
 } from './m59-roo.mjs';
+import { recordTactic } from './m59-tactics.mjs';
+import { recordCrossing } from './m59-crossings.mjs';
 import { BP, M59Client } from './m59-client.mjs';
 import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
 import {
@@ -1059,7 +1071,13 @@ const leaveVia = compileSessionMethod(brokerSource,
   });
 const leaveViaAny = compileSessionMethod(brokerSource,
   'async leaveViaAny(candidates, {', 'leaveViaAny', {
-    isTerminalMovementReason, spreadEdges, orderExits: exits => exits,
+    isTerminalMovementReason, spreadEdges, orderExits: exits => exits, KOD_FINENESS,
+    // THE TWO INSTRUMENTS, AS THE REAL ONES. Both are ordinary exports of modules that
+    // import without taking the fleet lock, and both are written to be unable to throw —
+    // which is exactly the property worth exercising here rather than stubbing away. They
+    // write under M59_TACTICS_DIR / M59_CROSSINGS_LEARNED, which this file points at a
+    // scratch path below so a test run never edits the fleet's own books.
+    recordTactic, recordCrossing,
   });
 
 function fakeBrokerSession(geometry, {
