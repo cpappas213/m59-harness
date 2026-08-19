@@ -4412,7 +4412,7 @@ class Session {
       const meFar = c.self;
       if (meFar && exit.fine_stand_on) {
         const distCells = Math.hypot(exit.fine_stand_on.x - meFar.x, exit.fine_stand_on.y - meFar.y) / KOD_FINENESS;
-        if (distCells > 5) {
+        if (distCells > 0.5) {
           const targetCol = Math.floor(exit.fine_stand_on.x / KOD_FINENESS);
           const targetRow = Math.floor(exit.fine_stand_on.y / KOD_FINENESS);
           const maxRawSteps = Math.min(200, Math.ceil(distCells * 2) + 20);

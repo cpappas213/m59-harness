@@ -53,10 +53,19 @@ function compendiumLevel(roomNum, mobName) {
   const spawns = loadSpawns();
   if (!spawns?.rooms) return null;
   const name = String(mobName).toLowerCase();
+  // First try the specific room.
   const entries = spawns.rooms[String(roomNum)];
-  if (!entries) return null;
-  const match = entries.find(e => e.creature?.toLowerCase() === name);
-  return match?.level ?? null;
+  if (entries) {
+    const match = entries.find(e => e.creature?.toLowerCase() === name);
+    if (match) return match.level;
+  }
+  // Fall back to a global search: the compendium may not list this
+  // mob for this specific room. The level is the same regardless.
+  for (const entries2 of Object.values(spawns.rooms)) {
+    const match2 = entries2.find(e => e.creature?.toLowerCase() === name);
+    if (match2) return match2.level;
+  }
+  return null;
 }
 
 export async function scavenge(client, session, opts = {}) {
