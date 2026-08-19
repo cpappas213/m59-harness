@@ -14302,7 +14302,7 @@ function heroSnapshot(name) {
       in_game: s.live === true,
       faction_status: factionStatus,
       room: room ? { num: room.num, name: room.name } : null,
-      position: me ? { col: me.col, row: me.row } : null,
+      position: me ? { col: me.col, row: me.row, facing_degrees: me.degrees ?? null } : null,
       // ROOM VIEW: the room's dimensions, the character's position, and
       // every object in the room (NPCs, players, items, exits). This lets
       // the hero page render a visual map of where the character is and
@@ -14686,12 +14686,16 @@ function serveDashboard(port) {
       const rv = h?.room_view ?? null;
       if (!rv) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end('{}'); }
       const { cols, rows, objects, self } = rv;
+      // Facing direction and GOAP target for the 3D view.
+      const goapState = h?.goap ?? null;
       const out = {
         room: h?.room?.name ?? '',
         roomNum: h?.room?.num ?? h?.room?.id ?? null,
         cols, rows,
-        objects: (objects ?? []).map(o => ({ x: o.col, z: o.row, t: o.is_self ? 0 : o.is_player ? 1 : 2, n: o.name })),
+        objects: (objects ?? []).map(o => ({ x: o.col, z: o.row, t: o.is_self ? 0 : o.is_player ? 1 : 2, n: o.name, id: o.id ?? null })),
         self: self ? { x: self.col, z: self.row } : null,
+        facing: h?.position?.facing_degrees ?? null,
+        target: goapState?.target ?? null,
         vitals: {
           hp: h?.vitals?.health?.value, hpMax: h?.vitals?.health?.max,
           mp: h?.vitals?.mana?.value, mpMax: h?.vitals?.mana?.max,

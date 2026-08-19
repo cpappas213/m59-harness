@@ -320,7 +320,10 @@ function makeLabel(text, color) {
   return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
 }
 
-function buildEntities(objs) {
+let facingArrow = null;
+let targetRing = null;
+
+function buildEntities(objs, facing, targetId) {
   // Clear existing
   while (entityGroup.children.length) {
     const ch = entityGroup.children[0];
@@ -328,6 +331,8 @@ function buildEntities(objs) {
     ch.traverse?.(n => { n.geometry?.dispose?.(); n.material?.map?.dispose?.(); n.material?.dispose?.(); });
   }
   selfRing.mesh = null;
+  facingArrow = null;
+  targetRing = null;
   for (const o of objs) {
     const cx = Math.min(Math.max(o.x, 0), COLS - 1);
     const cz = Math.min(Math.max(o.z, 0), ROWS - 1);
@@ -350,6 +355,36 @@ function buildEntities(objs) {
       ring.position.set(x, 0.02 + oh, z);
       entityGroup.add(ring);
       selfRing.mesh = ring;
+      // Facing arrow: a small cone pointing in the character's facing direction.
+      // degrees: 0=east, 90=south, 180=west, 270=north (game convention).
+      // In Three.js: 0=east(+x), 90=south(+z), 180=west(-x), 270=north(-z).
+      if (facing != null) {
+        const cone = new THREE.Mesh(
+          new THREE.ConeGeometry(0.15, 0.6, 8),
+          new THREE.MeshBasicMaterial({ color: 0x44ffaa })
+        );
+        // Cone points +Y by default; rotate to point horizontally.
+        cone.rotation.z = -Math.PI / 2;  // now points +X (east)
+        // Game degrees: 0=east, 90=south. Three.js rotation around Y: 0=+X, PI/2=+Z.
+        // So game_degrees maps directly to Y-rotation in radians.
+        const holder = new THREE.Group();
+        holder.add(cone);
+        holder.position.set(x, 0.3 + oh, z);
+        holder.rotation.y = -(facing * Math.PI / 180);
+        entityGroup.add(holder);
+        facingArrow = holder;
+      }
+    }
+    // Target reticle: a pulsing red ring around the targeted entity.
+    if (targetId != null && o.t !== 0 && o._objId === targetId) {
+      const tring = new THREE.Mesh(
+        new THREE.RingGeometry(0.4, 0.65, 32),
+        new THREE.MeshBasicMaterial({ color: 0xff3333, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+      );
+      tring.rotation.x = -Math.PI / 2;
+      tring.position.set(x, 0.04 + oh, z);
+      entityGroup.add(tring);
+      targetRing = tring;
     }
     const hex = '#' + colors[o.t].toString(16).padStart(6, '0');
     const sprite = makeLabel(o.n, hex);
@@ -358,7 +393,7 @@ function buildEntities(objs) {
     entityGroup.add(sprite);
   }
 }
-buildEntities(OBJECTS);
+buildEntities(OBJECTS, null, null);
 
 // Background poll: update entities + vitals every 3s without reloading.
 let entityKey = null;
@@ -374,10 +409,13 @@ async function pollData() {
         ' &middot; ' + d.room + ' &middot; ' + d.cols + '&times;' + d.rows + ' &middot; <span style="color:#4a9">&bull;</span>';
       roomName = d.room;
     }
-    // Update entities in-place (only rebuild if the set changed)
-    const key = JSON.stringify((d.objects || []).map(function(o) { return o.n + o.t + o.x + ',' + o.z; }));
+    // Update entities in-place (only rebuild if the set or facing/target changed)
+    var targetId = d.target ? d.target.id : null;
+    var key = JSON.stringify((d.objects || []).map(function(o) { return o.n + o.t + o.x + ',' + o.z + (o.id || ''); })) + 'f' + (d.facing ?? '') + 't' + (targetId ?? '');
     if (key !== entityKey) {
-      buildEntities(d.objects || []);
+      // Attach _objId to each object for target matching
+      var objs = (d.objects || []).map(function(o) { o._objId = o.id; return o; });
+      buildEntities(objs, d.facing, targetId);
       entityKey = key;
     }
     // Update vitals

@@ -636,8 +636,17 @@ export class GOAPKeeper {
             recover.cost = 2;
             extra.push(recover);
           } else if (ws.has_target === true) {
-            // Case 2: under attack by a mob. Take a safe spot, then rest.
+            // Case 2: under attack by a mob. If the mob is out of band
+            // (too high level), flee first — taking a safe spot against
+            // a mob 10+ levels above is a death sentence.
+            const shouldFleeFirst = ws.target_in_band === false;
             const recover = async (client, session) => {
+              if (shouldFleeFirst) {
+                const fleeResult = await flee(client, session);
+                if (!fleeResult?.sent && fleeResult?.reason !== 'no target') {
+                  return { acted: false, reason: 'flee failed: ' + (fleeResult?.reason ?? 'unknown') };
+                }
+              }
               const spotResult = await takeSafeSpot(client, session).catch(() => (null));
               const restResult = await rest(client, session);
               return { acted: restResult?.sent === true, reason: restResult?.reason ?? (spotResult?.reason ?? null) };
@@ -810,7 +819,13 @@ export class GOAPKeeper {
       }
     }
 
-    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra });
+    // When a hostile is present and the goal is 'healthy', remove plain `rest`
+    // from the action set so the planner is forced to use `recover` (which
+    // includes fleeing / safe-spot before resting). Resting in the open while
+    // a mob is in reach is how characters die.
+    const planFilter = (effectiveGoal === 'healthy' && ws.has_target === true)
+      ? new Set(['rest']) : null;
+    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra, filter: planFilter });
     // Record the plan for the dashboard / hero page. A visible plan is
     // the only plan you can argue with.
     this._lastPlan = {
@@ -821,6 +836,13 @@ export class GOAPKeeper {
       ws: wsSummary,
       pass: this._passCount,
       at: Date.now(),
+      // Target info for the 3D view: which object is being engaged,
+      // whether it's in band, and whether it's a player.
+      target: ws._targetId ? {
+        id: ws._targetId,
+        in_band: ws.target_in_band,
+        is_player: ws._targetIsPlayer,
+      } : null,
     };
     console.error(`[goap] ${who} pass ${this._passCount} PLAN found=${p.found} names=[${(p.names ?? []).join(', ')}] steps=${p.steps?.length ?? 0} problems=${(p.problems ?? []).length}`);
 

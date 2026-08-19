@@ -75,7 +75,7 @@ const ALWAYS = [rest, stand, buy, equipBest, eatSomething];
  * `pre`, `effects`, `atomic`, and `node` (the callable), which is the shape
  * m59-goap-planner expects.
  */
-export function actionsFor(client, { extra = [], costCtx = {}, ws = {}, isTrusted = null } = {}) {
+export function actionsFor(client, { extra = [], costCtx = {}, ws = {}, isTrusted = null, filter = null } = {}) {
   const all = [
     ...ALWAYS,
     // attack takes its id from the SAME ws the ceiling was checked against, and sell
@@ -85,7 +85,11 @@ export function actionsFor(client, { extra = [], costCtx = {}, ws = {}, isTruste
     ...groundedCasts(client),
     ...extra,
   ];
-  return all.map(fn => ({
+  // Optional filter: remove atomics by name. Used by the GOAP keeper to
+  // prevent the planner from picking `rest` when a hostile is present
+  // (it should use `recover` instead, which includes fleeing).
+  const filtered = filter ? all.filter(fn => !filter.has(fn.atomic)) : all;
+  return filtered.map(fn => ({
     name: fn.atomic,
     pre: fn.pre ?? [],
     effects: fn.effects ?? [],
@@ -112,7 +116,7 @@ export function actionsFor(client, { extra = [], costCtx = {}, ws = {}, isTruste
  */
 export function planFor(client, goal, { session = null, policy = {}, agent = null,
                                         ws: wsIn = null, extra = [], costCtx = {},
-                                        isTrusted = null } = {}) {
+                                        isTrusted = null, filter = null } = {}) {
   // WORLD STATE IS READ BEFORE THE ACTION SET IS BUILT, and the order matters: the
   // target `attack` grounds on is `ws._targetId`, the same one `in_reach` and
   // `target_in_band` are produced from. Building actions first meant grounding against
@@ -120,7 +124,7 @@ export function planFor(client, goal, { session = null, policy = {}, agent = nul
   const ctx = { client, session, policy, agent, ws: wsIn ?? {} };
   const ws  = { ...evaluate(ctx), ...(wsIn ?? {}) };
 
-  const actions  = actionsFor(client, { extra, costCtx, ws, isTrusted });
+  const actions  = actionsFor(client, { extra, costCtx, ws, isTrusted, filter });
   const problems = validateAll(actions);
   if (problems.length)
     return { found: false, problems, reason: 'the action set names symbols nothing produces' };
