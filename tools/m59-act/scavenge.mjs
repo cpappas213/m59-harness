@@ -101,14 +101,24 @@ export async function scavenge(client, session) {
   }
 
   // TAKE A SAFE SPOT BEFORE FIGHTING. A wall or corner reduces the
-  // number of directions enemies can attack from. This is a tactic
-  // (how to fight), not a strategy (what to do), so it belongs here
-  // in the atomic, not in the planner. The BT system did this in the
-  // fight node; GOAP does it here in scavenge.
-  if (session.s?.takeSafeSpot && typeof session.s.takeSafeSpot === 'function') {
-    await session.s.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
-  } else if (session.takeSafeSpot && typeof session.takeSafeSpot === 'function') {
-    await session.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
+  // number of directions enemies can attack from. Skip this when the
+  // target is far away (> 10 cells) — crossing the room to a wall
+  // first wastes time and can trap the character in an unwalkable
+  // pocket (Twisted Wood geometry mismatch). Close-range fights
+  // still take the safe spot.
+  const mePos = client?.self;
+  const targetCol = target.col ?? null;
+  const targetRow = target.row ?? null;
+  const distToTarget = (mePos && targetCol != null && targetRow != null)
+    ? Math.abs(mePos.col - targetCol) + Math.abs(mePos.row - targetRow)
+    : 0;
+  const shouldTakeSafeSpot = distToTarget <= 10;
+  if (shouldTakeSafeSpot) {
+    if (session.s?.takeSafeSpot && typeof session.s.takeSafeSpot === 'function') {
+      await session.s.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
+    } else if (session.takeSafeSpot && typeof session.takeSafeSpot === 'function') {
+      await session.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
+    }
   }
 
   // Delegate to the skills.fight() function. It takes the broker

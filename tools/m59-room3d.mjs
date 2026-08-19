@@ -397,12 +397,25 @@ buildEntities(OBJECTS, null, null);
 
 // Background poll: update entities + vitals every 3s without reloading.
 let entityKey = null;
+let roomNum = null; // current room number for change detection
 async function pollData() {
   try {
     const res = await fetch('/room3d-data/${name}');
     if (!res.ok) return;
     const d = await res.json();
-    // Update room name if it changed (character moved rooms)
+    // ROOM CHANGE: the static page (walls, grid, dimensions) is baked in at
+    // render time. When the character moves to a new room, we must reload
+    // the entire page to get the new geometry. A room NUMBER change is the
+    // reliable signal (names can repeat, numbers don't within a session).
+    if (d.roomNum != null) {
+      if (roomNum === null) roomNum = d.roomNum; // first poll: record
+      else if (d.roomNum !== roomNum) {
+        // New room — reload the page to pick up the new walls/grid/heights
+        window.location.reload();
+        return;
+      }
+    }
+    // Update room name in HUD (cosmetic; geometry is already correct)
     if (d.room && d.room !== roomName) {
       const dimEl = document.querySelector('#hud .dim');
       if (dimEl) dimEl.innerHTML =

@@ -4246,8 +4246,57 @@ class Session {
           && candidate.to === exit.to && candidate.direction === exit.direction);
         if (enriched) exit = { ...exit, ...enriched };
       }
-      if (!exit.stand_on || !exit.fine_stand_on || !exit.edge_target)
-        return { left: false, reason: `no BSP-valid crossing on the ${exit.direction} boundary` };
+      if (!exit.stand_on || !exit.fine_stand_on || !exit.edge_target) {
+        // NO BSP-VALID CROSSING: the .roo geometry does not publish a floor
+        // trace along this edge at the exit row. The server map says the exit
+        // exists; the room geometry disagrees. This is the "phantom exit"
+        // problem — the most common cause of a character being trapped in a
+        // room forever (Twisted Wood west, King's Way north, etc.).
+        //
+        // FABRICATE A STANDING SQUARE. Pick the cell on the exit boundary
+        // nearest to the character's current position, and use it as the
+        // stand_on. The server will either let us through (the geometry was
+        // just missing the trace) or refuse (the exit is truly blocked).
+        // Either way, we made progress instead of sitting in the room
+        // reporting "no BSP-valid crossing" for eternity.
+        const meNow0 = c.self;
+        const dir = exit.direction;
+        const roomC = c.room.cols ?? 50, roomR = c.room.rows ?? 48;
+        let fabricCol, fabricRow;
+        if (dir === 'west') { fabricCol = 0; fabricRow = meNow0?.row ?? Math.floor(roomR / 2); }
+        else if (dir === 'east') { fabricCol = roomC - 1; fabricRow = meNow0?.row ?? Math.floor(roomR / 2); }
+        else if (dir === 'north') { fabricCol = meNow0?.col ?? Math.floor(roomC / 2); fabricRow = 0; }
+        else if (dir === 'south') { fabricCol = meNow0?.col ?? Math.floor(roomC / 2); fabricRow = roomR - 1; }
+        else { return { left: false, reason: `no BSP-valid crossing on the ${dir} boundary` }; }
+        // Nudge the row/col inward by 1 if the boundary cell is unwalkable
+        // (coarse or fine), so the character has somewhere to stand before
+        // making the final outward step.
+        const geo = this.world?.room?.geo;
+        if (geo) {
+          const boundaryBlocked = (r, col) => {
+            const coarse = geo.flags ? (geo.flags[r * geo.cols + col] & 0x01) : 1;
+            const fine = geo.fineWalkable(r, col);
+            return coarse === 0 && fine !== true;
+          };
+          // Try up to 3 cells inward from the boundary
+          const inward = dir === 'west' ? 1 : dir === 'east' ? -1 : dir === 'north' ? 1 : -1;
+          for (let i = 0; i <= 3; i++) {
+            const fc = dir === 'west' || dir === 'east' ? fabricCol + inward * i : fabricCol;
+            const fr = dir === 'north' || dir === 'south' ? fabricRow + inward * i : fabricRow;
+            if (fc < 0 || fc >= roomC || fr < 0 || fr >= roomR) break;
+            if (!boundaryBlocked(fr, fc)) { fabricCol = fc; fabricRow = fr; break; }
+          }
+        }
+        const half = KOD_FINENESS >> 1;
+        exit = { ...exit,
+          stand_on: { col: fabricCol, row: fabricRow },
+          fine_stand_on: { x: fabricCol * KOD_FINENESS + half, y: fabricRow * KOD_FINENESS + half },
+          edge_target: { x: dir === 'west' ? 0 : dir === 'east' ? (roomC + 1) * KOD_FINENESS : fabricCol * KOD_FINENESS + half,
+                         y: dir === 'north' ? 0 : dir === 'south' ? (roomR + 1) * KOD_FINENESS : fabricRow * KOD_FINENESS + half },
+        };
+        if (process.env.M59_EXIT_DEBUG !== '0')
+          console.error(`[exit-debug] ${this.name ?? '?'} FABRICATED stand_on=(${fabricCol},${fabricRow}) dir=${dir} — no BSP crossing published`);
+      }
       const edgeStartRoom = c.room.id;
       // No reachable boundary square, says the square grid — the same verdict it
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
