@@ -1827,7 +1827,7 @@ export async function fight(s, {
   // behind you is refused with a message about view, not range.
   const spot = holdPosition ? null : s.world?.approachSquare?.(foe.col, foe.row);
   if (spot && spot.steps > 0) {
-    const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+    const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(60, spot.steps * 4), arriveWithin: 200 });
     say('approached', { arrived: walk.arrived, steps: walk.steps, reason: walk.reason });
     if (!walk.arrived)
       return { fought: false, reason: walk.reason || 'could not get to it', log,

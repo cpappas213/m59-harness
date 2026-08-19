@@ -156,99 +156,77 @@ export async function scavenge(client, session, opts = {}) {
     return { sent: false, killed: false, reason: 'no hostiles in the room' };
   }
 
-  // Pick the NEAREST hostile, not the weakest. The weakest mob might be
-  // across the room and unreachable (geometry blocks the walk). The
-  // nearest mob is the one we can actually reach and fight. If the
-  // nearest is too strong, fight() disengages and we try again next
-  // pass — or the GOAP routes us to a better room.
+  // Pick the NEAREST reachable hostile. Sort by distance, then try
+  // each one until the walk succeeds. The nearest mob might be behind
+  // a door or across an impassable gap — in that case, try the next.
   const mePos = client?.self;
-  const weak = hostiles.sort((a, b) => {
+  const sorted = hostiles.sort((a, b) => {
     if (mePos) {
       const da = Math.hypot((a.col ?? 0) - mePos.col, (a.row ?? 0) - mePos.row);
       const db = Math.hypot((b.col ?? 0) - mePos.col, (b.row ?? 0) - mePos.row);
-      if (Math.abs(da - db) > 3) return da - db;  // prefer nearest (within 3 cells tie)
+      if (Math.abs(da - db) > 3) return da - db;
     }
     return (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999);
-  })[0];
-  const target = weak;
-  const hpFrac = frac(client?.vitals?.()?.health);
-
-  const targetName = client?.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
-  const targetHp = target.max_health ?? target.health ?? '?';
-
-  // PVP GATE: if the target is a player, only fight if we can take
-  // them on. The character runs from players unless it is armed,
-  // healthy, and the player is in its level band. This is the
-  // "run unless you can win" policy for farming characters.
-  if (target.is_player === true) {
-    const armed = client?.equipment?.()?.equipped?.length > 0;
-    const healthy = hpFrac != null && hpFrac >= 0.7;
-    const inBand = typeof targetHp === 'number' && targetHp <= myLevel * 1.5;
-    if (!armed || !healthy || !inBand)
-      return { sent: false, killed: false,
-        reason: `player target (${targetName}) — not engaging (armed=${armed}, healthy=${healthy}, inBand=${inBand}); flee instead` };
-  }
-
-  // TAKE A SAFE SPOT BEFORE FIGHTING. A wall or corner reduces the
-  // number of directions enemies can attack from. Skip this when the
-  // target is far away (> 10 cells) — crossing the room to a wall
-  // first wastes time and can trap the character in an unwalkable
-  // pocket (Twisted Wood geometry mismatch). Close-range fights
-  // still take the safe spot.
-  const targetCol = target.col ?? null;
-  const targetRow = target.row ?? null;
-  const distToTarget = (mePos && targetCol != null && targetRow != null)
-    ? Math.abs(mePos.col - targetCol) + Math.abs(mePos.row - targetRow)
-    : 0;
-  const shouldTakeSafeSpot = distToTarget <= 10;
-  if (shouldTakeSafeSpot) {
-    if (session.s?.takeSafeSpot && typeof session.s.takeSafeSpot === 'function') {
-      await session.s.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
-    } else if (session.takeSafeSpot && typeof session.takeSafeSpot === 'function') {
-      await session.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
-    }
-  }
-
-  // COMBAT STRATEGY: FIGHT FROM THE SAFE SPOT (PULL-TO-WALL).
-  //
-  // The character is already at a wall/corner (takeSafeSpot above).
-  // Instead of walking to the mob (leaving the safety of the wall),
-  // we swing from the wall. The first swing aggro's the mob, and it
-  // walks toward us. When it's close enough (within reach), we start
-  // dealing damage with the wall at our back.
-  //
-  // This is the "pull to wall" strategy:
-  //   1. Hold position at the wall, swing at the target.
-  //   2. If out of reach, the swing still aggro's the mob (the server
-  //      processes the attack even if it misses for range).
-  //   3. Wait 2-3s for the mob to walk toward us.
-  //   4. Swing again. Repeat until the mob is in reach or dead.
-  //
-  // Max 3 pull attempts before giving up and doing a normal approach.
-  const { fight: doFight } = await import('../m59-skills.mjs');
-  const foeId = target.id ?? target.obj_id ?? null;
-  // Use the session's fresh client for position, not the stale client
-  // that was passed in. The session's client has the latest MOVE
-  // confirmations from the server.
-  const sClient = session.need();
-  const mePos2 = sClient.self;
-  const targetDist = mePos2 && target.col != null && target.row != null
-    ? Math.hypot(target.col - mePos2.col, target.row - mePos2.row)
-    : null;
-
-  // Fight the target. Use holdPosition: false so the fight skill
-  // can walk to the target if it's out of reach. This is more
-  // reliable than our own distance check which uses potentially
-  // stale positions. The fight skill reads fresh positions from
-  // the server and handles approach on its own.
-  const r = await doFight(session, {
-    target: targetName, preferId: foeId,
-    rounds: 30, swingsPerRound: 4, holdPosition: false, reach: 3,
   });
+  const hpFrac = frac(client?.vitals?.()?.health);
+  const { fight: doFight } = await import('../m59-skills.mjs');
+
+  // Try up to 3 nearest hostiles. Stop at the first one we can reach.
+  let lastResult = null;
+  for (let i = 0; i < Math.min(3, sorted.length); i++) {
+    const target = sorted[i];
+    const targetName = client?.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
+    const targetHp = target.max_health ?? target.health ?? '?';
+    const targetCol = target.col ?? null;
+    const targetRow = target.row ?? null;
+
+    // PVP GATE
+    if (target.is_player === true) {
+      const armed = client?.equipment?.()?.equipped?.length > 0;
+      const healthy = hpFrac != null && hpFrac >= 0.7;
+      const inBand = typeof targetHp === 'number' && targetHp <= myLevel * 1.5;
+      if (!armed || !healthy || !inBand) continue; // skip this player, try next
+    }
+
+    const distToTarget = (mePos && targetCol != null && targetRow != null)
+      ? Math.abs(mePos.col - targetCol) + Math.abs(mePos.row - targetRow) : 0;
+
+    const sClient = session.need();
+    const foeId = target.id ?? target.obj_id ?? null;
+
+    const r = await doFight(session, {
+      target: targetName, preferId: foeId,
+      rounds: 30, swingsPerRound: 4, holdPosition: false, reach: 3,
+    });
+
+    if (r?.killed || r?.won || (r?.fought && !r?.reason?.includes('could not get')))
+      return {
+        sent: true,
+        killed: r?.killed ?? r?.won ?? false,
+        reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+      };
+
+    // Walk failed or fight didn't start — log and try next target
+    lastResult = r;
+    if (r?.reason?.includes('could not get')) {
+      console.error(`[scavenge] ${session.name ?? '?'} target ${i+1}/${Math.min(3,sorted.length)} ${targetName} at (${targetCol},${targetRow}) unreachable: ${r.reason}`);
+      continue;
+    }
+    // Other failure (disengage, etc.) — don't try next target
+    break;
+  }
+
+  // All targets unreachable or fight failed
+  const firstTarget = sorted[0];
+  const firstName = client?.rsc?.get?.(firstTarget.nameRsc) ?? firstTarget.name ?? 'creature';
+  if (lastResult?.reason?.includes('could not get')) {
+    console.error(`[scavenge] ${session.name ?? '?'} all ${Math.min(3,sorted.length)} targets unreachable`);
+    return { sent: true, killed: false, reason: `could not reach any of ${Math.min(3,sorted.length)} nearest hostiles (nearest: ${firstName})` };
+  }
   return {
     sent: true,
-    killed: r?.killed ?? r?.won ?? false,
-    reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+    killed: lastResult?.killed ?? lastResult?.won ?? false,
+    reason: lastResult?.killed || lastResult?.won ? null : (lastResult?.reason ?? 'fight did not end in a kill'),
   };
 }
 
