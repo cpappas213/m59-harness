@@ -58,7 +58,12 @@ export const sealedDestinations = new Map([
  * stream is continuous, so the room before and the room after are simply the previous and
  * next segments of the same body, when they are close enough in time to be the same journey.
  */
-export function crossings(samples, { joinWithinMs = 15000, neighbours = null } = {}) {
+// How close to a way out a body has to be when it leaves, in squares. A real crossing ends
+// at the boundary it crosses or on the door tile it uses; a teleport can happen from the
+// middle of the floor.
+export const LEAVES_FROM_WITHIN = Number(process.env.M59_TRACK_LEAVE_WITHIN || 4);
+
+export function crossings(samples, { joinWithinMs = 15000, neighbours = null, exitsNear = null } = {}) {
   const segs = segments(samples);
   // Group by body so "the segment before" means the same body's previous room.
   const byBody = new Map();
@@ -126,6 +131,18 @@ export function crossings(samples, { joinWithinMs = 15000, neighbours = null } =
         if (Math.hypot(p.x - q.x, p.y - q.y) > MAX_JUMP_WIRE) { teleported = true; break; }
       }
       if (teleported) continue;
+      // A CROSSING LEAVES FROM A WAY OUT. A TELEPORT DOES NOT.
+      //
+      // The operator saw this before it bit: being ferried from the Western border of the
+      // Twisted Wood to The King's Way looks exactly like walking between them, because
+      // those two really do share a door — so the room-graph check above passes and a track
+      // is forged out of an instant that involved no walking at all. Rooms that do NOT
+      // border each other were already caught; this catches the ones that do.
+      //
+      // Geometry decides it rather than intent: whatever moved the body, it was either
+      // standing at the edge it left by, or it was not. `exitsNear` is the caller's
+      // predicate so this module stays testable without a map.
+      if (exitsNear && !exitsNear(Number(seg.room), b, Number(goingTo))) continue;
       out.push({ room: seg.room, cameFrom, goingTo, body: seg.body, name: seg.name,
                  ms: seg.to - seg.from, points: seg.points, entered: a, left: b });
     }
@@ -206,10 +223,22 @@ export function comb(crossingList, geoFor = () => null) {
     // Only if it is actually shorter than the best single walk. A stitch that ties is not
     // worth preferring: the walked one has been ridden and this one has not.
     if (length(sewn) < length(entry.waypoints) * 0.98) {
+      // KEEP THE WALKED ROUTE. A STITCH IS PROVED ON PAPER, NOT IN PRACTICE.
+      //
+      // Every stitched leg passes the same raycast the mover enforces, which is a real
+      // guarantee — and this session has been wrong about paper guarantees repeatedly, most
+      // recently about a step `moverStepLands` called legal that no body could make from
+      // where bodies actually stand. The walked route has been ridden by something with a
+      // health bar; the sewn one has not. Discarding the first for the second is exactly the
+      // wrong way round, so both are kept and the stitch carries `proven: false` until a
+      // ride completes on it. A bad stitch then costs one slow crossing instead of replacing
+      // the only route we know works.
       entry.stitched_from = walks.length;
+      entry.walked = entry.waypoints;
       entry.walked_length = Math.round(length(entry.waypoints));
       entry.waypoints = sewn.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
       entry.stitched_length = Math.round(length(sewn));
+      entry.proven = false;
     }
   }
   return best;
@@ -346,7 +375,30 @@ if (direct) {
     for (const g of (r.goExits ?? [])) if (g.to != null && !g.locked) to.add(Number(g.to));
     neighbours.set(Number(r.num), to);
   }
-  const list = crossings(samples, { neighbours });
+  // Where a body may legitimately be standing when it leaves: the room edge for an edge
+  // exit, the door tile for a `go` exit. Both come straight off the map.
+  const exitsNear = (roomNum, at, toRoom) => {
+    const r = map.rooms[roomNum];
+    if (!r) return true;                       // unknown room: do not invent a refusal
+    const rows = Number(r.rows), cols = Number(r.cols);
+    for (const e of (r.edgeExits ?? [])) {
+      if (Number(e.to) !== toRoom) continue;
+      const d = e.leaveName === 'north' ? at.row - 1
+              : e.leaveName === 'south' ? rows - at.row
+              : e.leaveName === 'west'  ? at.col - 1
+              : e.leaveName === 'east'  ? cols - at.col : Infinity;
+      if (d <= LEAVES_FROM_WITHIN) return true;
+    }
+    for (const g of (r.goExits ?? [])) {
+      if (Number(g.to) !== toRoom || g.locked) continue;
+      if (Math.max(Math.abs(g.row - at.row), Math.abs(g.col - at.col)) <= LEAVES_FROM_WITHIN) return true;
+    }
+    // A sealed room leaves by a teleporter, which can be anywhere its portal tile is, and
+    // those tiles are not in the room graph at all — so there is nothing to measure against.
+    const out = neighbours.get(Number(roomNum));
+    return !out || out.size === 0;
+  };
+  const list = crossings(samples, { neighbours, exitsNear });
 
   const best = comb(list, geoFor);
   const wantRoom = arg('--room') ? Number(arg('--room')) : null;

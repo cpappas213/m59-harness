@@ -4956,6 +4956,15 @@ class Session {
     if (!Number.isFinite(here) || !Number.isFinite(Number(toRoom))) return { rode: false, why: 'no room' };
     const track = recallTrack(here, fromRoom == null ? null : Number(fromRoom), Number(toRoom));
     if (!track?.waypoints?.length) return { rode: false, why: 'no track' };
+    // AN UNPROVEN STITCH IS TRIED ONCE, WITH THE WALKED ROUTE STILL UNDERNEATH IT.
+    //
+    // `waypoints` may be a route sewn from several walks: every leg raycast-proved, and the
+    // whole thing never ridden. `walked` is the real crossing it was built to beat. Ride the
+    // stitch — that is how it becomes proven — but if it does not get us out of the room,
+    // fall back to the route something has actually walked rather than reporting the
+    // crossing shut.
+    const sewn = track.proven === false && Array.isArray(track.walked) && track.walked.length >= 2
+      ? track.walked : null;
     const geo = this.world?.geometry ?? null;
     const me0 = c.self;
     if (!me0) return { rode: false, why: 'own position unknown' };
@@ -5040,8 +5049,21 @@ class Session {
         }
       }
     }
+    // The stitch did not get us out. Try the route that has actually been walked before
+    // giving the crossing back to the planner.
+    if (sewn) {
+      for (const wp of sewn) {
+        if (this.movementWasCancelled(movementGeneration, controlToken)) break;
+        const r = await this.walkFine(wp.x, wp.y, { maxSteps: 60, movementGeneration, controlToken })
+          .catch(() => null);
+        if (r?.left_room)
+          return { rode: true, left_room: true, reached, blocked, rested,
+                   fell_back_to_walked: true, ms: Date.now() - started };
+      }
+    }
     return { rode: true, left_room: false, reached, blocked, rested, ms: Date.now() - started,
              waypoints: track.waypoints.length - joinAt, track_best_ms: track.ms,
+             ...(sewn ? { stitch_unproven: true } : {}),
              ...(shelter.size ? { shelter_stations: shelter.size } : {}) };
   }
 
