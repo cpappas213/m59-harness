@@ -486,7 +486,7 @@ export class GOAPKeeper {
         // own level — fight mobs at or near your level.
         const charLevel = c.vitals?.()?.health?.max ?? 20;
         const huntLevel = this.policy.huntLevel ?? charLevel;
-        const band = this.policy?.threatBand ?? 5; // +5 levels above is OK
+        const band = this.policy?.threatBand ?? Math.floor(charLevel / 2); // +50% of level
         const ceiling = huntLevel + band;
 
         const hostiles = list.filter(o => {
@@ -647,7 +647,7 @@ export class GOAPKeeper {
       // mobless room. The travel_to injection below is the right action in that case.
       const here = c.room?.num ?? c.room?.id;
       const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
-      const levelCeiling2 = level + (this.policy?.threatBand ?? 5);
+      const levelCeiling2 = level + (this.policy?.threatBand ?? Math.floor(level / 2));
 
       let inHuntRoom = false;
       if (ws.armed === true && combatGoal && ws.has_target === false && here != null) {
@@ -820,7 +820,7 @@ export class GOAPKeeper {
       if (ws.armed === true && (ws.has_target === false || ws.target_in_band === false)) {
         const here = c.room?.num ?? c.room?.id;
         const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
-        const levelCeiling3 = level + (this.policy?.threatBand ?? 5);
+        const levelCeiling3 = level + (this.policy?.threatBand ?? Math.floor(level / 2));
         if (here != null) {
           const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
           const resolvedHere = resolveMapRoom(here, this._roomName());
@@ -953,7 +953,7 @@ export class GOAPKeeper {
     // character walks toward a mob it should be running from.
     const charLevel2 = c.vitals?.()?.health?.max ?? 20;
     const mapRoomNum = resolveMapRoom(c.room?.num ?? c.room?.id ?? null, this._roomName());
-    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? charLevel2, threatBand: this.policy.threatBand ?? 5, mapRoomNum };
+    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? charLevel2, threatBand: this.policy.threatBand ?? Math.floor(charLevel2 / 2), mapRoomNum };
     const result = await stepPlan(c, this.session, p, { index: 0, args: execArgs });
     console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
 

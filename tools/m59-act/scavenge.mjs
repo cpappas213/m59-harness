@@ -111,14 +111,19 @@ export async function scavenge(client, session, opts = {}) {
   // hunt level. This is the only way to know a spider is level 50
   // when Kage is level 20.
   const huntLevel = opts.huntLevel ?? null;
-  const band = opts.threatBand ?? 5;
+  const band = opts.threatBand ?? Math.floor(huntLevel / 2);
   const levelCeiling = huntLevel != null ? huntLevel + band : null;
   const roomNum = opts.mapRoomNum ?? room?.num ?? room?.id ?? null;
   if (levelCeiling != null && roomNum != null) {
     const filtered = hostiles.filter(o => {
       const name = client?.rsc?.get?.(o.nameRsc) ?? '';
       const lv = compendiumLevel(roomNum, name);
-      if (lv == null) return true;
+      // If the compendium doesn't know this mob, REFUSE it.
+      // An unknown mob could be a high-level spider that the
+      // compendium doesn't list for this room. Safer to skip
+      // unknowns than to walk into a spider (lv50) that
+      // the lookup failed to identify.
+      if (lv == null) return false;
       return lv <= levelCeiling;
     });
     if (filtered.length) {
