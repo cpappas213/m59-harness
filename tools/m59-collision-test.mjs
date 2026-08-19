@@ -19,11 +19,12 @@ import { createHash } from 'node:crypto';
 import {
   CLIENT_FINENESS, COLLISION_VERSION, DEFAULT_ROO_DIRS, KOD_FINENESS,
   MAX_STEP_HEIGHT, MIN_SIDE_MOVE, PLAYER_HEIGHT, PLAYER_RADIUS,
-  RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, setWallHeights,
+  RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, clientToProtocol, setWallHeights,
   sharedRoomGeometry,
 } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
+import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { BP, M59Client } from './m59-client.mjs';
 import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
@@ -1050,6 +1051,11 @@ const walkTo = compileSessionMethod(brokerSource,
     // default; it is duplicated rather than imported because importing the broker takes
     // the fleet lock, which is the reason this whole file lifts methods by text.
     PIVOT_ARRIVE_WITHIN: 64, protocolToClient,
+    // THE FINE DETOUR'S FOUR, AND THE LEDGER. Half of what the square lattice calls a wall
+    // is a slide that landed next door; these are what thread it. Real functions, because
+    // all five are ordinary exports of modules that import without taking the fleet lock.
+    finePath, pullFine, pointOfSquare, boundsAround, recordTactic,
+    clientToProtocol,
   });
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {

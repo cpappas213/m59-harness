@@ -1,6 +1,6 @@
 {
  "note": "The quickest crossing anybody has actually walked, per room and pair of doors, straightened against the baked BSP. Made of accepted moves, so it cannot contain a step the mover refuses. Ranked on TIME only: monsters wander, so a death says nothing about the route.",
- "written": "2026-08-19T15:24:47.839Z",
+ "written": "2026-08-19T16:13:17.057Z",
  "tracks": {
   "575:150>576": {
    "room": 575,
@@ -410,7 +410,7 @@
     "col": 4
    },
    "samples": 5,
-   "seen": 7,
+   "seen": 9,
    "straightened": true
   },
   "587:586>597": {
@@ -477,9 +477,9 @@
     "col": 69
    },
    "samples": 19,
-   "seen": 12,
+   "seen": 13,
    "straightened": true,
-   "stitched_from": 12,
+   "stitched_from": 13,
    "walked": [
     {
      "x": 3744,
@@ -565,8 +565,12 @@
      "y": 1504
     },
     {
-     "x": 555,
-     "y": 1569
+     "x": 524,
+     "y": 1554
+    },
+    {
+     "x": 701,
+     "y": 1547
     },
     {
      "x": 985,
@@ -597,9 +601,9 @@
     "col": 32
    },
    "samples": 39,
-   "seen": 12,
+   "seen": 14,
    "straightened": true,
-   "stitched_from": 12,
+   "stitched_from": 14,
    "walked": [
     {
      "x": 160,
@@ -631,7 +635,7 @@
     }
    ],
    "walked_length": 4995,
-   "stitched_length": 4368,
+   "stitched_length": 4365,
    "proven": false
   },
   "1:598>52": {
@@ -658,14 +662,14 @@
     "col": 7
    },
    "samples": 33,
-   "seen": 2,
+   "seen": 3,
    "straightened": true
   },
   "586:50>585": {
    "room": 586,
    "from": 50,
    "to": 585,
-   "ms": 13356,
+   "ms": 9479,
    "waypoints": [
     {
      "x": 2592,
@@ -676,12 +680,8 @@
      "y": 1504
     },
     {
-     "x": 1421,
-     "y": 1270
-    },
-    {
-     "x": 1248,
-     "y": 352
+     "x": 1312,
+     "y": 800
     },
     {
      "x": 1232,
@@ -697,33 +697,33 @@
     "col": 20
    },
    "samples": 13,
-   "seen": 14,
+   "seen": 19,
    "straightened": true,
-   "stitched_from": 14,
+   "stitched_from": 19,
    "walked": [
     {
      "x": 2592,
      "y": 1760
     },
     {
-     "x": 1632,
-     "y": 1760
+     "x": 1568,
+     "y": 1568
     },
     {
-     "x": 1421,
-     "y": 1270
+     "x": 1184,
+     "y": 1312
     },
     {
-     "x": 1248,
-     "y": 736
+     "x": 1312,
+     "y": 800
     },
     {
      "x": 1232,
      "y": 63
     }
    ],
-   "walked_length": 2728,
-   "stitched_length": 2590,
+   "walked_length": 2772,
+   "stitched_length": 2589,
    "proven": false
   },
   "587:586>576": {
@@ -991,7 +991,7 @@
    "room": 50,
    "from": null,
    "to": 586,
-   "ms": 25361,
+   "ms": 10718,
    "waypoints": [
     {
      "x": 1312,
@@ -1019,7 +1019,7 @@
     "col": 4
    },
    "samples": 8,
-   "seen": 2,
+   "seen": 3,
    "straightened": true
   },
   "1:597>52": {
@@ -1244,6 +1244,124 @@
    },
    "samples": 179,
    "seen": 2,
+   "straightened": true
+  },
+  "587:576>586": {
+   "room": 587,
+   "from": 576,
+   "to": 586,
+   "ms": 18296,
+   "waypoints": [
+    {
+     "x": 156,
+     "y": 399
+    },
+    {
+     "x": 275,
+     "y": 246
+    },
+    {
+     "x": 462,
+     "y": 159
+    },
+    {
+     "x": 468,
+     "y": 459
+    },
+    {
+     "x": 521,
+     "y": 666
+    },
+    {
+     "x": 675,
+     "y": 616
+    },
+    {
+     "x": 1295,
+     "y": 694
+    },
+    {
+     "x": 1615,
+     "y": 682
+    },
+    {
+     "x": 1901,
+     "y": 734
+    },
+    {
+     "x": 2163,
+     "y": 878
+    },
+    {
+     "x": 2461,
+     "y": 965
+    },
+    {
+     "x": 2547,
+     "y": 1140
+    },
+    {
+     "x": 2803,
+     "y": 1259
+    },
+    {
+     "x": 3723,
+     "y": 1074
+    },
+    {
+     "x": 4353,
+     "y": 769
+    }
+   ],
+   "shelter": [
+    1,
+    2
+   ],
+   "entered": {
+    "row": 7,
+    "col": 3
+   },
+   "left": {
+    "row": 13,
+    "col": 69
+   },
+   "samples": 21,
+   "seen": 4,
+   "straightened": true
+  },
+  "586:587>585": {
+   "room": 586,
+   "from": 587,
+   "to": 585,
+   "ms": 11273,
+   "waypoints": [
+    {
+     "x": 928,
+     "y": 2400
+    },
+    {
+     "x": 1440,
+     "y": 1440
+    },
+    {
+     "x": 1248,
+     "y": 416
+    },
+    {
+     "x": 1232,
+     "y": 63
+    }
+   ],
+   "entered": {
+    "row": 38,
+    "col": 15
+   },
+   "left": {
+    "row": 1,
+    "col": 20
+   },
+   "samples": 13,
+   "seen": 1,
    "straightened": true
   },
   "586:585>587": {
@@ -1591,7 +1709,7 @@
     "col": 32
    },
    "samples": 8,
-   "seen": 12,
+   "seen": 13,
    "straightened": true
   },
   "583:593>563": {
@@ -1752,39 +1870,39 @@
    "room": 584,
    "from": 583,
    "to": 585,
-   "ms": 35579,
+   "ms": 11466,
    "waypoints": [
     {
-     "x": 2272,
-     "y": 160
+     "x": 1777,
+     "y": 2040
     },
     {
-     "x": 1952,
-     "y": 1696
+     "x": 1710,
+     "y": 2108
     },
     {
-     "x": 1715,
-     "y": 2077
-    },
-    {
-     "x": 1696,
-     "y": 2144
-    },
-    {
-     "x": 1715,
-     "y": 2221
+     "x": 1712,
+     "y": 2219
     },
     {
      "x": 1760,
      "y": 2272
     },
     {
-     "x": 2272,
-     "y": 2272
+     "x": 2192,
+     "y": 2290
     },
     {
-     "x": 2346,
-     "y": 2562
+     "x": 2243,
+     "y": 2302
+    },
+    {
+     "x": 2274,
+     "y": 2317
+    },
+    {
+     "x": 2297,
+     "y": 2339
     },
     {
      "x": 2288,
@@ -1792,19 +1910,18 @@
     }
    ],
    "shelter": [
-    2,
-    7
+    1
    ],
    "entered": {
-    "row": 3,
-    "col": 36
+    "row": 32,
+    "col": 28
    },
    "left": {
     "row": 45,
     "col": 36
    },
-   "samples": 26,
-   "seen": 1,
+   "samples": 32,
+   "seen": 2,
    "straightened": true
   },
   "563:?>583": {
@@ -2188,89 +2305,6 @@
    "seen": 1,
    "straightened": true
   },
-  "587:576>586": {
-   "room": 587,
-   "from": 576,
-   "to": 586,
-   "ms": 18296,
-   "waypoints": [
-    {
-     "x": 156,
-     "y": 399
-    },
-    {
-     "x": 275,
-     "y": 246
-    },
-    {
-     "x": 462,
-     "y": 159
-    },
-    {
-     "x": 468,
-     "y": 459
-    },
-    {
-     "x": 521,
-     "y": 666
-    },
-    {
-     "x": 675,
-     "y": 616
-    },
-    {
-     "x": 1295,
-     "y": 694
-    },
-    {
-     "x": 1615,
-     "y": 682
-    },
-    {
-     "x": 1901,
-     "y": 734
-    },
-    {
-     "x": 2163,
-     "y": 878
-    },
-    {
-     "x": 2461,
-     "y": 965
-    },
-    {
-     "x": 2547,
-     "y": 1140
-    },
-    {
-     "x": 2803,
-     "y": 1259
-    },
-    {
-     "x": 3723,
-     "y": 1074
-    },
-    {
-     "x": 4353,
-     "y": 769
-    }
-   ],
-   "shelter": [
-    1,
-    2
-   ],
-   "entered": {
-    "row": 7,
-    "col": 3
-   },
-   "left": {
-    "row": 13,
-    "col": 69
-   },
-   "samples": 21,
-   "seen": 3,
-   "straightened": true
-  },
   "382:547>350": {
    "room": 382,
    "from": 547,
@@ -2435,6 +2469,33 @@
    "seen": 1,
    "straightened": true
   },
+  "1:599>52": {
+   "room": 1,
+   "from": 599,
+   "to": 52,
+   "ms": 271713,
+   "waypoints": [
+    {
+     "x": 694,
+     "y": 1574
+    },
+    {
+     "x": 416,
+     "y": 672
+    }
+   ],
+   "entered": {
+    "row": 25,
+    "col": 11
+   },
+   "left": {
+    "row": 11,
+    "col": 7
+   },
+   "samples": 537,
+   "seen": 1,
+   "straightened": true
+  },
   "584:?>583": {
    "room": 584,
    "from": null,
@@ -2464,6 +2525,37 @@
    },
    "samples": 5,
    "seen": 3,
+   "straightened": true
+  },
+  "102:593>109": {
+   "room": 102,
+   "from": 593,
+   "to": 109,
+   "ms": 5800,
+   "waypoints": [
+    {
+     "x": 2016,
+     "y": 2976
+    },
+    {
+     "x": 1888,
+     "y": 2464
+    },
+    {
+     "x": 864,
+     "y": 2336
+    }
+   ],
+   "entered": {
+    "row": 47,
+    "col": 32
+   },
+   "left": {
+    "row": 37,
+    "col": 14
+   },
+   "samples": 5,
+   "seen": 1,
    "straightened": true
   },
   "546:536>547": {
@@ -3033,6 +3125,57 @@
    "seen": 1,
    "straightened": true
   },
+  "537:?>536": {
+   "room": 537,
+   "from": null,
+   "to": 536,
+   "ms": 62857,
+   "waypoints": [
+    {
+     "x": 994,
+     "y": 730
+    },
+    {
+     "x": 1506,
+     "y": 1399
+    },
+    {
+     "x": 1568,
+     "y": 1440
+    },
+    {
+     "x": 1896,
+     "y": 1318
+    },
+    {
+     "x": 1760,
+     "y": 800
+    },
+    {
+     "x": 2198,
+     "y": 399
+    },
+    {
+     "x": 2228,
+     "y": 127
+    },
+    {
+     "x": 2208,
+     "y": 63
+    }
+   ],
+   "entered": {
+    "row": 12,
+    "col": 16
+   },
+   "left": {
+    "row": 1,
+    "col": 35
+   },
+   "samples": 60,
+   "seen": 1,
+   "straightened": true
+  },
   "101:106>104": {
    "room": 101,
    "from": 106,
@@ -3130,9 +3273,9 @@
     "col": 61
    },
    "samples": 33,
-   "seen": 114,
+   "seen": 121,
    "straightened": true,
-   "stitched_from": 114,
+   "stitched_from": 121,
    "walked": [
     {
      "x": 1056,
@@ -3182,24 +3325,28 @@
      "y": 928
     },
     {
-     "x": 1298,
-     "y": 1001
+     "x": 1310,
+     "y": 1006
     },
     {
-     "x": 3056,
-     "y": 1455
-    },
-    {
-     "x": 3109,
-     "y": 1470
+     "x": 3064,
+     "y": 1454
     },
     {
      "x": 3546,
      "y": 1820
     },
     {
-     "x": 3760,
-     "y": 1825
+     "x": 3744,
+     "y": 1952
+    },
+    {
+     "x": 4044,
+     "y": 1933
+    },
+    {
+     "x": 4048,
+     "y": 1903
     },
     {
      "x": 3872,
@@ -3220,9 +3367,9 @@
     "col": 61
    },
    "samples": 16,
-   "seen": 105,
+   "seen": 156,
    "straightened": true,
-   "stitched_from": 105,
+   "stitched_from": 156,
    "walked": [
     {
      "x": 1056,
@@ -3258,7 +3405,7 @@
     }
    ],
    "walked_length": 3623,
-   "stitched_length": 3009,
+   "stitched_length": 3443,
    "proven": false
   },
   "101:103>104": {
@@ -3317,9 +3464,9 @@
     "col": 17
    },
    "samples": 59,
-   "seen": 152,
+   "seen": 156,
    "straightened": true,
-   "stitched_from": 152,
+   "stitched_from": 156,
    "walked": [
     {
      "x": 3872,
@@ -3661,6 +3808,93 @@
     "col": 7
    },
    "samples": 800,
+   "seen": 1,
+   "straightened": true
+  },
+  "585:584>586": {
+   "room": 585,
+   "from": 584,
+   "to": 586,
+   "ms": 20185,
+   "waypoints": [
+    {
+     "x": 224,
+     "y": 288
+    },
+    {
+     "x": 737,
+     "y": 1822
+    },
+    {
+     "x": 480,
+     "y": 2336
+    },
+    {
+     "x": 736,
+     "y": 2848
+    },
+    {
+     "x": 912,
+     "y": 3362
+    },
+    {
+     "x": 1052,
+     "y": 3443
+    }
+   ],
+   "entered": {
+    "row": 5,
+    "col": 4
+   },
+   "left": {
+    "row": 55,
+    "col": 17
+   },
+   "samples": 26,
+   "seen": 1,
+   "straightened": true
+  },
+  "101:106>102": {
+   "room": 101,
+   "from": 106,
+   "to": 102,
+   "ms": 10292,
+   "waypoints": [
+    {
+     "x": 1696,
+     "y": 1184
+    },
+    {
+     "x": 2064,
+     "y": 1286
+    },
+    {
+     "x": 2272,
+     "y": 2400
+    },
+    {
+     "x": 2373,
+     "y": 2846
+    },
+    {
+     "x": 3360,
+     "y": 2976
+    }
+   ],
+   "shelter": [
+    0,
+    2,
+    4
+   ],
+   "entered": {
+    "row": 19,
+    "col": 27
+   },
+   "left": {
+    "row": 47,
+    "col": 53
+   },
+   "samples": 9,
    "seen": 1,
    "straightened": true
   },

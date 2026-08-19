@@ -44,10 +44,11 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
   from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient, clientToProtocol } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
+import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -3846,6 +3847,12 @@ class Session {
     // still gives up early, because bleeding out in a doorway is the failure this is meant
     // to prevent, not one to be patient about.
     let refunded = 0;
+    // How much fine threading one walk may spend. Each is a bounded A* plus a few validated
+    // moves; the cap is what stops a genuinely sealed pocket paying for it over and over.
+    let fineDetours = 0;
+    const FINE_DETOUR_MAX = Number(process.env.M59_FINE_DETOURS || 12);
+    const FINE_DETOUR_NODES = Number(process.env.M59_FINE_DETOUR_NODES || 4000);
+    const FINE_DETOUR_MARGIN = Number(process.env.M59_FINE_DETOUR_MARGIN || 4);
     // AND A REPLAN THAT GOT US CLOSER IS NOT A WASTED REPLAN.
     //
     // `replanBudget` is 8 plus a tenth of the plan, so a 65-step crossing gets about 14.
@@ -4118,6 +4125,72 @@ class Session {
       if (!hitSomething && was && (bdr || bdc)) {
         const k = edgeKey(was.row, was.col, was.row + bdr, was.col + bdc);
         if (!blockedEdges.has(k)) { blockedEdges.add(k); learned = true; }
+      }
+
+      // HALF OF WHAT THE SQUARE LATTICE CALLS A WALL IS A SLIDE THAT LANDED NEXT DOOR.
+      //
+      // `moverStepLands` asks whether a step from one stand point ARRIVES IN the target
+      // square. Around the Cibilo Creek Inn's porch — where prod characters pile up, 295
+      // samples on one square — five of the eight steps out of 8,58 are "refused", and only
+      // two of those are walls: the rest MOVE the body and simply land in a neighbouring
+      // square. A lattice cannot express that, so the walker learns an edge, replans, and
+      // meets the same lip from the next square along.
+      //
+      // Fine positioning can: `finePath` searches a quarter-square lattice, validating every
+      // move with the same trace the mover enforces, and raycasts the result down to the
+      // corners the geometry actually requires. On this porch it threads 8,58 to the inn
+      // door in 56 nodes and 25ms, and pulls to a SINGLE straight move.
+      //
+      // Local, and only after a refusal. A fine search across a whole outdoor room is tens
+      // of thousands of nodes and is not what this is for — the coarse plan is good at
+      // "which way round", and this is good at "and now through the gap".
+      // FIRE ON ANY GEOMETRY-CAUSED OFF-PLAN LANDING, NOT ONLY ON A NEW REFUSED EDGE.
+      //
+      // Gating this on `learned` was too narrow, and the Cibilo Creek porch is exactly why:
+      // walking from the inn door to Cor Noth's north gate the walker takes 38 steps,
+      // learns only TWO edges, and ends at 8,58 — the square 295 prod samples pile up on.
+      // The steps are not being refused; they MOVE the body and land somewhere the plan did
+      // not expect, which is what a slide off a fenced lip does. So the detour has to answer
+      // the landing, not the refusal.
+      if (!hitSomething && was && geo.collisionReady && fineDetours < FINE_DETOUR_MAX) {
+        // CLIENT UNITS ON BOTH ENDS. `finePath` searches the client lattice — 1024 to the
+        // square — while `c.self` is the WIRE position at 64 to the square. Handing it wire
+        // coordinates starts the search a twentieth of the way across the room from where
+        // the body is, which finds nothing and costs a search to find it. The same mixing
+        // this repository already warns about for traces.
+        const here = Number.isFinite(c.self?.x) && Number.isFinite(c.self?.y)
+          ? { x: protocolToClient(c.self.x), y: protocolToClient(c.self.y) } : null;
+        const goal = pointOfSquare(geo, next.row, next.col);
+        if (here && goal) {
+          fineDetours++;
+          const bounds = boundsAround([{ row: was.row, col: was.col },
+                                       { row: next.row, col: next.col }], FINE_DETOUR_MARGIN);
+          const found = finePath(geo, here, goal, { bounds, maxNodes: FINE_DETOUR_NODES });
+          if (found?.found) {
+            const legs = pullFine(geo, here, found.points);
+            let threaded = false;
+            for (const leg of legs) {
+              if (this.movementWasCancelled(movementGeneration, controlToken)) break;
+              const step = await this.stepFine(clientToProtocol(leg.x), clientToProtocol(leg.y))
+                .catch(() => null);
+              if (step?.left_room)
+                return { arrived: false, left_room: true, steps: taken,
+                         note: 'a fine detour crossed the room edge' };
+              const at = c.self;
+              if (at && at.row === next.row && at.col === next.col) { threaded = true; break; }
+            }
+            const at = c.self;
+            if (threaded || (at && at.row === next.row && at.col === next.col)) {
+              // Through the gap. The edge we blamed was never the problem, so unlearn it —
+              // leaving it would push every later replan away from a way that works.
+              if (learned) blockedEdges.delete(edgeKey(was.row, was.col, was.row + bdr, was.col + bdc));
+              recordTactic({ character: this.character ?? null, room: geo?.num ?? null,
+                             tactic: 'fine_walk', trigger: 'off_plan', worked: true,
+                             note: `threaded ${legs.length} fine leg(s) past a lattice refusal` });
+              continue;
+            }
+          }
+        }
       }
 
       // A BODY THAT IS HITTING US IS NOT GOING TO WANDER OFF.
