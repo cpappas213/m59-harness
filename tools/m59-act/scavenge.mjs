@@ -248,39 +248,34 @@ export async function scavenge(client, session, opts = {}) {
     };
   }
 
-  // Target is more than 3 cells away. Walk to it first using raw
-  // moveToSquare (no local geometry validation). The server handles
-  // real collision. Then fight in place.
-  //
-  // We do NOT use the pull-to-wall strategy for distant targets:
-  // it only works if the mob aggros on a missed swing, and many
-  // mobs (baby spiders, centipedes) are passive and don't aggros.
-  // Walking to the mob is more reliable.
+  // Target is more than 3 cells away. Walk to it using fine-grid
+  // movement (moveTo with x,y) instead of moveToSquare (which snaps
+  // to cell centers and can get stuck in corridors). Fine-grid
+  // movement allows sub-cell positioning and handles narrow passages.
   {
     const c = session.need();
     let meNow = c.self;
     let foeNow = c.room.objects.get(foeId);
     if (meNow && foeNow) {
-      // Walk toward the target using cell coordinates.
-      // moveToSquare takes cell coords (integers), not fine-grid units.
-      for (let step = 0; step < 40; step++) {
-        const mc = meNow?.col ?? 0;
-        const mr = meNow?.row ?? 0;
-        const fc = foeNow?.col ?? 0;
-        const fr = foeNow?.row ?? 0;
-        const dx = fc - mc;
-        const dy = fr - mr;
-        const dist = Math.hypot(dx, dy);
+      for (let step = 0; step < 60; step++) {
+        const mx = meNow?.x ?? 0;
+        const my = meNow?.y ?? 0;
+        const fx = foeNow?.x ?? 0;
+        const fy = foeNow?.y ?? 0;
+        const dx = fx - mx;
+        const dy = fy - my;
+        const dist = Math.hypot(dx, dy) / 1024; // in cells
         if (dist <= 3) break; // in reach
-        // Walk one cell toward the target (prefer the larger axis)
-        let nx = mc, ny = mr;
-        if (Math.abs(dx) >= Math.abs(dy)) {
-          nx = mc + Math.sign(dx);
-        } else {
-          ny = mr + Math.sign(dy);
-        }
+        // Walk one cell (1024 fine-grid units) toward the target
+        const stepSize = 1024;
+        const distRaw = Math.hypot(dx, dy);
+        if (distRaw === 0) break;
+        const sx = Math.round((dx / distRaw) * stepSize);
+        const sy = Math.round((dy / distRaw) * stepSize);
+        const nx = mx + sx;
+        const ny = my + sy;
         try {
-          await c.moveToSquare(nx, ny);
+          await c.moveTo(nx, ny);
         } catch { break; }
         await new Promise(res => setTimeout(res, 200));
         // Re-read position and target

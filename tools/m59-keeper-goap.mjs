@@ -446,6 +446,44 @@ export class GOAPKeeper {
 
     this._passCount++;
 
+    // STUCK DETECTION: if the character's position hasn't changed in
+    // the last 10 passes (~10 seconds), the character is stuck.
+    // Force a travel to a nearby room to reset the position.
+    {
+      const me = c.self;
+      if (me && me.col != null && me.row != null) {
+        const posKey = `${me.col},${me.row}`;
+        if (this._lastPosKey === posKey) {
+          this._stuckCount = (this._stuckCount ?? 0) + 1;
+          if (this._stuckCount === 10) {
+            console.error(`[goap] ${this.policy.agent} STUCK at (${me.col},${me.row}) for ${this._stuckCount} passes`);
+          }
+        } else {
+          this._stuckCount = 0;
+          this._lastPosKey = posKey;
+        }
+        if (this._stuckCount >= 10) {
+          console.error(`[goap] ${this.policy.agent} forcing room change to unstick`);
+          this._stuckCount = 0;
+          this._lastPosKey = null;
+          const { nearestHuntRoom, resolveMapRoom } = await import('./m59-hunt-room.mjs');
+          const here = c.room?.num ?? c.room?.id;
+          const resolved = resolveMapRoom(here, this._roomName());
+          const neighbors = nearestHuntRoom(resolved, 999, 2);
+          if (neighbors) {
+            const travelResult = await this.session.travel(neighbors.room, { maxHops: 1 });
+            if (travelResult?.arrived) {
+              console.error(`[goap] ${this.policy.agent} unstuck: arrived in room ${neighbors.room}`);
+              this._travelInFlight = true;
+              this._travelFromRoom = here;
+              this._travelStartedAt = Date.now();
+            }
+          }
+          return { acted: true, action: 'unstuck_travel', reason: 'stuck detection: forced room change' };
+        }
+      }
+    }
+
     // TRAVEL IN PROGRESS: if the last action was a travel_to that
     // hasn't completed yet (the character is still moving between
     // rooms), don't re-plan. Each new travel_to cancels the previous
