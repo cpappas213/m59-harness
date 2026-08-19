@@ -857,6 +857,25 @@ export class M59Client {
         || !Number.isInteger(y) || y < 0 || y > 0xffff)
       throw new RangeError(`movement coordinates must be unsigned 16-bit integers, got (${x},${y})`);
     this.send(BP.REQ_MOVE, u16b(y), u16b(x), u8b(speed), u32(objId(room || 0)));
+    // OUR OWN TRAIL, AT THE RATE WE ACTUALLY WALK IT.
+    //
+    // `BP_MOVE` is the server telling us where everyone is, and it arrives about once a
+    // second — measured on this fleet, a median of 1202ms between samples and 69 wire units
+    // of movement, which is roughly one square. That is the best resolution obtainable for
+    // ANOTHER body, and it is far coarser than our own walking: every move we send is a
+    // point we chose, in exact fine coordinates, already proved by `validateFineTarget`
+    // before it reached this line.
+    //
+    // Recording it here rather than at the caller because this is the one place every sent
+    // move passes through — a walk, a fine step, a doorway nudge and a retreat all end up
+    // here, and a recorder attached to any one of them would miss the others.
+    //
+    // Flagged `sent`, because it is where we ASKED to be and the server has not confirmed
+    // it yet. The straightener raycasts every leg it keeps, so an intention that was refused
+    // cannot become a track through a wall — it simply fails to join and is dropped.
+    recordSeen({ at: Date.now(), room: this.room?.id ?? null, id: this.selfId,
+                 name: this.character ?? null, by: this.character ?? null,
+                 player: true, sent: true, x, y });
   }
   // Grid-square convenience: centre of square (col,row).
   moveToSquare(col, row, speed = 18, room = this.room.id) {

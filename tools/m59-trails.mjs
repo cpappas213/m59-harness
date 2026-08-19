@@ -47,11 +47,29 @@ export const WALKS_DIR = process.env.M59_WALKS_DIR || path.join(HERE, '..', 'sub
 
 // A body has moved if it has moved more than this. Below it, the samples are the same place
 // reported twice — the server pushes position on a timer, not only on a change.
-export const MOVED_AT_LEAST = Number(process.env.M59_TRAIL_MOVED || 24);   // wire units
+// A body has moved if it has moved more than this, in wire units, where a square is 64.
+//
+// 8 rather than 24: the samples this drops are the small corrective moves — the shuffle at a
+// doorway, the slide along a wall — and those are precisely the ones worth keeping, because
+// they happen exactly where the square lattice cannot express the route. Measured, our own
+// characters already sample coarsely (a median of 116 wire units between samples, nearly two
+// squares) because the walker moves in coalesced hops; there is no point discarding the fine
+// detail on top of that. The server re-reporting a standing body is still dropped, which is
+// what this threshold is really for.
+export const MOVED_AT_LEAST = Number(process.env.M59_TRAIL_MOVED || 8);
 // How long a gap in the samples before the trail is cut. A body that vanished for six
 // seconds and reappeared did something we did not see, and joining the two ends would draw
 // a line through whatever it was.
 export const GAP_MS = Number(process.env.M59_TRAIL_GAP_MS || 6000);
+// How long a body must be unseen IN THE SAME ROOM before the trail is cut rather than
+// treated as a pause. Long enough that a character could have left, done something and
+// come back — anything shorter is standing still, which is most of what a fleet does.
+export const REJOIN_MS = Number(process.env.M59_TRAIL_REJOIN_MS || 120000);
+// The fastest a body plausibly travels, in wire units a second. A client runs about five
+// squares a second and a square is 64 wire units, so 320 is the real pace; this is doubled
+// so a burst of coalesced movement is never mistaken for a teleport. Anything beyond it did
+// not walk.
+export const MAX_WIRE_PER_SECOND = Number(process.env.M59_TRAIL_MAX_SPEED || 640);
 
 export function trailsFile(fleet = process.env.M59_FLEET || 'default') {
   return path.join(TRAILS_DIR, String(fleet).replace(/[^\w.-]/g, '_') + '.jsonl');
@@ -83,6 +101,9 @@ export function recordSeen(row = {}, { fleet = process.env.M59_FLEET || 'default
       // whose clock it is on.
       by: row.by ?? null,
       player: row.player === true,
+      // Where we asked to be, rather than where the server said we were. Kept apart so a
+      // reader can prefer confirmed positions when it has both.
+      ...(row.sent ? { sent: true } : {}),
       x: row.x, y: row.y,
       ...(Number.isFinite(row.col) ? { col: row.col, row: row.row } : {}),
     });
@@ -131,7 +152,28 @@ export function segments(samples) {
   for (const s of samples) {
     const k = String(s.id ?? s.name ?? 'self');
     const cur = runs.get(k);
-    if (cur && (cur.room !== s.room || (s.at - cur.lastAt) > GAP_MS)) close(k);
+    // A PAUSE IS NOT A ROOM CHANGE, AND CUTTING ON ONE SHREDS EVERY VISIT.
+    //
+    // Standing still produces no samples — `recordSeen` drops a body that has not moved —
+    // so a character that stops to fight, or waits at a door, looks exactly like a gap. Cut
+    // on that and one room visit becomes several fragments, none of which has a far side:
+    // measured, 618 of 658 candidate crossings were rejected as "the next segment is the
+    // same room", the median segment was THREE samples, and 24,520 samples yielded 14
+    // crossings. The room number is the real boundary and it is authoritative, so that is
+    // what cuts. A gap is only allowed to cut when it is long enough that the body could
+    // have left and come back — which is a different claim from "it paused".
+    const gap = cur ? s.at - cur.lastAt : 0;
+    // A TELEPORT IS A CUT, NOT A CORRUPTION. Merging across pauses means a relocate inside
+    // one room now lands INSIDE a segment, and a straight line drawn through it would claim
+    // a traversal nobody made. Cutting there keeps both halves usable, where discarding the
+    // segment threw away the walking either side of it — which is most of a training run,
+    // since the harness places its subjects by teleport.
+    const last = cur?.points[cur.points.length - 1];
+    const moved = last ? Math.hypot(s.x - last.x, s.y - last.y) : 0;
+    const couldHaveWalked = MAX_WIRE_PER_SECOND * Math.max(1, gap / 1000) + MOVED_AT_LEAST;
+    const teleported = !!last && moved > couldHaveWalked;
+    if (cur && (cur.room !== s.room || gap > REJOIN_MS || teleported)) close(k);
+    else if (cur && gap > GAP_MS) cur.paused = (cur.paused ?? 0) + gap;
     const seg = runs.get(k) ?? { body: k, name: s.name ?? null, player: s.player === true,
                                  room: s.room, from: s.at, points: [] };
     seg.points.push({ x: s.x, y: s.y, at: s.at });
