@@ -76,6 +76,42 @@ export async function flee(client, session, _opts = {}) {
   const me2 = c.self;
   const moved = me2 && (me2.col !== me.col || me2.row !== me.row);
 
+  // RAW FLEE FALLBACK: if walkTo failed and we didn't move, take
+  // direct moveToSquare steps in the flee direction. The server
+  // handles real collision; this ensures progress even when the
+  // local geometry (BSP/coarse grid) is wrong.
+  if (!moved) {
+    const meNow = c.self;
+    if (meNow) {
+      const ddx = me.col - nearest.col;
+      const ddy = me.row - nearest.row;
+      const dd = Math.max(1, Math.hypot(ddx, ddy));
+      const sx = Math.round(ddx / dd);
+      const sy = Math.round(ddy / dd);
+      for (let step = 0; step < 8; step++) {
+        const nx = meNow.col + sx;
+        const ny = meNow.row + sy;
+        if (nx < 1 || ny < 1 || nx > cols - 2 || ny > rows - 2) break;
+        try {
+          await s.pacer?.submit?.('move', () => c.moveToSquare(nx, ny));
+          await sleep(400);
+        } catch { break; }
+      }
+    }
+    // Re-check if we moved.
+    const me3 = c.self;
+    const moved2 = me3 && (me3.col !== me.col || me3.row !== me.row);
+    if (moved2) {
+      return {
+        sent: true, fled: true, reason: null,
+        from: { col: me.col, row: me.row },
+        to: { col: me3.col, row: me3.row },
+        threat: { id: nearest.id, col: nearest.col, row: nearest.row, dist: Math.round(nearestDist) },
+        raw: true,
+      };
+    }
+  }
+
   return {
     sent: true,
     fled: !!moved || walk.arrived,

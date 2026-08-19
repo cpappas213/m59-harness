@@ -654,12 +654,28 @@ export class GOAPKeeper {
             // Case 2: under attack by a mob. If the mob is out of band
             // (too high level), flee first — taking a safe spot against
             // a mob 10+ levels above is a death sentence.
-            const shouldFleeFirst = ws.target_in_band === false;
+            //
+            // If we're ALREADY at a wall and still being hit, the wall
+            // is not saving us (the mob is adjacent and the wall blocks
+            // our escape). In that case, break off the wall and run
+            // into the open — a damaged character in the open can still
+            // outrun a mob, but one pinned at a wall cannot.
+            const shouldFleeFirst = ws.target_in_band === false || ws.hurt === true;
             const recover = async (client, session) => {
               if (shouldFleeFirst) {
                 const fleeResult = await flee(client, session);
-                if (!fleeResult?.sent && fleeResult?.reason !== 'no target') {
-                  return { acted: false, reason: 'flee failed: ' + (fleeResult?.reason ?? 'unknown') };
+                if (fleeResult?.sent === true) {
+                  // Successfully fled. Now take a safe spot and rest.
+                  await takeSafeSpot(client, session).catch(() => {});
+                  const restResult = await rest(client, session);
+                  return { acted: true, reason: restResult?.reason ?? null };
+                }
+                // Flee failed (e.g. 'no hostiles' or 'could not move').
+                // If we're at a wall, try to break away from it.
+                if (fleeResult?.reason?.includes('no hostiles')) {
+                  // No hostiles found — just rest.
+                  const restResult = await rest(client, session);
+                  return { acted: restResult?.sent === true, reason: restResult?.reason ?? null };
                 }
               }
               const spotResult = await takeSafeSpot(client, session).catch(() => (null));

@@ -140,33 +140,115 @@ export async function scavenge(client, session, opts = {}) {
     }
   }
 
-  // Delegate to the skills.fight() function. It takes the broker
-  // session and a creature NAME (not an ID) and handles the full
-  // combat loop (walk to target, swing, check result, repeat).
+  // COMBAT STRATEGY: FIGHT FROM THE SAFE SPOT (PULL-TO-WALL).
   //
-  // WHEN THE TARGET IS ADJACENT (<= 2 cells): fight() still tries to
-  // walk first (approachSquare + walkTo), and that walk can fail due
-  // to local geometry mismatches even for a 1-cell move. In that case,
-  // skip the walk entirely and let fight() start swinging from where
-  // we are. The reach check inside fight() will either hit the target
-  // or disengage.
-  const mePos2 = client?.self;
-  const targetAdj = mePos2 && target.col != null && target.row != null
-    ? Math.hypot(target.col - mePos2.col, target.row - mePos2.row) <= 2
-    : false;
-
+  // The character is already at a wall/corner (takeSafeSpot above).
+  // Instead of walking to the mob (leaving the safety of the wall),
+  // we swing from the wall. The first swing aggro's the mob, and it
+  // walks toward us. When it's close enough (within reach), we start
+  // dealing damage with the wall at our back.
+  //
+  // This is the "pull to wall" strategy:
+  //   1. Hold position at the wall, swing at the target.
+  //   2. If out of reach, the swing still aggro's the mob (the server
+  //      processes the attack even if it misses for range).
+  //   3. Wait 2-3s for the mob to walk toward us.
+  //   4. Swing again. Repeat until the mob is in reach or dead.
+  //
+  // Max 3 pull attempts before giving up and doing a normal approach.
   const { fight: doFight } = await import('../m59-skills.mjs');
-  const r = await doFight(session, {
-    target: targetName,
-    preferId: target.id ?? target.obj_id ?? null,
-    rounds: 12,
-    swingsPerRound: 4,
-    holdPosition: targetAdj,  // skip the walk, fight from where we are
+  const foeId = target.id ?? target.obj_id ?? null;
+  const mePos2 = client?.self;
+  const targetDist = mePos2 && target.col != null && target.row != null
+    ? Math.hypot(target.col - mePos2.col, target.row - mePos2.row)
+    : null;
+
+  // If the target is already adjacent (<= 1 cell), just fight.
+  if (targetDist != null && targetDist <= 1) {
+    const r = await doFight(session, {
+      target: targetName, preferId: foeId,
+      rounds: 12, swingsPerRound: 4, holdPosition: true,
+    });
+    return {
+      sent: true,
+      killed: r?.killed ?? r?.won ?? false,
+      reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+    };
+  }
+
+  // PULL-TO-WALL: swing from the safe spot, wait for the mob to approach.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    const r = await doFight(session, {
+      target: targetName, preferId: foeId,
+      rounds: 1, swingsPerRound: 2, holdPosition: true,
+    });
+    if (r?.killed || r?.won) {
+      return { sent: true, killed: true, reason: null };
+    }
+    if (r?.out_of_reach) {
+      // The mob is too far. The swing aggro'd it (or not — some mobs
+      // don't aggro on a missed swing). Wait 3s for it to walk toward us.
+      await new Promise(res => setTimeout(res, 3000));
+      // Re-check: is it closer now?
+      const c = session.need();
+      const it = c.room.objects.get(foeId);
+      if (it && mePos2) {
+        const newDist = Math.hypot(it.col - mePos2.col, it.row - mePos2.row);
+        if (newDist <= 2) {
+          // It walked closer. Fight for real now.
+          const r2 = await doFight(session, {
+            target: targetName, preferId: foeId,
+            rounds: 12, swingsPerRound: 4, holdPosition: true,
+          });
+          return {
+            sent: true,
+            killed: r2?.killed ?? r2?.won ?? false,
+            reason: r2?.killed || r2?.won ? null : (r2?.reason ?? 'fight did not end in a kill'),
+          };
+        }
+      }
+      continue; // try again
+    }
+    // Fight happened (in reach). Return the result.
+    return {
+      sent: true,
+      killed: r?.killed ?? r?.won ?? false,
+      reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+    };
+  }
+
+  // All 3 pull attempts failed (mob never walked closer). Fall back to
+  // a raw approach: walk directly toward the mob using moveToSquare
+  // (no local geometry validation). The server handles real collision;
+  // this ensures progress even if the local .roo geometry is wrong.
+  const c = session.need();
+  const meNow = c.self;
+  const foeNow = c.room.objects.get(foeId);
+  if (meNow && foeNow) {
+    const dx = foeNow.col - meNow.col;
+    const dy = foeNow.row - meNow.row;
+    const dist = Math.hypot(dx, dy);
+    if (dist > 1) {
+      // Walk up to 5 steps toward the mob.
+      for (let step = 0; step < 5; step++) {
+        const nx = meNow.col + Math.sign(dx);
+        const ny = meNow.row + Math.sign(dy);
+        try {
+          await session.pacer.submit('move', () => c.moveToSquare(nx, ny));
+          await new Promise(res => setTimeout(res, 400));
+        } catch { break; }
+      }
+    }
+  }
+  // Now try a normal fight from the new position.
+  const rFallback = await doFight(session, {
+    target: targetName, preferId: foeId,
+    rounds: 12, swingsPerRound: 4, holdPosition: false,
   });
   return {
     sent: true,
-    killed: r?.killed ?? r?.won ?? false,
-    reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+    killed: rFallback?.killed ?? rFallback?.won ?? false,
+    reason: rFallback?.killed || rFallback?.won ? null : (rFallback?.reason ?? 'fight did not end in a kill'),
   };
 }
 
