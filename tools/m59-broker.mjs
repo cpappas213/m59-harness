@@ -2850,6 +2850,23 @@ class Session {
       if (touches) return {
         available: false, moved: false, blocked: true,
         reason: 'collision_geometry_changed',
+        // THE EVIDENCE, NOT JUST THE REFUSAL. This block has already been narrowed once —
+        // the Temple of Qor door in 598 cycles faster than the 8s window, so an
+        // unnarrowed record caged anything standing in the Cragged Mountains. It is
+        // firing again on the Tos -> Castle Victoria road, seven refusals in thirty-five
+        // seconds, and from outside the process there is no way to tell WHICH of the two
+        // reasons applies: the moving sector really is on our path, or the packet arrived
+        // short so `sector` is null and the whole room is being refused again. Those want
+        // opposite fixes, so the refusal now says which.
+        animation: {
+          sector: Number.isInteger(invalidated.sector) ? invalidated.sector : null,
+          narrowed: Number.isInteger(invalidated.sector) && typeof geo.leafAtClient === 'function',
+          kind: invalidated.kind ?? null,
+          // How long this record still has to run, so a caller can tell "it will clear in
+          // 200ms" from "this has been re-armed continuously for a minute".
+          expires_in_ms: invalidated.until == null ? null : Math.max(0, invalidated.until - Date.now()),
+          armed_ms_ago: invalidated.at ? Date.now() - invalidated.at : null,
+        },
         note: `${invalidated.kind} changed live room geometry` +
               (Number.isInteger(invalidated.sector) ? ` in sector ${invalidated.sector}` : '') +
               '; movement is fail-closed until that animation finishes or the room is re-entered',
@@ -4946,6 +4963,12 @@ class Session {
     const stagingSquares = new Set(spread.map(e => `${e.stand_on?.col},${e.stand_on?.row}`));
     const isNeedle = stagingSquares.size <= 1 && spread.length > 0;
     let waited = 0;
+    // A cycling door is worth a handful of asks; a room whose geometry really has changed
+    // is not. Both bounds matter — the count stops the loop, the per-wait cap stops one ask
+    // swallowing the whole errand.
+    let animationWaits = 0;
+    const ANIMATION_MAX_WAITS = Number(process.env.M59_ANIMATION_WAITS || 6);
+    const ANIMATION_WAIT_MS = Number(process.env.M59_ANIMATION_WAIT_MS || 2500);
     // spreadEdges turns each declared edge into one candidate per square that crosses
     // that boundary — see m59-world.mjs. Without it this tried the nearest square and
     // called the whole wall refused.
@@ -5022,6 +5045,41 @@ class Session {
                          note: `crossed on attempt ${tried.length + 1}` });
         return { ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
                  ...(tried.length ? { tried } : {}) };
+      }
+      // AN ANIMATING DOOR IS A TEMPORARY OBSTACLE WEARING A TERMINAL REASON'S CLOTHES.
+      //
+      // `collision_geometry_changed` is on the terminal list for a good reason: the room's
+      // geometry moved, we cannot mutate our BSP the way the stock client does, and a
+      // refusal that loops is how a bad route gets learned. But the thing that fires it
+      // most is a DOOR, and a door opens again — the Temple of Qor's lives in room 598 and
+      // cycles faster than the 8s invalidation window, which is why it sits exactly on the
+      // Cragged Mountains -> Ukgoth crossing on the road to Castle Victoria. Measured
+      // there: seven refusals in thirty-five seconds and the Tos -> Castle Victoria leg
+      // never once completed, 0 of 3 in a grand tour.
+      //
+      // Abandoning the boundary is the worst response available, because the next attempt
+      // walks the whole room again and arrives at a fresh random phase of the same cycle.
+      // Standing at the door and asking again costs nothing and is what a person does.
+      // Bounded in tries AND in total time, so a genuine geometry change — the case the
+      // terminal list is really for — still ends the walk rather than pinning a character
+      // at a wall for ever.
+      if (r.reason === 'collision_geometry_changed' && animationWaits < ANIMATION_MAX_WAITS) {
+        animationWaits++; spent--;
+        const gap = Number.isFinite(r.animation?.expires_in_ms)
+          ? Math.min(ANIMATION_WAIT_MS, Math.max(250, r.animation.expires_in_ms + 250))
+          : ANIMATION_WAIT_MS;
+        tried.push({ stand_on: exit.stand_on, why: r.reason,
+                     waited_for_the_animation_ms: gap,
+                     ...(r.animation ? { animation: r.animation } : {}),
+                     note: `a live animation holds this doorway — waiting at it rather than ` +
+                           `walking the room again (${animationWaits}/${ANIMATION_MAX_WAITS})` });
+        recordTactic({ character: this.character ?? null, room: roomBefore,
+                       tactic: 'animation_wait', trigger: 'door_refused', worked: false,
+                       ms: gap, note: r.animation?.sector != null
+                         ? `sector ${r.animation.sector}` : 'whole room refused' });
+        await new Promise(resolve => setTimeout(resolve, gap));
+        index--;                        // the same door, one cycle later
+        continue;
       }
       if (isTerminalMovementReason(r.reason))
         return { ...r, left: false, used_exit: exit, ...(tried.length ? { tried } : {}) };

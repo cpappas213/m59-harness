@@ -1443,6 +1443,60 @@ console.log('\nterminal movement propagation and edge packet authority');
        JSON.stringify({ asks, steps: out.steps, monster_blocked: out.monster_blocked }));
   }
 
+  // A CYCLING DOOR IS WAITED AT, NOT WALKED AWAY FROM — BUT A REAL GEOMETRY CHANGE STILL
+  // ENDS THE WALK.
+  //
+  // `collision_geometry_changed` is terminal because we cannot mutate our BSP the way the
+  // stock client does. The thing that fires it most, though, is a door, and the Temple of
+  // Qor's sits on the Cragged Mountains -> Ukgoth crossing and cycles faster than the 8s
+  // invalidation window. Abandoning the boundary means walking the whole room again and
+  // arriving at a fresh random phase of the same cycle: measured, that leg completed 0 of 3.
+  if (typeof leaveViaAny !== 'function') {
+    skip('a doorway held by a live animation is waited at, not abandoned', 'did not extract');
+    skip('and a geometry change that never clears still ends the walk', 'ditto');
+  } else {
+    process.env.M59_ANIMATION_WAIT_MS = '1';
+    const door = [{ kind: 'edge', to: 599, stand_on: { col: 22, row: 64 } }];
+    {
+      let attempts = 0;
+      const session = {
+        movementGeneration: 0, world: { room: { num: 598 } },
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          if (attempts >= 3) return { left: true };      // the door came open
+          return { left: false, reason: 'collision_geometry_changed',
+                   animation: { sector: 12, narrowed: true, expires_in_ms: 40 } };
+        },
+        async retreatAlongBreadcrumbs() { return { steps: 0 }; },
+        async leaveViaUnvalidated() { return { left: false }; },
+      };
+      const result = await leaveViaAny.call(session, door, {});
+      ok('a doorway held by a live animation is waited at, not abandoned',
+         result.left === true && attempts === 3,
+         JSON.stringify({ left: result.left, attempts }));
+    }
+    {
+      let attempts = 0;
+      const session = {
+        movementGeneration: 0, world: { room: { num: 598 } },
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          return { left: false, reason: 'collision_geometry_changed',
+                   animation: { sector: null, narrowed: false, expires_in_ms: null } };
+        },
+        async retreatAlongBreadcrumbs() { return { steps: 0 }; },
+        async leaveViaUnvalidated() { return { left: false }; },
+      };
+      const result = await leaveViaAny.call(session, door, {});
+      ok('and a geometry change that never clears still ends the walk',
+         result.left !== true && attempts <= 8,
+         JSON.stringify({ left: result.left, attempts }));
+    }
+    delete process.env.M59_ANIMATION_WAIT_MS;
+  }
+
   // ONCE IT IS THROUGH, IT STOPS.
   //
   // Every recovery below is MOVEMENT, and after a crossing the character stands a step from
