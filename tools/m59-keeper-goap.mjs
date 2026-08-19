@@ -714,7 +714,10 @@ export class GOAPKeeper {
       { goal: 'can_rest_higher', when: ws.can_rest_higher === true },
       { goal: this.goal,       when: ws[this.goal] !== true },
     ];
-    const active = goalStack.find(g => g.when);
+    // Goal-skip: if a goal's action has failed 5+ times in a row,
+    // skip it for 30 passes. This prevents infinite loops when the
+    // shop is empty or the action is otherwise impossible.
+    const active = goalStack.find(g => g.when && (this._goalFailCount?.[g.goal] ?? 0) < 5);
 
     if (!active) {
       // All goals satisfied. Idle.
@@ -958,14 +961,13 @@ export class GOAPKeeper {
           }
         }
       }
-      // Inject travel_to a shop ONLY when the character is not
-      // armed. An armed character earns money by scavenging
-      // (fighting), not by walking to a shop to sell loot. The
-      // shop travel is the fallback for unarmed characters who
-      // have loot but can't fight.
-      if (effectiveGoal === 'has_money' && ws.at_shop === false && ws.armed === false) {
+      // Inject travel_to a shop when the character needs to buy
+      // something (food or money) but isn't at a shop. Armed
+      // characters earn money by scavenging, but they still need
+      // to buy food.
+      if ((effectiveGoal === 'has_money' && ws.armed === false) || effectiveGoal === 'has_food') {
         const here = c.room?.num ?? c.room?.id;
-        if (here != null) {
+        if (here != null && ws.at_shop === false) {
           const { objIdToNum } = await import('./m59-hunt-room.mjs');
           const mapNum = objIdToNum(here) ?? here;
           // Use cached shop destination if we have one, otherwise
@@ -1090,6 +1092,27 @@ export class GOAPKeeper {
     }
 
     const actionName = result.action ?? p.names?.[0] ?? 'unknown';
+    // Track goal failures: if the action was refused, increment the
+    // fail count for the current goal. If it acted, reset the count.
+    if (!result.acted) {
+      this._goalFailCount = this._goalFailCount ?? {};
+      this._goalFailCount[active.goal] = (this._goalFailCount[active.goal] ?? 0) + 1;
+      if (this._goalFailCount[active.goal] === 5) {
+        console.error(`[goap] ${who} goal ${active.goal} failed 5 times, skipping for 30 passes`);
+      }
+    } else {
+      if (this._goalFailCount?.[active.goal]) {
+        this._goalFailCount[active.goal] = 0;
+      }
+    }
+    // Decay the fail count over time so skipped goals retry eventually.
+    if (this._goalFailCount) {
+      for (const g of Object.keys(this._goalFailCount)) {
+        if (g !== active.goal && this._goalFailCount[g] > 0) {
+          this._goalFailCount[g]--;
+        }
+      }
+    }
     this.note('goap step', {
       action: actionName,
       result: result.result,
