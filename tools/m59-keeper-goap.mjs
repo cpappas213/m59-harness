@@ -932,6 +932,11 @@ export class GOAPKeeper {
     // a mob is in reach is how characters die.
     const planFilter = new Set();
     if (effectiveGoal === 'healthy' && ws.has_target === true) planFilter.add('rest');
+    // When hurt and a hostile is present, block scavenge too. The
+    // character should flee/recover, not start another swing.
+    // Without this, the planner keeps picking scavenge (lower cost)
+    // and the character takes damage until the fight ends.
+    if (ws.hurt === true && ws.has_target === true) planFilter.add('scavenge');
     if (this._blockTravel) planFilter.add('travel_to');
     const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra, filter: planFilter.size ? planFilter : null });
     // Record the plan for the dashboard / hero page. A visible plan is
