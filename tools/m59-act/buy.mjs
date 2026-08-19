@@ -36,7 +36,61 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
   if (!client || !session) return { sent: false, bought: null, reason: 'no client or session' };
 
   // The buy list is cached on the client when BP_SELL_LIST arrives.
-  const buyList = client.buyList;
+  // This only happens when the character is near a merchant. If the
+  // list is empty, find the nearest merchant NPC and walk to them
+  // before retrying.
+  let buyList = client.buyList;
+  if (!buyList?.items?.length) {
+    // Find a merchant in the room. The server sends BP_SELL_LIST
+    // when the character is near a merchant NPC. We need to walk
+    // to them first.
+    const c = session.need();
+    const objects = c.room?.objects;
+    const myName = c.rsc?.get?.(c.self?.nameRsc) ?? session.name;
+    if (objects?.size) {
+      let merchant = null;
+      for (const obj of objects.values()) {
+        // Skip self and players
+        if (obj.id === c.self?.id) continue;
+        if (obj.is_player) continue;
+        const name = c.rsc?.get?.(obj.nameRsc) ?? '';
+        if (!name || name === myName) continue;
+        // Look for merchant-like names first
+        if (/merchant|shop|vendor|seller|innkeep|inn keep|blacksmith|banker|tavern/i.test(name)) {
+          merchant = obj;
+          break;
+        }
+      }
+      // If no named merchant, try the nearest non-mob NPC
+      if (!merchant) {
+        const me = c.self;
+        if (me) {
+          let bestDist = Infinity;
+          for (const obj of objects.values()) {
+            if (obj.id === c.self?.id) continue;
+            if (obj.is_player) continue;
+            const name = (c.rsc?.get?.(obj.nameRsc) ?? '').toLowerCase();
+            if (!name || name === myName?.toLowerCase()) continue;
+            // Skip obvious mobs/creatures
+            if (/rat|spider|skeleton|zombie|mummy|giant|troll|orc|goblin|wolf|bear|dragon|demon|undead|corpse|bones|ghost|wraith|vampire|werewolf|elemental|construct|golem|fiend|imp|sprite|fairy|gnome|baby|shadow/i.test(name)) continue;
+            const d = Math.hypot((obj.col ?? 0) - me.col, (obj.row ?? 0) - me.row);
+            if (d < bestDist && d <= 20) { bestDist = d; merchant = obj; }
+          }
+        }
+      }
+      if (merchant) {
+        const mName = c.rsc?.get?.(merchant.nameRsc);
+        console.error(`[buy] ${session.name ?? '?'} no buy list, approaching merchant: ${mName} at (${merchant.col},${merchant.row})`);
+        try {
+          const walk = await session.walkTo(merchant.col, merchant.row, { maxSteps: 30 });
+          if (walk.arrived) {
+            await new Promise(r => setTimeout(r, 1000));
+            buyList = session.need().buyList;
+          }
+        } catch {}
+      }
+    }
+  }
   if (!buyList?.items?.length)
     return { sent: false, bought: null, reason: 'no buy list (not in a shop room?)' };
 
