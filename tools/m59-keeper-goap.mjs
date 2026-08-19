@@ -902,7 +902,7 @@ export class GOAPKeeper {
     // for its band check). Without this, the scavenge uses myLevel*2
     // which is looser than the GOAP's myLevel+threatBand, and the
     // character walks toward a mob it should be running from.
-    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null };
+    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? null };
     const result = await stepPlan(c, this.session, p, { index: 0, args: execArgs });
     console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
 

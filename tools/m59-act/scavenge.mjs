@@ -33,6 +33,32 @@ function frac(v) {
 
 import { wanderAway } from '../m59-wander.mjs';
 import { affordances, OF } from '../m59-parse.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+
+// Compendium spawn data: room number -> [{creature, level, ...}].
+// Used to filter targets by level when the wire protocol doesn't
+// send mob HP/level data.
+let _spawns = null;
+function loadSpawns() {
+  if (_spawns) return _spawns;
+  const file = 'substrate/m59-spawns.json';
+  if (!existsSync(file)) return null;
+  try { _spawns = JSON.parse(readFileSync(file, 'utf8')); } catch { _spawns = null; }
+  return _spawns;
+}
+
+// Find the compendium level for a mob name in a given room.
+// Returns the level or null if not found.
+function compendiumLevel(roomNum, mobName) {
+  const spawns = loadSpawns();
+  if (!spawns?.rooms) return null;
+  // roomNum might be a live objId — try both the raw num and the objId key
+  const entries = spawns.rooms[String(roomNum)] ?? null;
+  if (!entries) return null;
+  const name = String(mobName).toLowerCase();
+  const match = entries.find(e => e.creature?.toLowerCase() === name);
+  return match?.level ?? null;
+}
 
 export async function scavenge(client, session, opts = {}) {
   if (!client || !session)
@@ -79,6 +105,36 @@ export async function scavenge(client, session, opts = {}) {
     if (/friendly|pet|tame/i.test(name)) return false;
     return true;
   });
+
+  // LEVEL FILTER: the wire protocol does not send mob HP/level data.
+  // The compendium (m59-spawns.json) does: it maps room -> creature -> level.
+  // Filter out mobs whose compendium level is above the character's
+  // hunt level. This is the only way to know a spider is level 50
+  // when Kage is level 20.
+  const huntLevel = opts.huntLevel ?? this?.policy?.huntLevel ?? null;
+  const roomNum = room?.num ?? room?.id ?? null;
+  if (huntLevel != null && roomNum != null) {
+    const filtered = hostiles.filter(o => {
+      const name = client?.rsc?.get?.(o.nameRsc) ?? '';
+      const lv = compendiumLevel(roomNum, name);
+      // If the compendium doesn't know this mob, let it through
+      // (we can't judge what we don't know).
+      if (lv == null) return true;
+      return lv <= huntLevel;
+    });
+    if (filtered.length) {
+      // Only keep mobs at or below the hunt level.
+      const removed = hostiles.length - filtered.length;
+      if (removed > 0)
+        console.error(`[scavenge] level filter: removed ${removed} mob(s) above lv${huntLevel} in room ${roomNum}`);
+      hostiles.splice(0, hostiles.length, ...filtered);
+    } else if (hostiles.length > 0) {
+      // ALL mobs in the room are above the hunt level. Don't fight.
+      const names = hostiles.map(o => client?.rsc?.get?.(o.nameRsc) ?? '?').join(', ');
+      return { sent: false, killed: false,
+        reason: `all mobs in room are above hunt level ${huntLevel} (${names}) — travel to a safer room` };
+    }
+  }
 
   if (!hostiles.length) {
     // No hostiles: walk a few steps toward where mobs are likely to be, then wait.
