@@ -1039,7 +1039,7 @@ const ordinaryStep = compileSessionMethod(brokerSource,
     KOD_FINENESS, squaresPerSecond: () => 2.5,
   });
 const walkFine = compileSessionMethod(brokerSource,
-  'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason });
+  'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason, KOD_FINENESS });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     provedSquares,

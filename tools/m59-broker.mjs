@@ -3392,7 +3392,9 @@ class Session {
                       note: 'own position is unknown; call look before moving' };
 
     const log = [];
-    let stalls = 0;
+    let stalls = 0, lastStep = null;
+    const stride0 = stride;          // what a healthy step is, to restore after a halving
+    let closest = Infinity, sinceCloser = 0;
     const geometryRejections = new Set();
     // Headings to try, in order: straight at it, then fanned out to either side.
     // The wide angles are what carry you along a wall rather than into it.
@@ -3411,7 +3413,21 @@ class Session {
                  steps: i, log };
 
       const base = Math.atan2(dy, dx);
-      const reach = Math.min(stride, remaining);
+      // DO NOT STRIDE PAST THE TARGET. A fixed 48-unit step aimed at a point 20 units away
+      // overshoots, the next step overshoots back, and a two-square walk dithers until it
+      // runs out of steps — which is what happened the moment the skid fix let short walks
+      // reach their target at all. The step is capped at what is left.
+      const reach = Math.max(8, Math.min(stride, remaining));
+      // AND CLOSE ENOUGH IS ARRIVED. Position is confirmed by the server and our own moves
+      // are still settling, so the last few units cannot be closed by aiming harder. If the
+      // walk has stopped improving on its closest approach and that approach is inside a
+      // square, it is there — the alternative is spending the whole step budget shaving
+      // units off a number that a body's own width makes meaningless.
+      if (remaining < closest - 1) { closest = remaining; sinceCloser = 0; }
+      else if (++sinceCloser >= 4 && closest <= KOD_FINENESS)
+        return { arrived: true, position: { col: me.col, row: me.row, x: me.x, y: me.y },
+                 steps: i, log, note: 'as close as fine movement gets — ' +
+                   Math.round(closest) + ' units, inside one square' };
       let progressed = false;
 
       for (const off of FAN) {
@@ -3419,6 +3435,12 @@ class Session {
           return this.cancelledMovement({ steps: i, log });
         const a = base + off;
         const r = await this.stepFine(me.x + Math.cos(a) * reach, me.y + Math.sin(a) * reach);
+        lastStep = { aimed: { x: Math.round(me.x + Math.cos(a) * reach), y: Math.round(me.y + Math.sin(a) * reach) },
+                     from: { x: me.x, y: me.y }, reach,
+                     moved: r.moved, travelled: r.travelled, reason: r.reason ?? null,
+                     locally_validated: r.locally_validated ?? null,
+                     geometry_blocked: r.geometry_blocked ?? null,
+                     position: r.position ?? null, note: (r.note ?? '').slice(0, 90) };
         if (r.left_room || (c.room.id !== startRoom)) {
           log.push({ step: i, left_room: true });
           return { arrived: false, left_room: true, room: c.room.id, steps: i + 1, log,
@@ -3433,8 +3455,28 @@ class Session {
           return { arrived: false, left_room: true, room: c.room.id, steps: i + 1, log,
                    note: 'walked out of the room — for an edge exit that IS arriving' };
         }
-        if (r.moved) {
+        // PROGRESS IS GROUND GAINED ON THE TARGET, NOT A POSITION COMPARISON THAT RACES
+        // PREDICTION.
+        //
+        // `r.moved` is `after !== queued.before`, and `queued.before` is read inside the
+        // paced send — by which time our own position has usually advanced, because moves
+        // are dead-reckoned and the previous one is still settling. So a step that really
+        // did carry the character forward comes back `moved: false`, walkFine counts a
+        // stall, halves the stride, and fans wider until it is aiming backwards. Measured
+        // in three different rooms: from 1496,1491 aiming 12 units west, the character
+        // ended at 1507,1493 — further along its way — and it was scored a refusal. Once
+        // the stride is halved below the drift, no step can ever be seen to work, which is
+        // why fine movement failed everywhere while coarse walking was fine.
+        //
+        // Distance to the destination cannot be fooled that way: it is measured from the
+        // position the server confirmed, against a target that does not move.
+        const now = c.self;
+        const gained = now ? remaining - Math.hypot(destX - now.x, destY - now.y) : 0;
+        if (r.moved || gained > 1) {
           progressed = true;
+          // A step that gained ground gets the full stride back. The halving is for a body
+          // wedged in a gap, and this one is not wedged.
+          if (gained > 1) stride = Math.min(stride * 2, stride0);
           if (off !== 0) log.push({ step: i, slid: Number(off.toFixed(2)), to: r.position });
           break;
         }
@@ -3446,6 +3488,11 @@ class Session {
         stride = Math.max(12, Math.round(stride / 2));
         if (stalls >= 4)
           return { arrived: false, reason: 'blocked — every heading refused, at every reach tried',
+                   // WHAT THE LAST REFUSAL ACTUALLY SAID. Without this the caller is told
+                   // "every heading refused" and cannot tell a wall from a rate limit from a
+                   // move the server simply ignored — which is exactly the wall this
+                   // investigation hit.
+                   last_step: lastStep,
                    position: me ? { col: me.col, row: me.row, x: me.x, y: me.y } : null,
                    steps: i, log, geometry_rejections: [...geometryRejections],
                    note: geometryRejections.has('geometry_blocked')
@@ -5009,8 +5056,25 @@ class Session {
     for (let i = joinAt; i < track.waypoints.length; i++) {
       const wp = track.waypoints[i];
       if (this.movementWasCancelled(movementGeneration, controlToken)) break;
-      const r = await this.walkFine(wp.x, wp.y, { maxSteps: 60, movementGeneration, controlToken })
-        .catch(() => null);
+      // RIDE A LEG THE WAY IT WAS PROVED.
+      //
+      // A track's legs are proved by `straighten`, which asks `traceFineMoveClient` whether
+      // ONE slide from here to there lands within a body's width of the target. Riding them
+      // with `walkFine` asks a different question entirely — 48-unit steps with a fan of
+      // headings, groping toward a point — and a leg that is a single clean slide is not
+      // something that gropes well. Measured on the Tos gate track: three of four legs came
+      // back "blocked, every heading refused, at every reach tried", on a route a body had
+      // actually walked and a raycast had re-proved.
+      //
+      // So the leg is sent as the single validated move it was proved to be. walkFine stays
+      // as the fallback for the leg that really does need feeling out, which is the job it
+      // is good at.
+      let r = await this.stepFine(wp.x, wp.y).catch(() => null);
+      const arrivedNear = () => { const p = c.self;
+        return p && Math.hypot(p.x - wp.x, p.y - wp.y) <= 48; };
+      if (!r?.left_room && !arrivedNear())
+        r = await this.walkFine(wp.x, wp.y, { maxSteps: 40, movementGeneration, controlToken })
+          .catch(() => null) ?? r;
       if (r?.left_room) {
         clearStrikes(here, fromRoom == null ? null : Number(fromRoom), Number(toRoom));
         return { rode: true, left_room: true, reached, blocked, rested,
