@@ -25,6 +25,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readSamples, segments, straighten, squareOf, roomIndex, resolveRoom,
          TRAILS_DIR, WALKS_DIR } from './m59-trails.mjs';
+import { UNDERWORLD_PORTALS } from './m59-underworld.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 export const TRACKS_FILE = process.env.M59_TRACKS ||
@@ -40,6 +41,15 @@ export const MAX_JUMP_WIRE = Number(process.env.M59_TRACK_MAX_JUMP || 600);
 
 export const trackKey = (room, from, to) => `${room}:${from ?? '?'}>${to ?? '?'}`;
 
+// WHERE A SEALED ROOM IS KNOWN TO LEAD. Only the Underworld today: five pentagram portals
+// with fixed destinations, plus the rip in space, which re-rolls among those same five — so
+// the destination SET is the same either way. Empty for any other sealed room, which means
+// "nothing is known, accept what is observed" and keeps this from becoming a second, worse
+// copy of the room graph.
+export const sealedDestinations = new Map([
+  [1, new Set(UNDERWORLD_PORTALS.map(p => Number(p.inn)).filter(Number.isFinite))],
+]);
+
 /**
  * Turn a stream of samples into crossings: which room, in by which door, out by which.
  *
@@ -47,7 +57,7 @@ export const trackKey = (room, from, to) => `${room}:${from ?? '?'}>${to ?? '?'}
  * stream is continuous, so the room before and the room after are simply the previous and
  * next segments of the same body, when they are close enough in time to be the same journey.
  */
-export function crossings(samples, { joinWithinMs = 15000 } = {}) {
+export function crossings(samples, { joinWithinMs = 15000, neighbours = null } = {}) {
   const segs = segments(samples);
   // Group by body so "the segment before" means the same body's previous room.
   const byBody = new Map();
@@ -68,6 +78,43 @@ export function crossings(samples, { joinWithinMs = 15000 } = {}) {
       // room to itself — which then keys a track nobody can ever use and hides the real one
       // behind it. Same for the near side.
       if (goingTo === seg.room || cameFrom === seg.room) continue;
+      // AND THE DOORS HAVE TO EXIST.
+      //
+      // `goingTo` is simply the next room this body was seen in, and after a teleport that
+      // is wherever the harness put it — so a "crossing" appeared from the Western border
+      // of the Twisted Wood into the Streets of Tos, which do not touch. Left in, those
+      // become tracks nobody can ever ride, sorted to the top by their absurdly short times,
+      // and they are the first thing a reader picks up. A crossing is only a crossing
+      // between rooms that share a door.
+      if (neighbours) {
+        const out = neighbours.get(Number(seg.room));
+        // A ROOM WITH NO DOORS AT ALL LEAVES BY SOMETHING ELSE, AND THAT IS THE POINT.
+        //
+        // The filter above exists to throw away the harness's own teleports, which look
+        // exactly like crossings. It would also throw away every PORTAL hop, and the
+        // Underworld is the case that matters: it publishes no exits whatsoever — "six
+        // teleporters, and that is all" — so the router cannot plan a single step of it and
+        // a recorded walk is the only thing that ever could. When a room declares nothing,
+        // every real transition out of it is necessarily a teleporter, so there is nothing
+        // for the filter to protect against and it stands aside.
+        const sealed = !out || out.size === 0;
+        // A SEALED ROOM STILL HAS A KNOWN SET OF WAYS OUT, WHERE ANYBODY HAS WRITTEN ONE
+        // DOWN. Standing the filter aside entirely let the harness's own relocations back
+        // in: the Underworld grew "crossings" to The Streets of Tos and East Merchant Way,
+        // which are not portal destinations and which nothing can ever ride. The pentagram's
+        // five inns are documented in m59-underworld.mjs with their kod citations, so the
+        // exception is narrowed to them rather than to anything at all.
+        if (sealed) {
+          const known = sealedDestinations.get(Number(seg.room));
+          if (known && !known.has(Number(goingTo))) continue;
+        } else if (!out.has(Number(goingTo))) continue;
+        if (cameFrom != null && !sealed) {
+          const back = neighbours.get(Number(cameFrom));
+          // Arriving from a sealed room is a teleporter landing, which is legitimate for
+          // the same reason.
+          if (back && back.size && !back.has(Number(seg.room))) continue;
+        }
+      }
       const a = squareOf(seg.points[0]), b = squareOf(seg.points[seg.points.length - 1]);
       const span = Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col));
       if (span < MIN_SPAN_SQUARES) continue;
@@ -156,7 +203,6 @@ if (direct) {
   }
   if (!files.length) { console.log('no trails recorded yet'); process.exit(0); }
   const samples = files.flatMap(readSamples);
-  const list = crossings(samples);
 
   const { loadMap } = await import('./m59-map.mjs');
   const { movementMapFile } = await import('./m59-map-path.mjs');
@@ -167,13 +213,20 @@ if (direct) {
   const geoFor = num => { const r = map.rooms[num];
     try { return r?.roo ? sharedRoomGeometry(r) : null; } catch { return null; } };
 
-  // Resolve object ids to room numbers before combing — see roomIndex in m59-trails.mjs.
+  // Resolve object ids to room numbers, then keep only crossings between rooms that share
+  // a door — see the note in crossings(). Samples are rewritten first so the neighbour test
+  // is asked in room numbers, which is the only vocabulary the map speaks.
   const index = roomIndex(map);
-  for (const c of list) {
-    c.room = resolveRoom(index, c.room) ?? c.room;
-    c.cameFrom = c.cameFrom == null ? null : (resolveRoom(index, c.cameFrom) ?? c.cameFrom);
-    c.goingTo = resolveRoom(index, c.goingTo) ?? c.goingTo;
+  for (const s2 of samples) s2.room = resolveRoom(index, s2.room) ?? s2.room;
+  const neighbours = new Map();
+  for (const key of Object.keys(map.rooms)) {
+    const r = map.rooms[key];
+    const to = new Set();
+    for (const e of (r.edgeExits ?? [])) if (e.to != null) to.add(Number(e.to));
+    for (const g of (r.goExits ?? [])) if (g.to != null && !g.locked) to.add(Number(g.to));
+    neighbours.set(Number(r.num), to);
   }
+  const list = crossings(samples, { neighbours });
 
   const best = comb(list, geoFor);
   const wantRoom = arg('--room') ? Number(arg('--room')) : null;

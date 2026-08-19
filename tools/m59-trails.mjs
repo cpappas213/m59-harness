@@ -245,11 +245,20 @@ export function straighten(geo, points, { arriveWithin = 40 } = {}) {
 // 430 segments were filed as "a room we have no geometry for", and every one of them was a
 // room we know perfectly well.
 export function roomIndex(map) {
+  // OBJECT IDS ONLY. The identity mapping that used to be here — num -> num, "in case it is
+  // already a room number" — is not a convenience, it is a COLLISION: room 1, the
+  // Underworld, has object id 6, and room 6 is The Deep Dark Woods of Marion. Whichever was
+  // written last won, so every Underworld sample was filed under the woods and the best
+  // straightening result this session ever reported (126 samples to 2 waypoints "in The
+  // Deep Dark Woods of Marion") was almost certainly the Underworld wearing its name.
+  //
+  // The client only ever knows the object id — `this.room.id` — so there is nothing to fall
+  // back FOR. A room number arriving here would be a bug in the recorder, and leaving it
+  // unresolved is how that bug stays visible.
   const byObj = new Map();
   for (const key of Object.keys(map?.rooms ?? {})) {
     const r = map.rooms[key];
     if (r?.objId != null) byObj.set(Number(r.objId), Number(r.num));
-    if (r?.num != null) byObj.set(Number(r.num), Number(r.num));   // already a number: identity
   }
   return byObj;
 }
