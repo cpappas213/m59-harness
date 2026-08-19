@@ -232,11 +232,14 @@ export async function scavenge(client, session, opts = {}) {
     ? Math.hypot(target.col - mePos2.col, target.row - mePos2.row)
     : null;
 
-  // If the target is already adjacent (<= 1 cell), just fight.
-  if (targetDist != null && targetDist <= 1) {
+  // If the target is already in reach (<= 3 cells), fight in place.
+  // 30 rounds is enough to kill an in-band mob. If the mob survives
+  // 30 rounds, it's out of our damage range — disengage and let
+  // the GOAP re-plan (travel to a weaker mob, rest, etc).
+  if (targetDist != null && targetDist <= 3) {
     const r = await doFight(session, {
       target: targetName, preferId: foeId,
-      rounds: 12, swingsPerRound: 4, holdPosition: true, reach: 3,
+      rounds: 30, swingsPerRound: 4, holdPosition: true, reach: 3,
     });
     return {
       sent: true,
@@ -245,84 +248,59 @@ export async function scavenge(client, session, opts = {}) {
     };
   }
 
-  // PULL-TO-WALL: swing from the safe spot, wait for the mob to approach.
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await doFight(session, {
-      target: targetName, preferId: foeId,
-      rounds: 1, swingsPerRound: 2, holdPosition: true, reach: 3,
-    });
-    if (r?.killed || r?.won) {
-      return { sent: true, killed: true, reason: null };
-    }
-    if (r?.out_of_reach) {
-      // The mob is too far. The swing aggro'd it (or not — some mobs
-      // don't aggro on a missed swing). Wait 3s for it to walk toward us.
-      await new Promise(res => setTimeout(res, 3000));
-      // Re-check: is it closer now?
-      const c = session.need();
-      const it = c.room.objects.get(foeId);
-      if (it && mePos2) {
-        const newDist = Math.hypot(it.col - mePos2.col, it.row - mePos2.row);
-        if (newDist <= 2) {
-          // It walked closer. Fight for real now.
-          const r2 = await doFight(session, {
-            target: targetName, preferId: foeId,
-            rounds: 12, swingsPerRound: 4, holdPosition: true, reach: 3,
-          });
-          return {
-            sent: true,
-            killed: r2?.killed ?? r2?.won ?? false,
-            reason: r2?.killed || r2?.won ? null : (r2?.reason ?? 'fight did not end in a kill'),
-          };
+  // Target is more than 3 cells away. Walk to it first using raw
+  // moveToSquare (no local geometry validation). The server handles
+  // real collision. Then fight in place.
+  //
+  // We do NOT use the pull-to-wall strategy for distant targets:
+  // it only works if the mob aggros on a missed swing, and many
+  // mobs (baby spiders, centipedes) are passive and don't aggros.
+  // Walking to the mob is more reliable.
+  {
+    const c = session.need();
+    let meNow = c.self;
+    let foeNow = c.room.objects.get(foeId);
+    if (meNow && foeNow) {
+      // Walk toward the target using cell coordinates.
+      // moveToSquare takes cell coords (integers), not fine-grid units.
+      for (let step = 0; step < 40; step++) {
+        const mc = meNow?.col ?? 0;
+        const mr = meNow?.row ?? 0;
+        const fc = foeNow?.col ?? 0;
+        const fr = foeNow?.row ?? 0;
+        const dx = fc - mc;
+        const dy = fr - mr;
+        const dist = Math.hypot(dx, dy);
+        if (dist <= 3) break; // in reach
+        // Walk one cell toward the target (prefer the larger axis)
+        let nx = mc, ny = mr;
+        if (Math.abs(dx) >= Math.abs(dy)) {
+          nx = mc + Math.sign(dx);
+        } else {
+          ny = mr + Math.sign(dy);
         }
+        try {
+          await c.moveToSquare(nx, ny);
+        } catch { break; }
+        await new Promise(res => setTimeout(res, 200));
+        // Re-read position and target
+        const c2 = session.need();
+        meNow = c2.self;
+        foeNow = c2.room.objects.get(foeId);
+        if (!foeNow) break; // target gone
       }
-      continue; // try again
     }
-    // Fight happened (in reach). Return the result.
+    // Now fight in place (target should be in reach or we walked as close as we could)
+    const r = await doFight(session, {
+      target: targetName, preferId: foeId,
+      rounds: 30, swingsPerRound: 4, holdPosition: true, reach: 3,
+    });
     return {
       sent: true,
       killed: r?.killed ?? r?.won ?? false,
       reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
     };
   }
-
-  // All 3 pull attempts failed (mob never walked closer). Fall back to
-  // a raw approach: walk directly toward the mob using moveToSquare
-  // (no local geometry validation). The server handles real collision;
-  // this ensures progress even if the local .roo geometry is wrong.
-  // Walk up to 30 steps — enough to cross most rooms. Re-check the
-  // target position each step (the mob may be moving).
-  const c = session.need();
-  let meNow = c.self;
-  let foeNow = c.room.objects.get(foeId);
-  if (meNow && foeNow) {
-    for (let step = 0; step < 30; step++) {
-      const dx = foeNow.col - meNow.col;
-      const dy = foeNow.row - meNow.row;
-      const dist = Math.hypot(dx, dy);
-      if (dist <= 2) break;  // close enough, stop walking
-      const nx = meNow.col + Math.sign(dx);
-      const ny = meNow.row + Math.sign(dy);
-      try {
-        await session.pacer.submit('move', () => c.moveToSquare(nx, ny));
-        await new Promise(res => setTimeout(res, 400));
-      } catch { break; }
-      // Re-read position and target (both may have moved).
-      meNow = c.self;
-      foeNow = c.room.objects.get(foeId);
-      if (!meNow || !foeNow) break;
-    }
-  }
-  // Now try a normal fight from the new position.
-  const rFallback = await doFight(session, {
-    target: targetName, preferId: foeId,
-    rounds: 12, swingsPerRound: 4, holdPosition: false,
-  });
-  return {
-    sent: true,
-    killed: rFallback?.killed ?? rFallback?.won ?? false,
-    reason: rFallback?.killed || rFallback?.won ? null : (rFallback?.reason ?? 'fight did not end in a kill'),
-  };
 }
 
 // No precondition: scavenge is always available. When there is no
