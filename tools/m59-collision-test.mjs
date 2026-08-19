@@ -1443,6 +1443,39 @@ console.log('\nterminal movement propagation and edge packet authority');
        JSON.stringify({ asks, steps: out.steps, monster_blocked: out.monster_blocked }));
   }
 
+  // ONCE IT IS THROUGH, IT STOPS.
+  //
+  // Every recovery below is MOVEMENT, and after a crossing the character stands a step from
+  // the boundary it just came through — so a recovery run at that moment walks it back.
+  // Watched live: a subject wiggled through the entrance to The Flatlands and then zoned
+  // straight back into Main gate to Cor Noth, undoing the only thing that had worked. The
+  // room is the authority here, not the crossing's own report, because a transition that
+  // lands a beat late reads as a refusal while the server has already moved us.
+  if (typeof leaveViaAny !== 'function') {
+    skip('a crossing that reported failure but changed the room is not recovered from', 'did not extract');
+  } else {
+    let retreats = 0, attempts = 0;
+    const session = {
+      movementGeneration: 0,
+      world: { room: { num: 100 } },
+      movementWasCancelled() { return false; },
+      async leaveVia() {
+        attempts++;
+        // The move worked and the server moved us; the report did not catch up.
+        this.world.room.num = 101;
+        return { left: false, reason: 'object_blocked', monster_blocked: 1 };
+      },
+      async retreatAlongBreadcrumbs() { retreats++; return { steps: 4 }; },
+      async leaveViaUnvalidated() { return { left: false }; },
+    };
+    const result = await leaveViaAny.call(session,
+      [{ kind: 'edge', to: 101, stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 335 } },
+       { kind: 'edge', to: 101, stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 352 } }], {});
+    ok('a crossing that reported failure but changed the room is not recovered from',
+       result.left === true && result.late === true && retreats === 0 && attempts === 1,
+       JSON.stringify({ left: result.left, late: result.late, retreats, attempts }));
+  }
+
   // A ONE-SQUARE DOORWAY GETS PATIENCE, NOT BREADTH.
   //
   // 13 of the world's 280 declared exits publish two or fewer distinct staging squares.

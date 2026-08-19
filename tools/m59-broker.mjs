@@ -4964,6 +4964,34 @@ class Session {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
       const askedAt = Date.now();
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
+
+      // WE ARE THROUGH. STOP. DO NOT RUN A RECOVERY.
+      //
+      // Every tactic below exists to get an unstuck walk moving again, and every one of
+      // them is movement — a retreat, a wait, another approach. Run after the crossing has
+      // ALREADY happened, they are movement in the wrong room, and the character is
+      // standing a step from the boundary it just came through, so the cheapest of them
+      // walks it straight back. Watched live: a subject wiggled its way through the
+      // entrance to The Flatlands, kept wiggling because nothing told it to stop, and
+      // zoned back into Main gate to Cor Noth — undoing the only thing that had worked.
+      //
+      // THE ROOM IS THE AUTHORITY, NOT `r.left`. `leaveVia` reports what its own last move
+      // saw, and a transition that lands a beat late reads as a refusal; asking the session
+      // which room it is in cannot be late in that way, because the server pushed it. So
+      // the check is against the room we started in, and it runs before anything else can
+      // move the character.
+      const roomNow = Number(this.world?.room?.num ?? this.client?.room?.id ?? NaN);
+      const crossed = Number.isFinite(roomBefore) && Number.isFinite(roomNow)
+                   && roomNow !== roomBefore;
+      if (crossed && !r.left) {
+        recordTactic({ character: this.character ?? null, room: roomBefore,
+                       tactic: 'needle_backoff', trigger: 'door_refused', worked: true,
+                       ms: Date.now() - askedAt,
+                       note: 'the room changed while the crossing reported failure — ' +
+                             'stopped rather than recovering back through the door' });
+        return { left: true, late: true, used_exit: exit,
+                 stood_on: this.lastExitStand ?? null, ...(tried.length ? { tried } : {}) };
+      }
       if (r.left) {
         // THE DOOR HAS NOT MOVED, SO IT SHOULD BE WRITTEN DOWN — AND THIS IS NOT YET THE
         // PLACE THAT CAN DO IT HONESTLY.
