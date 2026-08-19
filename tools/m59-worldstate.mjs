@@ -44,6 +44,7 @@
 import * as skills from './m59-skills.mjs';
 import * as party  from './m59-party.mjs';
 import { REST_VIGOR_CAP, MIN_FIGHT_VIGOR } from './m59-localpolicy.mjs';
+import { affordances } from './m59-parse.mjs';
 
 // Melee reach is a disc on SQUARE coordinates -- both sides run
 // `SquaredDistanceTo <= GetAttackRange^2` where range is Bound(2 + difficulty/6, 2, 3)
@@ -290,10 +291,11 @@ export const SYMBOLS = {
     why_unknown: 'no merchant visible, no buy; a wrong true just wastes a turn',
     produce: ({ client }) => {
       // First: check for a merchant with a buy list in the room objects.
+      // Raw objects have o.flags, not o.can — derive via affordances().
       const objects = client?.room?.objects;
       if (objects) {
         const list = objects instanceof Map ? [...objects.values()] : Array.isArray(objects) ? objects : [];
-        if (list.some(o => (o.can ?? []).includes('buy')))
+        if (list.some(o => affordances(o.flags ?? 0).includes('buy')))
           return true;
       }
       // Fallback: the room name matches a shop type. This covers

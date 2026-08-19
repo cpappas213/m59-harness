@@ -38,6 +38,7 @@ import { evaluate, unknowns, SYMBOL_NAMES } from './m59-worldstate.mjs';
 import { planFor, stepPlan } from './m59-plan.mjs';
 import { loadMap, findPath } from './m59-map.mjs';
 import { objIdToNum } from './m59-hunt-room.mjs';
+import { affordances, OF } from './m59-parse.mjs';
 
 // ROOMS THAT HAVE SHOPS. A shop is any room where a merchant with a buy
 // list can be found. We use room names as a proxy: inns, taverns, shops,
@@ -443,6 +444,7 @@ export class GOAPKeeper {
     //    the client cannot see yet (e.g. in_underworld after a
     //    reconnect, when the client's room is stale but the broker's
     //    room tracking is authoritative).
+    const who = this.policy.agent ?? this.session?.s?.name ?? this.session?.name ?? '?';
     const ws = { ...evaluate({ client: c, policy: this.policy, agent: this.policy.agent }), ...(wsOverride ?? {}) };
 
     // 1b. TARGET DETECTION. The GOAP keeper must set _targetId so
@@ -459,9 +461,15 @@ export class GOAPKeeper {
         const ceiling = myLevel + band;
 
         const hostiles = list.filter(o => {
-          const can = o.can ?? [];
+          // Raw room objects have o.flags (bit flags), NOT o.can (action list).
+          // The action list is derived from flags via affordances(). Using o.can
+          // directly was the bug: it was always undefined, so no hostile was ever
+          // found, and the GOAP never saw any mobs in the room.
+          const can = affordances(o.flags ?? 0);
+          const name = c.rsc?.get?.(o.nameRsc) ?? '';
           return can.includes('attack')
-            && !/friendly|pet|tame/i.test(o.name ?? '');
+            && !/friendly|pet|tame/i.test(name)
+            && !(o.flags & OF.PLAYER); // players are handled separately by the PVP gate
         });
 
 
@@ -472,22 +480,43 @@ export class GOAPKeeper {
             (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
           const targetLevel = target.max_health ?? target.health ?? null;
           const targetName = c.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
-          const isPlayer = target.is_player === true;
+          const isPlayer = !!(target.flags & OF.PLAYER);
 
           ws._targetId = target.id ?? target.obj_id;
           ws._targetLevel = targetLevel;
           ws._threatCeiling = ceiling;
-          // Mark whether the target is a player, so the goal stack
-          // and atomics can make PVP-specific decisions.
           ws._targetIsPlayer = isPlayer;
+
+          // Re-derive the target-dependent symbols now that _targetId is set.
+          // evaluate() already ran without it, so has_target/in_reach/
+          // target_in_band are stale. Update them manually.
+          ws.has_target = !!c?.room?.objects?.has?.(ws._targetId);
+          // in_reach: check distance to target
+          if (ws.has_target) {
+            const tgt = c.room.objects.get(ws._targetId);
+            const myPos = c.self;
+            if (tgt && myPos) {
+              const dx = (tgt.col ?? 0) - (myPos.col ?? 0);
+              const dy = (tgt.row ?? 0) - (myPos.row ?? 0);
+              ws.in_reach = Math.hypot(dx, dy) <= 2;
+            } else {
+              ws.in_reach = false;
+            }
+          } else {
+            ws.in_reach = false;
+          }
+          ws.target_in_band = targetLevel != null ? targetLevel <= ceiling : false;
 
           console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, my lv${myLevel}, ceiling ${ceiling})`);
         } else if (!hostiles.length && ws._targetId) {
-          // Target is gone. Clear it.
+          // Target is gone. Clear it and the derived symbols.
           delete ws._targetId;
           delete ws._targetLevel;
           delete ws._threatCeiling;
           delete ws._targetIsPlayer;
+          ws.has_target = false;
+          ws.in_reach = false;
+          ws.target_in_band = false;
         }
       }
     }
@@ -496,7 +525,6 @@ export class GOAPKeeper {
     // journal (in-memory, lost on restart) is not the only record.
     const wsSummary = Object.entries(ws).filter(([,v]) => v !== null)
       .map(([k,v]) => `${k}=${v}`).join(' ');
-    const who = this.policy.agent ?? this.session?.s?.name ?? this.session?.name ?? '?';
 
     // 2. GOAL STACK. Try goals in priority order. The first goal that
     //    is NOT satisfied becomes the effective goal. This is the
@@ -563,6 +591,7 @@ export class GOAPKeeper {
       // mobless room. The travel_to injection below is the right action in that case.
       const here = c.room?.num ?? c.room?.id;
       const level = this.policy.huntLevel ?? 30;
+
       let inHuntRoom = false;
       if (ws.armed === true && combatGoal && ws.has_target === false && here != null) {
         try {

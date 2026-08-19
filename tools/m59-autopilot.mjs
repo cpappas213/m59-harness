@@ -6901,7 +6901,17 @@ export class Autopilot {
       // a reconnect). The GOAP keeper's goal stack picks !in_underworld
       // and plans the escape_underworld atomic.
       const wsOverride = isUnderworld ? { in_underworld: true } : null;
-      const r = await this._goapKeeper.pass(wsOverride);
+      let r;
+      try {
+        // Attach the autopilot to the broker session so atomics can
+        // call session.ap.fight() etc. The broker session itself has
+        // no fight method — that lives on the autopilot.
+        s.ap = this;
+        r = await this._goapKeeper.pass(wsOverride);
+      } catch (e) {
+        console.error(`[goap-debug] ${this.name ?? '?'} GOAP pass threw: ${e?.message ?? e}`);
+        return;
+      }
       if (r.acted) { this.progress('goap: ' + r.action); return; }
       // No plan: the GOAP planner could not find a way to reach the goal.
       // This is an answer, not a failure: something the plan needs is

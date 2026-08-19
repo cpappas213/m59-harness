@@ -32,6 +32,7 @@ function frac(v) {
 }
 
 import { wanderAway } from '../m59-wander.mjs';
+import { affordances, OF } from '../m59-parse.mjs';
 
 export async function scavenge(client, session) {
   if (!client || !session)
@@ -47,10 +48,15 @@ export async function scavenge(client, session) {
     : Array.isArray(objects) ? objects : [];
 
   const hostiles = list.filter(o => {
-    const can = o.can ?? [];
+    // Raw room objects have o.flags (bit flags), NOT o.can (action list).
+    // The action list is derived from flags via affordances().
+    if (o.id === client?.selfId) return false; // never target self
+    if (o.flags & OF.PLAYER) return false; // players are handled by the PVP gate, not scavenge
+    const can = affordances(o.flags ?? 0);
     if (!can.includes('attack')) return false;
-    if (/friendly|pet|tame/i.test(o.name ?? '')) return false;
-    return true; // include both NPCs and players
+    const name = client?.rsc?.get?.(o.nameRsc) ?? '';
+    if (/friendly|pet|tame/i.test(name)) return false;
+    return true;
   });
 
   if (!hostiles.length) {
@@ -105,20 +111,16 @@ export async function scavenge(client, session) {
     await session.takeSafeSpot({ maxSteps: 10 }).catch(() => {});
   }
 
-  // Delegate to the legacy fight method. The session (autopilot)
-  // has a fight() that handles the full combat loop.
-  if (session.fight && typeof session.fight === 'function') {
-    const r = await session.fight(target.id ?? target.obj_id, { maxRounds: 30 });
-    return {
-      sent: true,
-      killed: r?.killed ?? r?.won ?? false,
-      reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
-    };
-  }
-
-  // Fallback: no fight method on the session. This is the case for
-  // the standalone goap-run. Refuse.
-  return { sent: false, killed: false, reason: 'no fight method on session (broker required)' };
+  // Delegate to the skills.fight() function. It takes the broker
+  // session and a creature NAME (not an ID) and handles the full
+  // combat loop (walk to target, swing, check result, repeat).
+  const { fight: doFight } = await import('../m59-skills.mjs');
+  const r = await doFight(session, { target: targetName, preferId: target.id ?? target.obj_id ?? null, rounds: 12, swingsPerRound: 4 });
+  return {
+    sent: true,
+    killed: r?.killed ?? r?.won ?? false,
+    reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
+  };
 }
 
 // No precondition: scavenge is always available. When there is no

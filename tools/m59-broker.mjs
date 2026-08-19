@@ -2864,8 +2864,15 @@ class Session {
     // ability to leave a square the model cannot reason about — which the game plainly
     // allows, because a person walks off those squares without noticing they exist.
     let recovered = null;
+    // The recovery radius is 3 cells (3×KOD_FINENESS) rather than 1, because
+    // some rooms (e.g. the Twisted Wood, room 587) have coarse-grid pockets
+    // where the character's position and several surrounding cells are all
+    // marked unwalkable, but the server allows the character to stand there.
+    // The nearest walkable square can be 2-3 cells away.
+    const NO_FLOOR_RECOVERY_RADIUS = 3 * KOD_FINENESS;
     if (requestedTrace.reason === 'start_has_no_floor'
-        && Math.abs(x - fromWireX) <= KOD_FINENESS && Math.abs(y - fromWireY) <= KOD_FINENESS
+        && Math.abs(x - fromWireX) <= NO_FLOOR_RECOVERY_RADIUS
+        && Math.abs(y - fromWireY) <= NO_FLOOR_RECOVERY_RADIUS
         && geo.leafAtClient(toClient(x), toClient(y))) {
       recovered = { from: { x: fromWireX, y: fromWireY } };
       requestedTrace = { available: true, moved: true, arrived: true, blocked: false,
@@ -3551,6 +3558,8 @@ class Session {
     if (!geo.standable(me0.row, me0.col)) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const spot = geo.nearestWalkable(me0.row, me0.col);
+      if (process.env.M59_EXIT_DEBUG !== '0')
+        console.error(`[exit-debug] ${this.name ?? '?'} start_has_no_floor check: me0=(${me0.col},${me0.row}) standable=${geo.standable(me0.row, me0.col)} walkable=${geo.walkable(me0.row, me0.col)} nearest=${JSON.stringify(spot)} room=${c.room?.id}`);
       if (!spot) return { arrived: false, reason: 'start_has_no_floor',
                           note: 'standing off the floor with no walkable square anywhere near',
                           position: { col: me0.col, row: me0.row } };
