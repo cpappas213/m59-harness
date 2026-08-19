@@ -38,6 +38,26 @@ import { evaluate, unknowns, SYMBOL_NAMES } from './m59-worldstate.mjs';
 import { planFor, stepPlan } from './m59-plan.mjs';
 import { loadMap, findPath } from './m59-map.mjs';
 import { objIdToNum } from './m59-hunt-room.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+
+// Compendium spawn data for level lookups.
+let _spawns = null;
+function _loadSpawns() {
+  if (_spawns) return _spawns;
+  const file = 'substrate/m59-spawns.json';
+  if (!existsSync(file)) return null;
+  try { _spawns = JSON.parse(readFileSync(file, 'utf8')); } catch { _spawns = null; }
+  return _spawns;
+}
+function _compendiumLevel(roomNum, mobName) {
+  const spawns = _loadSpawns();
+  if (!spawns?.rooms) return null;
+  const entries = spawns.rooms[String(roomNum)] ?? null;
+  if (!entries) return null;
+  const name = String(mobName).toLowerCase();
+  const match = entries.find(e => e.creature?.toLowerCase() === name);
+  return match?.level ?? null;
+}
 import { affordances, OF } from './m59-parse.mjs';
 
 // ROOMS THAT HAVE SHOPS. A shop is any room where a merchant with a buy
@@ -456,9 +476,13 @@ export class GOAPKeeper {
         const list = room.objects instanceof Map
           ? [...room.objects.values()]
           : Array.isArray(room.objects) ? room.objects : [];
-        const myLevel = c.vitals?.()?.health?.max ?? 20;
+        // The engagement ceiling is the huntLevel from the loadout
+        // config, NOT max HP. Max HP is a proxy that doesn't match
+        // the game's level system. huntLevel is the actual level of
+        // mobs the character is expected to fight.
+        const huntLevel = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
         const band = this.policy?.threatBand ?? 0; // 0 = same level only
-        const ceiling = myLevel + band;
+        const ceiling = huntLevel + band;
 
         const hostiles = list.filter(o => {
           // Raw room objects have o.flags (bit flags), NOT o.can (action list).
@@ -493,9 +517,21 @@ export class GOAPKeeper {
             target = hostiles.sort((a, b) =>
               (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
           }
-          const targetLevel = target.max_health ?? target.health ?? null;
           const targetName = c.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
           const isPlayer = !!(target.flags & OF.PLAYER);
+
+          // The wire protocol does not send mob HP/level. Use the
+          // compendium (m59-spawns.json) to look up the target's level.
+          // Without this, targetLevel is always null and target_in_band
+          // is always false — the 3D view shows a FLEE ring for every
+          // mob, even ones the character can fight.
+          //
+          // The compendium is keyed by MAP room number, not the live
+          // objId. Resolve the live ID to the map num first.
+          const liveRoomNum = c.room?.num ?? c.room?.id ?? null;
+          const mapRoomNum = liveRoomNum != null ? resolveMapRoom(liveRoomNum, this._roomName()) : null;
+          const compLevel = mapRoomNum != null ? _compendiumLevel(mapRoomNum, targetName) : null;
+          const targetLevel = target.max_health ?? target.health ?? compLevel ?? null;
 
           ws._targetId = target.id ?? target.obj_id;
           ws._targetLevel = targetLevel;
@@ -522,7 +558,7 @@ export class GOAPKeeper {
           }
           ws.target_in_band = targetLevel != null ? targetLevel <= ceiling : false;
 
-          console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, my lv${myLevel}, ceiling ${ceiling})`);
+          console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, hunt lv${huntLevel}, ceiling ${ceiling})`);
         } else if (!hostiles.length && ws._targetId) {
           // Target is gone. Clear it and the derived symbols.
           delete ws._targetId;
@@ -902,7 +938,8 @@ export class GOAPKeeper {
     // for its band check). Without this, the scavenge uses myLevel*2
     // which is looser than the GOAP's myLevel+threatBand, and the
     // character walks toward a mob it should be running from.
-    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? null };
+    const mapRoomNum = resolveMapRoom(c.room?.num ?? c.room?.id ?? null, this._roomName());
+    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? null, mapRoomNum };
     const result = await stepPlan(c, this.session, p, { index: 0, args: execArgs });
     console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
 

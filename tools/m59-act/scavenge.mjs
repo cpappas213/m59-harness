@@ -52,10 +52,9 @@ function loadSpawns() {
 function compendiumLevel(roomNum, mobName) {
   const spawns = loadSpawns();
   if (!spawns?.rooms) return null;
-  // roomNum might be a live objId — try both the raw num and the objId key
-  const entries = spawns.rooms[String(roomNum)] ?? null;
-  if (!entries) return null;
   const name = String(mobName).toLowerCase();
+  const entries = spawns.rooms[String(roomNum)];
+  if (!entries) return null;
   const match = entries.find(e => e.creature?.toLowerCase() === name);
   return match?.level ?? null;
 }
@@ -111,8 +110,10 @@ export async function scavenge(client, session, opts = {}) {
   // Filter out mobs whose compendium level is above the character's
   // hunt level. This is the only way to know a spider is level 50
   // when Kage is level 20.
-  const huntLevel = opts.huntLevel ?? this?.policy?.huntLevel ?? null;
-  const roomNum = room?.num ?? room?.id ?? null;
+  const huntLevel = opts.huntLevel ?? null;
+  // The GOAP keeper passes the resolved map room num. The compendium
+  // is keyed by map num, not live objId.
+  const roomNum = opts.mapRoomNum ?? room?.num ?? room?.id ?? null;
   if (huntLevel != null && roomNum != null) {
     const filtered = hostiles.filter(o => {
       const name = client?.rsc?.get?.(o.nameRsc) ?? '';
