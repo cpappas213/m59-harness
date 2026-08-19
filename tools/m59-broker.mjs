@@ -4270,7 +4270,7 @@ class Session {
         : 0;
       if (process.env.M59_EXIT_DEBUG !== '0')
         console.error(`[exit-debug] ${this.name ?? '?'} staging approach: distToStaging=${distToStaging.toFixed(1)} cells, using ${distToStaging > 12 ? 'FINE' : 'COARSE'} walk`);
-      if (distToStaging > 12) {
+      if (distToStaging > 0) {
         const fineDirect = await this.walkFine(exit.fine_stand_on.x, exit.fine_stand_on.y, {
           maxSteps: Math.max(40, Math.ceil(distToStaging * 3)), stride: 48, arriveWithin: 4,
           movementGeneration, controlToken,
@@ -14679,6 +14679,28 @@ function serveDashboard(port) {
       const { renderRoom3D } = await import('./m59-room3d.mjs');
       res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
       return res.end(renderRoom3D(who, h?.room_view ?? null, h));
+    }
+    if (url.pathname.startsWith('/room3d-data/')) {
+      const who = decodeURIComponent(url.pathname.slice('/room3d-data/'.length).split('/')[0] || '');
+      const h = heroSnapshot(who);
+      const rv = h?.room_view ?? null;
+      if (!rv) { res.writeHead(404, { 'content-type': 'application/json' }); return res.end('{}'); }
+      const { cols, rows, objects, self } = rv;
+      const out = {
+        room: h?.room?.name ?? '',
+        roomNum: h?.room?.num ?? h?.room?.id ?? null,
+        cols, rows,
+        objects: (objects ?? []).map(o => ({ x: o.col, z: o.row, t: o.is_self ? 0 : o.is_player ? 1 : 2, n: o.name })),
+        self: self ? { x: self.col, z: self.row } : null,
+        vitals: {
+          hp: h?.vitals?.health?.value, hpMax: h?.vitals?.health?.max,
+          mp: h?.vitals?.mana?.value, mpMax: h?.vitals?.mana?.max,
+          vig: h?.vitals?.vigor?.value, vigMax: h?.vitals?.vigor?.current_max ?? h?.vitals?.vigor?.max,
+        },
+        goap: h?.goap ? { goal: h.goap.goal, action: h.goap.action, plan: h.goap.plan } : null,
+      };
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      return res.end(JSON.stringify(out));
     }
     if (url.pathname.startsWith('/hero/')) {
       const parts = url.pathname.slice('/hero/'.length).split('/');

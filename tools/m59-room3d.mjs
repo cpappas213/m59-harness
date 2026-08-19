@@ -13,7 +13,7 @@ export function renderRoom3D(name, rv, hero) {
   const { cols, rows, objects, self } = rv;
   const walkable = rv.walkable ?? [];
   const hasWalls = walkable.length === cols * rows && walkable.some(v => v === 0);
-  const roomName = hero?.room?.name ?? '';
+  let roomName = hero?.room?.name ?? '';
   const hp = hero?.vitals?.health ?? {};
   const mana = hero?.vitals?.mana ?? {};
   const vigor = hero?.vitals?.vigor ?? {};
@@ -48,7 +48,7 @@ export function renderRoom3D(name, rv, hero) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
 <title>${name} — 3D Room</title>
-<meta http-equiv="refresh" content="15">
+
 <style>
   * { margin:0; padding:0; }
   body { background:#0a0a12; overflow:hidden; touch-action:none; }
@@ -74,7 +74,7 @@ export function renderRoom3D(name, rv, hero) {
 <body>
 <div id="hud">
   <a href="/hero/${name}">&larr; ${name}</a>
-  <span class="dim"> &middot; ${roomName || 'unknown room'} &middot; ${cols}\\u00d7${rows}${hasWalls ? '' : ' &middot; unmapped'}</span>
+  <span class="dim"> &middot; ${roomName || 'unknown room'} &middot; ${cols}\\u00d7${rows}${hasWalls ? '' : ' &middot; unmapped'} &middot; <span style="color:#4a9" id="poll-dot">\u25cf</span></span>
   <div class="bars">
     <span class="bar hp" style="width:${Math.round((hp.value/hp.max)*100)}%" title="HP ${hp.value}/${hp.max}"></span>
     <span class="bar mana" style="width:${Math.round((mana.value/mana.max)*100)}%" title="Mana ${mana.value}/${mana.max}"></span>
@@ -111,6 +111,7 @@ const HMIN = ${hMin}, HMAX = ${hMax};
 // Asymmetric safe cells: coarse-grid WALL but fine-grid open. The player can stand
 // here (fine-grid, any direction); a monster (NSEW on the coarse grid) cannot step in.
 const HIDDEN = ${hiddenJson};
+let roomName = ${JSON.stringify(roomName)};
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -295,52 +296,119 @@ if (WALL_SEGS.length) {
   scene.add(new THREE.LineSegments(segGeo, segMat));
 }
 
-// Entities
+// Entities — built as a group so we can update positions in-place on poll.
+const entityGroup = new THREE.Group();
+scene.add(entityGroup);
 const colors = [0x44ffaa, 0xff4444, 0xffaa44];
-for (const o of OBJECTS) {
-  const x = o.x + 0.5;
-  const z = o.z + 0.5;
-  const oh = (HEIGHTS && o.x >= 0 && o.z >= 0 && o.x < COLS && o.z < ROWS && HEIGHTS[o.z * COLS + o.x] != null && HEIGHTS[o.z * COLS + o.x] >= 0)
-    ? (HEIGHTS[o.z * COLS + o.x] - HMIN) : 0;
+const selfRing = { mesh: null };
 
-  // Body (sphere)
-  const r = o.t === 0 ? 0.45 : 0.3;
-  const bodyGeo = new THREE.SphereGeometry(r, 16, 12);
-  const bodyMat = new THREE.MeshLambertMaterial({
-    color: colors[o.t],
-    emissive: o.t === 0 ? 0x228844 : 0x000000,
-  });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.set(x, r + 0.1 + oh, z);
-  body.castShadow = true;
-  scene.add(body);
+function heightAt(c, r) {
+  if (!HEIGHTS || c < 0 || r < 0 || c >= COLS || r >= ROWS) return 0;
+  const h = HEIGHTS[r * COLS + c];
+  return (h != null && h >= 0) ? (h - HMIN) : 0;
+}
 
-  // Self: ring on floor
-  if (o.t === 0) {
-    const ringGeo = new THREE.RingGeometry(0.5, 0.75, 32);
-    const ringMat = new THREE.MeshBasicMaterial({ color: 0x44ffaa, side: THREE.DoubleSide });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = -Math.PI / 2;
-    ring.position.set(x, 0.02 + oh, z);
-    scene.add(ring);
-  }
-
-  // Label (sprite, always faces camera)
+function makeLabel(text, color) {
   const cv = document.createElement('canvas');
   cv.width = 256; cv.height = 64;
   const ctx = cv.getContext('2d');
   ctx.font = 'bold 28px system-ui';
   ctx.textAlign = 'center';
-  ctx.fillStyle = '#' + colors[o.t].toString(16).padStart(6, '0');
-  ctx.fillText(o.n, 128, 44);
+  ctx.fillStyle = color;
+  ctx.fillText(text, 128, 44);
   const tex = new THREE.CanvasTexture(cv);
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
-    map: tex, transparent: true, depthTest: false,
-  }));
-  sprite.position.set(x, 2.0 + oh, z);
-  sprite.scale.set(3.5, 0.9, 1);
-  scene.add(sprite);
+  return new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }));
 }
+
+function buildEntities(objs) {
+  // Clear existing
+  while (entityGroup.children.length) {
+    const ch = entityGroup.children[0];
+    entityGroup.remove(ch);
+    ch.traverse?.(n => { n.geometry?.dispose?.(); n.material?.map?.dispose?.(); n.material?.dispose?.(); });
+  }
+  selfRing.mesh = null;
+  for (const o of objs) {
+    const cx = Math.min(Math.max(o.x, 0), COLS - 1);
+    const cz = Math.min(Math.max(o.z, 0), ROWS - 1);
+    const x = cx + 0.5, z = cz + 0.5;
+    const oh = heightAt(cx, cz);
+    const r = o.t === 0 ? 0.45 : 0.3;
+    const body = new THREE.Mesh(
+      new THREE.SphereGeometry(r, 16, 12),
+      new THREE.MeshLambertMaterial({ color: colors[o.t], emissive: o.t === 0 ? 0x228844 : 0x000000 })
+    );
+    body.position.set(x, r + 0.1 + oh, z);
+    body.castShadow = true;
+    entityGroup.add(body);
+    if (o.t === 0) {
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.5, 0.75, 32),
+        new THREE.MeshBasicMaterial({ color: 0x44ffaa, side: THREE.DoubleSide })
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(x, 0.02 + oh, z);
+      entityGroup.add(ring);
+      selfRing.mesh = ring;
+    }
+    const hex = '#' + colors[o.t].toString(16).padStart(6, '0');
+    const sprite = makeLabel(o.n, hex);
+    sprite.position.set(x, 2.0 + oh, z);
+    sprite.scale.set(3.5, 0.9, 1);
+    entityGroup.add(sprite);
+  }
+}
+buildEntities(OBJECTS);
+
+// Background poll: update entities + vitals every 3s without reloading.
+let entityKey = null;
+async function pollData() {
+  try {
+    const res = await fetch('/room3d-data/${name}');
+    if (!res.ok) return;
+    const d = await res.json();
+    // Update room name if it changed (character moved rooms)
+    if (d.room && d.room !== roomName) {
+      const dimEl = document.querySelector('#hud .dim');
+      if (dimEl) dimEl.innerHTML =
+        ' &middot; ' + d.room + ' &middot; ' + d.cols + '&times;' + d.rows + ' &middot; <span style="color:#4a9">&bull;</span>';
+      roomName = d.room;
+    }
+    // Update entities in-place (only rebuild if the set changed)
+    const key = JSON.stringify((d.objects || []).map(function(o) { return o.n + o.t + o.x + ',' + o.z; }));
+    if (key !== entityKey) {
+      buildEntities(d.objects || []);
+      entityKey = key;
+    }
+    // Update vitals
+    if (d.vitals) {
+      const v = d.vitals;
+      function setBar(sel, val, max) {
+        const el = document.querySelector(sel);
+        if (el && max) el.style.width = Math.round((val / max) * 100) + '%';
+      }
+      setBar('#hud .bar.hp', v.hp, v.hpMax);
+      setBar('#hud .bar.mana', v.mp, v.mpMax);
+      setBar('#hud .bar.vigor', v.vig, v.vigMax);
+      const stats = document.querySelector('#hud .stats');
+      if (stats) {
+        var goapStr = '';
+        if (d.goap && d.goap.goal) {
+          var planTitle = (d.goap.plan || '').replace(/"/g, '&quot;');
+          goapStr = ' <span style="color:#888" title="' + planTitle + '">\u25b8 ' + d.goap.goal + (d.goap.action ? ' \u2192 ' + d.goap.action : '') + '</span>';
+        }
+        var hiddenSpan = HIDDEN && HIDDEN.length ? '<span style="color:#ffcc33">\u25c6 ' + HIDDEN.length + ' hidden</span>' : '';
+        stats.innerHTML =
+          '<span class="hp">HP ' + (v.hp ?? '?') + '/' + (v.hpMax ?? '?') + '</span>' +
+          '<span class="mana">MP ' + (v.mp ?? '?') + '/' + (v.mpMax ?? '?') + '</span>' +
+          '<span class="vigor">VIG ' + (v.vig ?? '?') + '/' + (v.vigMax ?? '?') + '</span>' +
+          hiddenSpan + goapStr;
+      }
+    }
+  } catch (e) {}
+}
+pollData();
+setInterval(pollData, 3000);
 
 // Animate
 (function animate() {
