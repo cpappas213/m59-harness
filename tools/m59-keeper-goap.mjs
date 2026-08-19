@@ -476,12 +476,17 @@ export class GOAPKeeper {
         const list = room.objects instanceof Map
           ? [...room.objects.values()]
           : Array.isArray(room.objects) ? room.objects : [];
-        // The engagement ceiling is the huntLevel from the loadout
-        // config, NOT max HP. Max HP is a proxy that doesn't match
-        // the game's level system. huntLevel is the actual level of
-        // mobs the character is expected to fight.
-        const huntLevel = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
-        const band = this.policy?.threatBand ?? 0; // 0 = same level only
+        // The engagement ceiling is based on the character's ACTUAL
+        // level (max HP), NOT a hardcoded huntLevel. The game level IS
+        // the max HP. As the character levels up, the ceiling goes up
+        // with it, and he can fight stronger mobs.
+        //
+        // The huntLevel from the loadout can override this (for
+        // specific farming targets), but the default is the character's
+        // own level — fight mobs at or near your level.
+        const charLevel = c.vitals?.()?.health?.max ?? 20;
+        const huntLevel = this.policy.huntLevel ?? charLevel;
+        const band = this.policy?.threatBand ?? 5; // +5 levels above is OK
         const ceiling = huntLevel + band;
 
         const hostiles = list.filter(o => {
@@ -641,18 +646,25 @@ export class GOAPKeeper {
       // travel_to because it directly achieves has_money — trapping the character in a
       // mobless room. The travel_to injection below is the right action in that case.
       const here = c.room?.num ?? c.room?.id;
-      const level = this.policy.huntLevel ?? 30;
+      const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
+      const levelCeiling2 = level + (this.policy?.threatBand ?? 5);
 
       let inHuntRoom = false;
       if (ws.armed === true && combatGoal && ws.has_target === false && here != null) {
         try {
           const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
           const resolvedHere = resolveMapRoom(here, this._roomName());
-          const hunt = nearestHuntRoom(resolvedHere, level);
+          const hunt = nearestHuntRoom(resolvedHere, levelCeiling2);
           inHuntRoom = !!(hunt && hunt.hops === 0);
         } catch {}
       }
-      if (ws.has_target === true || ws.hurt === true || (ws.armed === true && combatGoal && inHuntRoom)) {
+      // When the target is out of band (too high level) and the character
+      // is NOT hurt, scavenge is a dead action (it will refuse every pass).
+      // Don't inject it — let the planner use travel_to to find a room
+      // with in-band prey. When hurt, still inject scavenge + flee so the
+      // character can disengage.
+      const targetEngageable = ws.has_target === true && (ws.target_in_band === true || ws.hurt === true);
+      if (targetEngageable || ws.hurt === true || (ws.armed === true && combatGoal && inHuntRoom)) {
         const { attackOf } = await import('./m59-act/attack.mjs');
         const { scavenge } = await import('./m59-act/scavenge.mjs');
         const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
@@ -807,11 +819,12 @@ export class GOAPKeeper {
       // at or below the character's level.
       if (ws.armed === true && (ws.has_target === false || ws.target_in_band === false)) {
         const here = c.room?.num ?? c.room?.id;
-        const level = this.policy.huntLevel ?? 30;
+        const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
+        const levelCeiling3 = level + (this.policy?.threatBand ?? 5);
         if (here != null) {
           const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
           const resolvedHere = resolveMapRoom(here, this._roomName());
-          const hunt = nearestHuntRoom(resolvedHere, level);
+          const hunt = nearestHuntRoom(resolvedHere, levelCeiling3);
           if (hunt && hunt.hops > 0) {
             // Travel to a hunt room with mobs.
             const travelToHunt = (client, session) => {
@@ -938,8 +951,9 @@ export class GOAPKeeper {
     // for its band check). Without this, the scavenge uses myLevel*2
     // which is looser than the GOAP's myLevel+threatBand, and the
     // character walks toward a mob it should be running from.
+    const charLevel2 = c.vitals?.()?.health?.max ?? 20;
     const mapRoomNum = resolveMapRoom(c.room?.num ?? c.room?.id ?? null, this._roomName());
-    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? null, mapRoomNum };
+    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? charLevel2, threatBand: this.policy.threatBand ?? 5, mapRoomNum };
     const result = await stepPlan(c, this.session, p, { index: 0, args: execArgs });
     console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
 

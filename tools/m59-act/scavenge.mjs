@@ -111,29 +111,27 @@ export async function scavenge(client, session, opts = {}) {
   // hunt level. This is the only way to know a spider is level 50
   // when Kage is level 20.
   const huntLevel = opts.huntLevel ?? null;
-  // The GOAP keeper passes the resolved map room num. The compendium
-  // is keyed by map num, not live objId.
+  const band = opts.threatBand ?? 5;
+  const levelCeiling = huntLevel != null ? huntLevel + band : null;
   const roomNum = opts.mapRoomNum ?? room?.num ?? room?.id ?? null;
-  if (huntLevel != null && roomNum != null) {
+  if (levelCeiling != null && roomNum != null) {
     const filtered = hostiles.filter(o => {
       const name = client?.rsc?.get?.(o.nameRsc) ?? '';
       const lv = compendiumLevel(roomNum, name);
-      // If the compendium doesn't know this mob, let it through
-      // (we can't judge what we don't know).
       if (lv == null) return true;
-      return lv <= huntLevel;
+      return lv <= levelCeiling;
     });
     if (filtered.length) {
       // Only keep mobs at or below the hunt level.
       const removed = hostiles.length - filtered.length;
       if (removed > 0)
-        console.error(`[scavenge] level filter: removed ${removed} mob(s) above lv${huntLevel} in room ${roomNum}`);
+        console.error(`[scavenge] level filter: removed ${removed} mob(s) above ceiling ${levelCeiling} in room ${roomNum}`);
       hostiles.splice(0, hostiles.length, ...filtered);
     } else if (hostiles.length > 0) {
-      // ALL mobs in the room are above the hunt level. Don't fight.
+      // ALL mobs in the room are above the ceiling. Don't fight.
       const names = hostiles.map(o => client?.rsc?.get?.(o.nameRsc) ?? '?').join(', ');
       return { sent: false, killed: false,
-        reason: `all mobs in room are above hunt level ${huntLevel} (${names}) — travel to a safer room` };
+        reason: `all mobs in room are above ceiling ${levelCeiling} (hunt lv${huntLevel} + band ${band}) (${names}) — travel to a safer room` };
     }
   }
 
