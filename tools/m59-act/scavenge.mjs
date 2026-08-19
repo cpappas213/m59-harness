@@ -167,7 +167,7 @@ export async function scavenge(client, session, opts = {}) {
   if (targetDist != null && targetDist <= 1) {
     const r = await doFight(session, {
       target: targetName, preferId: foeId,
-      rounds: 12, swingsPerRound: 4, holdPosition: true,
+      rounds: 12, swingsPerRound: 4, holdPosition: true, reach: 3,
     });
     return {
       sent: true,
@@ -180,7 +180,7 @@ export async function scavenge(client, session, opts = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
     const r = await doFight(session, {
       target: targetName, preferId: foeId,
-      rounds: 1, swingsPerRound: 2, holdPosition: true,
+      rounds: 1, swingsPerRound: 2, holdPosition: true, reach: 3,
     });
     if (r?.killed || r?.won) {
       return { sent: true, killed: true, reason: null };
@@ -198,7 +198,7 @@ export async function scavenge(client, session, opts = {}) {
           // It walked closer. Fight for real now.
           const r2 = await doFight(session, {
             target: targetName, preferId: foeId,
-            rounds: 12, swingsPerRound: 4, holdPosition: true,
+            rounds: 12, swingsPerRound: 4, holdPosition: true, reach: 3,
           });
           return {
             sent: true,
