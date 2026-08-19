@@ -92,7 +92,21 @@ export async function scavenge(client, session, opts = {}) {
   // nearest mob is the one we can actually reach and fight. If the
   // nearest is too strong, fight() disengages and we try again next
   // pass — or the GOAP routes us to a better room.
+  //
+  // MAX ENGAGEMENT DISTANCE: if the nearest mob is beyond 15 cells,
+  // crossing the room to reach it is slow and exposes the character
+  // to other threats. The GOAP should travel to a room where the mob
+  // is closer, rather than scavenge across a large empty room.
+  const MAX_ENGAGE = 15;
   const mePos = client?.self;
+  const distToNearest = mePos
+    ? Math.min(...hostiles.map(h => Math.hypot((h.col ?? 0) - mePos.col, (h.row ?? 0) - mePos.row)))
+    : null;
+  if (distToNearest != null && distToNearest > MAX_ENGAGE) {
+    return { sent: false, killed: false,
+      reason: `nearest hostile ${Math.round(distToNearest)} cells away (max ${MAX_ENGAGE}) — travel to a closer room` };
+  }
+
   const weak = hostiles.sort((a, b) => {
     if (mePos) {
       const da = Math.hypot((a.col ?? 0) - mePos.col, (a.row ?? 0) - mePos.row);
