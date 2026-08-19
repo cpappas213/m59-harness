@@ -49,19 +49,19 @@
  "carry": [
   {
    "item": "elderberry",
-   "min": 6,
+   "min": 0,
    "max": 200,
    "match": "exact",
-   "why": "create food, 2 per casting; floor 6 triggers the trip, ceiling 200 fills it — 100 castings. Peak bulk is at the start when the pack is empty, and it burns down as loot comes in, so the two never compete",
+   "why": "create food, 2 per casting; floor 6 triggers the trip, ceiling 200 fills it — 100 castings. Peak bulk is at the start when the pack is empty, and it burns down as loot comes in, so the two never compete | floor zeroed for the graveyard shift 2026-08-19: a floor of 6 with 0 banked sent every character on a 9-hop supply trip to Barloque instead of the graveyard. Restore from substrate/.loadouts-before-graveyard-shift",
    "weight": 3,
    "kind": "reagent"
   },
   {
    "item": "herb",
-   "min": 6,
+   "min": 0,
    "max": 200,
    "match": "exact",
-   "why": "create food, 2 per casting; herbs are the binding half; floor 6 triggers the trip, ceiling 200 fills it — 100 castings. Peak bulk is at the start when the pack is empty, and it burns down as loot comes in, so the two never compete",
+   "why": "create food, 2 per casting; herbs are the binding half; floor 6 triggers the trip, ceiling 200 fills it — 100 castings. Peak bulk is at the start when the pack is empty, and it burns down as loot comes in, so the two never compete | floor zeroed for the graveyard shift 2026-08-19: a floor of 6 with 0 banked sent every character on a 9-hop supply trip to Barloque instead of the graveyard. Restore from substrate/.loadouts-before-graveyard-shift",
    "weight": 2,
    "kind": "reagent"
   },

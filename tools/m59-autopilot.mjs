@@ -4130,7 +4130,17 @@ export class Autopilot {
     // a rate set by vigor (player.kod:5611): at 80 it is ~6s a point and a useful top-up
     // costs longer than the whole journey, so holding at the resting cap buys almost
     // nothing and pays full price in exposure.
-    const minVigor = this.policy.travelHoldVigor ?? 100;
+    // BUT 100 IS UNREACHABLE FOR A FLEET WITH AN EMPTY LARDER, AND THAT IS THE COMMON CASE.
+    // Resting caps at REST_VIGOR_CAP (80 of 200) and everything above it has to be EATEN, so a
+    // fleet that cannot cook sits at 80 for ever — and 80 < 100 meant this hold NEVER FIRED for
+    // any of them. Measured on prod 2026-08-19: 21 characters all capped at 80, and 14 died in
+    // transit across the Ileria->Tos wilderness inside one 35-minute window, every one of them
+    // walking hurt past walls it was entitled to stop at. The exposure argument above is real,
+    // but it is an argument about a CHOICE between holding and walking on; at 80 with no food
+    // there was no choice being made — the feature was simply off. So the default is the
+    // resting cap, the highest vigor an unfed character can actually present.
+    // Set travel_hold_vigor back to 100 to restore the old behaviour.
+    const minVigor = this.policy.travelHoldVigor ?? 80;
     if (vig != null && vig < minVigor)
       return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
     // Something already swinging at us is a fight or a flight, and the ordinary pass
@@ -4718,10 +4728,20 @@ export class Autopilot {
     const c = this.s?.client, me = c?.self;
     if (!me || !c?.room) return null;
 
-    // Everything in reach that the grudge book and the live flags both agree on.
+    // EVERYWHERE IN THIS ROOM, NOT JUST WITHIN REACH — the same argument `pull` makes.
+    //
+    // This used to filter to `<= REACH`, which meant a character only ever swung back at
+    // somebody who had already closed to melee. Against an organised group that is not a
+    // defence: they pick the range, hit, and step back out of a 3-square disc, and every
+    // one of our characters stands there reporting itself safe. Measured on prod
+    // 2026-08-19: Morpheus landed 19 hits across 9 characters and was engaged twice.
+    //
+    // REACH itself is NOT the knob and must not be widened — it is the SERVER's melee
+    // reach (`SquaredDistanceTo <= GetAttackRange^2`, a disc of 2-3 squares) and a fact
+    // about the game rather than a policy. What changes is how far we will WALK to put
+    // ourselves inside it, which is the same distinction `pull` draws for monsters.
     const candidates = [...c.room.objects.values()]
-      .filter(o => o.id !== c.selfId &&
-                   Math.hypot(o.col - me.col, o.row - me.row) <= REACH)
+      .filter(o => o.id !== c.selfId)
       .map(o => {
         const name = c.rsc.get(o.nameRsc) || null;
         return { o, name, verdict: grudge.mayReturnFire({ name, flags: o.flags },
@@ -4767,10 +4787,39 @@ export class Autopilot {
       declareConflict(c.me?.name ?? this.who(), pick.name,
                       this.s.world?.room?.num ?? null);
     } catch { /* the record is never worth the swing */ }
-    await this.s.faceToward(pick.o).catch(() => {});
-    await this.s.pacer.submit('attack', () => c.attack(pick.o.id), 1050).catch(() => {});
+    // CLOSE THE DISTANCE FIRST. An attack outside the server's melee reach is refused
+    // silently, so without this the widened search above would only produce a character
+    // swinging at the air. Bounded the way `pull` bounds it — relative to the trip —
+    // so it stays in this room and walks no further than the exit.
+    const away = Math.hypot(pick.o.col - me.col, pick.o.row - me.row);
+    if (away > REACH) {
+      const approach = this.s.world?.approachSquare?.(pick.o.col, pick.o.row);
+      if (!approach) {
+        this.note('cannot reach a flagged attacker', {
+          who: pick.name, squares_away: Math.round(away),
+          why: 'no square beside them this room can route us to' });
+        return { engaged: null, why: 'no route to them' };
+      }
+      this.doing = 'fighting';
+      const out = await this.s.walkTo(approach.col, approach.row,
+                                      { maxSteps: approach.steps + 8 })
+                            .catch(e => ({ arrived: false, reason: e.message }));
+      this.movedAt = Date.now();
+      if (!out.arrived) {
+        this.note('could not close on a flagged attacker', {
+          who: pick.name, squares_away: Math.round(away), why: out.reason ?? 'walk refused' });
+        return { engaged: null, why: 'could not close' };
+      }
+    }
+    // NEVER TRUST A CAPTURED OBJECT'S COORDINATES ACROSS A WALK. BP_ROOM_CONTENTS
+    // replaces the whole object map, so the instance we picked may be stale or gone —
+    // they are a player and players move, which is the entire reason we just walked.
+    const still = c.room.objects.get(pick.o.id);
+    if (!still) return { engaged: null, why: 'they left the room' };
+    await this.s.faceToward(still).catch(() => {});
+    await this.s.pacer.submit('attack', () => c.attack(still.id), 1050).catch(() => {});
     this.swungAt = Date.now();
-    this.foeId = pick.o.id;
+    this.foeId = still.id;
     return { engaged: pick.name, why: pick.verdict.why };
   }
 
