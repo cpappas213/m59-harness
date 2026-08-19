@@ -487,12 +487,20 @@ export class GOAPKeeper {
           }
           // Travel failed (character can't move from no-floor position).
           // Try: cast blink to teleport to a random nearby position.
-          // Blink is a teleport spell — it moves the character without
-          // requiring a valid floor at the current position.
+          // Blink may be in spells OR skills depending on the server.
+          // Check both lists.
           try {
-            const { cast: doCast } = await import('./m59-act/cast.mjs');
-            const blinkResult = await doCast(c, this.session, { spell: 'blink' });
-            if (blinkResult?.sent) {
+            const blinkSpell = (c.spells ?? []).find(sp => {
+              const n = c.rsc?.get?.(sp.nameRsc) ?? sp.name ?? '';
+              return n.toLowerCase() === 'blink';
+            });
+            const blinkSkill = (c.skills ?? []).find(sp => {
+              const n = c.rsc?.get?.(sp.nameRsc) ?? sp.name ?? '';
+              return n.toLowerCase() === 'blink';
+            });
+            const blink = blinkSpell ?? blinkSkill;
+            if (blink) {
+              await c.cast(blink.id, []);
               await new Promise(res => setTimeout(res, 1500));
               const newMe = c.self;
               if (newMe && (newMe.col !== me.col || newMe.row !== me.row)) {
@@ -501,7 +509,7 @@ export class GOAPKeeper {
               }
               console.error(`[goap] ${this.policy.agent} blink cast but position unchanged`);
             } else {
-              console.error(`[goap] ${this.policy.agent} blink failed: ${blinkResult?.reason}`);
+              console.error(`[goap] ${this.policy.agent} blink not found in spells (${(c.spells??[]).length}) or skills (${(c.skills??[]).length})`);
             }
           } catch (e) {
             console.error(`[goap] ${this.policy.agent} blink error: ${e.message}`);
