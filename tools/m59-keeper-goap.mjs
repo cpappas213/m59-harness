@@ -73,7 +73,7 @@ import { affordances, OF } from './m59-parse.mjs';
 // ROOMS THAT HAVE SHOPS. A shop is any room where a merchant with a buy
 // list can be found. We use room names as a proxy: inns, taverns, shops,
 // banks, smithies, and apothecaries all have merchants.
-const SHOP_RE = /inn|tavern|shop|store|market|apothecary|smith|armourer|jeweller|bank|pawn|general/i;
+const SHOP_RE = /inn|tavern|shop|store|market|apothecary|smith|armourer|jeweller|bank|pawn|general|pub/i;
 
 let _shopRooms = null;
 function shopRooms() {
@@ -721,7 +721,7 @@ export class GOAPKeeper {
       // reagents to cast create food, or has money to buy).
       // Skip when there's a target in band — fighting is more
       // important than food.
-      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) && !(ws.armed === true && ws.has_target === true && ws.target_in_band === true) },
+      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) && !(ws.armed === true && ws.has_target === true && ws.target_in_band === true) && !(this.goal === 'has_loot' && ws.has_loot === false && ws.has_target === false) },
       // has_money: earn or sell. The character needs money whether
       // it has loot to sell or not. But only trigger when the
       // character CAN make money: it has loot to sell and a shop
@@ -955,13 +955,13 @@ export class GOAPKeeper {
             const travelToHunt = (client, session) => {
               return this._travelOneHop(hunt.path[0] ?? hunt.room);
             };
-            travelToHunt.atomic = 'travel_to';
+            travelToHunt.atomic = 'travel_to_hunt';
             travelToHunt.pre = [];
             // Reaching the hunt room is a step toward both has_target (mobs are there)
             // and has_money (we scavenge there). Declaring both lets the planner chain
             // travel_to directly for the has_money goal without needing scavenge to be
             // injected in the destination room (the planner is room-local).
-            travelToHunt.effects = ['has_target', 'has_money'];
+            travelToHunt.effects = ['has_target', 'has_money', 'has_loot'];
             travelToHunt.cost = 1;
             extra.push(travelToHunt);
             console.error(`[goap] ${who} hunting: room=${here} -> hunt=${hunt.room} (${hunt.creature} lv${hunt.level}) hops=${hunt.hops}`);

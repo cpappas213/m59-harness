@@ -50,21 +50,32 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
       const merchants = [...objects.values()].filter(o =>
         affordances(o.flags).includes('buy')
       );
-      if (merchants.length) {
-        const seller = merchants[0];
+      for (const seller of merchants) {
         const sName = c.rsc?.get?.(seller.nameRsc) ?? 'merchant';
+        // Walk to the merchant if far away — server requires proximity
+        const me = c.self;
+        if (me) {
+          const d = Math.hypot((seller.col ?? 0) - me.col, (seller.row ?? 0) - me.row);
+          if (d > 2) {
+            console.error(`[buy] ${session.name ?? '?'} walking to ${sName} at (${seller.col},${seller.row}), dist=${d.toFixed(1)}`);
+            try { await session.walkTo(seller.col, seller.row, { maxSteps: 20 }); } catch {}
+          }
+        }
         console.error(`[buy] ${session.name ?? '?'} opening shop: ${sName} (id=${seller.id})`);
         const before = c.evSeq;
-        await session.pacer.submit('buy-list', () => c.buy(seller.id), 1000).catch(() => {});
+        await session.pacer.submit('buy', () => c.buy(seller.id), 1000).catch(() => {});
         const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 })
                         .catch(() => ({ events: [] }));
         const shop = ev.events?.find(e => e.kind === 'shop');
-        buyList = shop ? { items: shop.items ?? [] } : (client.buyList ?? null);
-        if (buyList?.items?.length) {
-          console.error(`[buy] ${session.name ?? '?'} got buy list from ${sName}: ${buyList.items.length} items`);
+        if (shop?.items?.length) {
+          buyList = { items: shop.items };
+          console.error(`[buy] ${session.name ?? '?'} got buy list from ${sName}: ${shop.items.length} items`);
+          break;
         }
-      } else {
-        console.error(`[buy] ${session.name ?? '?'} no merchants with buy affordance in room`);
+        // Try next merchant
+      }
+      if (!buyList?.items?.length) {
+        console.error(`[buy] ${session.name ?? '?'} no merchant gave a buy list (tried ${merchants.length})`);
       }
     }
   }
