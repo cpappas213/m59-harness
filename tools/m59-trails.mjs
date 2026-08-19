@@ -186,7 +186,15 @@ export function readSamples(file) {
 export function segments(samples) {
   const runs = new Map();     // body -> current segment
   const out = [];
-  const close = (k) => { const s = runs.get(k); if (s && s.points.length >= 2) out.push(s); runs.delete(k); };
+  // A ROOM PASSED THROUGH IN ONE SAMPLE IS STILL A ROOM YOU WENT TO.
+  //
+  // Dropping single-point segments loses the fact that the body was ever there, and the
+  // next reader then reads the room AFTER it as the destination. Measured: the Cor Noth
+  // inn-to-gate crossing was recorded perfectly — 35 points, span 19 — and thrown away,
+  // because the body's one sample in the gate room vanished and the room it went to next
+  // looked like the room it had come from, which the bounce rule then rejected. Kept, and
+  // whether a segment is long enough to BE a crossing is asked separately by the comber.
+  const close = (k) => { const s = runs.get(k); if (s && s.points.length >= 1) out.push(s); runs.delete(k); };
   for (const s of samples) {
     const k = String(s.id ?? s.name ?? 'self');
     const cur = runs.get(k);

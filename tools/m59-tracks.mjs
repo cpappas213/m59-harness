@@ -66,7 +66,8 @@ export const sealedDestinations = new Map([
 // middle of the floor.
 export const LEAVES_FROM_WITHIN = Number(process.env.M59_TRACK_LEAVE_WITHIN || 4);
 
-export function crossings(samples, { joinWithinMs = 15000, neighbours = null, exitsNear = null } = {}) {
+export function crossings(samples, { joinWithinMs = 15000, neighbours = null, exitsNear = null,
+                                     traversable = null } = {}) {
   const segs = segments(samples);
   // Group by body so "the segment before" means the same body's previous room.
   const byBody = new Map();
@@ -79,14 +80,22 @@ export function crossings(samples, { joinWithinMs = 15000, neighbours = null, ex
     list.sort((a, b) => a.from - b.from);
     for (let i = 0; i < list.length; i++) {
       const seg = list[i], prev = list[i - 1], next = list[i + 1];
-      const cameFrom = prev && (seg.from - prev.to) <= joinWithinMs ? prev.room : null;
+      let cameFrom = prev && (seg.from - prev.to) <= joinWithinMs ? prev.room : null;
       const goingTo = next && (next.from - seg.to) <= joinWithinMs ? next.room : null;
       if (goingTo == null) continue;               // a crossing needs a far side
       // AND THE FAR SIDE HAS TO BE A DIFFERENT ROOM. A body whose samples were cut by a gap
       // produces two segments in the SAME room, and joining them reads as a crossing from a
       // room to itself — which then keys a track nobody can ever use and hides the real one
       // behind it. Same for the near side.
-      if (goingTo === seg.room || cameFrom === seg.room) continue;
+      if (goingTo === seg.room) continue;
+      // COMING FROM THIS ROOM MEANS WE DO NOT KNOW THE DOOR, NOT THAT THIS IS NOT A
+      // CROSSING. A segment can be cut inside a room — by a teleport, or by a gap longer
+      // than the rejoin window — and the piece after the cut then has the same room
+      // "before" it. Discarding those threw away the Cor Noth inn-to-gate crossing five
+      // times over, each a clean 35-point traversal ending one square from the door.
+      // Forgetting the entry door files it under the `?` key, which is exactly what that
+      // key is for: the approach any arrival with no exact match is offered.
+      if (cameFrom === seg.room) cameFrom = null;
       // IN AND BACK OUT THE SAME DOOR IS NOT A CROSSING.
       //
       // A bot that bounces at a boundary is seen leaving to the room it just came from, and
@@ -136,14 +145,33 @@ export function crossings(samples, { joinWithinMs = 15000, neighbours = null, ex
           if (back && back.size && !back.has(Number(seg.room))) continue;
         }
       }
+      // The crossing itself still needs a real trail; a one-sample segment can say where a
+      // body WENT without being a route through anywhere.
+      if (seg.points.length < 2) continue;
       const a = squareOf(seg.points[0]), b = squareOf(seg.points[seg.points.length - 1]);
       const span = Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col));
       if (span < MIN_SPAN_SQUARES) continue;
       // A jump between consecutive samples is not a walk.
+      // A LONG MOVE IS NOT A TELEPORT, AND DISTANCE CANNOT TELL THEM APART.
+      //
+      // One packet moves a body as far as it says; the walker coalesces hops and rides
+      // pulled track legs, so eleven squares between two samples is an ordinary walk.
+      // Measured: the Cor Noth inn-to-gate crossing was rejected as a teleport on jumps of
+      // 604 and 724 wire units against a flat 600 limit — every clean traversal of that
+      // room, thrown away, while the fleet piled up on the porch it describes the way out
+      // of.
+      //
+      // Geometry can tell them apart. A walked jump has a clear line under it; a teleport
+      // does not, because it went through whatever was in the way. So the caller passes the
+      // same trace the mover enforces, and the flat distance is only the fallback for a
+      // reader with no map.
       let teleported = false;
       for (let k = 1; k < seg.points.length; k++) {
         const p = seg.points[k], q = seg.points[k - 1];
-        if (Math.hypot(p.x - q.x, p.y - q.y) > MAX_JUMP_WIRE) { teleported = true; break; }
+        const far = Math.hypot(p.x - q.x, p.y - q.y);
+        if (far <= MAX_JUMP_WIRE) continue;
+        if (traversable) { if (traversable(Number(seg.room), q, p)) continue; }
+        teleported = true; break;
       }
       if (teleported) continue;
       // A CROSSING LEAVES FROM A WAY OUT. A TELEPORT DOES NOT.
@@ -476,7 +504,16 @@ if (direct) {
     const out = neighbours.get(Number(roomNum));
     return !out || out.size === 0;
   };
-  const list = crossings(samples, { neighbours, exitsNear });
+  // Did a body plausibly WALK between these two samples? The same raycast the mover uses.
+  const traversable = (roomNum, a, b) => {
+    const geo = geoFor(roomNum);
+    if (!geo?.collisionReady || typeof geo.traceFineMoveClient !== 'function') return false;
+    const t = geo.traceFineMoveClient(protocolToClient(a.x), protocolToClient(a.y),
+                                      protocolToClient(b.x), protocolToClient(b.y), { slide: true });
+    if (!t) return false;
+    return Math.hypot(t.x - protocolToClient(b.x), t.y - protocolToClient(b.y)) <= 64;
+  };
+  const list = crossings(samples, { neighbours, exitsNear, traversable });
 
   const best = comb(list, geoFor);
   const wantRoom = arg('--room') ? Number(arg('--room')) : null;
