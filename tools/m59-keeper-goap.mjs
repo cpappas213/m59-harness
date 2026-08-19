@@ -700,10 +700,17 @@ export class GOAPKeeper {
       // This is priority 3 because a hurt character that keeps
       // travelling or fighting will die.
       { goal: 'healthy',       when: ws.hurt === true },
+      // FIGHT: if there's a target in band and the character is armed,
+      // fight it. This takes priority over rest and food because
+      // a free kill is the best use of time. Uses has_loot as the goal
+      // symbol because has_money may already be true (character has
+      // gold but no reason to fight).
+      { goal: 'has_loot',      when: ws.armed === true && ws.has_target === true && ws.target_in_band === true },
       // has_food: only try when the character CAN get food (has
       // reagents to cast create food, or has money to buy).
-      // Otherwise, skip to the next goal: rest to the cap (80).
-      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) },
+      // Skip when there's a target in band — fighting is more
+      // important than food.
+      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) && !(ws.armed === true && ws.has_target === true && ws.target_in_band === true) },
       // has_money: earn or sell. The character needs money whether
       // it has loot to sell or not. But only trigger when the
       // character CAN make money: it has loot to sell and a shop
