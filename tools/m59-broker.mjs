@@ -47,7 +47,7 @@ import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPat
 import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
-import { recallTrack } from './m59-tracks.mjs';
+import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -5005,14 +5005,22 @@ class Session {
     const restBelow = Number(process.env.M59_TRACK_REST_BELOW || 0.5);
     const restMs = Number(process.env.M59_TRACK_REST_MS || 20000);
     let rested = 0;
-    let reached = 0, blocked = 0;
+    let reached = 0, blocked = 0, bodiesInTheWay = 0;
     for (let i = joinAt; i < track.waypoints.length; i++) {
       const wp = track.waypoints[i];
       if (this.movementWasCancelled(movementGeneration, controlToken)) break;
       const r = await this.walkFine(wp.x, wp.y, { maxSteps: 60, movementGeneration, controlToken })
         .catch(() => null);
-      if (r?.left_room) return { rode: true, left_room: true, reached, blocked, rested,
-                                 ms: Date.now() - started };
+      if (r?.left_room) {
+        clearStrikes(here, fromRoom == null ? null : Number(fromRoom), Number(toRoom));
+        return { rode: true, left_room: true, reached, blocked, rested,
+                 ms: Date.now() - started };
+      }
+      // WAS ANYTHING ALIVE IN THE WAY? This is the whole of the strike rule: a ride that
+      // fails while a body is standing on it says nothing about the route.
+      if (r?.reason === 'object_blocked' || (r?.monster_blocked ?? 0) > 0
+          || (Array.isArray(r?.blocked_by_bodies_at) && r.blocked_by_bodies_at.length))
+        bodiesInTheWay++;
       const now = c.self;
       const near = now && Math.hypot(now.x - wp.x, now.y - wp.y) <= 48;
       if (near) reached++; else blocked++;
@@ -5056,13 +5064,28 @@ class Session {
         if (this.movementWasCancelled(movementGeneration, controlToken)) break;
         const r = await this.walkFine(wp.x, wp.y, { maxSteps: 60, movementGeneration, controlToken })
           .catch(() => null);
-        if (r?.left_room)
+        if (r?.left_room) {
+          clearStrikes(here, fromRoom == null ? null : Number(fromRoom), Number(toRoom));
           return { rode: true, left_room: true, reached, blocked, rested,
                    fell_back_to_walked: true, ms: Date.now() - started };
+        }
       }
     }
+    // THE RIDE DID NOT GET US OUT. Whose fault was it?
+    //
+    // Nothing living in the way means the route is wrong, and three of those in a row
+    // retires it. A body in the way means traffic, which is exactly what a monorail is for
+    // and says nothing about the line — so it is not counted, or every busy corridor would
+    // strike out its own best route.
+    const struck = bodiesInTheWay === 0
+      ? strikeTrack(here, fromRoom == null ? null : Number(fromRoom), Number(toRoom))
+      : 0;
     return { rode: true, left_room: false, reached, blocked, rested, ms: Date.now() - started,
              waypoints: track.waypoints.length - joinAt, track_best_ms: track.ms,
+             bodies_in_the_way: bodiesInTheWay,
+             ...(struck ? { strikes: struck,
+                            retired: struck >= 3 ? 'this track will not be offered again' : undefined }
+                        : {}),
              ...(sewn ? { stitch_unproven: true } : {}),
              ...(shelter.size ? { shelter_stations: shelter.size } : {}) };
   }

@@ -1280,7 +1280,8 @@ export class M59Client {
                      room_name_rsc: this.roomNameRsc ?? null, room_rsc: this.roomRsc ?? null,
                      room: this.room?.id ?? null,
                      id: res.id, name: o?.name ?? null, by: this.character ?? null,
-                     player: !!(o && o.isPlayer), x: res.x, y: res.y, col: res.col, row: res.row });
+                     player: !!(o && (o.flags & OF.PLAYER)),
+                     x: res.x, y: res.y, col: res.col, row: res.row });
         // Our own moves confirm what the server accepted, which is the only
         // trustworthy position — dead reckoning drifts and illegal moves are
         // simply refused with no reply.

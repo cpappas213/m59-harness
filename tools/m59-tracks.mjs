@@ -34,7 +34,10 @@ export const TRACKS_FILE = process.env.M59_TRACKS ||
 
 // A crossing has to be a crossing. A segment that starts and ends in the same corner of a
 // room is somebody milling about, not a route through it.
-export const MIN_SPAN_SQUARES = Number(process.env.M59_TRACK_MIN_SPAN || 4);
+// A crossing has to cross something. Four squares was low enough to admit the corner nubs
+// described above; a real traversal of even a small room moves further than this, and a
+// track shorter than it saves nobody anything anyway.
+export const MIN_SPAN_SQUARES = Number(process.env.M59_TRACK_MIN_SPAN || 10);
 // And it has to be plausible as a walk. A segment spanning more than this in one sample is a
 // teleport, a knockback or a relocate, and joining its ends draws a line through whatever
 // happened in between.
@@ -84,6 +87,18 @@ export function crossings(samples, { joinWithinMs = 15000, neighbours = null, ex
       // room to itself — which then keys a track nobody can ever use and hides the real one
       // behind it. Same for the near side.
       if (goingTo === seg.room || cameFrom === seg.room) continue;
+      // IN AND BACK OUT THE SAME DOOR IS NOT A CROSSING.
+      //
+      // A bot that bounces at a boundary is seen leaving to the room it just came from, and
+      // the trail is a couple of squares in a corner. Those are real observations and
+      // useless as routes — and because the comb keeps the FASTEST, a three-second nub beats
+      // every honest traversal of the room. Worse, it lands on the `?` key, which is the
+      // FALLBACK any arrival with no exact entry match is handed. Measured live: the
+      // Western border of the Twisted Wood offered `587:?>576` as two waypoints spanning
+      // four squares of a 55x67 room, so a character bound for The King's Way boarded a nub
+      // in the corner, rode it, did not leave, and went round again. That is a fleet
+      // character stuck on prod.
+      if (cameFrom != null && cameFrom === goingTo) continue;
       // AND THE DOORS HAVE TO EXIST.
       //
       // `goingTo` is simply the next room this body was seen in, and after a teleport that
@@ -331,13 +346,76 @@ export function stitch(walks, geo, { arriveWithin = 40 } = {}) {
   return out.length >= 2 ? out : null;
 }
 
+// A TRACK THAT FAILS WITH NOTHING IN THE WAY IS A BAD TRACK.
+//
+// The operator's heuristic, and it is sharper than any offline check could be. A ride that
+// fails while a monster is standing on it says nothing about the route — bodies wander the
+// coarse grid and that is the whole reason a monorail exists. A ride that fails with NOBODY
+// in the way is the route itself being wrong: a degenerate segment kept because it happened
+// to be the fastest, a stitch whose legs are individually legal and collectively not, a
+// crossing recorded before a wall moved.
+//
+// Three in a row, because one is noise — a lag spike, a door mid-animation, a character
+// arriving further off the station than usual — and three is a pattern. Consecutive, so a
+// track that works most of the time is never retired for an occasional bad day: any success
+// clears the count.
+//
+// STRIKES LIVE APART FROM THE BOOK, because the book is REGENERATED from the trails on
+// every comb and would forget them. This file is the only place a judgement about a track
+// survives its rebuild.
+export const STRIKES_FILE = process.env.M59_TRACK_STRIKES ||
+  path.join(HERE, '..', 'substrate', 'm59-track-strikes.json');
+export const STRIKES_BEFORE_REJECT = Number(process.env.M59_TRACK_STRIKES_MAX || 3);
+
+export function loadStrikes(file = STRIKES_FILE) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')).strikes ?? {}; } catch { return {}; }
+}
+
+function saveStrikes(strikes, file = STRIKES_FILE) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({
+      note: 'Consecutive failures of a track replay in which nothing living was in the way. ' +
+            'A ride blocked by a body is not counted — that is traffic, not a bad route. ' +
+            'Any success clears the count. At ' + STRIKES_BEFORE_REJECT + ' the track is ' +
+            'refused and the crossing is planned as it always was.',
+      written: new Date().toISOString(), strikes,
+    }, null, 1) + String.fromCharCode(10));
+  } catch { /* a judgement that cannot be written is one the next ride re-earns */ }
+}
+
+/** A ride failed with nothing in the way. Returns the new count. */
+export function strikeTrack(room, from, to, { file = STRIKES_FILE } = {}) {
+  const strikes = loadStrikes(file);
+  const key = trackKey(room, from, to);
+  strikes[key] = (strikes[key] ?? 0) + 1;
+  saveStrikes(strikes, file);
+  return strikes[key];
+}
+
+/** A ride worked. Forget the strikes — they are consecutive by definition. */
+export function clearStrikes(room, from, to, { file = STRIKES_FILE } = {}) {
+  const strikes = loadStrikes(file);
+  const key = trackKey(room, from, to);
+  if (!strikes[key]) return 0;
+  delete strikes[key];
+  saveStrikes(strikes, file);
+  return 0;
+}
+
 export function loadTracks(file = TRACKS_FILE) {
   try { return JSON.parse(fs.readFileSync(file, 'utf8')).tracks ?? {}; } catch { return {}; }
 }
 
 /** The track for this crossing, or null — and null means "plan it as you always did". */
-export function recallTrack(room, from, to, tracks = loadTracks()) {
-  return tracks[trackKey(room, from, to)] ?? tracks[trackKey(room, null, to)] ?? null;
+export function recallTrack(room, from, to, tracks = loadTracks(), strikes = loadStrikes()) {
+  const exact = trackKey(room, from, to), loose = trackKey(room, null, to);
+  // A struck-out track is not offered at all. It is left in the book rather than deleted:
+  // the walk that produced it really happened, and the next comb may stitch something
+  // better out of it even though riding it end to end does not work.
+  if ((strikes[exact] ?? 0) < STRIKES_BEFORE_REJECT && tracks[exact]) return tracks[exact];
+  if ((strikes[loose] ?? 0) < STRIKES_BEFORE_REJECT && tracks[loose]) return tracks[loose];
+  return null;
 }
 
 // ---------------------------------------------------------------------------- CLI

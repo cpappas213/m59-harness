@@ -101,10 +101,27 @@ let buffer = [], timer = null, lastOf = new Map();
  * than at read time, because the server re-reports a standing body indefinitely and a
  * ledger of somebody standing still is most of the file.
  */
+// WHAT IS WORTH WRITING DOWN. Monsters are recorded only if somebody asks for them.
+//
+// The recorder captures every body the room can see, which is what makes it an instrument
+// for formations and for watching a person walk. It also means twenty-six idle characters
+// standing in monster-rich rooms fill the ledger with wandering rats: measured, the trail
+// file grew 19 KB in twenty seconds while three of thirty characters were actually walking
+// anywhere. None of that teaches a crossing, and all of it is read back on every comb.
+//
+// Monsters do not walk the routes we are learning — they wander the coarse grid, which is
+// the very thing a monorail exists to route around — so they are off by default. Set
+// M59_TRAIL_MONSTERS=1 to keep them, which is what a formation or a threat study would
+// want.
+const RECORD_MONSTERS = process.env.M59_TRAIL_MONSTERS === '1';
+
 export function recordSeen(row = {}, { fleet = FLEET() } = {}) {
   try {
     const id = row.id ?? row.name ?? null;
     if (id == null || !Number.isFinite(row.x) || !Number.isFinite(row.y)) return false;
+    // `sent` is our own move, which is a player by construction even before BP_PLAYER has
+    // told us our own flags.
+    if (!RECORD_MONSTERS && row.player !== true && row.sent !== true) return false;
     const k = String(row.room) + ':' + String(id);
     const prev = lastOf.get(k);
     if (prev && Math.abs(prev.x - row.x) + Math.abs(prev.y - row.y) < MOVED_AT_LEAST) return false;
