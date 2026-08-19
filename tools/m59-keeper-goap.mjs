@@ -957,7 +957,7 @@ export class GOAPKeeper {
         is_player: ws._targetIsPlayer,
       } : null,
     };
-    console.error(`[goap] ${who} pass ${this._passCount} PLAN found=${p.found} names=[${(p.names ?? []).join(', ')}] steps=${p.steps?.length ?? 0} problems=${(p.problems ?? []).length}`);
+    console.error(`[goap] ${who} pass ${this._passCount} PLAN found=${p.found} names=[${(p.names ?? []).join(', ')}] steps=${p.steps?.length ?? 0} problems=${(p.problems ?? []).length} reason=${p.reason ?? 'n/a'}`);
 
     if (p.problems?.length) {
       console.error(`[goap] ${who} pass ${this._passCount} PROBLEMS: ${p.problems.join('; ')}`);
