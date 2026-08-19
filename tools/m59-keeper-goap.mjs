@@ -602,23 +602,34 @@ export class GOAPKeeper {
           // pick the weakest (safest prey). This is the difference between
           // "a rat is biting my leg" and "I'm choosing what to hunt."
           const me0 = c.self;
+          // ELEVATION FILTER: skip targets on a different floor level.
+          // The pathfinder cannot walk down a cliff, so a target 3 cells
+          // away on the 2D grid but on a lower ledge is unreachable.
+          const geo0 = this.session?.world?.geometry;
+          const myH = (me0 && geo0?.floorHeightAtCell) ? geo0.floorHeightAtCell(me0.row, me0.col) : null;
+          const elevHostiles = myH != null
+            ? hostiles.filter(t => {
+                const th = geo0.floorHeightAtCell(t.row, t.col);
+                return th == null || Math.abs(myH - th) <= 384;
+              })
+            : hostiles;
+          const pool = elevHostiles.length > 0 ? elevHostiles : hostiles;
+          if (elevHostiles.length < hostiles.length) {
+            console.error(`[goap] ${who} elevation filter: ${hostiles.length} hostiles, ${elevHostiles.length} same-level (myH=${myH})`);
+          }
           let target;
           if (ws.hurt && me0) {
             // NEAREST first: the mob actually attacking us
-            target = hostiles.sort((a, b) => {
+            target = pool.sort((a, b) => {
               const da = Math.hypot((a.col ?? 0) - me0.col, (a.row ?? 0) - me0.row);
               const db = Math.hypot((b.col ?? 0) - me0.col, (b.row ?? 0) - me0.row);
               return da - db;
             })[0];
           } else {
-            // WEAKEST first: safest prey for hunting. Use the
-            // compendium level (max_health/health are never sent by
-            // the wire protocol, so they're always null and the sort
-            // is a no-op — the first hostile found wins). The
-            // compendium has the real levels.
+            // WEAKEST first: safest prey for hunting.
             const liveNum0 = c.room?.num ?? c.room?.id ?? null;
             const mapNum0 = liveNum0 != null ? resolveMapRoom(liveNum0, this._roomName()) : null;
-            target = hostiles.sort((a, b) => {
+            target = pool.sort((a, b) => {
               const nameA = c.rsc?.get?.(a.nameRsc) ?? '';
               const nameB = c.rsc?.get?.(b.nameRsc) ?? '';
               const lvlA = (mapNum0 != null ? _compendiumLevel(mapNum0, nameA) : null) ?? 999;

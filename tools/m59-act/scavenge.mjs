@@ -158,9 +158,29 @@ export async function scavenge(client, session, opts = {}) {
 
   // Pick the NEAREST reachable hostile. Sort by distance, then try
   // each one until the walk succeeds. The nearest mob might be behind
-  // a door or across an impassable gap — in that case, try the next.
+  // a door, on a different elevation, or across an impassable gap.
   const mePos = client?.self;
-  const sorted = hostiles.sort((a, b) => {
+  const geo = session.world?.geometry;
+
+  // ELEVATION CHECK: if the geometry has height data, filter out
+  // targets whose floor height differs from ours by more than one
+  // step (384 fine units). A mummy on a lower ledge is 3 cells away
+  // on the 2D grid but unreachable — the pathfinder will waste 30+ 
+  // steps trying to walk down a cliff.
+  const myHeight = (mePos && geo?.floorHeightAtCell) 
+    ? geo.floorHeightAtCell(mePos.row, mePos.col) : null;
+  // Debug: log elevation check
+  console.error(`[scavenge] ${session.name ?? '?'} elevation check: geo=${!!geo} floorHeightAtCell=${typeof geo?.floorHeightAtCell} mePos=(${mePos?.col},${mePos?.row}) myHeight=${myHeight}`);
+  const reachable = hostiles.filter(t => {
+    if (myHeight == null || !geo?.floorHeightAtCell) return true; // no height data, allow all
+    const th = geo.floorHeightAtCell(t.row, t.col);
+    if (th == null) return true; // target has no floor data, allow (might be same level)
+    return Math.abs(myHeight - th) <= 384; // MAX_STEP_HEIGHT
+  });
+  if (reachable.length < hostiles.length && mePos) {
+    console.error(`[scavenge] ${session.name ?? '?'} elevation filter: ${hostiles.length} hostiles, ${reachable.length} reachable (myHeight=${myHeight})`);
+  }
+  const sorted = reachable.sort((a, b) => {
     if (mePos) {
       const da = Math.hypot((a.col ?? 0) - mePos.col, (a.row ?? 0) - mePos.row);
       const db = Math.hypot((b.col ?? 0) - mePos.col, (b.row ?? 0) - mePos.row);
@@ -170,6 +190,14 @@ export async function scavenge(client, session, opts = {}) {
   });
   const hpFrac = frac(client?.vitals?.()?.health);
   const { fight: doFight } = await import('../m59-skills.mjs');
+
+  // All targets filtered by elevation — the character is on a different
+  // level than every hostile in the room. The GOAP should move the
+  // character to a different position or room.
+  if (sorted.length === 0 && hostiles.length > 0) {
+    console.error(`[scavenge] ${session.name ?? '?'} all ${hostiles.length} hostiles unreachable by elevation (myHeight=${myHeight})`);
+    return { sent: false, killed: false, reason: 'all hostiles on a different elevation' };
+  }
 
   // Try up to 3 nearest hostiles. Stop at the first one we can reach.
   let lastResult = null;
