@@ -475,9 +475,24 @@ export class GOAPKeeper {
 
 
         if (hostiles.length && !ws._targetId) {
-          // Pick the weakest target (lowest max HP).
-          const target = hostiles.sort((a, b) =>
-            (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+          // Pick the target: when hurt, the NEAREST threat is the one
+          // eating us — not the weakest one in the corner. When healthy,
+          // pick the weakest (safest prey). This is the difference between
+          // "a rat is biting my leg" and "I'm choosing what to hunt."
+          const me0 = c.self;
+          let target;
+          if (ws.hurt && me0) {
+            // NEAREST first: the mob actually attacking us
+            target = hostiles.sort((a, b) => {
+              const da = Math.hypot((a.col ?? 0) - me0.col, (a.row ?? 0) - me0.row);
+              const db = Math.hypot((b.col ?? 0) - me0.col, (b.row ?? 0) - me0.row);
+              return da - db;
+            })[0];
+          } else {
+            // WEAKEST first: safest prey for hunting
+            target = hostiles.sort((a, b) =>
+              (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+          }
           const targetLevel = target.max_health ?? target.health ?? null;
           const targetName = c.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
           const isPlayer = !!(target.flags & OF.PLAYER);

@@ -13,6 +13,7 @@
 //   - reason: null on success, a description of what went wrong
 
 import { evaluate } from '../m59-worldstate.mjs';
+import { affordances, OF } from '../m59-parse.mjs';
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -27,9 +28,13 @@ export async function flee(client, session, _opts = {}) {
   const c = client;
   const s = session.s ?? session;
 
-  // Find the nearest hostile.
+  // Find the nearest hostile: anything that is attackable and not a player.
   const hostiles = (c.room?.objects instanceof Map)
-    ? [...c.room.objects.values()].filter(o => o.hostile || (o.flags & 2))
+    ? [...c.room.objects.values()].filter(o => {
+        if (o.id === c.selfId) return false;
+        if (o.flags & OF.PLAYER) return false;  // players are PVP, not flee-from
+        return affordances(o.flags ?? 0).includes('attack');
+      })
     : (Array.isArray(c.room?.objects) ? c.room.objects.filter(o => o.hostile) : []);
 
   if (!hostiles.length)
