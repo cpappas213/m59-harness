@@ -518,9 +518,20 @@ export class GOAPKeeper {
               return da - db;
             })[0];
           } else {
-            // WEAKEST first: safest prey for hunting.
-            target = hostiles.sort((a, b) =>
-              (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
+            // WEAKEST first: safest prey for hunting. Use the
+            // compendium level (max_health/health are never sent by
+            // the wire protocol, so they're always null and the sort
+            // is a no-op — the first hostile found wins). The
+            // compendium has the real levels.
+            const liveNum0 = c.room?.num ?? c.room?.id ?? null;
+            const mapNum0 = liveNum0 != null ? resolveMapRoom(liveNum0, this._roomName()) : null;
+            target = hostiles.sort((a, b) => {
+              const nameA = c.rsc?.get?.(a.nameRsc) ?? '';
+              const nameB = c.rsc?.get?.(b.nameRsc) ?? '';
+              const lvlA = (mapNum0 != null ? _compendiumLevel(mapNum0, nameA) : null) ?? 999;
+              const lvlB = (mapNum0 != null ? _compendiumLevel(mapNum0, nameB) : null) ?? 999;
+              return lvlA - lvlB;
+            })[0];
           }
           const targetName = c.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
           const isPlayer = !!(target.flags & OF.PLAYER);
