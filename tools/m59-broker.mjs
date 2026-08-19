@@ -5795,7 +5795,41 @@ class Session {
     // the whole journey's, and is what gets reported: a trip that arrived after eleven
     // retries arrived, but it is not the same event as one that walked straight there, and
     // a report that reset to zero on success could not tell them apart.
+    // DYING MID-JOURNEY PUTS YOU SOMEWHERE WITH NO EXITS, AND STUMBLING THERE IS FREE
+    // ONLY IN THE SENSE THAT IT ACHIEVES NOTHING.
+    //
+    // The Underworld publishes no exits in the room graph — "six teleporters, and that is
+    // all" — so a journey that dies on the way spends its whole stumble budget re-reading a
+    // room and re-planning a route that cannot exist. Measured on Tos -> North Barloque: the
+    // character died in The Flatlands and then stumbled seven times over THIRTEEN MINUTES,
+    // each one reporting "no route from 1 to 101 in the graph". Two runs of that were
+    // recorded at 795s and 799s and read, from outside, as a slow journey with a wrong turn.
+    // It was a corpse.
+    //
+    // Escaping is a thing this repository already knows how to do, and it is what the
+    // character needs before any route exists. One attempt, because a second is the same
+    // attempt: if it did not work, the journey is genuinely over and should say so rather
+    // than spend ten more minutes proving it.
+    let escapedUnderworld = false;
+    const leaveTheUnderworld = async () => {
+      if (escapedUnderworld) return false;
+      escapedUnderworld = true;
+      log.push({ stumble: stumbles + 1, at: this.world.room?.name ?? null,
+                 reason: 'died on the way — the Underworld has no exits in the graph',
+                 note: 'escaping before re-planning' });
+      const out = await this.escapeUnderworld?.({ movementGeneration, controlToken })
+        .catch(() => null);
+      if (out?.left) return true;
+      const skills = await import('./m59-skills.mjs').catch(() => null);
+      const r = await skills?.escapeUnderworld?.(this, {}).catch(() => null);
+      return !!r?.left;
+    };
+
     const stumble = async (why) => {
+      // The Underworld is not a room to re-plan in; it is a room to leave.
+      if (/no route from 1 to|The Underworld/i.test(String(why)) || Number(this.world?.room?.num) === 1) {
+        if (await leaveTheUnderworld()) { stumbles = 0; return true; }
+      }
       totalStumbles++;
       if (++stumbles > maxStumbles) return false;
       log.push({ stumble: stumbles, at: this.world.room?.name ?? null, reason: why,
