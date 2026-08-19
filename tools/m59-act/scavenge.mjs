@@ -56,6 +56,18 @@ export async function scavenge(client, session, opts = {}) {
     ? [...objects.values()]
     : Array.isArray(objects) ? objects : [];
 
+  // HEALTH GATE: if we're below 50% HP, don't start a new fight.
+  // The GOAP's hurt symbol uses 70% (restBelow), but there's a timing
+  // gap where HP drops during a pass and the world state is stale.
+  // This is the last line of defense: even if the GOAP says "go fight",
+  // the scavenge itself refuses when the character is too hurt to
+  // survive another engagement. The GOAP will re-evaluate on the
+  // next pass with fresh vitals and switch to recover/flee.
+  const hpNow = frac(client?.vitals?.()?.health);
+  if (hpNow != null && hpNow < 0.5)
+    return { sent: false, killed: false,
+      reason: `HP too low to fight (${Math.round(hpNow * 100)}%) — need to recover first` };
+
   const hostiles = list.filter(o => {
     // Raw room objects have o.flags (bit flags), NOT o.can (action list).
     // The action list is derived from flags via affordances().
@@ -75,44 +87,22 @@ export async function scavenge(client, session, opts = {}) {
     return { sent: false, killed: false, reason: 'no hostiles in the room' };
   }
 
-  // Pick the weakest hostile that is WITHIN THE CEILING. The ceiling is
-  // the same one the GOAP uses for target_in_band (myLevel + threatBand).
-  // A mob above the ceiling is not prey — it is a threat. The character
-  // should be running from it, not walking toward it to "scavenge."
-  //
-  // WHEN max_health IS UNKNOWN: the wire protocol does not always send
-  // max_health on room objects. If we treat unknown HP as "in band", every
-  // mob passes the filter and the character walks toward whatever is
-  // nearest — including a level 50 fungus beast. Instead, when HP is
-  // unknown, defer to the GOAP's target_in_band symbol (computed from
-  // the threat ceiling). If the GOAP says the target is out of band,
-  // so are all mobs of unknown HP.
-  const hpFrac = frac(client?.vitals?.()?.health);
-  const goapInBand = opts.targetInBand ?? null; // from GOAP world state
-  const inBand = hostiles.filter(h => {
-    const hp = h.max_health ?? h.health ?? null;
-    if (hp != null) return hp <= ceiling;
-    // Unknown HP: only allow if the GOAP explicitly says the target is in band,
-    // or if we have no GOAP info (standalone use, not under GOAP).
-    if (goapInBand == null) return true; // no GOAP: be permissive
-    return goapInBand; // GOAP says in-band or not
-  });
-  const weak = inBand.length
-    ? inBand.sort((a, b) => (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0]
-    : null;
-
-  // If NO hostile is in band, the character should not be fighting
-  // anything in this room. Refuse so the GOAP falls through to
-  // healthy/flee/travel.
-  if (!weak) {
-    const strongest = hostiles.sort((a, b) =>
-      (b.max_health ?? b.health ?? 0) - (a.max_health ?? a.health ?? 0))[0];
-    const sName = client?.rsc?.get?.(strongest.nameRsc) ?? 'creature';
-    return { sent: false, killed: false,
-      reason: `all hostiles in the room are above the band (weakest: ${sName} hp=${strongest.max_health ?? strongest.health ?? '?'} > ceiling ${ceiling})` };
-  }
-
+  // Pick the NEAREST hostile, not the weakest. The weakest mob might be
+  // across the room and unreachable (geometry blocks the walk). The
+  // nearest mob is the one we can actually reach and fight. If the
+  // nearest is too strong, fight() disengages and we try again next
+  // pass — or the GOAP routes us to a better room.
+  const mePos = client?.self;
+  const weak = hostiles.sort((a, b) => {
+    if (mePos) {
+      const da = Math.hypot((a.col ?? 0) - mePos.col, (a.row ?? 0) - mePos.row);
+      const db = Math.hypot((b.col ?? 0) - mePos.col, (b.row ?? 0) - mePos.row);
+      if (Math.abs(da - db) > 3) return da - db;  // prefer nearest (within 3 cells tie)
+    }
+    return (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999);
+  })[0];
   const target = weak;
+  const hpFrac = frac(client?.vitals?.()?.health);
 
   const targetName = client?.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
   const targetHp = target.max_health ?? target.health ?? '?';
@@ -136,7 +126,6 @@ export async function scavenge(client, session, opts = {}) {
   // first wastes time and can trap the character in an unwalkable
   // pocket (Twisted Wood geometry mismatch). Close-range fights
   // still take the safe spot.
-  const mePos = client?.self;
   const targetCol = target.col ?? null;
   const targetRow = target.row ?? null;
   const distToTarget = (mePos && targetCol != null && targetRow != null)
@@ -154,8 +143,26 @@ export async function scavenge(client, session, opts = {}) {
   // Delegate to the skills.fight() function. It takes the broker
   // session and a creature NAME (not an ID) and handles the full
   // combat loop (walk to target, swing, check result, repeat).
+  //
+  // WHEN THE TARGET IS ADJACENT (<= 2 cells): fight() still tries to
+  // walk first (approachSquare + walkTo), and that walk can fail due
+  // to local geometry mismatches even for a 1-cell move. In that case,
+  // skip the walk entirely and let fight() start swinging from where
+  // we are. The reach check inside fight() will either hit the target
+  // or disengage.
+  const mePos2 = client?.self;
+  const targetAdj = mePos2 && target.col != null && target.row != null
+    ? Math.hypot(target.col - mePos2.col, target.row - mePos2.row) <= 2
+    : false;
+
   const { fight: doFight } = await import('../m59-skills.mjs');
-  const r = await doFight(session, { target: targetName, preferId: target.id ?? target.obj_id ?? null, rounds: 12, swingsPerRound: 4 });
+  const r = await doFight(session, {
+    target: targetName,
+    preferId: target.id ?? target.obj_id ?? null,
+    rounds: 12,
+    swingsPerRound: 4,
+    holdPosition: targetAdj,  // skip the walk, fight from where we are
+  });
   return {
     sent: true,
     killed: r?.killed ?? r?.won ?? false,

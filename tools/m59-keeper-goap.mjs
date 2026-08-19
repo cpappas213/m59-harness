@@ -753,7 +753,7 @@ export class GOAPKeeper {
       // has no target. The character needs to go fight something to
       // generate money/loot. Find the nearest room with huntable mobs
       // at or below the character's level.
-      if (ws.armed === true && ws.has_target === false) {
+      if (ws.armed === true && (ws.has_target === false || ws.target_in_band === false)) {
         const here = c.room?.num ?? c.room?.id;
         const level = this.policy.huntLevel ?? 30;
         if (here != null) {
