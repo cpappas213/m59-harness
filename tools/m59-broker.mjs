@@ -4243,6 +4243,58 @@ class Session {
       // No reachable boundary square, says the square grid — the same verdict it
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
       // floor square actually on that boundary and walk to it with fine BSP collision.
+      //
+      // THE LONG-CROSSING DRIFT FIX. `walkTo` plans square-to-square on cell centers, but
+      // after the first slide the character is no longer at a center, and every subsequent
+      // step is validated center-to-center — so steps the coarse model calls legal are
+      // refused by the fine collision, each costing a replan that produces the same plan
+      // that just failed. Measured in the Twisted Wood: a 50-column crossing took 74+ steps
+      // and hit the budget, reporting "kept ending up somewhere other than the planned
+      // square", while a direct fine walk to the same gap takes 15s. For a FAR staging
+      // square (> 12 cells), skip the coarse walk entirely and go straight to `walkFine`,
+      // which steps from the character's ACTUAL fine position (position-anchored, immune to
+      // the slide-drift) rather than from cell centers. Short walks (<= 12 cells) keep the
+      // well-tested coarse `walkTo` path.
+      const meNow = c.self;
+      const distToStaging = meNow
+        ? Math.hypot(exit.fine_stand_on.x - meNow.x, exit.fine_stand_on.y - meNow.y) / KOD_FINENESS
+        : 0;
+      if (process.env.M59_EXIT_DEBUG !== '0')
+        console.error(`[exit-debug] ${this.name ?? '?'} staging approach: distToStaging=${distToStaging.toFixed(1)} cells, using ${distToStaging > 12 ? 'FINE' : 'COARSE'} walk`);
+      if (distToStaging > 12) {
+        const fineDirect = await this.walkFine(exit.fine_stand_on.x, exit.fine_stand_on.y, {
+          maxSteps: Math.max(40, Math.ceil(distToStaging * 3)), stride: 48, arriveWithin: 4,
+          movementGeneration, controlToken,
+        });
+        if (process.env.M59_EXIT_DEBUG !== '0')
+          console.error(`[exit-debug] ${this.name ?? '?'} fineDirect result: arrived=${fineDirect.arrived} left_room=${fineDirect.left_room} reason=${fineDirect.reason ?? 'none'} room=${c.room.id} (start=${edgeStartRoom}) steps=${fineDirect.steps ?? '?'}`);
+        if (fineDirect.left_room || c.room.id !== edgeStartRoom)
+          return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
+                   note: 'the room changed while fine-walking to the boundary' };
+        if (isTerminalMovementReason(fineDirect.reason))
+          return { left: false, stage: 'walk', ...fineDirect };
+        // If the fine walk got us to a crossing square (even if not the exact fine_stand_on),
+        // proceed to the edge step from wherever we are.
+        if (!fineDirect.arrived) {
+          const me2 = c.self;
+          const crossings = [{ col: exit.stand_on.col, row: exit.stand_on.row,
+                               fine_stand_on: exit.fine_stand_on, edge_target: exit.edge_target,
+                               fine_path: exit.fine_path },
+                             ...(exit.alternates ?? [])];
+          const here2 = me2 && crossings.find(a => a.col === me2.col && a.row === me2.row
+                                               && a.fine_stand_on && a.edge_target);
+          if (here2) {
+            exit = { ...exit, stand_on: { col: here2.col, row: here2.row },
+                     fine_stand_on: here2.fine_stand_on, edge_target: here2.edge_target,
+                     fine_path: here2.fine_path, crossed_from_alternate: true };
+          } else {
+            // The fine walk got us close but not onto a crossing square. Fall through to
+            // the edge step anyway — being near the opening is often enough for StandardLeaveDir.
+            if (process.env.M59_EXIT_DEBUG !== '0')
+              console.error(`[exit-debug] ${this.name ?? '?'} fine walk got to (${me2?.col ?? '?'},${me2?.row ?? '?'}) not on a crossing square; trying edge step from here`);
+          }
+        }
+      } else {
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
                                      { maxSteps: budget(exit), movementGeneration, controlToken,
                                        clearance: 0.6 });
@@ -4283,7 +4335,40 @@ class Session {
                  fine_path: here.fine_path,
                  crossed_from_alternate: true };
       }
+      }
       let pressedInWithoutExactFit = null;
+      // RAW-GRID FALLBACK. If the character is still far from the opening (> 5 cells) after
+      // both the coarse and fine walks failed, the local collision geometry is out of sync
+      // with the server's (the .roo file does not match this room's actual collision). In
+      // that case, stop trying to validate against local geometry and just walk
+      // grid-square-to-grid-square toward the opening using raw moveToSquare. The server
+      // handles the real collision; the character steps one square at a time and the
+      // server moves him or bounces him. This is the "dumb but robust" fallback that
+      // always makes progress because it never refuses a step on the client side.
+      const meFar = c.self;
+      if (meFar && exit.fine_stand_on) {
+        const distCells = Math.hypot(exit.fine_stand_on.x - meFar.x, exit.fine_stand_on.y - meFar.y) / KOD_FINENESS;
+        if (distCells > 5) {
+          const targetCol = Math.floor(exit.fine_stand_on.x / KOD_FINENESS);
+          const targetRow = Math.floor(exit.fine_stand_on.y / KOD_FINENESS);
+          const maxRawSteps = Math.min(200, Math.ceil(distCells * 2) + 20);
+          for (let i = 0; i < maxRawSteps; i++) {
+            if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
+            const me = c.self;
+            if (!me || c.room.id !== edgeStartRoom) break;
+            const dx = targetCol - me.col, dy = targetRow - me.row;
+            if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) break; // close enough
+            const stepCol = me.col + Math.sign(dx);
+            const stepRow = me.row + Math.sign(dy);
+            try { c.moveToSquare(stepCol, stepRow); } catch { break; }
+            await new Promise(r => setTimeout(r, 250));
+          }
+          if (process.env.M59_EXIT_DEBUG !== '0') {
+            const meNow = c.self;
+            console.error(`[exit-debug] ${this.name ?? '?'} raw-grid fallback: walked ${maxRawSteps} steps, now at (${meNow?.col ?? '?'},${meNow?.row ?? '?'}) target=(${targetCol},${targetRow})`);
+          }
+        }
+      }
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       for (const point of finePath) {
         const fine = await this.walkFine(point.x, point.y, {
