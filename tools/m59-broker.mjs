@@ -49,6 +49,7 @@ import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
+import { nearestSafeSpot } from './m59-safespots.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -5825,6 +5826,71 @@ class Session {
       return !!r?.left;
     };
 
+    // BLEED SLOWLY ENOUGH AND ANY ROAD KILLS YOU. STOP AT A WALL AND HEAL.
+    //
+    // The operator's reading of the deaths, and it is a better model than the one I had:
+    // what kills a traveller is not which room it crossed but how long it was out there
+    // while hurt and never stopping. A slow trip that never heals arrives dead on a road a
+    // fast one walks safely.
+    //
+    // A safe wall IS the coarse grid and the BSP disagreeing — the fleet's own book measures
+    // 44% of held squares at such a disagreement against 24% of ordinary floor — and the
+    // whole point of one is that a monster cannot reach you there. So mid-journey recovery
+    // is not a detour into safety, it is a step to the nearest square the room already
+    // offers, and then sitting until whole.
+    //
+    // Between hops, because that is where a journey has a choice: crossing a room is
+    // committed, arriving somewhere new is the moment to look at the health bar. Doctrine
+    // still holds — a planned trip completes as fast as possible while being attacked and
+    // does not stop to FIGHT. This does not fight; it stands where nothing can swing.
+    const healBelow = Number(process.env.M59_TRAVEL_HEAL_BELOW || 0.7);
+    const healToward = Number(process.env.M59_TRAVEL_HEAL_TO || 0.95);
+    const healMs = Number(process.env.M59_TRAVEL_HEAL_MS || 90000);
+    let healed = 0;
+    const healAtAWall = async () => {
+      const c = this.need();
+      const v = c.vitals?.() ?? {};
+      const hp = v.health?.value ?? v.health, max = v.health?.max ?? v.maxHealth;
+      if (!Number.isFinite(hp) || !Number.isFinite(max) || max <= 0) return false;
+      if (hp / max >= healBelow) return false;
+      const geo = this.world?.geometry;
+      const me = c.self;
+      if (!geo?.collisionReady || !me) return false;
+      // The nearest square the room offers where a body cannot be reached. Null is a
+      // perfectly ordinary answer — plenty of rooms have none — and it means carry on.
+      let spot = null;
+      try {
+        spot = nearestSafeSpot(geo, { row: me.row, col: me.col },
+                               { within: 14, room: Number(this.world?.room?.num) || null });
+      } catch { spot = null; }
+      if (!spot) return false;
+      const walked = await this.walkTo(spot.col, spot.row,
+        { maxSteps: 40, movementGeneration, controlToken }).catch(() => null);
+      if (walked?.left_room) return false;
+      log.push({ healing_at: { row: spot.row, col: spot.col },
+                 room: this.world?.room?.name ?? null, from: Math.round(100 * hp / max) + '%' });
+      await this.pacer.submit('rest', () => c.rest()).catch(() => null);
+      const until = Date.now() + healMs;
+      let last = hp, quiet = 0;
+      while (Date.now() < until) {
+        if (this.movementWasCancelled(movementGeneration, controlToken)) break;
+        await new Promise(r => setTimeout(r, 3000));
+        const now = c.vitals?.()?.health?.value ?? c.vitals?.()?.health;
+        if (!Number.isFinite(now)) break;
+        if (now / max >= healToward) break;
+        // FALLING means this is not shelter after all, and sitting still to be killed is
+        // the opposite of the point.
+        if (now < last) break;
+        if (now === last && ++quiet >= 4) break;
+        if (now > last) quiet = 0;
+        last = now;
+      }
+      await this.pacer.submit('rest', () => c.stand()).catch(() => null);
+      const after = c.vitals?.()?.health?.value ?? c.vitals?.()?.health;
+      if (Number.isFinite(after) && after > hp) healed++;
+      return true;
+    };
+
     const stumble = async (why) => {
       // The Underworld is not a room to re-plan in; it is a room to leave.
       if (/no route from 1 to|The Underworld/i.test(String(why)) || Number(this.world?.room?.num) === 1) {
@@ -6041,6 +6107,7 @@ class Session {
       hops++;
       stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
       cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
+      await healAtAWall().catch(() => false);
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model
       // needs; give the room contents a moment to land as well.
