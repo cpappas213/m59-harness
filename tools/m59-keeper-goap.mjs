@@ -461,13 +461,19 @@ export class GOAPKeeper {
       const elapsed = Date.now() - (this._travelStartedAt ?? 0);
       if (curRoom === this._travelFromRoom && elapsed < 60000) {
         // Still in the same room and less than 60s elapsed —
-        // movement might still be in progress. Wait.
-        return { acted: false, action: 'travel_in_progress', reason: 'waiting for movement to complete' };
+        // movement might still be in progress. Don't block ALL GOAP
+        // activity (the character still needs to flee, fight, etc).
+        // Instead, set a flag so the planner filters out travel_to.
+        this._blockTravel = true;
+      } else {
+        // Room changed (travel completed) or 60s elapsed (timeout).
+        this._travelInFlight = false;
+        this._travelFromRoom = null;
+        this._travelStartedAt = null;
+        this._blockTravel = false;
       }
-      // Room changed (travel completed) or 60s elapsed (timeout).
-      this._travelInFlight = false;
-      this._travelFromRoom = null;
-      this._travelStartedAt = null;
+    } else {
+      this._blockTravel = false;
     }
 
     // 1. Read the world state. The caller can override symbols that
@@ -924,9 +930,10 @@ export class GOAPKeeper {
     // from the action set so the planner is forced to use `recover` (which
     // includes fleeing / safe-spot before resting). Resting in the open while
     // a mob is in reach is how characters die.
-    const planFilter = (effectiveGoal === 'healthy' && ws.has_target === true)
-      ? new Set(['rest']) : null;
-    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra, filter: planFilter });
+    const planFilter = new Set();
+    if (effectiveGoal === 'healthy' && ws.has_target === true) planFilter.add('rest');
+    if (this._blockTravel) planFilter.add('travel_to');
+    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra, filter: planFilter.size ? planFilter : null });
     // Record the plan for the dashboard / hero page. A visible plan is
     // the only plan you can argue with.
     this._lastPlan = {
