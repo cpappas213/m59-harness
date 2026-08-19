@@ -407,7 +407,11 @@ export class World {
           const seen = new Set([`${origin.row},${origin.col}`]);
           for (let index = 0; index < reachable.length; index++) {
             const at = reachable[index];
-            for (const next of geo.neighbors(at.row, at.col, { collision })) {
+            // The coarse flood (collision: false) widens into fine-open cells (fineWiden) so a
+            // character in a pocket (coarse-sealed, fine-open) can still reach an exit's
+            // staging square. The mover flood (collision: true) already widens via the fine
+            // fallback, so fineWiden is a no-op there.
+            for (const next of geo.neighbors(at.row, at.col, { collision, fineWiden: !collision })) {
               const key = `${next.row},${next.col}`;
               if (seen.has(key)) continue;
               seen.add(key);

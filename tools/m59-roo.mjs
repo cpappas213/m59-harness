@@ -1183,8 +1183,22 @@ export class RoomGeometry {
     // their door tile is routinely unwalkable by design (the Royal Bank of Jasper) and
     // they are reached by fine positioning rather than by occupying the square.
     ;
-    const grounded = all.filter(c => this.walkable(c.row, c.col));
-    return grounded.length ? grounded : all;
+    // THE GATE IS COARSE-FIRST, FINE-SECOND, ALL-LAST. The coarse grid is the server's own
+    // map, so a candidate it calls walkable is the most trustworthy — it is what the server
+    // will actually let the character stand on. But the coarse grid also holds a silent veto
+    // over fine-open cells (coarse-wall/fine-open), and in a pocket the staging square can be
+    // coarse-unwalkable while the fine geometry has real floor there. A filter must never be
+    // the reason a doorway disappears, so a candidate the coarse grid vetoes is still offered
+    // when the fine grid (the actual wall segments the game collides against) says it is open.
+    //
+    // Order of preference: coarse-walkable (server authority) > fine-walkable (geometry open)
+    // > everything (the existing safe fallback — being wrong about a wall costs a walk, and
+    // offering the whole crossing lets leaveViaAny try each square and report what happened).
+    const coarseOk = all.filter(c => this.walkable(c.row, c.col));
+    if (coarseOk.length) return coarseOk;
+    const fineOk = all.filter(c => this.fineWalkable(c.row, c.col) === true);
+    if (fineOk.length) return fineOk;
+    return all;
   }
 
   // A boundary opening is useful only when the character can approach it from a
@@ -1981,7 +1995,7 @@ export class RoomGeometry {
   // purpose: a step is refused by the wall BETWEEN two squares, and blaming the square
   // removes a perfectly good place to stand that other neighbours can still reach.
   neighbors(row, col, { fine = true, collision = false, blockedEdges = null,
-                        allowInto = null } = {}) {
+                        allowInto = null, fineWiden = false } = {}) {
     const out = [];
     // WHICH MAP GETS TO SAY A STEP IS IMPOSSIBLE — and it must not be both.
     //
@@ -2033,7 +2047,11 @@ export class RoomGeometry {
     // not re-veto it); a step the coarse grid vetoes is reconsidered against the fine grid
     // and kept only if the destination is actually open in the wall segments. This means
     // a room whose coarse grid and walls agree behaves exactly as before.
-    const fineFallback = !authoritative && collision && (this.walls?.length > 0);
+    // `fineWiden` forces the fine fallback on even in the coarse (collision: false) path.
+    // This is how exits()'s reachability flood can see past the coarse grid's silent veto
+    // into fine-open cells (pockets), WITHOUT changing the coarse path for every other
+    // caller — they simply don't pass fineWiden, and behave exactly as before.
+    const fineFallback = !authoritative && (collision || fineWiden) && (this.walls?.length > 0);
     const coarseDirs = fineFallback ? new Set(this.openDirections(row, col, { fine }).map(d => `${d.dr},${d.dc}`)) : null;
     const dirs = authoritative || fineFallback ? DIRS : this.openDirections(row, col, { fine });
     for (const d of dirs) {

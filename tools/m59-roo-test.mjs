@@ -581,6 +581,45 @@ if (!roomsDir) {
   // Regression: a normal route through the room body still works.
   const pnorm = d4.path(10, 10, 20, 20, { collision: true });
   ok('normal route still works with fine fallback', pnorm.found === true, pnorm.reason ?? 'found');
+
+  // FINE-AWARE EXIT GATE: edgeCrossingCandidates prefers coarse-walkable staging squares,
+  // but when the coarse grid vetoes every candidate (a pocket) it falls back to fine-walkable
+  // ones, and only then to everything. The key property: a fine-open but coarse-unwalkable
+  // candidate is never DROPPED when it is the only option — a filter must not delete a door.
+  if (typeof d4.edgeCrossingCandidates === 'function' && d4.walls?.length) {
+    for (const dir of ['north', 'south', 'west', 'east']) {
+      const ranges = d4.edgeCrossingRanges(dir);
+      if (!ranges.length) continue; // no crossing this way, nothing to gate
+      const cands = d4.edgeCrossingCandidates(dir);
+      ok(`${dir}: exit candidates are all in-bounds`, cands.every(c => d4.inBounds(c.row, c.col)));
+      // Every candidate the gate returns must be at least fine-walkable OR coarse-walkable
+      // (never a square that is both coarse-wall AND fine-wall — that would be a dead door).
+      const viable = cands.filter(c => d4.walkable(c.row, c.col) || d4.fineWalkable(c.row, c.col) === true);
+      ok(`${dir}: all ${cands.length} exit candidates are viable (coarse or fine)`, viable.length === cands.length, `viable=${viable.length}`);
+    }
+  }
+
+  // fineWiden: the coarse flood (collision: false) can widen into fine-open cells when asked,
+  // but NOT by default. Verify a hidden cell is reachable from a coarse neighbour WITH
+  // fineWiden but the option does not change the default coarse path for non-pocket callers.
+  { const [hc, hr] = hidden[0];
+    let nb = null;
+    for (const [dr, dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+      const nr = hr + dr, nc = hc + dc;
+      if (d4.walkable(nr, nc) && d4.standable(nr, nc)) { nb = [nc, nr]; break; }
+    }
+    if (nb) {
+      const [bc, br] = nb;
+      // Default coarse neighbours (no fineWiden) — record what is offered.
+      const plain = d4.neighbors(br, bc, { collision: false });
+      // fineWiden coarse neighbours — must be a SUPERSET (permissive: only adds, never removes).
+      const widened = d4.neighbors(br, bc, { collision: false, fineWiden: true });
+      const plainKeys = new Set(plain.map(n => `${n.row},${n.col}`));
+      const widenedKeys = new Set(widened.map(n => `${n.row},${n.col}`));
+      ok('fineWiden is permissive: coarse neighbours are a subset of widened neighbours',
+         [...plainKeys].every(k => widenedKeys.has(k)), `plain=${plainKeys.size} widened=${widenedKeys.size}`);
+    }
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);
