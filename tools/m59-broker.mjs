@@ -4323,6 +4323,13 @@ class Session {
       // Room.StandardLeaveDir, and `offMap` is what stops our own collision view
       // refusing to send it — there is no floor out there and there is not meant to be.
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
+      if (process.env.M59_EXIT_DEBUG !== '0') {
+        const meNow = c.self;
+        const dx = Math.abs((meNow?.x ?? 0) - exit.edge_target.x);
+        const dy = Math.abs((meNow?.y ?? 0) - exit.edge_target.y);
+        console.error(`[exit-debug] ${this.name ?? '?'} edge step dir=${exit.direction} me=(${meNow?.col ?? '?'},${meNow?.row ?? '?'}) @(${meNow?.x ?? '?'},${meNow?.y ?? '?'}) ` +
+          `target=(${exit.edge_target.x},${exit.edge_target.y}) dist=(${dx.toFixed(0)},${dy.toFixed(0)}) ${pressedInWithoutExactFit ?? 'exact-fit'}`);
+      }
       const edgeMove = await this.queueValidatedMove(
         exit.edge_target.x, exit.edge_target.y,
         // Stock UserMovePlayer sends speed zero for the one StandardLeaveDir
@@ -4619,6 +4626,17 @@ class Session {
     // square it could offer — so that it can be set against the square a character is
     // standing on when the same door works. See m59-exitgap.mjs.
     const offered = orderExits(spreadEdges(candidates))[0] ?? null;
+    // DIAGNOSTIC: when an exit is refused on every square, log where the character actually
+    // is versus where each square wanted him. This is the evidence that separates "the
+    // character could not reach the opening" from "the server refused the outward step",
+    // and it is what turns a one-line "every square refused" into an actionable gap report.
+    if (tried.length && process.env.M59_EXIT_DEBUG !== '0') {
+      const me = this.need?.()?.self ?? null;
+      const roomName = this.world?.room?.name ?? this.client?.roomNameRsc ?? '?';
+      const detail = tried.map(t => `${t.why}@(${t.stand_on?.col},${t.stand_on?.row})`).join(' | ');
+      console.error(`[exit-debug] ${this.name ?? '?'} room=${roomName} dir=${offered?.direction ?? candidates?.[0]?.direction ?? '?'} ` +
+        `me=(${me?.col ?? '?'},${me?.row ?? '?'}) tried=${tried.length} :: ${detail}`);
+    }
     return { left: false, tried,
              gap: { believed: offered?.stand_on
                       ? { col: offered.stand_on.col, row: offered.stand_on.row } : null,

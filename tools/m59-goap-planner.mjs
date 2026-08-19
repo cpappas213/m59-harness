@@ -30,7 +30,13 @@ function applyEffects(ws, effects) {
 
 function satisfies(ws, goal) {
   for (const [k, v] of Object.entries(goal)) {
-    if (!!ws[k] !== !!v) return false;
+    // A NEGATED GOAL KEY IS THE SAME BUG THE PRECONDITIONS HAD. `{ '!in_underworld': true }`
+    // means "in_underworld must be false", and the effect that achieves it is `!in_underworld`
+    // (which sets in_underworld=false, NOT a key called '!in_underworld'). Reading ws['!in_underworld']
+    // literally finds undefined, so the goal was never satisfied and the planner reported "no plan"
+    // for a character trapped in the Underworld — exactly the preconditionsMet bug, in the goal gate.
+    const actual = k.startsWith('!') ? !ws[k.slice(1)] : !!ws[k];
+    if (actual !== !!v) return false;
   }
   return true;
 }
@@ -73,7 +79,10 @@ export function plan(actions, initialWs, goal, { maxNodes = 4000 } = {}) {
 
   function heuristic(ws) {
     let n = 0;
-    for (const [k, v] of Object.entries(goal)) if (!!ws[k] !== !!v) n++;
+    for (const [k, v] of Object.entries(goal)) {
+      const actual = k.startsWith('!') ? !ws[k.slice(1)] : !!ws[k];
+      if (actual !== !!v) n++;
+    }
     return n;
   }
 

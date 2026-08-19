@@ -124,6 +124,23 @@ console.log('\na negated precondition is a real one');
 
   const blocked = astar([mk(B)], { has_food: true }, { vigor_ok: true });
   ok('and is correctly refused when x is true', blocked.found === false);
+
+  // THE SAME BUG IN THE GOAL GATE. A negated goal key ('!in_underworld': true) means the
+  // underlying symbol must be false, and the effect that achieves it is '!in_underworld'
+  // (which sets in_underworld=false, not a key called '!in_underworld'). Reading the goal
+  // key literally finds undefined, so the goal was never satisfied and a character trapped
+  // in the Underworld got "no plan" for an action that was right there. Verify the plan
+  // is found when the negated goal is achievable, and refused when it is not.
+  const Esc = () => ({}); Esc.pre = ['in_underworld']; Esc.effects = ['!in_underworld']; Esc.atomic = 'escape';
+  const esc = astar([mk(Esc)], { in_underworld: true }, { '!in_underworld': true });
+  ok('a negated goal is satisfied by the matching negated effect', esc.found === true);
+  const escDone = astar([mk(Esc)], { in_underworld: false }, { '!in_underworld': true });
+  ok('and is already satisfied when the symbol is false', escDone.found === true && escDone.steps.length === 0);
+  const escStuck = astar([mk(Esc)], { in_underworld: true }, { in_underworld: false });
+  // The goal { in_underworld: false } is achievable (escape sets it false), so this is found.
+  // A genuinely unplannable goal: a symbol no action can produce.
+  const escImpossible = astar([mk(Esc)], { in_underworld: true }, { at_shop: true });
+  ok('a goal no action can produce is refused', escImpossible.found === false);
 }
 
 console.log('\nexecution is one step at a time, never a loop');
