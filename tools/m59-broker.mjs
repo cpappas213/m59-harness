@@ -4329,11 +4329,17 @@ class Session {
                            ...(exit.alternates ?? [])];
         const here = me && crossings.find(a => a.col === me.col && a.row === me.row
                                             && a.fine_stand_on && a.edge_target);
-        if (!here) return { left: false, stage: 'walk', ...walk };
-        exit = { ...exit, stand_on: { col: here.col, row: here.row },
-                 fine_stand_on: here.fine_stand_on, edge_target: here.edge_target,
-                 fine_path: here.fine_path,
-                 crossed_from_alternate: true };
+        if (here) {
+          exit = { ...exit, stand_on: { col: here.col, row: here.row },
+                   fine_stand_on: here.fine_stand_on, edge_target: here.edge_target,
+                   fine_path: here.fine_path,
+                   crossed_from_alternate: true };
+        }
+        // If we are not on a crossing square, do NOT return. Fall through to the
+        // raw-grid fallback below, which will walk us toward the opening using raw
+        // moveToSquare. The old `return` here abandoned the exit attempt on the first
+        // walk failure, even when the character was close and a raw-grid nudge would
+        // have made it (e.g. an inn door blocked by furniture in the local geometry).
       }
       }
       let pressedInWithoutExactFit = null;

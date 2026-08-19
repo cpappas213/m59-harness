@@ -447,17 +447,7 @@ export class GOAPKeeper {
 
     // 1b. TARGET DETECTION. The GOAP keeper must set _targetId so
     //     that has_target, in_reach, and target_in_band are produced
-    //     from the actual room contents. The BT system did this in
-    //     m59-bt-combat.mjs; the GOAP keeper needs its own.
-    //
-    //     We look for the weakest hostile in the room (NPCs and
-    //     players alike) and set _targetId, _targetLevel, and
-    //     _threatCeiling. The planner and the goal stack then
-    //     decide whether to fight (scavenge/attack) or flee.
-    //
-    //     The threat ceiling comes from policy: the character fights
-    //     targets at or below its own level (conservative) or up to
-    //     10 levels above (aggressive). Default: same level.
+    //     from the actual room contents.
     {
       const room = c.room;
       if (room?.objects) {
@@ -473,6 +463,8 @@ export class GOAPKeeper {
           return can.includes('attack')
             && !/friendly|pet|tame/i.test(o.name ?? '');
         });
+
+
 
         if (hostiles.length && !ws._targetId) {
           // Pick the weakest target (lowest max HP).
