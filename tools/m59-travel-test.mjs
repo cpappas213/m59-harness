@@ -67,6 +67,14 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
         return next == null ? [] : [{ to: next, kind: 'edge', stand_on: { col: 1, row: 1 } }];
       },
     },
+    // NO TRACK MEANS PLAN IT THE WAY YOU ALWAYS DID, AND THAT IS THE SAFETY PROPERTY.
+    //
+    // `travel` consults the learned track book before walking a hop. The book is mostly one
+    // observation per crossing, so it must never be able to make travel worse than not
+    // having it — every refusal falls straight through to the ordinary exit walk. This fake
+    // rides nothing, which means every assertion in this file is about the planner path and
+    // stays exactly as true as it was before the monorail existed.
+    async rideTrack() { return { rode: false, why: 'no track in this fixture' }; },
     // Each call consumes one scripted outcome; `true` moves us on, `false` refuses.
     async leaveViaAny(candidates) {
       // A room the server will not let this character into answers the same way every

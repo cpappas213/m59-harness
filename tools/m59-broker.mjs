@@ -4933,6 +4933,118 @@ class Session {
   // it and refuses, while (9,6) one square north opens. Which is which is not in
   // the protocol, so the only honest thing is to try them in a sensible order and
   // report what each said.
+  /**
+   * Ride a learned track across this room, or say why not.
+   *
+   * THE MONORAIL. A track is the quickest crossing anybody has actually made of this room
+   * between these two doors, straightened against the baked BSP — so it is made of accepted
+   * moves and cannot contain a step the mover refuses, which is the failure mode of planning
+   * on square stand points a body never occupies.
+   *
+   * IT BOARDS COARSELY AND RIDES FINELY. The stations are the waypoints the SQUARE router
+   * can reach; the tight ones between them are exactly what the coarse grid cannot deliver
+   * you to, which is the same fact that makes them safe walls. So getting on is an ordinary
+   * walk and only the ride is fine.
+   *
+   * NULL-ISH IS "PLAN IT THE WAY YOU ALWAYS DID". Every refusal here returns `rode: false`
+   * and moves nothing that matters, because a book with one observation per key must never
+   * be able to make travel worse than not having it.
+   */
+  async rideTrack(fromRoom, toRoom, { movementGeneration = this.movementGeneration, controlToken } = {}) {
+    const c = this.need();
+    const here = Number(this.world?.room?.num ?? NaN);
+    if (!Number.isFinite(here) || !Number.isFinite(Number(toRoom))) return { rode: false, why: 'no room' };
+    const track = recallTrack(here, fromRoom == null ? null : Number(fromRoom), Number(toRoom));
+    if (!track?.waypoints?.length) return { rode: false, why: 'no track' };
+    const geo = this.world?.geometry ?? null;
+    const me0 = c.self;
+    if (!me0) return { rode: false, why: 'own position unknown' };
+    const JOIN_WITHIN = Number(process.env.M59_TRACK_JOIN_WITHIN || 640);
+    let joinAt = -1, joinDist = Infinity;
+    for (let i = 0; i < track.waypoints.length; i++) {
+      const wp = track.waypoints[i];
+      const row = Math.floor(wp.y / KOD_FINENESS) + 1, col = Math.floor(wp.x / KOD_FINENESS) + 1;
+      if (geo && typeof geo.walkable === 'function' && !geo.walkable(row, col)) continue;
+      const d = Math.hypot(wp.x - me0.x, wp.y - me0.y);
+      if (d < joinDist) { joinDist = d; joinAt = i; }
+    }
+    if (joinAt < 0) return { rode: false, why: 'no station reachable on the coarse grid' };
+    if (joinDist > JOIN_WITHIN) return { rode: false, why: 'not on this track', off_by: Math.round(joinDist) };
+    const started = Date.now();
+    if (joinDist > KOD_FINENESS) {
+      const wp = track.waypoints[joinAt];
+      const board = await this.walkTo(Math.floor(wp.x / KOD_FINENESS) + 1,
+                                      Math.floor(wp.y / KOD_FINENESS) + 1,
+                                      { maxSteps: 60, movementGeneration, controlToken }).catch(() => null);
+      if (board?.left_room) return { rode: true, left_room: true, boarded: false, ms: Date.now() - started };
+      if (!board?.arrived) return { rode: false, why: 'could not reach the station', off_by: Math.round(joinDist) };
+    }
+    // MONORAIL HEALING STEPS.
+    //
+    // The tight squares that make these crossings awkward are the same squares a monster
+    // cannot reach — that IS a safe wall, measured — so a track already runs past the best
+    // shelter in the room, and `shelter` names which of its stations those are. A traveller
+    // hurt on the way does not need to reach a town; it needs the next station with a wall
+    // at its back, and it is standing on the route to one.
+    //
+    // Doctrine says a planned trip completes AS FAST AS POSSIBLE WHILE BEING ATTACKED and
+    // does not stop to fight — this does not break that. It is not a fight and it is not a
+    // detour: the shelter is a waypoint the journey was going to walk over anyway, and
+    // resting on it is strictly cheaper than arriving dead. It only fires BELOW the rest
+    // threshold, only on a station the track already contains, and it is bounded.
+    const shelter = new Set(track.shelter ?? []);
+    const restBelow = Number(process.env.M59_TRACK_REST_BELOW || 0.5);
+    const restMs = Number(process.env.M59_TRACK_REST_MS || 20000);
+    let rested = 0;
+    let reached = 0, blocked = 0;
+    for (let i = joinAt; i < track.waypoints.length; i++) {
+      const wp = track.waypoints[i];
+      if (this.movementWasCancelled(movementGeneration, controlToken)) break;
+      const r = await this.walkFine(wp.x, wp.y, { maxSteps: 60, movementGeneration, controlToken })
+        .catch(() => null);
+      if (r?.left_room) return { rode: true, left_room: true, reached, blocked, rested,
+                                 ms: Date.now() - started };
+      const now = c.self;
+      const near = now && Math.hypot(now.x - wp.x, now.y - wp.y) <= 48;
+      if (near) reached++; else blocked++;
+      // Standing on shelter, and hurt: take it. Only here, because only here is the
+      // character on a square something measured as hard to reach.
+      if (near && shelter.has(i)) {
+        // SIT, WATCH, STAND. `rest` is the client verb — there is no session-level
+        // rest-until, and reaching for one that does not exist would have made this whole
+        // feature a silent no-op. Polled rather than slept through, because the reason to
+        // be here is that something may be hitting us: it stops the moment health stops
+        // climbing, and stands up before walking on so the next leg is not crawled.
+        const vit = c.vitals?.() ?? {};
+        const hp = vit.health, max = vit.maxHealth;
+        if (Number.isFinite(hp) && Number.isFinite(max) && max > 0 && hp / max < restBelow) {
+          const before = hp;
+          let last = hp, quiet = 0;
+          await this.pacer.submit('rest', () => c.rest()).catch(() => null);
+          const until = Date.now() + restMs;
+          while (Date.now() < until) {
+            if (this.movementWasCancelled(movementGeneration, controlToken)) break;
+            await new Promise(r => setTimeout(r, 2000));
+            const h = c.vitals?.()?.health;
+            if (!Number.isFinite(h)) break;
+            if (h / max >= restBelow) break;
+            // LOSING health means something is hitting us and this is not shelter after
+            // all; standing still to be killed is the opposite of the point.
+            if (h < last) break;
+            if (h === last && ++quiet >= 3) break;      // nothing is coming back
+            if (h > last) quiet = 0;
+            last = h;
+          }
+          await this.pacer.submit('rest', () => c.stand()).catch(() => null);
+          if ((c.vitals?.()?.health ?? before) > before) rested++;
+        }
+      }
+    }
+    return { rode: true, left_room: false, reached, blocked, rested, ms: Date.now() - started,
+             waypoints: track.waypoints.length - joinAt, track_best_ms: track.ms,
+             ...(shelter.size ? { shelter_stations: shelter.size } : {}) };
+  }
+
   async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const tried = [];
     // Captured before the first attempt, because a successful crossing changes the room out
@@ -5481,6 +5593,12 @@ class Session {
     const journeyId = `${this.name}-${Date.now().toString(36)}`;
     let enteredAt = Date.now();
     let hops = 0, stumbles = 0, totalStumbles = 0;
+    // WHICH DOOR WE CAME IN BY, because that is half of a track's identity. A crossing of a
+    // room is not one route, it is one per entrance — Western border of the Twisted Wood is
+    // entered from three different rooms and leaves by three more — so a book keyed only on
+    // the destination would hand every arrival the same approach, which is the mistake
+    // `anchorFor` exists to make inexpressible. Null on the first hop: we did not walk in.
+    let cameFromRoom = null;
     // Doors this journey has already found it cannot reach from where it was standing.
     // See the note on UNREACHABLE_EXIT below for why this is per-journey and the barred
     // set is per-session.
@@ -5565,6 +5683,26 @@ class Session {
       // this line is routing and exit selection; below it is the walk. If the tail turns
       // out to be in the gap between them, the fix is in the planner, not the legs.
       const walkBegan = Date.now();
+      const leavingRoom = Number(this.world?.room?.num ?? NaN);
+      // THE MONORAIL FIRST, THE PLANNER SECOND.
+      //
+      // This hop is exactly what a track describes — a crossing of THIS room, in by the door
+      // we came through and out by the one we want — so if somebody has already walked it,
+      // walking it again is strictly better evidence than planning it afresh. It is tried
+      // first and it is allowed to fail: `rode:false` costs nothing and falls straight
+      // through to the ordinary exit walk below, which is the whole safety argument for
+      // shipping a book whose keys mostly have one observation each.
+      const ridden = await this.rideTrack(cameFromRoom, nextHop.to, { movementGeneration, controlToken })
+        .catch(() => ({ rode: false, why: 'ride threw' }));
+      if (ridden.left_room) {
+        hops++; stumbles = 0;
+        cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
+        log.push({ from: this.world?.room?.name ?? String(nextHop.from), to: nextHop.to_name,
+                   via: 'track', ok: true, ms: ridden.ms,
+                   rode: { reached: ridden.reached ?? 0, blocked: ridden.blocked ?? 0 } });
+        await this.settleAfterRoomChange?.().catch?.(() => {});
+        continue;
+      }
       const r = await this.leaveViaAny(candidates, { movementGeneration, controlToken });
       // QUEUE THE GAP ON `this`, AND LET SOMETHING ELSE FILE IT.
       //
@@ -5686,6 +5824,7 @@ class Session {
       }
       hops++;
       stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
+      cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model
       // needs; give the room contents a moment to land as well.
@@ -7395,17 +7534,48 @@ const TOOLS = [
       // somebody else's doorway.
       const JOIN_WITHIN = Number(process.env.M59_TRACK_JOIN_WITHIN || 640);   // 10 squares
       const me0 = c.self;
-      let joinAt = 0, joinDist = Infinity;
+      const geo = s.world?.geometry ?? null;
+      // JOIN AT THE NEAREST COARSE SPOT, NOT SIMPLY THE NEAREST POINT.
+      //
+      // The operator's rule, and it follows from what a safe wall IS: the tight squares are
+      // exactly the ones the coarse grid cannot deliver you to, and they are most of what a
+      // track threads. Picking the geometrically nearest waypoint therefore picks, by
+      // preference, a station standing inside a wall pocket — the one place ordinary routing
+      // cannot reach — so the approach fails before the track is ever ridden.
+      //
+      // So a station has to be somewhere the SQUARE router can get to, and the walk to it is
+      // an ordinary coarse walk. Fine precision is for riding the track, not for boarding it.
+      let joinAt = -1, joinDist = Infinity;
       if (me0) {
         for (let i = 0; i < track.waypoints.length; i++) {
-          const d = Math.hypot(track.waypoints[i].x - me0.x, track.waypoints[i].y - me0.y);
+          const wp = track.waypoints[i];
+          const sq = { row: Math.floor(wp.y / KOD_FINENESS) + 1, col: Math.floor(wp.x / KOD_FINENESS) + 1 };
+          // A station must be coarse-walkable. With no geometry loaded every point qualifies,
+          // which is the old behaviour and is right for a checkout with no bake.
+          if (geo && typeof geo.walkable === 'function' && !geo.walkable(sq.row, sq.col)) continue;
+          const d = Math.hypot(wp.x - me0.x, wp.y - me0.y);
           if (d < joinDist) { joinDist = d; joinAt = i; }
         }
       }
-      if (!(joinDist <= JOIN_WITHIN))
-        return { replayed: false, room: here, to: num(a.to), off_track_by: Math.round(joinDist),
-                 note: 'not on this track — the nearest waypoint is ' + Math.round(joinDist / 64) +
-                       ' squares away; plan it as usual' };
+      if (joinAt < 0 || !(joinDist <= JOIN_WITHIN))
+        return { replayed: false, room: here, to: num(a.to),
+                 off_track_by: Number.isFinite(joinDist) ? Math.round(joinDist) : null,
+                 note: joinAt < 0
+                   ? 'no station on this track is reachable on the coarse grid; plan it as usual'
+                   : 'not on this track — the nearest station is ' + Math.round(joinDist / 64) +
+                     ' squares away; plan it as usual' };
+      // BOARD IT COARSELY. Anything more than a step away is an ordinary square walk, which
+      // is what the router is good at and what the station was chosen to be reachable by.
+      if (joinDist > KOD_FINENESS) {
+        const wp = track.waypoints[joinAt];
+        const board = await s.walkTo(Math.floor(wp.x / KOD_FINENESS) + 1,
+                                     Math.floor(wp.y / KOD_FINENESS) + 1,
+                                     { maxSteps: 60 }).catch(() => null);
+        if (!board?.arrived)
+          return { replayed: false, room: here, to: num(a.to), boarding_failed: true,
+                   off_track_by: Math.round(joinDist),
+                   note: 'could not reach the station on the coarse grid; plan it as usual' };
+      }
       const started = Date.now();
       const hp0 = c.self?.health ?? null;
       const log = [];

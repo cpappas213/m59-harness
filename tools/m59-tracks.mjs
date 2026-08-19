@@ -100,8 +100,34 @@ export function comb(crossingList, geoFor = () => null) {
     const geo = geoFor(c.room);
     const points = straighten(geo, c.points);
     if (points.length < 2) continue;
+    // WHICH STATIONS ARE SHELTER.
+    //
+    // The tight squares that make these crossings awkward are the SAME squares a monster
+    // cannot reach — that is what a safe wall is, measured: the coarse grid offering a
+    // neighbour the mover refuses. So a track already runs past the best places in the room
+    // to stop and bleed quietly, and marking them costs nothing. A traveller that is hurt
+    // mid-crossing does not need to reach a town; it needs the next station with a wall at
+    // its back.
+    //
+    // The dose is what matters rather than the fact: at zero refused neighbours 28% of
+    // tested squares held, at four or more 70.5%. Three is the threshold where the signal
+    // is clearly present and the squares are still common enough to be on a route.
+    const safeAt = [];
+    if (geo && typeof geo.walkable === 'function') {
+      points.forEach((p, i) => {
+        const row = Math.floor(p.y / 64) + 1, col = Math.floor(p.x / 64) + 1;
+        let refused = 0;
+        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]) {
+          const nr = row + dr, nc = col + dc;
+          if (!geo.inBounds?.(nr, nc) || !geo.walkable(nr, nc)) continue;
+          if (!geo.moverStepLands?.(row, col, nr, nc)) refused++;
+        }
+        if (refused >= 3) safeAt.push(i);
+      });
+    }
     best.set(key, { room: c.room, from: c.cameFrom, to: c.goingTo, ms: c.ms,
                     waypoints: points.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) })),
+                    ...(safeAt.length ? { shelter: safeAt } : {}),
                     entered: c.entered, left: c.left,
                     samples: c.points.length, seen: (had?.seen ?? 0) + 1,
                     straightened: geo ? true : false });
