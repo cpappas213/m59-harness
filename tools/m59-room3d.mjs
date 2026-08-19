@@ -323,7 +323,7 @@ function makeLabel(text, color) {
 let facingArrow = null;
 let targetRing = null;
 
-function buildEntities(objs, facing, targetId) {
+function buildEntities(objs, facing, targetId, targetInBand) {
   // Clear existing
   while (entityGroup.children.length) {
     const ch = entityGroup.children[0];
@@ -375,16 +375,24 @@ function buildEntities(objs, facing, targetId) {
         facingArrow = holder;
       }
     }
-    // Target reticle: a pulsing red ring around the targeted entity.
+    // Target reticle: color indicates intent.
+    //   orange = in-band, will fight
+    //   red    = out-of-band, will flee (danger)
     if (targetId != null && o.t !== 0 && o._objId === targetId) {
+      const ringColor = targetInBand ? 0xff9933 : 0xff3333;
       const tring = new THREE.Mesh(
         new THREE.RingGeometry(0.4, 0.65, 32),
-        new THREE.MeshBasicMaterial({ color: 0xff3333, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
+        new THREE.MeshBasicMaterial({ color: ringColor, side: THREE.DoubleSide, transparent: true, opacity: 0.8 })
       );
       tring.rotation.x = -Math.PI / 2;
       tring.position.set(x, 0.04 + oh, z);
       entityGroup.add(tring);
       targetRing = tring;
+      // Small text label above the ring: FIGHT or FLEE
+      const label = makeLabel(targetInBand ? 'FIGHT' : 'FLEE!', '#' + ringColor.toString(16).padStart(6, '0'));
+      label.position.set(x, 1.2 + oh, z);
+      label.scale.set(2.5, 0.7, 1);
+      entityGroup.add(label);
     }
     const hex = '#' + colors[o.t].toString(16).padStart(6, '0');
     const sprite = makeLabel(o.n, hex);
@@ -393,7 +401,7 @@ function buildEntities(objs, facing, targetId) {
     entityGroup.add(sprite);
   }
 }
-buildEntities(OBJECTS, null, null);
+buildEntities(OBJECTS, null, null, null);
 
 // Background poll: update entities + vitals every 3s without reloading.
 let entityKey = null;
@@ -424,11 +432,12 @@ async function pollData() {
     }
     // Update entities in-place (only rebuild if the set or facing/target changed)
     var targetId = d.target ? d.target.id : null;
-    var key = JSON.stringify((d.objects || []).map(function(o) { return o.n + o.t + o.x + ',' + o.z + (o.id || ''); })) + 'f' + (d.facing ?? '') + 't' + (targetId ?? '');
+    var targetInBand = d.target ? !!d.target.in_band : null;
+    var key = JSON.stringify((d.objects || []).map(function(o) { return o.n + o.t + o.x + ',' + o.z + (o.id || ''); })) + 'f' + (d.facing ?? '') + 't' + (targetId ?? '') + 'b' + (targetInBand ?? '');
     if (key !== entityKey) {
       // Attach _objId to each object for target matching
       var objs = (d.objects || []).map(function(o) { o._objId = o.id; return o; });
-      buildEntities(objs, d.facing, targetId);
+      buildEntities(objs, d.facing, targetId, targetInBand);
       entityKey = key;
     }
     // Update vitals
