@@ -96,6 +96,11 @@ export function recordSeen(row = {}, { fleet = process.env.M59_FLEET || 'default
     buffer.push({
       at: row.at ?? Date.now(),
       room: row.room ?? null,
+      // The stable identity — see the note at the recording site. Written when known and
+      // preferred on read; the object id stays as a fallback for a client that has not seen
+      // a BP_PLAYER yet and for reading back trails recorded before this existed.
+      ...(row.room_name_rsc != null ? { room_name_rsc: row.room_name_rsc } : {}),
+      ...(row.room_rsc != null ? { room_rsc: row.room_rsc } : {}),
       id, name: row.name ?? null,
       // The observer, so a trail can be told from a sighting — and so a formation knows
       // whose clock it is on.
@@ -245,26 +250,61 @@ export function straighten(geo, points, { arriveWithin = 40 } = {}) {
 // 430 segments were filed as "a room we have no geometry for", and every one of them was a
 // room we know perfectly well.
 export function roomIndex(map) {
-  // OBJECT IDS ONLY. The identity mapping that used to be here — num -> num, "in case it is
-  // already a room number" — is not a convenience, it is a COLLISION: room 1, the
-  // Underworld, has object id 6, and room 6 is The Deep Dark Woods of Marion. Whichever was
-  // written last won, so every Underworld sample was filed under the woods and the best
-  // straightening result this session ever reported (126 samples to 2 waypoints "in The
-  // Deep Dark Woods of Marion") was almost certainly the Underworld wearing its name.
+  // THREE SEPARATE INDEXES, BECAUSE THE THREE KEYS ARE NOT INTERCHANGEABLE AND MERGING THEM
+  // IS EXACTLY THE BUG THIS FUNCTION ALREADY SHIPPED ONCE.
   //
-  // The client only ever knows the object id — `this.room.id` — so there is nothing to fall
-  // back FOR. A room number arriving here would be a bug in the recorder, and leaving it
-  // unresolved is how that bug stays visible.
-  const byObj = new Map();
+  //   nameRsc / roomRsc — unique per room, protocol-visible on BP_PLAYER, and STABLE across
+  //                       a save. These are the keys m59-world already identifies rooms by,
+  //                       calling object ids "the fallback, not the key".
+  //   objId            — convenient, and renumbered by every `save game`, which is every
+  //                       fifteen minutes here. It is also ambiguous within a single boot:
+  //                       30 of the 264 object ids are ALSO a room number, so room 1's objId
+  //                       of 6 is indistinguishable from room 6.
+  //
+  // The first version wrote objId -> num AND num -> num into one map, "in case it is already
+  // a room number". Room 1 is the Underworld, room 6 is The Deep Dark Woods of Marion, and
+  // whichever landed last won — so every Underworld sample was filed under the woods, and
+  // the best straightening result this session reported was the Underworld wearing the
+  // woods' name. Keeping the maps apart is what makes that unsayable rather than unlikely.
+  const byName = new Map(), byRsc = new Map(), byObj = new Map();
   for (const key of Object.keys(map?.rooms ?? {})) {
     const r = map.rooms[key];
-    if (r?.objId != null) byObj.set(Number(r.objId), Number(r.num));
+    const num = Number(r?.num);
+    if (!Number.isFinite(num)) continue;
+    if (r.nameRsc != null) byName.set(Number(r.nameRsc), num);
+    if (r.roomRsc != null) byRsc.set(Number(r.roomRsc), num);
+    if (r.objId != null) byObj.set(Number(r.objId), num);
   }
-  return byObj;
+  // `get` is kept so a caller holding a bare object id still works; it is the object-id
+  // index, which is what every such caller was passing anyway.
+  return { byName, byRsc, byObj, get: (k) => byObj.get(Number(k)) };
 }
 
 /** Resolve a recorded `room` (an object id, usually) to a room number, or null. */
-export const resolveRoom = (index, room) => index?.get(Number(room)) ?? null;
+/**
+ * Resolve a recorded sample to a room NUMBER, stable key first.
+ *
+ * Takes the whole sample rather than one field, because which key is trustworthy is a
+ * property of the sample: one recorded after the stable identity was added carries it, one
+ * from before does not, and only the sample knows which it is. Asking for "the room" and
+ * letting this decide is what stops the object id being reached for out of habit.
+ */
+export function resolveRoom(index, sampleOrRoom) {
+  if (index == null) return null;
+  const s = (sampleOrRoom != null && typeof sampleOrRoom === 'object') ? sampleOrRoom : null;
+  if (s) {
+    if (s.room_name_rsc != null) {
+      const hit = index.byName?.get(Number(s.room_name_rsc));
+      if (hit != null) return hit;
+    }
+    if (s.room_rsc != null) {
+      const hit = index.byRsc?.get(Number(s.room_rsc));
+      if (hit != null) return hit;
+    }
+    return index.byObj?.get(Number(s.room)) ?? null;
+  }
+  return index.byObj?.get(Number(sampleOrRoom)) ?? null;
+}
 
 export const squareOf = p => ({ row: Math.floor(p.y / KOD_FINENESS) + 1,
                                 col: Math.floor(p.x / KOD_FINENESS) + 1 });

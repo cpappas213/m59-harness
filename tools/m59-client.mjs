@@ -873,7 +873,9 @@ export class M59Client {
     // Flagged `sent`, because it is where we ASKED to be and the server has not confirmed
     // it yet. The straightener raycasts every leg it keeps, so an intention that was refused
     // cannot become a track through a wall — it simply fails to join and is dropped.
-    recordSeen({ at: Date.now(), room: this.room?.id ?? null, id: this.selfId,
+    recordSeen({ at: Date.now(),
+                 room_name_rsc: this.roomNameRsc ?? null, room_rsc: this.roomRsc ?? null,
+                 room: this.room?.id ?? null, id: this.selfId,
                  name: this.character ?? null, by: this.character ?? null,
                  player: true, sent: true, x, y });
   }
@@ -1261,7 +1263,22 @@ export class M59Client {
         //
         // Buffered, deduplicated against standing still, and unable to throw: this is the
         // packet path that every session shares.
-        recordSeen({ at: Date.now(), room: this.room?.num ?? this.room?.id ?? null,
+        // THE ROOM'S STABLE IDENTITY, NOT ITS OBJECT ID.
+        //
+        // `this.room.id` is the object id, and m59-map.mjs says plainly that objId is NOT
+        // stable — the server renumbers objects on every `save game`, which is every 15
+        // minutes here. A ledger keyed on it silently re-points at different rooms after a
+        // save, which is the worst kind of wrong for a record meant to outlive the session.
+        // It is also ambiguous even within one boot: 30 of the 264 object ids are ALSO a
+        // room number, so room 1's objId of 6 is indistinguishable from room 6.
+        //
+        // `roomNameRsc` and `roomRsc` come from BP_PLAYER, are unique per room across the
+        // world, and survive a save — which is why m59-world identifies rooms by them and
+        // uses the object id only as a last resort. The reader resolves whichever of these
+        // it is given; the id is kept alongside for debugging rather than as the key.
+        recordSeen({ at: Date.now(),
+                     room_name_rsc: this.roomNameRsc ?? null, room_rsc: this.roomRsc ?? null,
+                     room: this.room?.id ?? null,
                      id: res.id, name: o?.name ?? null, by: this.character ?? null,
                      player: !!(o && o.isPlayer), x: res.x, y: res.y, col: res.col, row: res.row });
         // Our own moves confirm what the server accepted, which is the only

@@ -137,6 +137,37 @@ console.log('\nneither instrument may break the thing it measures');
      JSON.stringify(loadTrips('never-existed')) === '{}');
 }
 
+console.log('');
+console.log('an object id is not a room number, and the two indexes must never merge');
+{
+  const { roomIndex, resolveRoom } = await import('./m59-trails.mjs');
+  // The real shape of the collision: room 1 (the Underworld) has object id 6, and room 6
+  // (The Deep Dark Woods of Marion) exists. 30 of the world's 264 object ids collide with
+  // some room's number like this, so a single map that accepts either answers 11% of
+  // lookups with the wrong room and cannot be told that it is doing so.
+  const map = { rooms: {
+    1: { num: 1, objId: 6,  nameRsc: 900, roomRsc: 800 },
+    6: { num: 6, objId: 42, nameRsc: 901, roomRsc: 801 },
+  } };
+  const idx = roomIndex(map);
+  ok('an object id resolves to its own room, not to the room of the same number',
+     resolveRoom(idx, { room: 6 }) === 1, String(resolveRoom(idx, { room: 6 })));
+  ok('and the room whose NUMBER is 6 is still reachable by its own object id',
+     resolveRoom(idx, { room: 42 }) === 6, String(resolveRoom(idx, { room: 42 })));
+
+  // THE STABLE KEY WINS. objId is renumbered by every `save game`; nameRsc and roomRsc come
+  // from BP_PLAYER and survive one. A sample carrying both must be resolved by the durable
+  // one, or a ledger silently re-points at different rooms after a save.
+  ok('the stable name resource beats a stale object id',
+     resolveRoom(idx, { room: 42, room_name_rsc: 900 }) === 1);
+  ok('and the room resource does too',
+     resolveRoom(idx, { room: 42, room_rsc: 800 }) === 1);
+  ok('a sample with no stable key still resolves by object id',
+     resolveRoom(idx, { room: 6 }) === 1);
+  ok('and an unknown room resolves to null rather than to a guess',
+     resolveRoom(idx, { room: 12345 }) === null);
+}
+
 rmSync(scratch, { recursive: true, force: true });
 console.log('\n' + passed + ' passed, ' + failed + ' failed');
 process.exit(failed ? 1 : 0);
