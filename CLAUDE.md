@@ -2212,6 +2212,52 @@ of a quiet middle band — there is no setting that clears both. Written as an e
 every value warned about something, which reads the same as nothing. They are independent
 remarks and a value may collect both.
 
+## A PROFILE IS THE OTHER HALF: NOT A NUMBER, BUT WHERE THE FLEET IS ALLOWED TO BE
+
+The local policy above overrides *thresholds*, and its surface is deliberately small. What
+it cannot say is the thing that actually keeps a bare fleet alive, because that is not a
+threshold: it is **where the fleet may stand**, and the dozen unrelated-looking policy
+fields that each quietly walk a character out of it.
+
+```bash
+node tools/m59-profiles.mjs --room 70              # plan: who is ready, who is held, why
+node tools/m59-profiles.mjs --room 70 --apply
+```
+
+`town_safe_farming` is the first one and it means *farm what is inside the walls and never
+step outside them*. **It is one setting in spirit and thirteen in practice** — `roam`,
+`bank_above`, `sell_at_load`, `sell_when_broke`, the three `buy_*`, `vault_items`,
+`guild_wants`, `guild_tithe`, `conflict_response_hops`, `farm_delivery`, `farm_cleanup` —
+and **not one of them looks like travel**. `vault_items` deposits at the *Barloque* vault;
+`conflict_response_hops` runs to a fleetmate's fight five rooms away.
+
+Why it exists, measured 2026-08-19: a graveyard shift put **14 of 21 characters in the
+Underworld inside one 35-minute window, and not one of them died to the prey.** They died
+crossing — 584 The Flatlands, 585 the border of the Badlands, 576 The King's Way, 587 the
+Western border of the Twisted Wood — and a death costs max health, which *is* the level.
+
+**THE GUARD IS THE POINT, NOT THE POLICY BLOB.** Anyone can set `assigned_room`. What this
+refuses is the two ways a town-safe posture silently stops being one, and both look like
+success from the fleet board:
+
+- **a farm room outside the town**, which makes the character walk out to reach its own
+  assignment. A boundary room is refused by name, because 585 and 587 are where this fleet
+  actually died rather than merely where it could have;
+- **a character that is not in the town yet.** Applying a posture does not move anybody, so
+  this would send it across exactly the wilderness the profile exists to avoid. It says
+  "walk it in first" — which is a real workflow, since walking them in by hand is what an
+  operator does while the routing is untrusted.
+
+An unknown *current* room is the one thing allowed to be a note rather than a refusal.
+
+**The town is a curated room set and a name cannot do this job.** "The Deep Dark Woods **of
+Tos**" (4) carries the name and is wilderness; "Familiars" (52) and "The Crypt" (71) carry
+nothing and are indoors. `TOWNS.tos.boundary` names the way out rather than merely omitting
+it. And the profile **reports what a character cannot do instead of assigning it silently**:
+the engagement ceiling refusing the prey, or a kill that pays nothing because the creature's
+level is not *strictly* above max health, are notes on a plan that is still ready — being
+unable to earn is not a reason to leave somebody outside the walls.
+
 ## Working in this repository
 
 - **A CLAIM THAT CONTRADICTS WHAT IS ALREADY WRITTEN DOWN NEEDS A REPRODUCTION BEFORE
@@ -2286,6 +2332,16 @@ remarks and a value may collect both.
   permitted hop reports arrival rather than "gave up", and that a cancelled movement still
   wins. It lifts the real method out of `m59-broker.mjs` by brace-matching rather than
   reimplementing it, because that file cannot be imported without taking the fleet lock) and
+  `node tools/m59-travelguard-test.mjs` (29 — **one character has one body**: that a second
+  travel call is REFUSED while the first is in flight, and that both arms of the tool claim
+  the same slot. `background: true` took a job slot and the foreground arm did not, so two
+  travel calls on one character both ran — measured on arena as two journey ids walking one
+  character to one destination at identical timestamps, each replanning against the other's
+  steps. It is reached by the ordinary path: a travel runs for minutes, longer than a default
+  HTTP client timeout, so a caller that gives up and retries starts a second one. Half the
+  suite is STRUCTURAL — that the walk is spelled exactly once — because the mechanism was
+  never broken and `startJob`'s own assertions pass on the buggy code; set
+  `M59_BROKER_SRC` at a copy with the old path and exactly those two go red) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (383) and
   `node tools/m59-playbook-test.mjs` (37 — the three moments, the closed verb set, and
@@ -2339,6 +2395,14 @@ remarks and a value may collect both.
   that cannot sell it anything, that an empty purse sends it to a bank FIRST, that a full
   pack still goes to Roq, and that the bill the trip and the withdrawal both read has one
   home. See the trap below on a trip that cannot fix the thing that opened it) and
+  `node tools/m59-profiles-test.mjs` (56 — **the contract test for a posture whose whole
+  value is in what it REFUSES**: that the town is a curated room set rather than a name
+  match (the Deep Dark Woods *of Tos* is wilderness; Familiars and The Crypt are indoors
+  and say neither), that a farm room outside the walls and a character standing outside
+  them are both refused rather than quietly walked, that an unknown current room is the one
+  thing allowed to be a note instead, and above all that every one of the thirteen policy
+  fields which can walk a character out of a room is still suppressed — a list that grew
+  one death at a time and passes cleanly if somebody adds a fourteenth) and
   `node tools/m59-guild-test.mjs` (192 — **the contract test for a command space that
   refuses in total silence**: that the permission check runs off the server's own bitmask
   rather than the rank table, that invite is LORD while exile is LIEUTENANT, that

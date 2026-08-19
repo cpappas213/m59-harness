@@ -2307,10 +2307,72 @@ class Session {
                   ...(controlToken ? { controlToken } : {}),
                   ...(leaseToken ? { leaseToken } : {}) };
     this.job = job;
-    fn(generation).then(r => { job.result = r; }, e => { job.error = e.message; })
-        .finally(() => { job.done = true; job.finishedAt = Date.now(); });
+    // KEPT SO A FOREGROUND CALLER CAN AWAIT THE SLOT IT JUST CLAIMED.
+    //
+    // Background callers poll `job.result`/`job.error` and that is unchanged. A
+    // foreground one has to be able to await the same work WITHOUT a second code path,
+    // because "there is another way to run a travel" is exactly how one of the two ways
+    // ended up with no busy check at all — see the travel tool.
+    job.promise = fn(generation).then(
+      r => { job.result = r; return r; },
+      e => { job.error = e.message; throw e; })
+      .finally(() => { job.done = true; job.finishedAt = Date.now(); });
+    // Nobody is obliged to await it, so absorb the rejection here or a failed background
+    // job becomes an unhandled rejection and takes the broker — and its sessions — down.
+    // `job.error` still carries the failure to every existing reader, exactly as before.
+    job.promise.catch(() => {});
     return job;
   }
+
+  // THE ONLY WAY ANYTHING IN THIS FILE SHOULD START A JOURNEY.
+  //
+  // `travel()` is the hop loop and knows nothing about who else wants the character. Two
+  // things have to be true AROUND it, and both used to be the travel tool's private
+  // business:
+  //
+  //   the JOB SLOT   — so a second journey is refused instead of driving the same body;
+  //   the KEEPER HOLD — so the keeper is not taking safe spots and pulling monsters while
+  //                     we walk, which is the same contention by a different door.
+  //
+  // Every other caller here — the faction errands, the Raza exit, the follow loop —
+  // reached `travel()` directly and got NEITHER. So an errand could walk a character that
+  // a travel call was already walking, and the thirty lines of comment on the travel tool
+  // preventing exactly that protected only the callers that came through the tool.
+  //
+  // It THROWS when the body is taken, exactly as `startJob` does, and that is the useful
+  // answer: an errand that cannot have the character should say so rather than fight for
+  // it. Callers that already turn a throw into a failed leg need no change at all.
+  travelJob(dest, { where = `room ${dest}`, ...opts } = {}) {
+    const keeper = autopilotIfAny(this.name);
+    return this.startJob('travel', `walk to ${where}`, async movementGeneration => {
+      let ours = false;
+      // RE-ASSERTED ON A TIMER, because an inert keeper WAKES ON A DEADLINE
+      // (`INERT_MAX_MS`, so a crashed errand cannot silence one for ever) and that
+      // deadline does not know a journey is in progress. Watched live before this
+      // existed: a stale hold lapsed mid-walk and the character was being driven by the
+      // keeper and by travel at once.
+      //
+      // And only ever revive a hold that is OURS — reviving somebody else's is how a
+      // character ends up driven by two things again, which is the whole point of this.
+      const assert_ = () => {
+        if (!keeper || keeper.inert) return;
+        keeper.goInert(`travelling to ${where}`);
+        ours = true;
+      };
+      assert_();
+      const timer = setInterval(assert_, 2000);
+      timer.unref?.();
+      try {
+        return await this.travel(dest, { ...opts, movementGeneration });
+      } finally {
+        clearInterval(timer);
+        if (ours) keeper.revive('travel finished');
+      }
+    });
+  }
+
+  // The same thing for a caller that wants to WAIT. `travelJob` for one that does not.
+  travelExclusive(dest, opts = {}) { return this.travelJob(dest, opts).promise; }
 
   movementWasCancelled(generation, controlToken) {
     return generation !== this.movementGeneration ||
@@ -6971,44 +7033,39 @@ const TOOLS = [
       //
       // So: poll. If the keeper is awake and we are still walking, take the hold; keep a
       // note of whether the hold is OURS, and only ever revive our own.
-      const keeper = autopilotIfAny(s.name);
-      const holdKeeper = () => {
-        if (!keeper) return null;
-        let ours = false;
-        const assert_ = () => {
-          if (keeper.inert) return;
-          keeper.goInert(`travelling to ${where.name}`);
-          ours = true;
-        };
-        assert_();
-        const timer = setInterval(assert_, 2000);
-        timer.unref?.();
-        return () => {
-          clearInterval(timer);
-          if (ours) keeper.revive('travel finished');
-        };
-      };
+      // A FOREGROUND TRAVEL CLAIMS THE SAME ONE BODY A BACKGROUND ONE DOES.
+      //
+      // The foreground path used to call `s.travel` directly — no job slot, no busy
+      // check — so `background` was the only arm of this tool that honoured "one job at
+      // a time per session". Two travel calls on one character therefore both RAN, each
+      // replanning against the other's steps. Measured live on arena: two journey ids
+      // walking one character to one destination, recording the same crossings at
+      // identical timestamps.
+      //
+      // It is reached by the ordinary path rather than an exotic one. A travel here runs
+      // for minutes — longer than a default HTTP client timeout — so a caller that gives
+      // up and retries issues the second call believing the first is gone. It is not; the
+      // broker is still walking it, and nothing told the caller otherwise.
+      //
+      // The cost is not just a wasted walk. `travelJob` holds the keeper INERT for the
+      // whole journey, deliberately, so while the two loops fight the character neither
+      // fights back nor flees — which is what turns a survivable corridor into the
+      // 60-second killings recorded in the postmortems.
+      //
+      // Both the slot and the keeper hold now live on `Session.travelJob`, because this
+      // tool having its own private copy of them is precisely why every other caller in
+      // the file had neither. ONE definition, two ways to wait for it.
+      const startTravel = () => s.travelJob(dest, {
+        where: where.name, maxHops: num(a.max_hops, 25), controlToken: a.control_token,
+      });
 
       if (a.background) {
-        s.startJob('travel', `walk to ${where.name}`,
-                   async movementGeneration => {
-                     const release = holdKeeper();
-                     try {
-                       return await s.travel(dest, {
-                         maxHops: num(a.max_hops, 25), movementGeneration,
-                         controlToken: a.control_token,
-                       });
-                     } finally { release?.(); }
-                   });
+        startTravel();
         const hops = s.world.route(dest)?.length ?? null;
         return { started: true, destination: where, hops,
                  note: 'walking now; poll `fleet` or `status` — do not re-issue while busy' };
       }
-      const release = holdKeeper();
-      let r;
-      try {
-        r = await s.travel(dest, { maxHops: num(a.max_hops, 25), controlToken: a.control_token });
-      } finally { release?.(); }
+      const r = await startTravel().promise;
       return { destination: { num: dest, name: worldMap.rooms[dest].name }, ...r, now: arrivalReport(s) };
     },
   },
@@ -7586,7 +7643,7 @@ const TOOLS = [
           (!a.token || item.id === Number(a.token)));
         if (!held) throw new Error('no real Council token is carried');
         if ((s.world?.room?.num ?? null) !== join.room) {
-          const traveled = await s.travel(join.room, { maxHops: 25 });
+          const traveled = await s.travelExclusive(join.room, { maxHops: 25 });
           if (!traveled.arrived) return { delivered: false, faction: own.faction, token: held,
             reason: `could not reach ${join.leader}: ${traveled.reason ?? 'travel did not arrive'}` };
         }
@@ -7603,7 +7660,7 @@ const TOOLS = [
           report = await factionSpeech(s, council.councilor);
           const weak = report.some(line => /suspected to be a weak believer/i.test(line));
           if (weak) {
-            const traveled = await s.travel(council.room, { maxHops: 25 });
+            const traveled = await s.travelExclusive(council.room, { maxHops: 25 });
             if (!traveled.arrived) return { delivered: false, faction: own.faction, token: held,
               councilor_report: report,
               reason: `could not reach weak councilor ${council.councilor}: ${traveled.reason ?? 'travel did not arrive'}` };
@@ -10345,6 +10402,12 @@ const TOOLS = [
           '(half of journeys hold, half walk on, decided per journey); "observe" writes down what it ' +
           'would have done and changes nothing; "off" is the behaviour from before it existed. This ' +
           'is the kill switch for that experiment and takes effect on the next hop — no restart.' },
+      travel_hold_vigor: { type: 'number',
+        description: 'the vigor a character must have before it will stop mid-journey to heal at a ' +
+          'safe wall. Health comes back at a rate set by vigor, so below this a top-up costs more in ' +
+          'exposure than it returns. Default 80 — the resting cap, and the highest an unfed character ' +
+          'can reach; it was 100, which no fleet with an empty larder could ever present, so the hold ' +
+          'never fired. Raise it to 100 for a fed fleet that would rather press on.' },
       full_journal: { type: 'boolean', description: 'return the whole journal, not just the tail' },
     }, required: ['agent', 'action'] },
     run: (a) => {
@@ -10539,6 +10602,17 @@ const TOOLS = [
         p.policy.weaponPriority = Array.isArray(a.weapon_priority) && a.weapon_priority.length
           ? a.weapon_priority.map(String) : null;
       if (a.travel_hold !== undefined) p.policy.travelHold = String(a.travel_hold);
+      // Guarded rather than coerced: `Number(x) || d` turns a deliberate 0 into the default,
+      // which is the falsy-zero bug conflict_response_hops still has one screen below.
+      if (a.travel_hold_vigor !== undefined) {
+        if (a.travel_hold_vigor == null) p.policy.travelHoldVigor = null;
+        else {
+          const v = Number(a.travel_hold_vigor);
+          if (!Number.isFinite(v) || v < 0 || v > skills.VIGOR_MAX)
+            throw new Error(`travel_hold_vigor must be between 0 and ${skills.VIGOR_MAX}`);
+          p.policy.travelHoldVigor = v;
+        }
+      }
       if (a.drop_junk !== undefined) p.policy.dropJunk = !!a.drop_junk;
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.assigned_room !== undefined)
@@ -12945,7 +13019,7 @@ const TOOLS = [
       const log = [];
       let out = false;
       for (let attempt = 0; attempt < 3 && !out; attempt++) {
-        const t = await s.travel(MUSEUM_ROOM, { maxHops: 8 }).catch(e => ({ arrived: false, reason: e.message }));
+        const t = await s.travelExclusive(MUSEUM_ROOM, { maxHops: 8, where: "the Grand Museum" }).catch(e => ({ arrived: false, reason: e.message }));
         log.push({ step: 'to the Grand Museum', ...t });
         // The bounce does not always put you back on the square you left, so step
         // off and on again rather than assuming position.
@@ -12959,7 +13033,7 @@ const TOOLS = [
 
       if (out && a.then_travel_to != null && worldMap) {
         const dest = resolveRoom(worldMap, a.then_travel_to);
-        if (dest != null) log.push({ step: 'onward', ...(await s.travel(dest, { maxHops: 18 }).catch(e => ({ arrived: false, reason: e.message }))) });
+        if (dest != null) log.push({ step: 'onward', ...(await s.travelExclusive(dest, { maxHops: 18 }).catch(e => ({ arrived: false, reason: e.message }))) });
       }
       return { left: out, log, now: arrivalReport(s),
                note: out ? 'one-way — you cannot walk back into Raza'
@@ -13869,7 +13943,11 @@ const TOOLS = [
           rememberAutopilot(o.agent, { mode: p.mode, policy: { ...p.policy } });
           if (a.travel && o.moves) {
             const s = session(o.agent);
-            try { s.startJob('travel', `walk to ${o.room_name}`, () => s.travel(o.room, { maxHops: 20 })); }
+            // `travelJob` rather than a hand-rolled `startJob`: this one did claim the
+            // slot, but it held no keeper and dropped the movement generation — so the
+            // keeper went on steering underneath it and `cancel_movement` could not reach
+            // it. Claiming the slot is only half of not being driven by two things.
+            try { s.travelJob(o.room, { where: o.room_name, maxHops: 20 }); }
             catch { /* already busy — the assignment alone will carry it there */ }
           }
         }
@@ -15966,7 +16044,7 @@ async function supplyBetween(a) {
             // and chasing where it WAS is how this used to end up in the wrong room.
             const dest = other.world?.room?.num;
             if (dest == null) { why = 'cannot see which room the other one is in'; break; }
-            const t = await mover.travel(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
+            const t = await mover.travelExclusive(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
             why = t.arrived ? null : t.reason;
             arrived = await canSeeThem();
             const nowIn = mover.world?.room?.num ?? null;
