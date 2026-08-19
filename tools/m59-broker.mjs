@@ -47,6 +47,7 @@ import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPat
 import { CLIENT_FINENESS, elideLoops, protocolToClient } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
+import { recallTrack } from './m59-tracks.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -7352,6 +7353,85 @@ const TOOLS = [
         }),
         messages: out.slice(-limit),
       };
+    },
+  },
+  {
+    name: 'replay_track',
+    description: 'Walk a recorded track: the fastest crossing anybody has actually made of this ' +
+      'room, between these two doors, straightened against the baked BSP. Learned by m59-tracks.mjs ' +
+      'from the trail ledger, so a track is made of accepted moves and cannot contain a step the ' +
+      'mover refuses — which is the failure mode of planning on square stand points a body never ' +
+      'occupies. ' +
+      'Answers replayed:false with no movement at all when there is no track for this crossing, ' +
+      'which the caller must read as "plan it the way you always did" rather than as a refusal. ' +
+      'Every waypoint still goes through the ordinary validated fine move, so a world that has ' +
+      'changed refuses it exactly as it would refuse a fresh plan.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      to: { type: 'number', description: 'the room number this crossing leads to' },
+      from: { type: 'number', description: 'the room walked in from; omitted matches any' },
+      max_steps: { type: 'number', description: 'fine steps allowed per waypoint, default 60' },
+    }, required: ['agent', 'to'] },
+    run: async (a) => {
+      const s = session(a.agent);
+      const c = s.need();
+      const here = Number(s.world?.room?.num ?? NaN);
+      const track = recallTrack(here, a.from == null ? null : num(a.from), num(a.to));
+      if (!track?.waypoints?.length)
+        return { replayed: false, room: here, to: num(a.to),
+                 note: 'no track for this crossing — plan it as usual' };
+      // GET ON AT THE NEAREST STATION GOING YOUR WAY.
+      //
+      // A track is a crossing somebody made, and it starts where THEY came in. Replaying it
+      // from waypoint one means walking back to their entrance first, which is a long way
+      // across the room and through whatever is standing in it — the first live attempt
+      // spent over ten minutes doing exactly that in Ukgoth, on a track whose whole
+      // recorded crossing took 28 seconds.
+      //
+      // So the replay joins at the nearest waypoint that is not BEHIND us: nearest by
+      // distance, and among the last few it never goes backwards along the track. If the
+      // nearest is further than JOIN_WITHIN, we are not on this track at all and saying so
+      // is the honest answer — the caller plans as usual rather than being dragged to
+      // somebody else's doorway.
+      const JOIN_WITHIN = Number(process.env.M59_TRACK_JOIN_WITHIN || 640);   // 10 squares
+      const me0 = c.self;
+      let joinAt = 0, joinDist = Infinity;
+      if (me0) {
+        for (let i = 0; i < track.waypoints.length; i++) {
+          const d = Math.hypot(track.waypoints[i].x - me0.x, track.waypoints[i].y - me0.y);
+          if (d < joinDist) { joinDist = d; joinAt = i; }
+        }
+      }
+      if (!(joinDist <= JOIN_WITHIN))
+        return { replayed: false, room: here, to: num(a.to), off_track_by: Math.round(joinDist),
+                 note: 'not on this track — the nearest waypoint is ' + Math.round(joinDist / 64) +
+                       ' squares away; plan it as usual' };
+      const started = Date.now();
+      const hp0 = c.self?.health ?? null;
+      const log = [];
+      let reached = 0, blocked = 0;
+      for (const wp of track.waypoints.slice(joinAt)) {
+        const before = c.self ? { x: c.self.x, y: c.self.y } : null;
+        const r = await s.walkFine(wp.x, wp.y, { maxSteps: num(a.max_steps, 60) }).catch(() => null);
+        const now = c.self;
+        // A WAYPOINT IS REACHED OR IT IS NOT, AND BEING PUSHED OFF IT IS THE INTERESTING CASE.
+        // The track is what the room allows; anything that stops us on it is a body, and that
+        // is exactly the number this verb exists to produce.
+        const near = now && Math.hypot(now.x - wp.x, now.y - wp.y) <= 48;
+        if (near) reached++; else blocked++;
+        log.push({ to: { x: wp.x, y: wp.y }, reached: !!near,
+                   ...(r?.reason ? { reason: r.reason } : {}),
+                   moved: !!(before && now && (before.x !== now.x || before.y !== now.y)) });
+        if (r?.left_room) break;
+      }
+      const hp1 = c.self?.health ?? null;
+      return { replayed: true, room: here, to: num(a.to),
+               joined_at: joinAt, off_track_by: Math.round(joinDist),
+               waypoints: track.waypoints.length - joinAt, reached, blocked,
+               ms: Date.now() - started, track_best_ms: track.ms,
+               ...(hp0 != null && hp1 != null && hp1 < hp0 ? { health_lost: hp0 - hp1 } : {}),
+               left_room: Number(s.world?.room?.num ?? NaN) !== here,
+               log };
     },
   },
   {
