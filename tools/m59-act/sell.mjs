@@ -93,7 +93,7 @@ export async function sell(client, session, { merchantId, itemId, waitMs = 1500 
   return { sent: true, sold: name, price, reason: null };
 }
 
-sell.pre     = ['at_shop'];  // need a merchant in the room to sell to
+sell.pre     = ['at_shop', 'has_loot'];  // need a merchant in the room AND something to sell
 sell.effects = ['has_money'];  // selling produces money (coarse gate)
 sell.atomic  = 'sell';
 sell.mutates = true;  // sends mutation packets (BP_REQ_OFFER + BP_ACCEPT_OFFER);

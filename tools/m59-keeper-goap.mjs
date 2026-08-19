@@ -37,6 +37,7 @@
 import { evaluate, unknowns, SYMBOL_NAMES } from './m59-worldstate.mjs';
 import { planFor, stepPlan } from './m59-plan.mjs';
 import { loadMap, findPath } from './m59-map.mjs';
+import { objIdToNum } from './m59-hunt-room.mjs';
 
 // ROOMS THAT HAVE SHOPS. A shop is any room where a merchant with a buy
 // list can be found. We use room names as a proxy: inns, taverns, shops,
@@ -93,6 +94,14 @@ function resolveMapRoom(liveNum, roomName) {
     const mapNum = nameMap.get(roomName);
     if (mapNum != null) return mapNum;
   }
+  // LAST RESORT: try objIdToNum. The live room id (e.g. 1548) may not be a map
+  // key, but objIdToNum knows the mapping from the server's object ids to map
+  // numbers. This covers the case where the room name hasn't been resolved yet
+  // (RSC timing) but the objId mapping is known.
+  try {
+    const mapped = objIdToNum(liveNum);
+    if (mapped != null) return mapped;
+  } catch {}
   return liveNum;
 }
 

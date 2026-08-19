@@ -299,9 +299,10 @@ export const SYMBOLS = {
       // Fallback: the room name matches a shop type. This covers
       // the case where the merchant hasn't been published yet (timing)
       // or the room has a vendor that doesn't advertise 'buy'.
-      const roomName = client?.room?.name ?? '';
+      // Resolve the room name via RSC — client.room.name is an RSC id, not a string.
+      const roomName = client?.rsc?.get?.(client?.roomNameRsc) ?? client?.room?.name ?? '';
       const SHOP_ROOM_RE = /inn|tavern|shop|store|market|apothecary|smith|armourer|jeweller|bank|pawn|general/i;
-      return SHOP_ROOM_RE.test(roomName);
+      return typeof roomName === 'string' && SHOP_ROOM_RE.test(roomName);
     },
   },
 
@@ -334,6 +335,11 @@ export const SYMBOLS = {
         if (/shilling|gold|silver|copper/i.test(lower)) return false;
         if (/bread|cheese|stew|apple|peach|bun|cake|pie|porridge|rice|meat|fish|salad|egg|ham|bacon|sausage|roast|kebab|bowl|plate|loaf|torta|pasta|noodles|sushi|burger|sandwich|pizza|dough|flour|milk|juice|water|beer|wine|ale|cider|potion|drink|food/i.test(lower)) return false;
         if (/elderberry|herb|mushroom|reagent/i.test(lower)) return false;
+        // Exclude gear: weapons, armor, shields. These are not sellable loot —
+        // they are the character's equipment. A false positive here makes the GOAP
+        // plan a useless sell trip for a character who has nothing to sell.
+        if (/mace|sword|axe|dagger|club|staff|bow|spear|hammer|warhammer|flail|sickle|scythe|katana|rapier|sabre|broadsword|longsword|shortsword|greatsword/i.test(lower)) return false;
+        if (/armor|armour|shield|helmet|helm|glove|gait|boots|cloak|robe|tunic|leather|chain|plate|scale|ring|amulet|belt|bracer|greave/i.test(lower)) return false;
         return true;
       });
     },
