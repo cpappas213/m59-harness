@@ -57,6 +57,11 @@ node_modules/
 # The fleet's own recorded walks and the doors it learned — both name characters and
 # positions, and both are this machine's history rather than anything a clone should carry.
 /substrate/trips/
+
+# Every body's path through every room, ours and everyone else's. Names characters and
+# real people who happened to be in the room, so it never leaves this machine.
+/substrate/trails/
+/substrate/m59-tracks.json
 /substrate/m59-crossings-learned.json
 # One JSON per character: every point of MAXIMUM HEALTH it has earned, and the creature
 # and room that paid for it. Caught from the server's own announcement — "You suddenly

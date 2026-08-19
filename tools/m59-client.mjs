@@ -19,6 +19,7 @@
 //   blakserv/session.c    GetCRC16BufferList: CRC32, truncated to 16 bits
 
 import net from 'node:net';
+import { recordSeen } from './m59-trails.mjs';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { loadResources } from './m59-rsc.mjs';
@@ -1230,6 +1231,20 @@ export class M59Client {
         // is cleared here rather than left to rot — a stale `predicted: true` on a
         // confirmed position would make every later reader distrust a good reading.
         if (o) Object.assign(o, { x: res.x, y: res.y, col: res.col, row: res.row, predicted: false });
+        // WRITE DOWN WHERE EVERY BODY ACTUALLY WENT.
+        //
+        // This packet is the only ground truth about walkable space this repository has, and
+        // until now it updated a map in memory and was thrown away. It covers EVERY object
+        // the room can see — our own characters, a proxied human, a stranger, a monster — so
+        // one character standing in a room is an instrument for everyone in it. That is what
+        // makes the same record serve travel (a trail through a room, straightened, is a
+        // route no planner can be wrong about) and formations (several trails on one clock).
+        //
+        // Buffered, deduplicated against standing still, and unable to throw: this is the
+        // packet path that every session shares.
+        recordSeen({ at: Date.now(), room: this.room?.num ?? this.room?.id ?? null,
+                     id: res.id, name: o?.name ?? null, by: this.character ?? null,
+                     player: !!(o && o.isPlayer), x: res.x, y: res.y, col: res.col, row: res.row });
         // Our own moves confirm what the server accepted, which is the only
         // trustworthy position — dead reckoning drifts and illegal moves are
         // simply refused with no reply.
