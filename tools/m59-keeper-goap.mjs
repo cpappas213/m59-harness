@@ -490,25 +490,9 @@ export class GOAPKeeper {
             })[0];
           } else {
             // WEAKEST first: safest prey for hunting.
-            // But only among hostiles within 15 cells. If all hostiles
-            // are farther, don't set a target — the GOAP should plan
-            // travel to a room where the mob is closer, rather than
-            // scavenging across a large empty room.
-            const MAX_ENGAGE = 15;
-            const inRange = me0
-              ? hostiles.filter(h => Math.hypot((h.col ?? 0) - me0.col, (h.row ?? 0) - me0.row) <= MAX_ENGAGE)
-              : hostiles;
-            target = inRange.length
-              ? inRange.sort((a, b) =>
-                  (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0]
-              : null;
+            target = hostiles.sort((a, b) =>
+              (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999))[0];
           }
-          if (target == null) {
-            // All hostiles are beyond 15 cells. Don't set a target —
-            // the GOAP should plan travel to a room with closer prey.
-            // has_target stays false, so travel_to gets injected.
-            console.error(`[goap] ${who} hostiles present but all > 15 cells away — no target, planning travel`);
-          } else {
           const targetLevel = target.max_health ?? target.health ?? null;
           const targetName = c.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
           const isPlayer = !!(target.flags & OF.PLAYER);
@@ -539,7 +523,6 @@ export class GOAPKeeper {
           ws.target_in_band = targetLevel != null ? targetLevel <= ceiling : false;
 
           console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, my lv${myLevel}, ceiling ${ceiling})`);
-          }  // end else (target != null)
         } else if (!hostiles.length && ws._targetId) {
           // Target is gone. Clear it and the derived symbols.
           delete ws._targetId;

@@ -92,21 +92,7 @@ export async function scavenge(client, session, opts = {}) {
   // nearest mob is the one we can actually reach and fight. If the
   // nearest is too strong, fight() disengages and we try again next
   // pass — or the GOAP routes us to a better room.
-  //
-  // MAX ENGAGEMENT DISTANCE: if the nearest mob is beyond 15 cells,
-  // crossing the room to reach it is slow and exposes the character
-  // to other threats. The GOAP should travel to a room where the mob
-  // is closer, rather than scavenge across a large empty room.
-  const MAX_ENGAGE = 15;
   const mePos = client?.self;
-  const distToNearest = mePos
-    ? Math.min(...hostiles.map(h => Math.hypot((h.col ?? 0) - mePos.col, (h.row ?? 0) - mePos.row)))
-    : null;
-  if (distToNearest != null && distToNearest > MAX_ENGAGE) {
-    return { sent: false, killed: false,
-      reason: `nearest hostile ${Math.round(distToNearest)} cells away (max ${MAX_ENGAGE}) — travel to a closer room` };
-  }
-
   const weak = hostiles.sort((a, b) => {
     if (mePos) {
       const da = Math.hypot((a.col ?? 0) - mePos.col, (a.row ?? 0) - mePos.row);
@@ -235,23 +221,27 @@ export async function scavenge(client, session, opts = {}) {
   // a raw approach: walk directly toward the mob using moveToSquare
   // (no local geometry validation). The server handles real collision;
   // this ensures progress even if the local .roo geometry is wrong.
+  // Walk up to 30 steps — enough to cross most rooms. Re-check the
+  // target position each step (the mob may be moving).
   const c = session.need();
-  const meNow = c.self;
-  const foeNow = c.room.objects.get(foeId);
+  let meNow = c.self;
+  let foeNow = c.room.objects.get(foeId);
   if (meNow && foeNow) {
-    const dx = foeNow.col - meNow.col;
-    const dy = foeNow.row - meNow.row;
-    const dist = Math.hypot(dx, dy);
-    if (dist > 1) {
-      // Walk up to 5 steps toward the mob.
-      for (let step = 0; step < 5; step++) {
-        const nx = meNow.col + Math.sign(dx);
-        const ny = meNow.row + Math.sign(dy);
-        try {
-          await session.pacer.submit('move', () => c.moveToSquare(nx, ny));
-          await new Promise(res => setTimeout(res, 400));
-        } catch { break; }
-      }
+    for (let step = 0; step < 30; step++) {
+      const dx = foeNow.col - meNow.col;
+      const dy = foeNow.row - meNow.row;
+      const dist = Math.hypot(dx, dy);
+      if (dist <= 2) break;  // close enough, stop walking
+      const nx = meNow.col + Math.sign(dx);
+      const ny = meNow.row + Math.sign(dy);
+      try {
+        await session.pacer.submit('move', () => c.moveToSquare(nx, ny));
+        await new Promise(res => setTimeout(res, 400));
+      } catch { break; }
+      // Re-read position and target (both may have moved).
+      meNow = c.self;
+      foeNow = c.room.objects.get(foeId);
+      if (!meNow || !foeNow) break;
     }
   }
   // Now try a normal fight from the new position.
