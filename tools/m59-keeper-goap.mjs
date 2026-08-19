@@ -467,37 +467,44 @@ export class GOAPKeeper {
           this._stuckCount = 0;
           this._lastPosKey = null;
           // First: try to travel to a nearby room
-          const { nearestHuntRoom, resolveMapRoom } = await import('./m59-hunt-room.mjs');
-          const here = c.room?.num ?? c.room?.id;
-          const resolved = resolveMapRoom(here, this._roomName());
-          const neighbors = nearestHuntRoom(resolved, 999, 2);
-          if (neighbors) {
-            const travelResult = await this.session.travel(neighbors.room, { maxHops: 1 });
-            if (travelResult?.arrived) {
-              console.error(`[goap] ${this.policy.agent} unstuck: arrived in room ${neighbors.room}`);
-              this._travelInFlight = true;
-              this._travelFromRoom = here;
-              this._travelStartedAt = Date.now();
-              return { acted: true, action: 'unstuck_travel', reason: 'stuck detection: forced room change' };
-            }
-          }
-          // Travel failed (character can't move from no-floor position).
-          // Try: walk to the center of the room using fine-grid moveTo.
-          // The room center is more likely to have a valid floor.
           try {
-            const roomCols = c.room?.cols ?? 50;
-            const roomRows = c.room?.rows ?? 50;
-            const centerX = Math.floor(roomCols / 2) * 1024 + 512;
-            const centerY = Math.floor(roomRows / 2) * 1024 + 512;
-            await c.moveTo(centerX, centerY, 18);
-            await new Promise(res => setTimeout(res, 500));
-            const newMe = c.self;
-            if (newMe && (newMe.col !== me.col || newMe.row !== me.row)) {
-              console.error(`[goap] ${this.policy.agent} unstuck by walking to center: now at (${newMe.col},${newMe.row})`);
-              return { acted: true, action: 'unstuck_walk', reason: 'stuck detection: walked to room center' };
+            const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
+            const here = c.room?.num ?? c.room?.id;
+            const resolved = resolveMapRoom(here, this._roomName());
+            const neighbors = nearestHuntRoom(resolved, 999);
+            if (neighbors) {
+              const travelResult = await this.session.travel(neighbors.room, { maxHops: 1 });
+              if (travelResult?.arrived) {
+                console.error(`[goap] ${this.policy.agent} unstuck: arrived in room ${neighbors.room}`);
+                this._travelInFlight = true;
+                this._travelFromRoom = here;
+                this._travelStartedAt = Date.now();
+                return { acted: true, action: 'unstuck_travel', reason: 'stuck detection: forced room change' };
+              }
             }
           } catch (e) {
-            console.error(`[goap] ${this.policy.agent} unstuck walk failed: ${e.message}`);
+            console.error(`[goap] ${this.policy.agent} travel failed: ${e.message}`);
+          }
+          // Travel failed (character can't move from no-floor position).
+          // Try: cast blink to teleport to a random nearby position.
+          // Blink is a teleport spell — it moves the character without
+          // requiring a valid floor at the current position.
+          try {
+            const { cast: doCast } = await import('./m59-act/cast.mjs');
+            const blinkResult = await doCast(c, this.session, { spell: 'blink' });
+            if (blinkResult?.sent) {
+              await new Promise(res => setTimeout(res, 1500));
+              const newMe = c.self;
+              if (newMe && (newMe.col !== me.col || newMe.row !== me.row)) {
+                console.error(`[goap] ${this.policy.agent} unstuck by blink: now at (${newMe.col},${newMe.row})`);
+                return { acted: true, action: 'unstuck_blink', reason: 'stuck detection: blinked to new position' };
+              }
+              console.error(`[goap] ${this.policy.agent} blink cast but position unchanged`);
+            } else {
+              console.error(`[goap] ${this.policy.agent} blink failed: ${blinkResult?.reason}`);
+            }
+          } catch (e) {
+            console.error(`[goap] ${this.policy.agent} blink error: ${e.message}`);
           }
           // Last resort: the character is truly stuck. Log it and let
           // the rejoin mechanism handle it (broker will rejoin the session
