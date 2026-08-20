@@ -127,11 +127,15 @@ export function simulateWalk(g, fromR, fromC, toR, toC, {
   // is a map fact somebody can go and look at; "kept ending up somewhere other than the
   // planned square" is not.
   const refusals = [];
+  // THE FINE POSITIONS, not just the squares. A square trail says a body oscillated; the
+  // fine trail says where against the wall it was when the move was refused, which is the
+  // only version you can draw on top of the .roo and learn anything from.
+  const positions = [];
 
   while (taken < maxSteps) {
     if (at.row === toR && at.col === toC)
       return { arrived: true, steps: taken, planLen, offPlan, detours,
-               learned: blockedEdges.size, refusals, trail: trace ? trail : trail.slice(-24) };
+               learned: blockedEdges.size, refusals, positions, trail: trace ? trail : trail.slice(-24) };
     let p = g.path(at.row, at.col, toR, toC, { collision: true, blockedEdges, clearance, clipCost });
     // RELAX IN THE ORDER THE FACTS DECAY, exactly as walkTo does — and modelling this
     // matters, because without it the simulator reports `no route mid-walk` for the
@@ -143,7 +147,7 @@ export function simulateWalk(g, fromR, fromC, toR, toC, {
       p = g.path(at.row, at.col, toR, toC, { collision: false });
     if (!p.found)
       return { arrived: false, why: 'no route mid-walk', at, steps: taken, planLen,
-               offPlan, detours, learned: blockedEdges.size, refusals, trail: trail.slice(-24) };
+               offPlan, detours, learned: blockedEdges.size, refusals, positions, trail: trail.slice(-24) };
     const s = p.steps[0];
     // A FALL IS PLANNED IN FALL MODE AND MUST BE ATTEMPTED IN FALL MODE. `fallTargets`
     // proves a drop with `traceFineMoveClient(..., { fall: true })` and the mover used to
@@ -218,12 +222,16 @@ export function simulateWalk(g, fromR, fromC, toR, toC, {
       if (routeLeft < shortestRoute) shortestRoute = routeLeft;
       if (!learned && !gained && ++replans > replanBudget)
         return { arrived: false, why: 'replan budget', at: landed, steps: taken, planLen,
-                 offPlan, detours, learned: blockedEdges.size, refusals, trail: trail.slice(-24) };
+                 offPlan, detours, learned: blockedEdges.size, refusals, positions, trail: trail.slice(-24) };
     } else {
       const gap = Math.max(Math.abs(landed.row - toR), Math.abs(landed.col - toC));
       if (gap < closest) closest = gap;
     }
 
+    positions.push({ x: Math.round(pos.x), y: Math.round(pos.y),
+                     aim: { x: Math.round(at2.x), y: Math.round(at2.y) },
+                     ...(s.fall ? { fall: true } : {}),
+                     ...(landed.row === s.row && landed.col === s.col ? {} : { off: true }) });
     trail.push(`${landed.row},${landed.col}` + (landed.row === s.row && landed.col === s.col ? '' : '*'));
     // A BOUNCE IS THE FINDING, so it is named rather than left to run the budget out. Twelve
     // visits to one square is not a busy junction, it is the two-square oscillation.
@@ -231,12 +239,12 @@ export function simulateWalk(g, fromR, fromC, toR, toC, {
     visits.set(k, (visits.get(k) ?? 0) + 1);
     if (visits.get(k) > 12)
       return { arrived: false, why: 'bouncing', bounce_at: k, at: landed, steps: taken,
-               planLen, offPlan, detours, learned: blockedEdges.size, refusals, trail: trail.slice(-24) };
+               planLen, offPlan, detours, learned: blockedEdges.size, refusals, positions, trail: trail.slice(-24) };
     if (landed.row !== at.row || landed.col !== at.col) prevSquare = at;
     cur = pos; at = landed;
   }
   return { arrived: false, why: 'step budget', at, steps: taken, planLen, offPlan, detours,
-           learned: blockedEdges.size, refusals, trail: trail.slice(-24) };
+           learned: blockedEdges.size, refusals, positions, trail: trail.slice(-24) };
 }
 
 /** Every square in a room a body could start a walk from. */

@@ -4180,6 +4180,52 @@ export class Autopilot {
     const inReach = this.inReachOfUs();
     if (inReach.length)
       return { candidate: false, why: `${inReach.length} already in reach — this is a fight, not a pause`, frac };
+
+    // AND A WALL STOPS MONSTERS, NOT PEOPLE. THIS IS THE ONE THING THAT OUTRANKS BEING HURT.
+    //
+    // A safe spot works because a creature cannot path to it — that is the whole mechanism,
+    // and it says nothing whatever about a player, who can walk to the same square, swing
+    // first, and take the pack. `PREFERRED_QUIET_RETREATS` learned this the expensive way:
+    // "no monsters spawn here" is TRUE of room 2 and is not the same fact as player-safe,
+    // and Gonzo was killed there twice in one evening.
+    //
+    // So the trade a hold makes is different when there are people about. Standing still
+    // for eighty-seven seconds with a full pack is the best target this game offers.
+    // Running for the next room is worse against the troll and better against the person:
+    // dying to the troll costs the walk back, dying to the player costs everything carried.
+    //
+    //   'refuse' (the default) — no hold while a player who is not ours is in the room, or
+    //                            while the FLEET-WIDE grudge book has a live entry. A grudge
+    //                            is somebody who attacked one of us within the hour, which
+    //                            is the closest thing to "PvP is anticipated" that exists.
+    //   'room'                 — only the player standing here counts; a grudge elsewhere
+    //                            does not stop a hold on a quiet road.
+    //   'ignore'               — the behaviour from before this existed.
+    //
+    // `party.isFleetmate` is how one of ours is told from a stranger, and a keeper that has
+    // not had a pass yet is absent from that roster — so this can call a fleetmate a
+    // stranger for a few seconds after a restart. Being wrong that way costs a pause we
+    // would have taken, which is the cheap direction.
+    const pvp = this.policy.travelHoldPvp ?? 'refuse';
+    if (pvp !== 'ignore') {
+      // A ROOM WE CANNOT READ REPORTS NOBODY, which is the pre-existing behaviour and the
+      // honest one: this gate can only ever say "somebody is here", never "nobody is".
+      const here = c?.room?.objects ? [...c.room.objects.values()] : [];
+      const strangers = here.filter(o =>
+        o.id !== c.selfId && (o.flags & OF.PLAYER) &&
+        !party.isFleetmate(c.rsc?.get(o.nameRsc)));
+      if (strangers.length)
+        return { candidate: false, frac, players: strangers.length,
+                 why: `${strangers.length} player(s) here who are not ours — a wall stops ` +
+                      `monsters, not people` };
+      if (pvp === 'refuse') {
+        const live = grudge.activeGrudges();
+        if (live.length)
+          return { candidate: false, frac, grudges: live.length,
+                   why: `${live.length} live grudge(s) — PvP is anticipated, and a stationary ` +
+                        `character with a full pack is the best target in the game` };
+      }
+    }
     return { candidate: true, frac, vigor: vig, health: hp.value, max: hp.max };
   }
 
@@ -4284,6 +4330,77 @@ export class Autopilot {
     });
   }
 
+  // DO NOT SET OUT HURT FROM A PLACE THAT IS FREE TO HEAL IN.
+  //
+  // A character standing in an inn is in the one situation where resting costs nothing at
+  // all: nothing spawns there, nothing can reach it, and the recovery that would take
+  // eighty-seven exposed seconds at a wall in the Cragged Mountains takes the same eighty-
+  // seven safe ones here. Walking out at 40% and topping up later is strictly worse — the
+  // topping up happens on a road with trolls on it, if it happens.
+  //
+  // It is also the commonest way the fleet is hurt at all. A character that has just come
+  // out of the Underworld arrives in an inn at a fraction of its health, and the next thing
+  // anything asks it to do is cross the world; on the arena fleet that is a death cascade,
+  // one death putting a character on a long road it is in no state to walk.
+  //
+  // VIGOR CANNOT REACH 100% BY RESTING AND THE DEFAULT SAYS SO. `REST_VIGOR_CAP` is 80 of
+  // 200 — everything above it has to be EATEN (`create food` is 2 elderberry AND 2 herbs) —
+  // so "rest to full vigor" means the resting cap, which is the highest an unfed character
+  // can present. Asking for more would be a gate nothing could ever pass, which is the
+  // failure mode this repository keeps paying for.
+  //
+  // Only from a SANCTUARY, and that is the whole safety argument: `sanctuary()` reads the
+  // spawn index rather than the room name, so it is true of inns, banks, shops and quiet
+  // stretches of road, and false of anywhere that generates monsters. Somewhere hostile,
+  // the ordinary survival ladder decides — sitting down there is how characters die.
+  async restBeforeSettingOut() {
+    const target = this.policy.travelStartHealth ?? 1;
+    if (!(target > 0)) return { rested: false, why: 'travel_start_health is off' };
+    const room = this.s.world?.room;
+    if (!this.sanctuary(room)) return { rested: false, why: 'not somewhere safe to sit down' };
+    const v = this.s.client?.vitals?.();
+    const hp = v?.health;
+    if (!hp?.max) return { rested: false, why: 'health unreadable' };
+    const frac = hp.value / hp.max;
+    // A FRACTION, LIKE EVERYTHING ELSE HERE. `REST_VIGOR_CAP` is 0.4 — 80 of the 200 the
+    // bar is drawn against — and `restUntil` takes fractions too. Comparing it against the
+    // raw vigor value would make the gate `80 >= 0.4`, always true, and the whole thing
+    // would be off while reading on.
+    const vig = vigorPct(v);
+    const wantVigor = Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP);
+    if (frac >= target && (vig == null || vig >= wantVigor))
+      return { rested: false, why: 'already fit to set out' };
+    // Anything swinging at us makes this a fight rather than a pause, exactly as it does
+    // for the mid-journey hold.
+    const near = this.inReachOfUs();
+    if (near?.length) return { rested: false, why: `${near.length} in reach — not a moment to sit` };
+
+    this.doing = 'recovering';
+    this.note('resting before setting out', {
+      health: `${hp.value}/${hp.max}`, vigor: v?.vigor?.value ?? null,
+      want: Math.round(target * 100) + '%',
+      want_vigor: Math.round(wantVigor * 200) + ' of 200 (the resting cap)',
+      room: room?.name ?? null,
+      why: 'this is the one place healing is free — nothing spawns here and nothing can ' +
+           'reach us, so the points that would cost exposure on the road cost nothing at all',
+      note: 'vigor stops at the resting cap because everything above it has to be eaten' });
+    // PFLAG_MOVED_SINCE_ENTRY has to be set or the character recovers nothing however long
+    // it sits, which is what `settle` is for. Cheap, and the commonest reason a rest in an
+    // inn does nothing at all.
+    await this.settle('about to set out, and resting only works after moving').catch(() => {});
+    const rest = await skills.restUntil(this.s, {
+      health: target, vigor: wantVigor,
+      maxSeconds: Math.round((this.policy.travelStartBudgetMs ?? 240_000) / 1000),
+    }).catch(e => ({ error: e.message }));
+    const after = this.s.client?.vitals?.();
+    this.note('set out after resting', {
+      health: after?.health ? `${after.health.value}/${after.health.max}` : null,
+      vigor: after?.vigor?.value ?? null,
+      gained: after?.health && hp ? after.health.value - hp.value : null,
+      stopped_because: rest?.reason ?? rest?.why ?? rest?.error ?? 'reached the target' });
+    return { rested: true, health_after: after?.health?.value ?? null };
+  }
+
   async travel(room, opts) {
     const { holdBetweenRooms = true, onHop, ...sessionOpts } = opts ?? {};
     // ONE GATE, BECAUSE THERE IS MORE THAN ONE DOOR AND I KEPT FINDING NEW ONES.
@@ -4321,6 +4438,12 @@ export class Autopilot {
                why: `room ${room} is outside the confinement ${confine.join('/')}` };
     }
 
+    // AND SET OUT FIT, IF THIS IS SOMEWHERE FIT CAN BE HAD FOR FREE. Above the journey
+    // rather than inside it, because the question is about LEAVING: once the first boundary
+    // is crossed the character is on the road and the mid-journey hold owns the decision.
+    await this.restBeforeSettingOut().catch(e => this.note('rest before setting out failed',
+                                                           { why: e.message }));
+
     // The same primitive crosses a nearby room boundary and undertakes a journey. Those
     // are different activities: upstairs-to-downstairs patrol movement is zoning, while
     // a route with intermediate rooms is travel. Decide from the route before the await
@@ -4333,7 +4456,25 @@ export class Autopilot {
     if (travelKind === 'zoning') this.doing = 'zoning';
     this.recordFrame('setting off');
     // One arm per journey, fixed before the first step so it cannot drift mid-route.
-    const arm = this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
+    // THE MODE DECIDES THE ARM, AND FOR "ON" IT DID NOT.
+    //
+    // `travelHold` checks `mode` for 'off' and 'observe' and then honours `arm === 'walk'`
+    // whatever the mode says — so `travel_hold: "on"` was accepted, stored, reported back
+    // by `autopilot status`, and SILENTLY LEFT THE COIN IN CHARGE. Half of every journey
+    // walked on hurt with the setting reading "on".
+    //
+    // Found by counting: the shadow fleet ran a whole evening with `travelHold: 'on'` on
+    // all twenty-one characters and the ledger holds THREE travel-hold events for the day,
+    // two of them `arm: "walk"` — the control arm of an experiment nobody meant to be
+    // running. `'on'` was not even in the tool's own enum; the broker stores the string it
+    // is given, so a value the schema never allowed became a value the code half-honoured.
+    //
+    // The enum is the contract: `on` always holds, `half`/`ab` is the experiment, `observe`
+    // writes down what it would have done, `off` is the behaviour from before it existed.
+    const holdMode = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
+    const arm = holdMode === 'on' ? 'hold'
+              : holdMode === 'off' ? 'walk'
+              : this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
     this.travelHeldMs = 0;
     this.travelSafeStops = 0;
     const startedAt = Date.now();

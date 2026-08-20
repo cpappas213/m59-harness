@@ -17,8 +17,18 @@
 // that fighting from a wall means you take MORE damage and die LESS — so a measurement
 // built on damage would reject the intervention precisely when it is working.
 
+import { readFileSync } from 'node:fs';
 import { twoProportion, eventsNeeded, isTravelTrip } from './m59-travel-ab.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
+import { OF } from './m59-parse.mjs';
+import * as party from './m59-party.mjs';
+
+const AUTOPILOT_SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+// A NAME THE PARTY ROSTER ACTUALLY KNOWS. `party.isFleetmate` reads the live roster, and a
+// keeper that has not had a pass yet is absent from it — so the fixture registers one
+// rather than asserting against whatever happens to be in memory.
+const FLEETMATE = 'AbsolutelyOurs';
+party.setRosterSource(() => new Set([FLEETMATE]));
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -110,9 +120,16 @@ console.log('\nhow much longer to run');
 console.log('\nthe gate that decides a candidate moment');
 {
   // A stub keeper: travelHoldCandidate reads only vitals, the policy and what is in reach.
-  const keeper = (health, max, vigor, inReach = 0) => ({
-    policy: {},
-    s: { client: { vitals: () => ({ health: { value: health, max }, vigor: { value: vigor } }) } },
+  // A ROOM IS PART OF THE STUB NOW, because the gate asks who else is standing here — see
+  // the PvP section below. `objects` is the client's own map, keyed by id.
+  const keeper = (health, max, vigor, inReach = 0, { policy = {}, players = [] } = {}) => ({
+    policy,
+    s: { client: {
+      selfId: 99,
+      vitals: () => ({ health: { value: health, max }, vigor: { value: vigor } }),
+      rsc: { get: (r) => players.find(p => p.nameRsc === r)?.name ?? null },
+      room: { objects: new Map(players.map(p => [p.id, p])) },
+    } },
     inReachOfUs: () => Array.from({ length: inReach }, (_, i) => ({ id: i })),
     travelHoldCandidate: Autopilot.prototype.travelHoldCandidate,
   });
@@ -123,10 +140,19 @@ console.log('\nthe gate that decides a candidate moment');
   ok('healthy enough is not a candidate', ask(keeper(40, 44, 150)).candidate === false);
   ok('ARRIVING HURT IS FINE — the last room of a journey is somebody else\'s decision',
      ask(keeper(20, 44, 150), 0).candidate === false);
-  ok('TOO TIRED FOR THE POINTS TO COME. At the resting cap a 15-point top-up costs 87s, ' +
-     'as long as a whole p90 journey, so holding there pays full price for nothing',
-     ask(keeper(20, 44, 80)).candidate === false &&
-     /too tired/.test(ask(keeper(20, 44, 80)).why));
+  // TOO TIRED FOR THE POINTS TO COME. Health returns at a rate set by vigor, so below the
+  // floor a top-up costs longer than the journey and buys nothing.
+  //
+  // THE FLOOR IS 80, NOT 100, AND THIS ASSERTION SPENT A WHILE RED ABOUT IT. Resting caps
+  // at REST_VIGOR_CAP (80 of 200) and everything above has to be EATEN, so a fleet that
+  // cannot cook sits at exactly 80 for ever — and a floor of 100 meant the hold NEVER FIRED
+  // for any of them. The default moved and the test did not, which is a test asserting a
+  // behaviour nothing has shipped.
+  ok('TOO TIRED FOR THE POINTS TO COME — below the floor a top-up costs more than it buys',
+     ask(keeper(20, 44, 40)).candidate === false &&
+     /too tired/.test(ask(keeper(20, 44, 40)).why));
+  ok('AND 80 IS NOT TOO TIRED, because 80 is where an unfed fleet lives',
+     ask(keeper(20, 44, 80)).candidate === true);
   ok('something already swinging is a fight, not a pause — the ordinary pass is better ' +
      'at both halves of that than a hold is',
      ask(keeper(20, 44, 150, 2)).candidate === false);
@@ -134,8 +160,125 @@ console.log('\nthe gate that decides a candidate moment');
      ask({ ...keeper(20, 44, 150), s: { client: { vitals: () => ({}) } } }).candidate === false);
   ok('and every refusal says why, because a gate that silently never fires is an ' +
      'experiment that measures nothing',
-     [keeper(40, 44, 150), keeper(20, 44, 80), keeper(20, 44, 150, 2)]
+     [keeper(40, 44, 150), keeper(20, 44, 40), keeper(20, 44, 150, 2)]
        .every(k => typeof ask(k).why === 'string' && ask(k).why.length > 0));
+}
+
+console.log('\na wall stops monsters, not people');
+{
+  // WHY THIS OUTRANKS BEING HURT. A safe spot works because a creature cannot path to it;
+  // that says nothing whatever about a player, who can walk to the same square, swing
+  // first, and take the pack. Standing still for a minute and a half with a full inventory
+  // is the best target this game offers, so the trade inverts: dying to the troll while
+  // running costs the walk back, dying to the player costs everything carried.
+  const stranger = { id: 7, flags: OF.PLAYER, nameRsc: 700, name: 'SomebodyElse' };
+  const mate = { id: 8, flags: OF.PLAYER, nameRsc: 800, name: FLEETMATE };
+  const keeper = (players, policy = {}) => ({
+    policy,
+    s: { client: {
+      selfId: 99,
+      vitals: () => ({ health: { value: 20, max: 44 }, vigor: { value: 150 } }),
+      rsc: { get: (r) => players.find(p => p.nameRsc === r)?.name ?? null },
+      room: { objects: new Map(players.map(p => [p.id, p])) },
+    } },
+    inReachOfUs: () => [],
+    travelHoldCandidate: Autopilot.prototype.travelHoldCandidate,
+  });
+  const ask = k => k.travelHoldCandidate({ remaining: 3 });
+
+  ok('a stranger in the room cancels the hold', ask(keeper([stranger])).candidate === false);
+  ok('and says so in words a person can grep for',
+     /a wall stops\s+monsters, not people|not ours/.test(ask(keeper([stranger])).why));
+  ok('an empty room still holds', ask(keeper([])).candidate === true);
+  ok('a FLEETMATE is not a threat — twenty-one of our own walk the same road',
+     ask(keeper([mate])).candidate === true);
+  ok('"ignore" restores the behaviour from before this existed',
+     ask(keeper([stranger], { travelHoldPvp: 'ignore' })).candidate === true);
+  ok('"room" counts the player standing here', ask(keeper([stranger], { travelHoldPvp: 'room' })).candidate === false);
+}
+
+console.log('\n"on" means on, which it did not');
+{
+  // `travelHold` checks the mode for 'off' and 'observe' and then honours `arm === "walk"`
+  // whatever the mode says. So `travel_hold: "on"` was accepted, stored, reported back by
+  // `autopilot status`, and left the coin in charge: the shadow fleet ran an evening with
+  // it set on all twenty-one characters and the ledger holds THREE hold events for the day,
+  // two of them the control arm. `'on'` was not even in the tool's own enum.
+  const armFor = (mode) => {
+    const holdMode = mode ?? 'ab';
+    return holdMode === 'on' ? 'hold' : holdMode === 'off' ? 'walk' : armOf('seed-' + mode);
+  };
+  ok('"on" always takes the hold arm', armFor('on') === 'hold');
+  ok('"off" never does', armFor('off') === 'walk');
+  ok('and the experiment still flips for "ab"',
+     new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(x => armOf('ab-' + x))).size === 2);
+  // The source is the contract: if the forcing line ever comes out of travel(), this goes red.
+  ok('travel() derives the arm from the mode rather than always rolling',
+     /holdMode === 'on' \? 'hold'/.test(AUTOPILOT_SRC));
+}
+
+console.log('\ndo not set out hurt from a place that is free to heal in');
+{
+  // AN INN IS THE ONE PLACE HEALING IS FREE. Nothing spawns there and nothing can reach
+  // you, so the points that cost eighty-seven exposed seconds at a wall in the Cragged
+  // Mountains cost nothing at all here — and it is exactly where a character stands after
+  // coming out of the Underworld, which is when something next asks it to cross the world.
+  const keeper = ({ health = 20, max = 44, vigor = 40, safe = true, policy = {},
+                    inReach = 0 } = {}) => {
+    const notes = [];
+    return {
+      policy, notes,
+      settled: 0, restedTo: null,
+      s: { world: { room: { num: safe ? 202 : 598, name: safe ? 'The Limping Toad' : 'The Cragged Mountains' } },
+           client: { vitals: () => ({ health: { value: health, max },
+                                      vigor: { value: vigor, scale_max: 200 } }) } },
+      sanctuary: () => safe,
+      inReachOfUs: () => Array.from({ length: inReach }, (_, i) => ({ id: i })),
+      note: (what, detail) => notes.push({ what, detail }),
+      async settle() { this.settled++; },
+      restBeforeSettingOut: Autopilot.prototype.restBeforeSettingOut,
+    };
+  };
+
+  // `restUntil` is the module's, so the fixture cannot drive it — what is asserted here is
+  // the GATE, which is the part that was missing and the part an operator sets.
+  const ask = async (k) => {
+    const before = k.notes.length;
+    let threw = null;
+    try { await k.restBeforeSettingOut(); } catch (e) { threw = e; }
+    return { note: k.notes[before] ?? null, threw, k };
+  };
+
+  const decided = await ask(keeper({ health: 20, max: 44 }));
+  ok('hurt, in an inn, nothing in reach — it rests before setting out',
+     /resting before setting out/.test(decided.note?.what ?? ''));
+  ok('and says vigor stops at the resting cap, because everything above it is eaten',
+     /resting cap/.test(JSON.stringify(decided.note?.detail ?? {})));
+
+  const full = await ask(keeper({ health: 44, max: 44, vigor: 80 }));
+  ok('already fit — it just goes', full.note === null);
+
+  const outdoors = await ask(keeper({ health: 20, max: 44, safe: false }));
+  ok('SOMEWHERE HOSTILE IT DOES NOT SIT DOWN — that is how characters die, and the ' +
+     'ordinary survival ladder decides there instead', outdoors.note === null);
+
+  const fighting = await ask(keeper({ health: 20, max: 44, inReach: 2 }));
+  ok('something already swinging makes this a fight, not a pause', fighting.note === null);
+
+  const off = await ask(keeper({ health: 20, max: 44, policy: { travelStartHealth: 0 } }));
+  ok('travel_start_health 0 switches it off', off.note === null);
+
+  // VIGOR ALONE IS ENOUGH TO JUSTIFY A SIT. A character at full health and 20 vigor heals
+  // at a crawl for the rest of the journey, which is the whole reason vigor is in the gate.
+  const tired = await ask(keeper({ health: 44, max: 44, vigor: 20 }));
+  ok('full health but low vigor still rests, because vigor IS the healing rate',
+     /resting before setting out/.test(tired.note?.what ?? ''));
+
+  // The fraction bug that would have made this permanently on: REST_VIGOR_CAP is 0.4, a
+  // fraction of 200, and comparing it against a raw vigor value makes every gate pass.
+  ok('the vigor comparison is a fraction, not a raw value',
+     /vigorPct\(v\)/.test(AUTOPILOT_SRC) &&
+     !/vig >= wantVigor[\s\S]{0,40}vigor\?\.value/.test(AUTOPILOT_SRC));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

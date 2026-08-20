@@ -10926,11 +10926,44 @@ const TOOLS = [
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
-      travel_hold: { type: 'string', enum: ['ab', 'observe', 'off'],
-        description: 'resting at a safe wall part-way through a journey. "ab" runs the experiment ' +
-          '(half of journeys hold, half walk on, decided per journey); "observe" writes down what it ' +
-          'would have done and changes nothing; "off" is the behaviour from before it existed. This ' +
-          'is the kill switch for that experiment and takes effect on the next hop — no restart.' },
+      travel_hold: { type: 'string', enum: ['on', 'half', 'ab', 'observe', 'off'],
+        description: 'resting at a safe wall part-way through a journey, to arrive at full health ' +
+          'rather than at whatever the road left. "on" ALWAYS holds when the conditions below are ' +
+          'met; "half" (= "ab") runs the experiment, half of journeys holding and half walking on, ' +
+          'decided per journey; "observe" writes down what it would have done and changes nothing; ' +
+          '"off" is the behaviour from before it existed. Takes effect on the next hop — no restart. ' +
+          'NOTE: "on" was accepted and stored before it was implemented, and the A/B coin stayed in ' +
+          'charge — a fleet set to "on" walked half its journeys hurt while the setting read on.' },
+      travel_hold_below: { type: 'number',
+        description: 'the health FRACTION under which a journey will stop at a wall to heal. ' +
+          'Default 0.75. Only the rooms in the MIDDLE of a journey are eligible — arriving hurt is ' +
+          'fine, because the destination is somebody\'s decision and there is usually a reason to ' +
+          'be there.' },
+      travel_hold_to: { type: 'number',
+        description: 'the health fraction a mid-journey rest stops at. Default 0.9. Not 1.0 on ' +
+          'purpose: the last tenth costs as long as the first half and every second of it is a ' +
+          'second something can find you.' },
+      travel_start_health: { type: 'number',
+        description: 'the health FRACTION a character rests to before setting out on a journey, ' +
+          'when it is somewhere safe to sit down. Default 1 — full. An inn is the one place ' +
+          'healing is free: nothing spawns there and nothing can reach you, so the points that ' +
+          'would cost eighty-seven exposed seconds at a wall in the Cragged Mountains cost nothing ' +
+          'at all here. It is also where a character stands after coming out of the Underworld, ' +
+          'which is exactly when something asks it to cross the world next. VIGOR IS TOPPED UP ' +
+          'TOO, to the resting cap of 80 of 200 — everything above that has to be EATEN, so ' +
+          '"full vigor" by resting is not a thing that exists. Set 0 to switch it off. Only ' +
+          'applies in a sanctuary, read from the spawn index rather than the room name.' },
+      travel_hold_pvp: { type: 'string', enum: ['refuse', 'room', 'ignore'],
+        description: 'what a mid-journey rest does when there are PEOPLE about. A safe spot works ' +
+          'because a creature cannot path to it, and that says nothing whatever about a player — ' +
+          'who can walk to the same square, swing first, and take the pack. Standing still for a ' +
+          'minute and a half with a full inventory is the best target this game offers, so the ' +
+          'trade inverts: dying to the troll while running costs the walk back, dying to the player ' +
+          'costs everything carried. "refuse" (the default) declines a hold while a player who is ' +
+          'not ours is in the room OR the fleet-wide grudge book has a live entry — somebody who ' +
+          'attacked one of us within the hour, which is the closest thing to "PvP is anticipated" ' +
+          'that exists here. "room" counts only the player standing here. "ignore" is the behaviour ' +
+          'from before this existed.' },
       confine_rooms: { type: 'array', items: { type: 'number' },
         description: 'the rooms this character may be in AT ALL. Unlike assigned_room this is ' +
           'honoured by the SURVIVAL refuge too, which is the largest hole in any confinement ' +
@@ -11143,7 +11176,44 @@ const TOOLS = [
       if (a.weapon_priority !== undefined)
         p.policy.weaponPriority = Array.isArray(a.weapon_priority) && a.weapon_priority.length
           ? a.weapon_priority.map(String) : null;
-      if (a.travel_hold !== undefined) p.policy.travelHold = String(a.travel_hold);
+      // NORMALISED, because `half` and `ab` are the same arm-flipping experiment under two
+      // names and the keeper should only ever have to know one of them. An unrecognised
+      // value is REPORTED rather than applied — a setting that silently does nothing is how
+      // `on` spent an evening looking enabled while the coin decided every journey.
+      if (a.travel_hold !== undefined) {
+        const want = String(a.travel_hold);
+        const mode = want === 'half' ? 'ab' : want;
+        if (!['on', 'ab', 'observe', 'off'].includes(mode))
+          throw new Error(`travel_hold must be one of on/half/ab/observe/off, not "${want}"`);
+        p.policy.travelHold = mode;
+      }
+      // A FRACTION, AND CHECKED, because "75" would read as 7500% and never fire — which is
+      // the same silence `on` had. Zero is refused too: a hold that never triggers is `off`
+      // said in a way nothing reports.
+      const holdFraction = (name, value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0 || n > 1)
+          throw new Error(`${name} must be a health fraction in (0,1] — 0.75 is 75%`);
+        return n;
+      };
+      if (a.travel_hold_below !== undefined)
+        p.policy.travelHoldBelow = holdFraction('travel_hold_below', a.travel_hold_below);
+      if (a.travel_hold_to !== undefined)
+        p.policy.travelHoldTo = holdFraction('travel_hold_to', a.travel_hold_to);
+      // Zero is allowed here and means OFF, which is why it does not go through
+      // `holdFraction` — a rest-to-nothing target is a legitimate way to say "just go".
+      if (a.travel_start_health !== undefined) {
+        const n = Number(a.travel_start_health);
+        if (!Number.isFinite(n) || n < 0 || n > 1)
+          throw new Error('travel_start_health must be a health fraction in [0,1] — 1 is full, 0 is off');
+        p.policy.travelStartHealth = n;
+      }
+      if (a.travel_hold_pvp !== undefined) {
+        const want = String(a.travel_hold_pvp);
+        if (!['refuse', 'room', 'ignore'].includes(want))
+          throw new Error(`travel_hold_pvp must be one of refuse/room/ignore, not "${want}"`);
+        p.policy.travelHoldPvp = want;
+      }
       // Guarded rather than coerced: `Number(x) || d` turns a deliberate 0 into the default,
       // which is the falsy-zero bug conflict_response_hops still has one screen below.
       if (a.defend_chase !== undefined) p.policy.defendChase = !!a.defend_chase;
