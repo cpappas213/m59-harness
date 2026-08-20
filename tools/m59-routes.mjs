@@ -291,6 +291,28 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     // EVERY STORED ROUTE RE-WALKED. A path is only worth having if each step is one the
     // grid actually permits and it lands exactly on the square it claims — a table that
     // is subtly wrong is worse than none, because nothing downstream re-checks it.
+    // CHECK WITH THE PREDICATE THE TABLE WAS BAKED WITH, NOT THE OTHER ONE.
+    //
+    // This used to ask `walkable()` — the COARSE one-byte grid — of every step. A table
+    // baked with `view: collision` is planned on the MOVER's fine BSP view, and the whole
+    // reason that view exists is that the two disagree: a safe wall IS the disagreement,
+    // measured, and there are 17,402 squares world-wide where they differ. So a
+    // collision-view route legitimately steps on squares the coarse grid calls solid, and
+    // checking one against the other reports a healthy table as broken.
+    //
+    // MEASURED, on the table in play: 1358 of 16293 routes "invalid" by the coarse
+    // predicate and ZERO by the mover's. Every one of those 1358 was a false alarm — and
+    // they were not harmless. They were read as "we have baked routes that walk through
+    // solid rock", which is the opposite of what the table says and sent an investigation
+    // into rewriting a bake that was correct.
+    //
+    // This is the same two-maps mistake the router itself was fixed for, committed one
+    // layer up in the tool that is supposed to catch it. A verifier that checks the wrong
+    // predicate does not merely fail to find bugs; it manufactures them.
+    const strict = !argv.includes('--coarse');
+    const view = t.view ?? 'grid';
+    // A grid-view table really is a grid artifact and must be checked as one.
+    const useMover = strict && view === 'collision';
     let checked = 0, bad = 0, badRooms = new Set();
     for (const [num, r] of Object.entries(t.rooms)) {
       const room = map.rooms[num] ?? map.rooms[Number(num)];
@@ -305,16 +327,25 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
         let ok = steps.length > 0;
         let pr = fr, pc = fc;
         for (const s of steps) {
-          if (!g.walkable(s.row, s.col) ||
-              Math.abs(s.row - pr) > 1 || Math.abs(s.col - pc) > 1) { ok = false; break; }
+          const legal = useMover
+            ? g.moverStepLands(pr, pc, s.row, s.col)
+            : (g.walkable(s.row, s.col) &&
+               Math.abs(s.row - pr) <= 1 && Math.abs(s.col - pc) <= 1);
+          if (!legal) { ok = false; break; }
           pr = s.row; pc = s.col;
         }
         if (ok && (pr !== tr || pc !== tc)) ok = false;
         if (!ok) { bad++; badRooms.add(num); }
       }
     }
-    console.log(`re-walked ${checked} baked route(s): ${checked - bad} valid, ${bad} invalid` +
+    console.log(`re-walked ${checked} baked route(s) against the ` +
+                `${useMover ? 'MOVER (moverStepLands)' : 'coarse grid (walkable)'} predicate` +
+                ` — table view "${view}"`);
+    console.log(`  ${checked - bad} valid, ${bad} invalid` +
                 (bad ? ` across ${badRooms.size} room(s)` : ''));
+    if (!useMover && view === 'collision')
+      console.log('  --coarse asked for the grid predicate on a collision table: expect ' +
+                  'false alarms wherever the two views disagree, which is where safe walls are');
     process.exit(bad ? 1 : 0);
   }
 

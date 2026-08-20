@@ -571,6 +571,43 @@ not rooms**: a table baked before masks existed has all 264 rooms, matches the m
 leaves the broker on the coarse grid — counting rooms put a green tick over exactly the
 failure that line exists to catch.
 
+**AND `--verify` WAS ASKING THE WRONG MAP, WHICH IS THIS FILE'S OWN CENTRAL MISTAKE
+COMMITTED BY THE TOOL THAT EXISTS TO CATCH IT.** The table is baked `view: collision` — the
+mover's fine BSP view — and `--verify` re-walked every step against `walkable()`, the coarse
+one-byte grid. Those two disagree *by design*: the disagreement IS what a safe wall is, and
+there are 17,402 such squares. So it reported healthy routes as broken wherever the views
+differ, which is precisely where the interesting geometry lives.
+
+Measured on the table in play: **1358 of 16293 routes "invalid" by the coarse predicate and
+ZERO by `moverStepLands`.** Every one of the 1358 was a false alarm, and they were not
+harmless — they read as "we have baked routes that walk through solid rock", which is the
+opposite of what the table says, and sent a live investigation into rewriting a bake that
+was correct. **A verifier that checks the wrong predicate does not merely fail to find bugs;
+it manufactures them.** `--coarse` still asks the old question, and the output now names
+which predicate it used and the table's view.
+
+**AND THE ANCHOR IS THE OTHER HALF: ONE SQUARE PER EXIT, AIMED AT BY EVERY WALK, NEVER
+CHECKED AGAINST THE SERVER.** `exitAnchors` bakes one staging square per exit and
+`m59-world.mjs` ranks it first, so a room's whole traffic converges on it. Our geometry has
+an opinion about whether it is standable; only the server's counts.
+
+```bash
+node tools/m59-anchorprobe.mjs --who <character>      # every anchor, placed and read back
+node tools/m59-anchorprobe.mjs --report               # the last run, no server needed
+```
+
+**THE MEASUREMENT IS THE DISPLACEMENT, NOT THE RETURN VALUE.** `UtilGoNearSquare` never says
+no — handed a square it will not stand you on it searches OUTWARD, puts you somewhere else
+and returns 1 — so the only evidence is reading `piRow`/`piCol` back afterwards and
+comparing. `m59-dm.mjs relocate --verify` does **not** do this: it checks only that the
+character is in the right ROOM and then reports the square it ASKED for, which reads as a
+confirmed placement and is not one.
+
+First full sweep, 2026-08-20: **1341 anchors, 1313 exact, 5 displaced by at most 6 squares
+(rooms 853 and 702), 23 landing in another room** — the last are `go` anchors on portal
+squares, where being moved is the point. So the monorail terminals are sound, and an anchor
+is not where to look when a fleet stalls.
+
 `node tools/m59-routing-test.mjs` (38) pins all of it, offline.
 
 **AND THE SAME FACT THAT MAKES A SQUARE SAFE MAKES IT A TRAP: THE WAY OUT OF A POCKET IS
@@ -2220,8 +2257,8 @@ threshold: it is **where the fleet may stand**, and the dozen unrelated-looking 
 fields that each quietly walk a character out of it.
 
 ```bash
-node tools/m59-profiles.mjs --room 70              # plan: who is ready, who is held, why
-node tools/m59-profiles.mjs --room 70 --apply
+node tools/m59-profiles.mjs --room 70                        # plan: who is ready, who is held, why
+node tools/m59-profiles.mjs --area undead --split --apply    # confine to the graveyard + crypt
 ```
 
 `town_safe_farming` is the first one and it means *farm what is inside the walls and never
@@ -2249,6 +2286,35 @@ success from the fleet board:
   operator does while the routing is untrusted.
 
 An unknown *current* room is the one thing allowed to be a note rather than a refusal.
+
+**AN AREA IS TIGHTER THAN A TOWN, AND `restInTown` IS WHAT LEAKS OUT OF ONE.** Confining to
+a town still lets a character walk to an inn, and it does: every strategy except
+**`fieldrest`** carries `restInTown: true`, which walks a hurt character back to town to
+recover **with its assignment still reading 70 and the board still reading healthy**. That
+is how Camilla was seen leaving the graveyard. `town_safe_farming` therefore pins
+`strategy: 'fieldrest'` — *"never walk back to town; withdraw within the hunting area and
+rest there"* — which is the whole posture in one field.
+
+`--area undead` narrows Tos to **the Graveyard (70) and the Crypt (71)**, and the map says
+that pair is a genuine pocket rather than a hopeful rule: **71 has exactly one exit and it
+is 70**, while 70 has the door back to 71 and one west EDGE to 50. So there is a single
+leak, `70 -> 50`, and the tool **prints it** rather than pretending it is shut — nothing
+here can close a door, what the profile does is remove every *reason* to take it, and
+naming the door is what lets somebody check by watching one room instead of the whole map.
+`--split` spreads the fleet over both rooms, because two rooms generating the same prey are
+two respawn pools and stacking everybody in one wastes the other.
+
+An area **narrows, it never widens**: asking for one that does not exist is a refusal, since
+requesting a two-room pocket and silently getting a fourteen-room town would look like it
+worked. Being *in the town but outside the area* stays a note rather than a refusal —
+walking Familiars to the graveyard is a town walk, which is exactly what this profile
+considers safe.
+
+Two behaviours it deliberately does **not** suppress, both survival: the post-death recovery
+that seats a character in an inn until health, mana and vigor are back, and
+`retreatToSafety`, which leaves a room entirely when overwhelmed. Those are `mortality` and
+`survival`, they decide at one second, and moving them out of this repository is what
+`m59-unattended-test` exists to catch.
 
 **The town is a curated room set and a name cannot do this job.** "The Deep Dark Woods **of
 Tos**" (4) carries the name and is wilderness; "Familiars" (52) and "The Crypt" (71) carry
@@ -2395,7 +2461,7 @@ unable to earn is not a reason to leave somebody outside the walls.
   that cannot sell it anything, that an empty purse sends it to a bank FIRST, that a full
   pack still goes to Roq, and that the bill the trip and the withdrawal both read has one
   home. See the trap below on a trip that cannot fix the thing that opened it) and
-  `node tools/m59-profiles-test.mjs` (56 — **the contract test for a posture whose whole
+  `node tools/m59-profiles-test.mjs` (74 — **the contract test for a posture whose whole
   value is in what it REFUSES**: that the town is a curated room set rather than a name
   match (the Deep Dark Woods *of Tos* is wilderness; Familiars and The Crypt are indoors
   and say neither), that a farm room outside the walls and a character standing outside

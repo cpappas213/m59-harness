@@ -295,3 +295,9 @@ __pycache__/
 /substrate/hoptests.json
 /substrate/hoptest-*.log
 /substrate/walktrials.json
+
+# The shadow-fleet tool. Dry-runs a prod operation against a local copy of the
+# roster, so it reads live production characters and writes their stats, position
+# and equipment to disk. Not to be shared in the repository.
+/tools/m59-shadow.mjs
+/substrate/shadow-snapshot.json
