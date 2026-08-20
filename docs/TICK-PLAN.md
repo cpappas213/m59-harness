@@ -43,9 +43,9 @@ Measured across 11,854 GOAP passes on this fleet: median 80ms, p99 16.6s, worst 
   server had already pushed. Live, one step cost 7.2 seconds that way.
 - **The collision model is baked into `substrate/`.** With `M59_ROOT` explicitly unset:
   `sharedRoomGeometry(map.rooms[1012])` returns geometry with `collisionReady: true` and
-  a step mask attached, and the FINE planner returns JayB's real route to the Mausoleum
-  staging square — 7 waypoints, 2 after string-pulling, around the fence.
-  **Motion planning needs no game install and no server.**
+  a step mask attached. **Motion planning needs no game install and no server** — but see
+  §4a: which planner to use is NOT settled, and the offline models have not been checked
+  against the server at all.
 - **`M59_ROOT` is on this machine** at `/Users/costas/Documents/Projects/Meridian59`
   (265 `.roo`, 1,232 `.kod`). Worth exporting for kod citations and the compendium; it
   is NOT required for routing.
@@ -110,93 +110,72 @@ decide 4ms**, against the old model's p99 of 16.6s.
 
 ## 4. What is missing, in order
 
-### 4a. MOTION PLANNING — ON THE FINE GRID, NOT THE COARSE ONE
+### 4a. MOTION PLANNING — MEASURED, AND THE FIRST TWO DESIGNS WERE WRONG
 
-**The mover is not proven and must not be built on.** `walkTo`/`stepFine` carry
-`_bruteForceExit`, "TRULY STUCK", and a `confirmPosition` that blocks 8s. Upstream
-measured **218 of 311** centre-to-centre steps failing in room 587, 92% of them not
-moving the character at all.
+**Everything below is reproducible: `node tools/m59-motion-probe.mjs`.** Offline, no
+server, no `M59_ROOT`. It was written because the argument in earlier drafts of this
+section rested on numbers QUOTED FROM CLAUDE.md rather than measured here, and two of
+them do not survive being checked.
 
-**And the naive alternative is worse.** The first tick router computed
-`me.col + sign(target.col - me.col)` — a beeline — and walked JayB into a fence, where he
-stood re-sending the same refused step. Watched from the client; invisible in the log.
-
-**THE SQUARE IS THE WRONG UNIT AND THE COARSE PATH IS THE WRONG PLAN.** `moveToSquare`
-converts to the square's CENTRE, which is precisely the centre-to-centre stepping that
-failed 218 of 311 times. The client collides a CIRCLE OF RADIUS 256 FINE UNITS against
-wall segments (`fineWalkable`), not a point against a grid — so a square whose centre is
-clear can be untraversable, and a square whose centre is blocked can be walked through at
-its edge. Planning on squares asks a question the mover does not answer.
-
-Measured on JayB's real route (Raza, his position to the Mausoleum staging square):
-
-| | result |
-|---|---|
-| `geo.path` (coarse squares) | **16 steps**, each independently refusable |
-| `geo.finePathProtocol` | **7 waypoints** |
-| after `geo.stringPull` | **2 points, 0 unverified** |
-
-Two verified moves instead of sixteen refusable ones. The fine planner uses
-`traceFineMoveClient` — the mover's own collision trace — for every visibility test, so a
-waypoint it returns is one the mover has already agreed it can reach.
-
-**THE DESIGN**
-
-1. **Plan in PROTOCOL FINE COORDINATES.** `finePathProtocol(fromX, fromY, toX, toY)` →
-   waypoints; `stringPull(waypoints)` → the fewest points the trace will verify.
-   `client.self.x/.y` are already protocol fine coordinates and
-   `client.moveTo(x, y, speed, room)` takes them, so nothing needs converting.
-   **`moveToSquare` is not used by this planner at all.**
-2. **Verify before sending.** `traceFineMoveClient(from → to)` must say `arrived` for the
-   leg we are about to send. A move we cannot justify is never sent.
-3. **Learn.** If the pushed position does not change after a leg the trace approved, the
-   trace was wrong about that leg: record it and replan around it. **An obstacle becomes
-   knowledge instead of a thing we retry for ever.**
-
-**THE COST, AND WHY IT DECIDES THE SHAPE**
-
-`finePathProtocol` is expensive and is NOT tick-safe:
+**40 random walkable pairs across 5 rooms:**
 
 ```
-blocked line (around the fence):  1384ms   19,831 nodes expanded
-clear line (direct):                 1ms        0 nodes  (short-circuits)
-the same query again:             1366ms   — there is no memo between calls
+coarse (geo.path over squares)     found a route  29  (72.5%)
+fine   (finePathProtocol)          found a route  16  (40.0%)   fine-only: 0
+coarse plans containing >=1 step the mover refuses   6 of 29  (20.7%)
+refused steps / all coarse steps                     6 of 726  (0.8%)
+fine planner cost: median 168ms, p90 1278ms, max 1296ms, node cap hit 4x
+hybrid (coarse corridor, string-pulled): 22.0 points, 178 UNVERIFIED legs, <1ms
 ```
 
-1.4 seconds of SYNCHRONOUS CPU. CLAUDE.md records this exact failure mode: collision-aware
-A* switched on fleet-wide "caused a rejoin storm: the trace is synchronous and CPU-bound,
-A* calls it tens of thousands of times, and every session in the broker shares one event
-loop — so a cold 1.2s path stops the loop, keepalives go unanswered, and twelve of
-twenty-one characters were out of the world in five minutes."
+**WHAT THIS OVERTURNS**
 
-**What has changed since then is Phase 3:** keepers are now separate processes, one per
-character, so a 1.4s stall costs ONE character's keepalive rather than the fleet's. That
-makes this affordable where it was fatal — but it is a bound, not a licence.
+- **"Fine planning beats coarse" is FALSE.** Fine finds routes in 40% of cases against
+  coarse's 72.5%, and `fine-only: 0` — it never finds a route coarse cannot. It exhausts
+  its 20,000-node budget on room-crossing distances and returns "not found", which is
+  indistinguishable from genuinely unreachable. An earlier draft of this document claimed
+  the opposite on the strength of ONE short route in ONE room.
+- **"218 of 311 centre-to-centre steps fail" DOES NOT REPRODUCE.** In this checkout, with
+  baked step masks, **0.8%** of coarse steps are refused by the mover's own trace.
+  Whatever that upstream figure measured, it is not this build. It should not be cited as
+  a reason for anything here until somebody reproduces it.
+- **The hybrid is not verified either.** Coarse corridor + `stringPull` gave 2.0 points
+  and ZERO unverified legs in Raza, and 22.0 points with **178 unverified legs** across
+  five rooms. Raza was a lucky room. Same error as the first bullet, one layer along.
 
-So:
+**THE LIMIT ON ALL OF IT, AND IT IS THE IMPORTANT PART**
 
-- **PLANNING IS NOT A TICK OPERATION.** It runs on a route change, its result is cached as
-  waypoints, and the per-tick cost is arithmetic plus one `moveTo`.
-- **ALWAYS TRY THE DIRECT TRACE FIRST.** The short-circuit is 1ms and covers every case
-  where nothing is in the way, which is most legs of most journeys.
-- **BUDGET IT.** `step` and `maxNodes` are tunables (`step: 8`, `maxNodes: 20000` — and
-  19,831 expanded means the fence query nearly exhausted the cap, so some queries are
-  already failing silently at the limit). A path that hits the cap must report that it
-  did, not return "not found".
-- **BAKING IS THE ANSWER IF IT IS STILL TOO SLOW.** `tools/m59-routebake.mjs` already
-  precomputes step masks for 264 rooms offline; exit-to-exit fine waypoints are the same
-  trick applied one level down.
+`moverStepLands` and `traceFineMoveClient` are BOTH OUR CODE. This probe compares two
+local models to each other; it cannot say what the SERVER does, and the server is the
+only authority on whether a move lands. The single piece of real evidence about the
+server is a character standing at a fence re-sending a refused move.
 
-**Two traps to keep:**
+**So the next step is not to pick a planner. It is to measure the server.**
 
-- **EXITS ARE NOT 1:1.** Where you arrive is not where the return edge is, so a leg is
-  recomputed on every room change and never reversed or remembered.
-- **`exits()` IS EXPENSIVE TOO.** It runs flood fills; its own comment records one call
-  taking tens of seconds. Room change only, cached as the leg.
+A probe that, on the live server, sends a move and records whether the pushed position
+changed — over a few hundred moves, tagged with what each local model PREDICTED. That
+gives, for the first time in this repository:
 
-**Tested against synthetic `RoomGeometry` fixtures** (`m59-collision-test.mjs` already
-builds them) so the planner is tested rather than one server's map — including a room
-with an obstacle whose square centres are clear.
+- how often the server refuses a move `moverStepLands` approved (false confidence)
+- how often it accepts one the trace rejected (false caution)
+- whether either model is worth planning on at all
+
+Cheap to run (one character, no fighting), safe, and it is the only thing that can settle
+the design. **Nothing else in 4a should be built before it.**
+
+**What is already known and does not need re-testing:**
+
+- The collision model is baked into `substrate/` — geometry, `collisionReady: true` and
+  step masks for 264 rooms, with `M59_ROOT` unset. Planning needs no game install.
+- `moveToSquare` aims at a square's CENTRE, and the client collides a CIRCLE OF RADIUS
+  256 FINE UNITS against wall segments (`fineWalkable`), not a point against a grid. So
+  square centres are the wrong thing to aim at even if the coarse path is the right
+  corridor — whatever plans the route, the MOVES should be fine coordinates via
+  `client.moveTo(x, y)`, which is what `client.self.x/.y` already are.
+- `finePathProtocol` short-circuits to 1ms when the straight line is clear, which is most
+  short legs. Its expensive case is the one to avoid, not its normal case.
+- **EXITS ARE NOT 1:1** — a leg is recomputed on every room change, never reversed.
+- **`exits()` runs flood fills** — room change only, cached as the leg.
 
 ### 4b. THE HUNT GOAL — "why do I have to assign a destination?"
 
