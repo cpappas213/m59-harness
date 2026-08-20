@@ -132,9 +132,24 @@ export function simulateWalk(g, fromR, fromC, toR, toC, {
   // only version you can draw on top of the .roo and learn anything from.
   const positions = [];
 
+  // THE HONEST DENOMINATOR. `planLen` is the length of the FIRST plan - made before a single
+  // edge had been tried - and dividing the walk by it measures how wrong that plan was, not
+  // how badly the walk went. In a room where the first plan is impossible, a walker that
+  // recovers perfectly still scores badly, and a walker that never left the first plan would
+  // score 1.00x by failing to move at all.
+  //
+  // So replan from the START with everything the walk went on to learn. That route is made
+  // only of edges nothing has refused, which makes it the shortest crossing anybody could
+  // have planned KNOWING WHAT WE NOW KNOW - and the only fair thing to divide a walk by.
+  const truePlan = () => {
+    if (!blockedEdges.size) return planLen;
+    const t = g.path(fromR, fromC, toR, toC, { collision: true, blockedEdges, clearance, clipCost });
+    return t?.found ? t.steps.length : planLen;
+  };
+
   while (taken < maxSteps) {
     if (at.row === toR && at.col === toC)
-      return { arrived: true, steps: taken, planLen, offPlan, detours,
+      return { arrived: true, steps: taken, planLen, planTrue: truePlan(), offPlan, detours,
                learned: blockedEdges.size, refusals, positions, trail: trace ? trail : trail.slice(-24) };
     let p = g.path(at.row, at.col, toR, toC, { collision: true, blockedEdges, clearance, clipCost });
     // RELAX IN THE ORDER THE FACTS DECAY, exactly as walkTo does — and modelling this
@@ -357,18 +372,19 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
         cases.push([a, gl, 'from the floor']);
     }
     const byWall = new Map(), bySquare = new Map(), byReason = new Map();
-    let plannedAll = 0, walkedAll = 0, arrived = 0;
+    let plannedAll = 0, walkedAll = 0, arrived = 0, firstPlanAll = 0;
     console.log(`room ${num} - ${room.name ?? '?'}   (a run is 5 squares/second)\n`);
-    console.log('kind           from      to        plan  min     walked  actual  tax   deviations');
+    console.log('kind           from      to        1st   real  min     walked  actual  tax   deviations');
     for (const [from, gl, kind] of cases) {
       const r = simulateWalk(g, from[0], from[1], gl.row, gl.col, { clipCost: clips[0], clearance: clearances[0] });
       const plan = r.planLen ?? 0;
-      const min = plan / 5, act = (r.steps ?? 0) / 5;
-      if (r.arrived) { arrived++; plannedAll += plan; walkedAll += r.steps; }
+      const real = r.planTrue ?? plan;      // shortest route made only of edges nothing refused
+      const min = real / 5, act = (r.steps ?? 0) / 5;
+      if (r.arrived) { arrived++; plannedAll += real; walkedAll += r.steps; firstPlanAll += plan; }
       console.log(kind.padEnd(15) + `${from[0]},${from[1]}`.padEnd(10) + `${gl.row},${gl.col}`.padEnd(10) +
-        String(plan).padEnd(6) + (min.toFixed(1) + 's').padEnd(8) +
+        String(plan).padEnd(6) + String(real).padEnd(6) + (min.toFixed(1) + 's').padEnd(8) +
         String(r.steps ?? 0).padEnd(8) + (act.toFixed(1) + 's').padEnd(8) +
-        (plan ? (act / Math.max(0.001, min)).toFixed(1) + 'x' : '-').padEnd(6) +
+        (real ? (act / Math.max(0.001, min)).toFixed(1) + 'x' : '-').padEnd(6) +
         (r.arrived ? String(r.offPlan ?? 0) : `${r.offPlan ?? 0}  FAILED — ${r.why}`));
       for (const ref of r.refusals ?? []) {
         const w = ref.wall == null ? 'no wall named' : `wall ${ref.wall}`;
@@ -378,9 +394,16 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       }
     }
     console.log(`\n${arrived}/${cases.length} arrived. Across the ones that did: ` +
-                `${plannedAll} squares planned, ${walkedAll} walked — ` +
-                `${(walkedAll / Math.max(1, plannedAll)).toFixed(2)}x the theoretical minimum, ` +
+                `${plannedAll} squares in the shortest route nothing refuses, ${walkedAll} walked — ` +
+                `${(walkedAll / Math.max(1, plannedAll)).toFixed(2)}x, ` +
                 `${((walkedAll - plannedAll) / 5).toFixed(0)}s of tax.`);
+    // Two ratios, and the gap between them is the finding: `real` is the shortest route made
+    // only of edges nothing refused, `1st` is what the planner offered before it knew that.
+    if (firstPlanAll && firstPlanAll !== plannedAll)
+      console.log(`The FIRST plan asked for ${firstPlanAll} squares, so ` +
+                  `${(walkedAll / Math.max(1, firstPlanAll)).toFixed(2)}x against that. The gap is ` +
+                  `the planner being wrong rather than the walker wandering: ` +
+                  `${plannedAll - firstPlanAll} of the extra squares were never avoidable.`);
     const top = m => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12);
     console.log('\nWHAT REFUSED THE MOVE');
     for (const [k, n] of top(byReason)) console.log(`  ${String(n).padStart(5)}  ${k}`);

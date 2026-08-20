@@ -3820,6 +3820,73 @@ class Session {
   // Walk to a fine coordinate without consulting the square grid at all.
   // `stride` is how far to reach per request; a short stride hugs geometry more
   // closely but costs a second per step, since the move rate is one per second.
+  // THE LAST MILE INTO A SAFE SPOT, AND THE TOOL IS NOT THE ONE YOU WOULD PICK.
+  //
+  // A SAFE WALL *IS* THE TWO GRIDS DISAGREEING. That is the entire mechanism and the reason
+  // the fleet seeks these squares out: the coarse grid calls the square open, the BSP hems
+  // it in, and a monster's pathing cannot follow. So the obvious conclusion is that the
+  // square router — which plans stand point to stand point — is the wrong tool for the
+  // approach, and that the fine grid should own the last mile.
+  //
+  // MEASURED, AND THAT CONCLUSION IS WRONG. Across 107 approaches to nominated safe spots
+  // in the eleven rooms this fleet uses, from ordinary floor within ten squares:
+  //
+  //     walkTo    91/107   85%   the square lattice
+  //     walkFine  74/107   69%   a greedy fan of nine headings that slides on purpose
+  //     finePath  25/107   23%   A* on the quarter-square lattice
+  //
+  // The square walker is the BEST of the three, and `finePath` — the tool that looks most
+  // like "plan the last mile properly" — is by far the worst. The reason is one line of it:
+  // `moveLands` rejects any move whose slide ends more than ARRIVE_WITHIN from where it was
+  // aimed, because an edge that goes somewhere else is not the edge being put in the graph.
+  // That is correct for a route across open floor and fatal here, because a pocket the BSP
+  // hems in is a place where EVERY move slides. The fine lattice is STRICTER than the square
+  // walker, not more capable, and it has no edges at all in exactly the squares that make a
+  // safe spot safe.
+  //
+  // So this is `walkFine`, which slides on purpose, and it is a FALLBACK rather than a
+  // replacement: it is worse on average and it reaches two walls in the Cragged Mountains
+  // that the square walker loses, which is the room the whole road turns on. Second, never
+  // first, and free when the square walk works.
+  //
+  // (Widening or narrowing the search radius was tried too and is a wash in the wrong
+  // direction: a nearer wall is reached more reliably — 88% at four squares against 83% at
+  // ten — but is found so much less often that the share of characters that end up on a
+  // wall at all falls from 68% to 51%. `travel_hold_within` stays at ten.)
+  async approachFine(col, row, { toX = null, toY = null, maxSteps = 60, stride = 48,
+                                 movementGeneration = this.movementGeneration,
+                                 controlToken = null } = {}) {
+    const c = this.need();
+    const geo = this.world?.geometry;
+    const me = c.self ?? await this.selfOrResync();
+    if (!me || !Number.isFinite(me.x))
+      return { arrived: false, reason: 'own_position_unknown' };
+    if (!geo?.collisionReady)
+      return { arrived: false, reason: 'collision_geometry_unavailable' };
+
+    // The remembered fine position if there is one — it is a record of where a body
+    // actually stood — otherwise the square's own stand point.
+    const goal = (Number.isFinite(toX) && Number.isFinite(toY))
+      ? { x: toX, y: toY }
+      : (geo.standPointWire?.(row, col)
+         ?? { x: col * KOD_FINENESS + (KOD_FINENESS >> 1),
+              y: row * KOD_FINENESS + (KOD_FINENESS >> 1) });
+
+    const r = await this.walkFine(goal.x, goal.y,
+      { maxSteps, stride, arriveWithin: KOD_FINENESS >> 1, movementGeneration, controlToken })
+      .catch(e => ({ arrived: false, reason: e.message }));
+    if (r?.left_room) return { arrived: false, left_room: true, steps: r.steps ?? 0 };
+    const at = c.self;
+    // ON THE SQUARE IS THE ONLY THING THAT COUNTS. `walkFine` answers "as close as fine
+    // movement gets", which is the right answer to its own question and not to this one:
+    // the hold belongs to a square, and `observe()` revokes one taken on the wrong square
+    // a pass later.
+    const landed = !!at && at.col === col && at.row === row;
+    return { arrived: landed, steps: r?.steps ?? 0,
+             position: at ? { col: at.col, row: at.row } : null,
+             ...(landed ? {} : { reason: r?.reason ?? 'fine approach ended off the square' }) };
+  }
+
   async walkFine(destX, destY, {
     maxSteps = 120,
     stride = 48,

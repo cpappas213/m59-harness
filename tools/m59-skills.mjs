@@ -1499,9 +1499,38 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
 
   // Get onto the right square first through the geometry, then close the last few
   // fine units directly — the square router cannot express the last bit.
+  //
+  // AND WHEN IT CANNOT EXPRESS THE FIRST BIT EITHER, ASK THE FINE GRID FOR THE WHOLE
+  // APPROACH. A safe wall IS the coarse grid and the BSP disagreeing; that is what makes
+  // it safe and it is also what makes the square router bad at reaching it. This used to
+  // give up here — `could not walk back to the square` — with the fine tools sitting
+  // unused two lines below, because they only ever ran once `walkTo` had already
+  // succeeded. Measured live: a proved wall ten squares away in the Cragged Mountains,
+  // abandoned at exactly this line, twice in one evening.
+  //
+  // WHICH FINE TOOL IS NOT THE ONE YOU WOULD PICK. Measured over 107 approaches in the
+  // eleven rooms this fleet uses: the square walker reaches the wall 85% of the time, the
+  // greedy sliding fan 69%, and A* on the quarter-square lattice 23%. The square walker is
+  // the BEST of the three. `finePath` is worst because `moveLands` refuses any move whose
+  // slide ends more than ARRIVE_WITHIN off its aim, and a pocket the BSP hems in is a place
+  // where EVERY move slides — so the fine lattice has no edges at all in exactly the squares
+  // that make a safe spot safe.
+  //
+  // So `Session.approachFine` is the sliding fan, and it is worth having only as a SECOND
+  // attempt: it is worse on average and it reaches two walls in the Cragged Mountains that
+  // the square walker loses, which is the room the whole road turns on. Free when the square
+  // walk works, because it does not run.
   if (c.self && (c.self.col !== spot.col || c.self.row !== spot.row)) {
-    const w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
-    if (!w.arrived) return { arrived: false, why: w.reason || 'could not walk back to the square' };
+    let w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
+    if (!w.arrived && typeof s.approachFine === 'function') {
+      const fine = await s.approachFine(spot.col, spot.row, { toX: spot.x, toY: spot.y })
+                          .catch(e => ({ arrived: false, reason: e.message }));
+      if (fine.arrived) w = fine;
+      else w = { ...w, fine_tried: fine.reason ?? 'fine approach did not arrive' };
+    }
+    if (!w.arrived)
+      return { arrived: false, why: w.reason || 'could not walk back to the square',
+               ...(w.fine_tried ? { fine_tried: w.fine_tried } : {}) };
     await confirmPrediction();
   }
   if (spot.x != null && s.walkFine) {
