@@ -206,6 +206,32 @@ export function anchorFor(table, roomNum, toRoom) {
 }
 
 /**
+ * DID THE BAKE'S BFS JOIN THESE TWO EXIT SQUARES — regardless of whether it could spell the
+ * steps. Returns true, false, or null when the table cannot say.
+ *
+ * This exists because `bakedPath` conflated two questions and one of them is the one
+ * callers actually ask. A route is stored as one letter per step in the eight unit
+ * directions, and a FALL is a single move of two or three squares, so any route containing
+ * one cannot be written down and used to produce no entry at all. `bakedPath` then answered
+ * null, and `m59-world.mjs` read that as "walking cannot join these exits".
+ *
+ * Ukgoth is where it was found: the 83-step route from the Castle Victoria doorway to the
+ * Sentinel doorway BEGINS with a fall, 2,26 -> 5,23, so the whole crossing was refused by a
+ * table that had walked it. Ask this when the question is "is there a way"; ask `bakedPath`
+ * only when the question is "which squares".
+ *
+ * A table baked before this existed carries no `reach` map at all, and answers null rather
+ * than false — "the table cannot say" and "the table says no" are different, and only the
+ * first is safe to fall back from.
+ */
+export function anchorReach(table, roomNum, from, to) {
+  const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  if (!r) return null;
+  if (!r.reach) return bakedPath(table, roomNum, from, to) ? true : null;
+  return !!r.reach[`${from.row},${from.col}>${to.row},${to.col}`];
+}
+
+/**
  * A baked route as PIVOTS — the corners a walker actually has to aim at — or null.
  *
  * Same contract as `bakedPath`: null means "the table does not cover this", never "there

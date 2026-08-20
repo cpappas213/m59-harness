@@ -25,7 +25,7 @@ import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { observedCrossings } from './m59-crossings.mjs';
-import { activeRoutes, anchorFor, sameRegion, bakedPath } from './m59-routes.mjs';
+import { activeRoutes, anchorFor, sameRegion, anchorReach } from './m59-routes.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -941,12 +941,19 @@ export class World {
       // reaches the Sentinel door in 136 steps while the reverse has no route at all, so
       // the components differ and `sameRegion` refused a transit the fleet makes.
       //
-      // The bake already holds the directed answer. `bakedPath` is one BFS per anchor
-      // square, written per ORDERED pair, so a route in the table is a route in that
-      // direction. Absent, fall through to the component test rather than to nothing: for
-      // a pair the bake never covered, mutual reachability is still evidence, and `null`
-      // still means carry on.
-      if (bakedPath(table, room, inA, outA)) return true;
+      // The bake already holds the directed answer. It is one BFS per anchor square,
+      // written per ORDERED pair, so a yes in the table is a yes in that direction.
+      // Absent, fall through to the component test rather than to nothing: for a pair the
+      // bake never covered, mutual reachability is still evidence, and `null` still means
+      // carry on.
+      //
+      // ASK `anchorReach`, NOT `bakedPath`. The question here is "is there a way", and
+      // `bakedPath` answers "here are the squares" — which is null whenever the route
+      // contains a FALL, because the step string is one letter per unit direction and a
+      // fall is one move of two or three squares. Ukgoth's Castle Victoria doorway reaches
+      // the Sentinel doorway in 83 steps whose FIRST move is a fall, so the crossing the
+      // fleet makes every lap was refused by a table that had walked it.
+      if (anchorReach(table, room, inA, outA)) return true;
       return sameRegion(table, room, inA, outA);
     };
   }

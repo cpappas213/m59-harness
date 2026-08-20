@@ -99,7 +99,7 @@ export function replay(fromRow, fromCol, path) {
  * do you stand to cross this boundary". A `go` exit names its square outright. Both are
  * reduced to a square, because that is what a route ends at.
  */
-export function exitAnchors(room, geometry, { reachable = null } = {}) {
+export function exitAnchors(room, geometry, { reachable = null, playerReachable = null } = {}) {
   const out = [];
   for (const e of room.edgeExits ?? []) {
     const dir = e.leaveName ?? null;
@@ -125,17 +125,40 @@ export function exitAnchors(room, geometry, { reachable = null } = {}) {
     // plEdge_Exits, so a candidate is kept only if crossing THERE actually fires THIS
     // exit. The world model has always used it; the bake reached past it to the raw list.
     // The operator's recorded crossings agree — 587 -> 597 is walked from row 47.
-    let best = null, fallback = null;
+    // AND A THIRD PREFERENCE ABOVE BOTH, WHICH IS THE CLIPSWEEP FINDING PUT TO WORK.
+    //
+    // `reachable` is the room's body in the COLLISION view — the view that is too
+    // permissive, and the one that walks 27 of the 28 squares of rock across the top of
+    // Ukgoth. So "the body can reach this square" is satisfied by a square only a clip can
+    // reach, and picking it bakes a doorway that works for a bot and not for a player.
+    //
+    // `playerReachable` is the coarse grid's main component: the map monsters move on,
+    // which is too tight about individual tiles and does NOT invent a wall across the
+    // middle of a room. A stage outside it is one no walking route reaches without crossing
+    // ground the grid calls solid.
+    //
+    // Ukgoth is the case. Its north exit publishes 2,26 first and 1,27 second; 2,26 is a
+    // ONE-SQUARE island in the coarse grid and 1,27 is in the main body of 1,679 — and 1,27
+    // is the doorway the operator names. Preferring the coarse-connected stage is the whole
+    // difference between the two.
+    //
+    // Ordered, never filtered: a stage that satisfies neither is still baked, because a
+    // bake must never be the reason a doorway disappears.
+    let best = null, second = null, fallback = null;
     try {
       for (const a of edgeCandidatesOf(room, e)) {
         for (const stage of a.stages ?? []) {
           fallback ??= stage;
-          if (!reachable || reachable.has(`${stage.row},${stage.col}`)) { best = stage; break; }
+          const k = `${stage.row},${stage.col}`;
+          const bodyOk = !reachable || reachable.has(k);
+          const playerOk = !playerReachable || playerReachable.has(k);
+          if (bodyOk && playerOk) { best = stage; break; }
+          if (bodyOk) second ??= stage;
         }
         if (best) break;
       }
     } catch { /* an unbaked direction simply offers nothing */ }
-    best ??= fallback;
+    best ??= second ?? fallback;
     if (!best) continue;
     out.push({ kind: 'edge', dir, to: e.to, row: best.row, col: best.col });
   }
@@ -357,7 +380,32 @@ export function bakeRoom(room, { collision = true } = {}) {
     }
   }
 
-  const anchors = exitAnchors(room, geometry, { reachable: reachedFromBody });
+  // The coarse grid's own main component — see `playerReachable` in exitAnchors. Computed
+  // here rather than passed in because it is one flood fill over squares already in memory,
+  // and the bake is the only caller that needs it.
+  const coarseBody = (() => {
+    const seen = new Map(); let id = 0, best = -1, bestId = -1;
+    for (let r = 0; r <= geometry.rows; r++) for (let c = 0; c <= geometry.cols; c++) {
+      if (!geometry.walkable(r, c) || seen.has(`${r},${c}`)) continue;
+      const stack = [[r, c]]; seen.set(`${r},${c}`, id); let n = 0;
+      while (stack.length) {
+        const [a, b] = stack.pop(); n++;
+        for (const nb of geometry.neighbors(a, b, { collision: false })) {
+          if (!geometry.walkable(nb.row, nb.col)) continue;
+          const k = `${nb.row},${nb.col}`;
+          if (seen.has(k)) continue;
+          seen.set(k, id); stack.push([nb.row, nb.col]);
+        }
+      }
+      if (n > best) { best = n; bestId = id; }
+      id++;
+    }
+    const out = new Set();
+    for (const [k, v] of seen) if (v === bestId) out.add(k);
+    return out;
+  })();
+  const anchors = exitAnchors(room, geometry,
+    { reachable: reachedFromBody, playerReachable: coarseBody });
   const regionOf = a => comp.label[comp.at(a.row, a.col)];
   const tagged = anchors.map(a => ({ ...a, region: regionOf(a),
                                      from_body: reachedFromBody.has(`${a.row},${a.col}`) }));
@@ -379,14 +427,36 @@ export function bakeRoom(room, { collision = true } = {}) {
   const squares = anchorSquares(tagged.filter(a => a.region >= 0));
   const routes = {};
   const pivots = {};
+  // WHETHER A PAIR IS JOINED AT ALL, RECORDED SEPARATELY FROM THE ROUTE BETWEEN THEM.
+  //
+  // Those were the same fact until a jump appeared in one. `pathString` encodes a route as
+  // one letter per step, in `STEP_DIRS`, which is the eight unit directions — and a fall is
+  // a single move of two or three squares. `LETTER.get('3,-3')` is undefined, `pathString`
+  // returns null, and the pair silently produces no entry: the BFS reached it, the bake
+  // dropped it, and `bakedPath` — which m59-world.mjs reads as "can walking join these two
+  // exits" — answered no.
+  //
+  // Found in Ukgoth, and it is exactly the room where it costs the most. The route from the
+  // Castle Victoria doorway to the Sentinel doorway is 83 steps and its FIRST move is a
+  // fall, 2,26 -> 5,23. So the transit check refused a crossing the mover can make, and
+  // m59-routing-test's "the directed answer still offers the way that works" went red the
+  // moment the north anchor moved off the rock island onto the real door.
+  //
+  // `reach` is the honest half: a BFS answer, kept whether or not the steps can be spelled.
+  // `routes` and `pivots` stay exactly as they were — a caller wanting the SQUARES still
+  // gets null and still has to work them out — and `unspellable` counts what was dropped,
+  // because a bake that quietly omits a thing is how this went unnoticed.
+  const reach = {};
+  let unspellable = 0;
   for (const from of squares) {
     const targets = squares.filter(t => t.row !== from.row || t.col !== from.col);
     if (!targets.length) continue;
     const { came, key } = bfs(geometry, from.row, from.col, { collision });
     for (const to of targets) {
-      const p = pathString(came, key, from.row, from.col, to.row, to.col);
-      if (p == null) continue;
       const pair = `${from.row},${from.col}>${to.row},${to.col}`;
+      if (came.has(key(to.row, to.col))) reach[pair] = 1;
+      const p = pathString(came, key, from.row, from.col, to.row, to.col);
+      if (p == null) { if (reach[pair]) unspellable++; continue; }
       routes[pair] = p;
 
       // AND THE PIVOTS, WHICH ARE WHAT A WALKER SHOULD ACTUALLY BE GIVEN.
@@ -434,6 +504,10 @@ export function bakeRoom(room, { collision = true } = {}) {
     // BSP hems in — the safe-spot candidates — and a one-square one is the strongest.
     pockets: comp.sizes.filter((_, id) => id !== mainRegion).length,
     stranded_exits: strandedExits,
+    // Anchor pairs the BFS joined, including the ones whose steps cannot be spelled — see
+    // the note above `reach`. `unspellable` is how many of those there were.
+    reach,
+    ...(unspellable ? { unspellable } : {}),
     // `from_body` is the one a router should read: can the room walk to this exit. `region`
     // is kept beside it because a pocket exit and a main-body exit behave differently once
     // you are standing on one — the first cannot be stepped back off.

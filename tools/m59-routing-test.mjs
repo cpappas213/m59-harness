@@ -862,17 +862,24 @@ console.log('\ncrossing a room — planning over doors rather than over rooms');
 console.log('\none-way transits, and the jumps the square walk cannot express');
 {
   const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
-  const { routesFor: rf, anchorFor: aFor, sameRegion: sameReg, bakedPath: bPath } =
+  const { routesFor: rf, anchorFor: aFor, sameRegion: sameReg, anchorReach: reaches } =
     await import('./m59-routes.mjs');
   const table = realMap ? rf(realMap.geometryManifestSha256) : null;
   if (!table) {
     skip('a one-way transit is offered in the direction that works', 'no routing table on disk');
   } else {
     const { findPath: fp } = await import('./m59-map.mjs');
+    // THE SAME THREE LINES `m59-world.mjs` USES, and they ask `anchorReach` rather than
+    // `bakedPath` for a reason this room is the proof of. A baked ROUTE is one letter per
+    // step in the eight unit directions; a FALL is one move of two or three squares, so a
+    // route containing one cannot be spelled and used to produce no entry at all. Ukgoth's
+    // 83-step route from the Castle Victoria doorway to the Sentinel doorway BEGINS with a
+    // fall, 2,26 -> 5,23, and this assertion went red the moment the north anchor moved off
+    // the rock island onto the real door. `reach` is the BFS answer, kept either way.
     const directed = (room, from, to) => {
       const x = aFor(table, room, from), y = aFor(table, room, to);
       if (!x || !y) return null;
-      if (bPath(table, room, x, y)) return true;
+      if (reaches(table, room, x, y)) return true;
       return sameReg(table, room, x, y);
     };
     // Ukgoth: the two doors are NOT mutually reachable, and that must not refuse the
