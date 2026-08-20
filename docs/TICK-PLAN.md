@@ -240,9 +240,37 @@ Four consequences, and they change the design more than anything else in this do
 - **BEING TOO PERMISSIVE IS NOT FREE.** The server will happily put a character inside
   geometry. What that costs — stuck bodies, rooms that cannot be left, something the
   server does notice later — is UNKNOWN and is the next thing worth measuring.
-- **The 16 rejections in the sample crossed no wall**, because Raza has none: they were
-  edge/height constraints between open squares. A room with real walls has not been
-  tested, and the wall-crossing question is still open.
+- **AND THE WALL TEST IS DONE. RAZA IS FULL OF WALLS; I WAS MEASURING THE WRONG THING.**
+  I searched for non-standable SQUARES and found 0 of 1980, and concluded the room was
+  open ground. A fence is not a square — it is a wall SEGMENT between squares, and the
+  coarse grid is blind to it:
+
+  ```
+  Raza wall segments:            760   impassable: 466
+  non-standable squares:           0   <- what I searched for
+  cells fineWalkable() == false: 280 of 1792   (15.6%)
+  ```
+
+  `standable()` reads the coarse grid, which `moverStepLands`'s own comment calls "a
+  SERVER artifact". Only the fine model — `fineWalkable`, `traceFineMoveClient` — knows
+  about wall segments. **Anything planning on `standable()` is blind to 15.6% of this
+  room**, which is a large part of why the coarse planner's routes contain steps that go
+  nowhere.
+
+  The wall test itself, run against a cell with `fineWalkable = false`:
+
+  ```
+  moved INTO the wall     -> accepted, the server placed us there
+  moved back OUT again    -> accepted, one move, no struggle
+  ```
+
+  **Movement into geometry is accepted and is not a trap** — at least here, at least for
+  one wall. So the cost of being too permissive is lower than feared, though "he got out
+  of one wall" is not "no wall is a trap".
+
+  **And it caught my own error:** the 24-square jump in the distance test above parked
+  JayB INSIDE a wall at 65,29 and I did not notice, because I was checking `standable()`,
+  which said the square was fine. He stood there through two subsequent test runs.
 
 **WHAT THIS SAMPLE DOES NOT SHOW, and must not be over-read:**
 
