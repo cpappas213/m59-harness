@@ -206,6 +206,44 @@ traceFineMoveClient  said LANDS 60 -> 60 arrived     said NO 10 -> ALL 10 ARRIVE
 - It also explains why the coarse planner found routes in only 72.5% of pairs offline: it
   is refusing ground the server allows.
 
+**AND THE REASON IS THAT MOVEMENT IS CLIENT-AUTHORITATIVE.** Measured, in the same room:
+
+```
+non-standable squares in Raza: 0 of 1980
+
+asked 41,23 -> 41,19   ( 4 squares)   landed 41,19   1393ms
+asked 41,19 -> 41,29   (10 squares)   landed 41,29   1288ms
+asked 41,29 -> 65,29   (24 squares)   landed 65,29   1283ms
+```
+
+A position 24 squares away, claimed in ONE packet, granted exactly, in the same time as a
+four-square move. A server that validated movement would not allow that. `stepFine`'s own
+comment says so and I did not believe it until this: *"VALIDATE BEFORE SENDING. The server
+accepts player coordinates; a room read is confirmation of state, never a collision
+oracle."*
+
+**THIS REVERSES THE MEANING OF THE NUMBERS ABOVE.** "100% false caution" is the wrong
+name for it. The server never checks, so **our models ARE the collision rule** — a
+rejection is not a bad prediction, it is the client declining to walk through its own
+geometry. The measurement does not show the models are wrong; it shows nothing is
+enforcing them but us.
+
+Four consequences, and they change the design more than anything else in this document:
+
+- **COLLISION IS ENTIRELY OUR RESPONSIBILITY.** There is no oracle to defer to and no
+  refusal to learn from. `blockedEdges`-style learning from "the server refused" cannot
+  work, because the server never refuses. That whole idea in an earlier draft is dead.
+- **WE CAN MOVE IN LONG JUMPS.** Routing does not need square-by-square stepping at all:
+  a string-pulled path of 2 verified waypoints can be walked as 2 packets, not 25. This is
+  the single biggest simplification available and it was invisible while we assumed the
+  server was validating.
+- **BEING TOO PERMISSIVE IS NOT FREE.** The server will happily put a character inside
+  geometry. What that costs — stuck bodies, rooms that cannot be left, something the
+  server does notice later — is UNKNOWN and is the next thing worth measuring.
+- **The 16 rejections in the sample crossed no wall**, because Raza has none: they were
+  edge/height constraints between open squares. A room with real walls has not been
+  tested, and the wall-crossing question is still open.
+
 **WHAT THIS SAMPLE DOES NOT SHOW, and must not be over-read:**
 
 - **One room, and an open one.** Raza is largely clear ground. A room with real walls
