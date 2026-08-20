@@ -178,6 +178,47 @@ local models to each other; it cannot say what the SERVER does, and the server i
 only authority on whether a move lands. The single piece of real evidence about the
 server is a character standing at a fence re-sending a refused move.
 
+**THE SERVER HAS NOW BEEN MEASURED — `node tools/m59-move-probe.mjs`.**
+
+70 single-square moves on JayB in Raza, each one sent and then CONFIRMED (the server does
+not push our position, see §1):
+
+```
+arrived 70    moved-but-not-arrived 0    did not move 0
+
+moverStepLands       said LANDS 64 -> 64 arrived     said NO  6 -> ALL 6 ARRIVED
+  false confidence  0/64    0.0%
+  false caution     6/6   100.0%
+
+traceFineMoveClient  said LANDS 60 -> 60 arrived     said NO 10 -> ALL 10 ARRIVED
+  false confidence  0/60    0.0%
+  false caution    10/10  100.0%
+```
+
+**The server accepted every move, including every one both models refused.**
+
+- **Neither model produced a single false positive.** Nothing they approved failed, so
+  planning on them is safe in the direction that matters.
+- **Every rejection either model made was wrong.** In this room their refusals are pure
+  loss: they would route a character the long way round, or report "no route", for moves
+  the server takes without complaint. That is the failure that makes a route look
+  impossible and leaves a character standing.
+- It also explains why the coarse planner found routes in only 72.5% of pairs offline: it
+  is refusing ground the server allows.
+
+**WHAT THIS SAMPLE DOES NOT SHOW, and must not be over-read:**
+
+- **One room, and an open one.** Raza is largely clear ground. A room with real walls
+  would certainly produce refusals; this sample contains almost no genuine obstacle.
+- **The character wandered locally**, so the ground covered is biased toward wherever it
+  happened to start.
+- **Single-square moves only.** Nothing here says anything about long legs.
+- 6 and 10 rejections is a thin denominator for "100%".
+
+**The sample that would settle it is the fence** — the one place we have independent
+evidence of a real obstacle, because a person watched a character fail at it. Running this
+probe in that specific spot is the next measurement, and it is cheap.
+
 **So the next step is not to pick a planner. It is to measure the server.**
 
 A probe that, on the live server, sends a move and records whether the pushed position

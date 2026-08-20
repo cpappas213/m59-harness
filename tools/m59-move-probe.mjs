@@ -82,6 +82,10 @@ async function main() {
 
   const rows = [];
   for (let i = 0; i < MOVES; i++) {
+    // A SITTING CHARACTER IS REFUSED EVERY MOVE WITH NO REPLY (PFLAG_NO_MOVE), which
+    // from out here is indistinguishable from a collision refusal. Stand periodically so
+    // a nap in the middle of the run cannot masquerade as a wall.
+    if (i % 25 === 0) { await session.pacer.submit('stand', () => c.stand()).catch(() => {}); await sleep(400); }
     const me = c.self;
     if (!me) { await sleep(SETTLE); continue; }
     // THE LIVE ROOM ID IS NOT A MAP NUMBER and the two namespaces overlap silently:
@@ -114,24 +118,45 @@ async function main() {
     } catch { traceArrives = null; }
 
     const before = { x: me.x, y: me.y, col: me.col, row: me.row };
-    // FIRE AND FORGET, then read what the server pushed. No confirmPosition: BP_MOVE for
-    // our own id is written straight into room.objects, which is what `self` reads.
-    await session.pacer.submit('move', () => c.moveTo(target.x, target.y, c.moveSpeed?.() ?? 18, c.room.id))
-                       .catch(() => {});
-    await c.waitFor({ kinds: ['moved'], timeoutMs: SETTLE }).catch(() => {});
-    await sleep(60);
+    // SEND, THEN ASK. Measured 2026-08-20: the server does NOT push our own position --
+    // three consecutive landed moves produced zero events and left `client.self`
+    // unchanged until confirmPosition() read the room. An earlier version of this probe
+    // waited for a `moved` event and recorded 120/120 "did not move" for moves that had
+    // all landed. The only way to know where we are is to ask.
+    let sendThrew = null;
+    try {
+      await session.pacer.submit('move',
+        () => c.moveTo(target.x, target.y, 18, c.room.id));
+    } catch (e) { sendThrew = e?.message ?? String(e); }
+    // WAIT FOR THE WALK TO FINISH, DO NOT GUESS AT IT. A move is not instantaneous: the
+    // server walks the body at `speed`, so a fixed 350ms settle read the position
+    // mid-stride and every sample landed on the PREVIOUS target -- an off-by-one that
+    // looked like "moved but never arrived" for every single move.
+    //
+    // So: confirm repeatedly until the position stops changing, or we run out of patience.
+    // Settling is the measurement here, not an inconvenience around it.
+    let confirmed = null, prev = null, settled = 0;
+    const deadline = Date.now() + SETTLE * 6;
+    do {
+      await sleep(SETTLE);
+      confirmed = await session.confirmPosition().catch(() => null);
+      const p = c.self ?? {};
+      if (prev && p.x === prev.x && p.y === prev.y) settled++; else settled = 0;
+      prev = { x: p.x, y: p.y };
+    } while (settled < 1 && Date.now() < deadline);
 
     const now = c.self ?? {};
     const after = { x: now.x, y: now.y, col: now.col, row: now.row };
     const movedAtAll = after.x !== before.x || after.y !== before.y;
     const arrived = after.col === tc && after.row === tr;
     rows.push({ room: roomNum, from: before, to: { col: tc, row: tr }, after,
-                says_lands: saysLands, trace_arrives: traceArrives, moved: movedAtAll, arrived });
+                says_lands: saysLands, trace_arrives: traceArrives, moved: movedAtAll,
+                arrived, confirmed: !!confirmed, send_threw: sendThrew });
 
     if (i < 4)
       console.log(`  #${i} ${before.col},${before.row} -> ${tc},${tr}  ` +
                   `lands=${saysLands} trace=${traceArrives}  landed at ${after.col},${after.row}` +
-                  `  moved=${movedAtAll}`);
+                  `  moved=${movedAtAll}${sendThrew ? '  THREW: ' + sendThrew : ''}`);
     if ((i + 1) % 20 === 0) process.stdout.write(`  ${i + 1}/${MOVES}\r`);
   }
 
