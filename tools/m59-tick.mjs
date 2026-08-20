@@ -166,6 +166,10 @@ export class Actuator {
     return this._send('attack', () => c.attack(targetId), 1050);
   }
 
+  // -- posture. Sitting down IS the behaviour when recovering; it is not a stall.
+  rest()  { const c = this.session.client; return this._send('rest',  () => c.rest()); }
+  stand() { const c = this.session.client; return this._send('stand', () => c.stand()); }
+
   // -- objects
   use(id)        { const c = this.session.client; return this._send('use',  () => c.use(id)); }
   unuse(id)      { const c = this.session.client; return this._send('use',  () => c.unuse(id)); }
