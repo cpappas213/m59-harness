@@ -81,7 +81,7 @@ const DEFAULT_HZ = 10;
 // SENSOR -- free, synchronous, sends nothing
 // ---------------------------------------------------------------------------
 export class Sensor {
-  constructor(session) { this.session = session; }
+  constructor(session) { this.session = session; this.lastAt = 0; }
 
   // ONE FRAME OF THE WORLD, read from state the server already pushed.
   //
@@ -91,11 +91,20 @@ export class Sensor {
   // where we started.
   read() {
     const s = this.session, c = s?.client;
+    const at = Date.now();
+    // HOW LONG SINCE WE LAST LOOKED, in wall clock. NOT for integrating anything -- the
+    // server owns position and pushes it, and keeping our own dead-reckoned copy would
+    // be a second, wrong world. It is here so a decider can tell a healthy cadence from
+    // a degraded one: a frame that arrives 2s after the last means we were blind for 2s,
+    // and some decisions (engaging, committing to a walk) deserve to know that.
+    const dt = this.lastAt ? at - this.lastAt : null;
+    this.lastAt = at;
     if (!c || s.live !== true || c.state !== 'game')
-      return { in_game: false, at: Date.now() };
+      return { in_game: false, at, dt_ms: dt };
     const me = c.self;
     return {
-      at: Date.now(),
+      at,
+      dt_ms: dt,
       in_game: true,
       agent: s.name ?? null,
       character: c.me?.name ?? null,

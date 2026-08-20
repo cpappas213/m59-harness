@@ -72,7 +72,7 @@ console.log('\nAN UNPLANNABLE GOAL COUNTS AS A FAILURE');
   // the only outcome that could never retire it.
   const { session } = world({ pack: [] });          // nothing to eat, nothing to cast with
   const seen = [];
-  const decide = makeDecider({ session, skipAfter: 3, skipFor: 10,
+  const decide = makeDecider({ session, skipAfter: 3, skipForMs: 10_000,
     goals: [{ goal: 'has_food', when: () => true }],
     onDecision: d => seen.push(d) });
   const act = new Actuator(session);

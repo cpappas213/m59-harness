@@ -108,11 +108,17 @@ export function intend(actionName, frame, act, ctx) {
 // which is not currently skipped is pursued. It is the caller's, not this file's,
 // because what a character is FOR is a directional decision and belongs to whoever is
 // steering -- the same split CLAUDE.md draws between the keeper and a bot.
+// TIME IS WALL CLOCK, NEVER A TICK COUNT.
+//
+// `skipForMs` was `skipFor = 30` in TICKS, and that is wrong in the direction that hurts:
+// ticks coalesce when the loop is under load, so a goal "skipped for 30 ticks" is three
+// seconds on a healthy loop and half a minute on a struggling one. The pause would grow
+// exactly when things were going worst. A tick is a sampling cadence, not a clock.
 export function makeDecider({ session, policy = {}, goals = [], onDecision = null,
-                              skipAfter = 5, skipFor = 30 } = {}) {
+                              skipAfter = 5, skipForMs = 3000, now = () => Date.now() } = {}) {
   if (!session) throw new Error('makeDecider: no session');
   const fails = new Map();       // goal -> consecutive failures
-  const skipped = new Map();     // goal -> tick number to resume at
+  const skipped = new Map();     // goal -> wall-clock ms to resume at
   let ticks = 0;
 
   const decide = (frame, act, loop) => {
@@ -127,7 +133,7 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
     const active = goals.find(g => {
       if (!g?.goal || !g.when?.(ws)) return false;
       const until = skipped.get(g.goal) ?? 0;
-      return ticks >= until;
+      return now() >= until;
     });
     if (!active) { onDecision?.({ ticks, goal: null, why: 'nothing to do' }); return; }
 
@@ -155,7 +161,7 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
     if (ok) { fails.set(goal, 0); return; }
     const n = (fails.get(goal) ?? 0) + 1;
     fails.set(goal, n);
-    if (n >= skipAfter) { skipped.set(goal, ticks + skipFor); fails.set(goal, 0); }
+    if (n >= skipAfter) { skipped.set(goal, now() + skipForMs); fails.set(goal, 0); }
   }
 
   decide.state = () => ({ ticks, fails: Object.fromEntries(fails),
