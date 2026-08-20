@@ -215,6 +215,40 @@ node tools/m59-routes.mjs                # what is baked, and whether it matches
 node tools/m59-routes.mjs --verify       # re-walk every baked route
 ```
 
+**A STALE TABLE IS NOT ALWAYS A STALE MAP, AND THE MANIFEST CANNOT TELL YOU.** It hashes the
+GEOMETRY. When the anchor-SELECTION code changes, a table baked by the older code passes
+every check here and is confidently wrong about where a doorway is. That is not
+hypothetical: Ukgoth's north anchor to Outside Castle Victoria was baked at row 1, col 62 —
+five grid-walkable squares with no coarse-grid connection to the room's other 1,679 — while
+the current code answers 2,26, the operator's real doorway. Rebake after touching
+`exitAnchors`, `edgeCandidatesOf` or `neighbors`; nothing will remind you.
+
+Three more offline tools, and each answers a question the others cannot:
+
+```bash
+node tools/m59-walksim.mjs --cycle       # will the WALKER get stuck — the mover, not the router
+node tools/m59-clipsweep.mjs --anchors   # doorways only a clip can reach
+node tools/m59-falljump.mjs              # the jumps somebody walked and wrote down
+```
+
+`m59-walktrial.mjs --plan-only` asks whether a ROUTE EXISTS and is essentially perfect from
+ordinary squares — it said so for months while the fleet stood in corners.
+**`m59-walksim.mjs` asks whether the WALKER ARRIVES**, by driving the real `path`,
+`standPoint` and `traceFineMoveClient` with the fine position carried forward, and that is
+where the failures are: the router validates centre-to-centre, the mover slides, and after
+the first slide the body is never on a centre again. It reproduces the two-square bounce
+offline, on demand, with no server:
+
+```bash
+node tools/m59-walksim.mjs --room 598 --from 19,8 --to 64,19 --trace
+```
+
+`m59-clipsweep.mjs` counts where the collision view is more permissive than the coarse grid
+— the invariant running backwards, 30,878 steps and, before the bake learned to prefer a
+coarse-connected staging square, 116 rooms of 264 with an exit anchor only a clip can reach
+(96 after). `CLIP_STEP_COST` in `m59-roo.mjs` prices those steps rather than forbidding
+them, because 137 of 2,164 recorded human positions are squares the coarse grid calls wall.
+
 Three things about running it that are not obvious. **`--resume` adopts only what was baked
 from the same geometry AND the same view** — a half-table stitched from two maps is the one
 kind of wrong nothing downstream could detect. **The partial table is flushed every minute

@@ -138,13 +138,13 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
   is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
-  `node tools/m59-collision-test.mjs` (148 — **the fail-closed contract for all
+  `node tools/m59-collision-test.mjs` (191 — **the fail-closed contract for all
   movement**: compact collision metadata survives a bake, legacy maps cannot authorize
   a coordinate packet, the player cylinder catches wall bodies and corners, long strides
   cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
   emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
   Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
-  `node tools/m59-routing-test.mjs` (38 — **the contract test for planning on the map the
+  `node tools/m59-routing-test.mjs` (90 — **the contract test for planning on the map the
   mover enforces**: that `moverStepLands` and not `stepAllowedByCollision` is the question
   that decides anything, that the quantizer has one answer for the planning half and the
   sending half, that a mask round-trips bit for bit and one of the wrong size is refused
@@ -170,11 +170,31 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   one. Its last section is the guard against the routing preference leaking back into the
   tactical questions and teaching the fleet off the walls — flip `path`'s clearance default
   back on and it goes red on 302 of 395 walks) and
-  `node tools/m59-breadcrumb-test.mjs` (32 — **the contract test for getting out of a safe
+  `node tools/m59-breadcrumb-test.mjs` (51 — **the contract test for getting out of a safe
   spot**: that a crumb is recorded at the one choke point every move passes through, that a
   retreat cannot invent an impossible traversal because every step goes back through the
   fine validator, that a broken trail is dropped whole rather than skipped, that it stops
-  the moment the route reappears, and that a genuine dead end still reports itself) and
+  the moment the route reappears, and that a genuine dead end still reports itself.
+  **Its last section lifts `selfOrResync` and `refreshRoomIdentity` out of the broker source
+  and RUNS them**, which is the only way this class of fault is visible: both sent an
+  identifier that is bound nowhere in that file, so both threw ReferenceError the moment
+  they were reached — and both are recovery paths, so they could only fail once something
+  else had already gone wrong. Every other assertion here about losing our own position
+  drives the FIXTURE's stub of that method, and passed perfectly throughout) and
+  `node tools/m59-pulse-test.mjs` (43 — **is the character moving, asked of the character**.
+  Every other stall number measures the KEEPER. Most of the file is the exclusions, because
+  a detector that shouts when somebody sits down gets switched off before the day it was
+  needed: resting, fighting, trading, waiting and holding a safe wall are all silent, and a
+  wall held for a full minute raises nothing. Its newest section is the one exclusion that
+  was WRONG — `inert` meant an errand or a bot owned the character, and the pulse stood down
+  for it, so two characters bled out stationary in The Flatlands with `wedges: 0` and
+  `stood_down_for: "travelling to The Streets of Tos"` in both post-mortems. Inert now
+  excuses standing still and not standing still while losing health, with steady health,
+  healing, and genuinely leaving the neighbourhood all still silent. Two assertions in that
+  section exist because the first implementation was useless and only the counters said so:
+  a wedge must survive a painless second, since damage and the pulse both land about once a
+  second and the excused branch clears the episode; and the body test must see a character
+  ALTERNATING between two squares, which the exact-square comparison reads as movement) and
   `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on

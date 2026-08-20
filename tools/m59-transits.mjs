@@ -137,6 +137,26 @@ if (process.argv[1]?.endsWith('m59-transits.mjs')) {
   const roomWanted = arg('room');
   const worstN = Number(arg('worst', 0));
   const failuresOnly = process.argv.includes('--failures');
+  // ONLY THIS RUN, BECAUSE THE LEDGER IS APPEND-ONLY AND OUTLIVES THE CODE THAT WROTE IT.
+  //
+  // Every number here is an attribute of a BUILD as much as of a map, and the book holds
+  // months of crossings made by walkers that have since been fixed. Reporting the lot and
+  // calling it "how we do" averages the current code with every version of itself, which is
+  // the one thing a before-and-after must not do. Accepts an ISO timestamp, a millisecond
+  // epoch, or a plain age — `--since 45m`, `--since 3h`.
+  const sinceArg = arg('since');
+  const since = (() => {
+    if (!sinceArg || sinceArg === true) return 0;
+    const age = /^(\d+(?:\.\d+)?)([smhd])$/.exec(String(sinceArg));
+    if (age) {
+      const unit = { s: 1e3, m: 6e4, h: 36e5, d: 864e5 }[age[2]];
+      return Date.now() - Number(age[1]) * unit;
+    }
+    const n = Number(sinceArg);
+    if (Number.isFinite(n) && n > 1e11) return n;
+    const t = Date.parse(String(sinceArg));
+    return Number.isFinite(t) ? t : 0;
+  })();
   const names = only ? [safeName(only)] : listCharacters();
   if (!names.length) {
     console.log(`no transit records yet — ${TRANSIT_DIR} is empty.`);
@@ -148,6 +168,7 @@ if (process.argv[1]?.endsWith('m59-transits.mjs')) {
   const pad = (s, w) => String(s).padEnd(w);
 
   let all = books.flatMap(b => (b.transits || []).map(t => ({ ...t, who: b.character })));
+  if (since) all = all.filter(t => (t.at ?? 0) >= since);
   if (roomWanted != null) all = all.filter(t => String(t.room) === String(roomWanted));
   if (failuresOnly) all = all.filter(t => !t.ok);
   if (!all.length) { console.log('nothing recorded that matches.'); process.exit(0); }
@@ -163,6 +184,54 @@ if (process.argv[1]?.endsWith('m59-transits.mjs')) {
                   pad(secs(t.ms), 10) + pad(t.walk_ms != null ? secs(t.walk_ms) : '-', 10) +
                   pad(t.tried, 9) + (t.ok ? 'left' : `FAILED — ${String(t.reason).slice(0, 44)}`));
     console.log('');
+  }
+
+  // PER BOUNDARY, WHICH IS THE QUESTION "HOW LONG BETWEEN THESE TWO MAPS" ACTUALLY ASKS.
+  //
+  // `byRoom` below answers a different and also-useful one — how long a body spends INSIDE
+  // a map, whichever door it came in by — and the header argues for it. But a fleet walking
+  // a fixed itinerary is crossing named boundaries, and a boundary is where the failures
+  // live: 586 -> 587 and 587 -> 576 were 0/3 while 587's own floor routed perfectly.
+  //
+  // Both maps are named by number AND name on both sides, because a room number is what
+  // every tool here speaks and a name is what a person recognises, and the two have been
+  // confused in this repository often enough to be worth the width.
+  if (process.argv.includes('--hops')) {
+    const byHop = new Map();
+    for (const t of all) {
+      const k = `${t.room}>${t.to}`;
+      const e = byHop.get(k) ?? { room: t.room, room_name: t.room_name, to: t.to,
+                                  to_name: t.to_name, ok: [], failed: 0, reasons: new Map() };
+      if (t.ok) e.ok.push(t.ms); else {
+        e.failed++;
+        e.reasons.set(t.reason ?? 'no reason', (e.reasons.get(t.reason ?? 'no reason') ?? 0) + 1);
+      }
+      byHop.set(k, e);
+    }
+    const rows = [...byHop.values()].map(e => {
+      const s = e.ok.slice().sort((a, b) => a - b);
+      return { ...e, crossed: s.length,
+               median_ms: pctile(s, 0.5), p90_ms: pctile(s, 0.9), max_ms: s[s.length - 1] ?? 0 };
+    }).sort((a, b) => b.max_ms - a.max_ms);
+    console.log(pad('from', 38) + pad('to', 38) + pad('crossed', 9) + pad('failed', 8) +
+                pad('median', 9) + pad('p90', 9) + pad('worst', 9) + 'commonest refusal');
+    for (const r of rows) {
+      const worstReason = [...r.reasons.entries()].sort((a, b) => b[1] - a[1])[0];
+      console.log(pad(`${r.room} - ${r.room_name ?? '?'}`, 38) +
+                  pad(`${r.to} - ${r.to_name ?? '?'}`, 38) +
+                  pad(r.crossed, 9) + pad(r.failed, 8) +
+                  pad(r.crossed ? secs(r.median_ms) : '-', 9) +
+                  pad(r.crossed ? secs(r.p90_ms) : '-', 9) +
+                  pad(r.crossed ? secs(r.max_ms) : '-', 9) +
+                  (worstReason ? `${worstReason[0]} x${worstReason[1]}` : ''));
+    }
+    const okAll = all.filter(t => t.ok).map(t => t.ms).sort((a, b) => a - b);
+    console.log('');
+    console.log(`${rows.length} boundaries, ${all.length} attempts, ${okAll.length} crossed, ` +
+                `${all.length - okAll.length} refused. Across every crossing: median ` +
+                `${secs(pctile(okAll, 0.5))}, p90 ${secs(pctile(okAll, 0.9))}, ` +
+                `worst ${secs(okAll[okAll.length - 1] ?? 0)}.`);
+    process.exit(0);
   }
 
   const rooms = byRoom(books, { failuresOnly });

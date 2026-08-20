@@ -1,0 +1,6184 @@
+{
+  "_what": "Squares the collision view will step onto that the coarse grid calls solid — the invariant running backwards. See the header of tools/m59-clipsweep.mjs.",
+  "swept_at": "2026-08-20T17:42:46.531Z",
+  "rooms": [
+    {
+      "room": 750,
+      "name": "The Dreaded Caves of Ice",
+      "clip_steps": 1220,
+      "legal_steps": 5495,
+      "clip_squares": 636,
+      "pct": 18.168279970215934,
+      "coarse_islands": 183,
+      "coarse_body": 146,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 526,
+          "dir": "south",
+          "at": {
+            "row": 47,
+            "col": 24
+          },
+          "on_solid_ground": false,
+          "island": 52
+        }
+      ]
+    },
+    {
+      "room": 521,
+      "name": "Elhadrim",
+      "clip_steps": 712,
+      "legal_steps": 3400,
+      "clip_squares": 422,
+      "pct": 17.315175097276263,
+      "coarse_islands": 90,
+      "coarse_body": 496,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 578,
+      "name": "The Cragged Mountains",
+      "clip_steps": 533,
+      "legal_steps": 5850,
+      "clip_squares": 384,
+      "pct": 8.35030549898167,
+      "coarse_islands": 96,
+      "coarse_body": 899,
+      "anchors": 5,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 826,
+          "dir": "east",
+          "at": {
+            "row": 26,
+            "col": 50
+          },
+          "on_solid_ground": false,
+          "island": 4
+        }
+      ]
+    },
+    {
+      "room": 536,
+      "name": "Forest of Farol",
+      "clip_steps": 507,
+      "legal_steps": 6627,
+      "clip_squares": 327,
+      "pct": 7.1068124474348195,
+      "coarse_islands": 46,
+      "coarse_body": 963,
+      "anchors": 6,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 706,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 9001,
+      "name": "Historic Marion",
+      "clip_steps": 692,
+      "legal_steps": 43576,
+      "clip_squares": 305,
+      "pct": 1.5632059275323031,
+      "coarse_islands": 80,
+      "coarse_body": 5693,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 28,
+      "name": "The Forests of Meridian",
+      "clip_steps": 647,
+      "legal_steps": 5795,
+      "clip_squares": 276,
+      "pct": 10.04346476249612,
+      "coarse_islands": 47,
+      "coarse_body": 695,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 4,
+      "name": "The Deep Dark Woods of Tos",
+      "clip_steps": 561,
+      "legal_steps": 4338,
+      "clip_squares": 266,
+      "pct": 11.451316595223515,
+      "coarse_islands": 26,
+      "coarse_body": 654,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 546,
+      "name": "Deep in the Forest of Farol",
+      "clip_steps": 496,
+      "legal_steps": 6705,
+      "clip_squares": 260,
+      "pct": 6.887932231634495,
+      "coarse_islands": 84,
+      "coarse_body": 893,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2133,
+      "name": "Ruins of the Riija Temple",
+      "clip_steps": 382,
+      "legal_steps": 13127,
+      "clip_squares": 245,
+      "pct": 2.8277444666518616,
+      "coarse_islands": 64,
+      "coarse_body": 1852,
+      "anchors": 6,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2132,
+          "dir": "north",
+          "at": {
+            "row": 1,
+            "col": 36
+          },
+          "on_solid_ground": false,
+          "island": 13
+        }
+      ]
+    },
+    {
+      "room": 2123,
+      "name": "Camp of the Warrior Avars",
+      "clip_steps": 362,
+      "legal_steps": 5431,
+      "clip_squares": 233,
+      "pct": 6.248921111686518,
+      "coarse_islands": 65,
+      "coarse_body": 768,
+      "anchors": 4,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2124,
+          "dir": "south",
+          "at": {
+            "row": 49,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 2501,
+      "name": "An Enigmatic Chamber",
+      "clip_steps": 610,
+      "legal_steps": 7851,
+      "clip_squares": 223,
+      "pct": 7.2095496986171845,
+      "coarse_islands": 112,
+      "coarse_body": 1291,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2132,
+      "name": "Turf of the Warrior Avars",
+      "clip_steps": 368,
+      "legal_steps": 7586,
+      "clip_squares": 218,
+      "pct": 4.626602967060599,
+      "coarse_islands": 44,
+      "coarse_body": 1123,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 6,
+      "name": "The Deep Dark Woods of Marion",
+      "clip_steps": 454,
+      "legal_steps": 3314,
+      "clip_squares": 217,
+      "pct": 12.048832271762208,
+      "coarse_islands": 34,
+      "coarse_body": 508,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 544,
+      "name": "Valley of Ileria",
+      "clip_steps": 316,
+      "legal_steps": 32188,
+      "clip_squares": 206,
+      "pct": 0.9721880383952745,
+      "coarse_islands": 38,
+      "coarse_body": 4209,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 587,
+      "name": "Western border of the Twisted Wood",
+      "clip_steps": 599,
+      "legal_steps": 9081,
+      "clip_squares": 206,
+      "pct": 6.18801652892562,
+      "coarse_islands": 64,
+      "coarse_body": 1319,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2124,
+      "name": "Path to the Ruins",
+      "clip_steps": 334,
+      "legal_steps": 9290,
+      "clip_squares": 204,
+      "pct": 3.4704904405652535,
+      "coarse_islands": 46,
+      "coarse_body": 1288,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2152,
+      "name": "Headquarters of the Noble Avars",
+      "clip_steps": 371,
+      "legal_steps": 13614,
+      "clip_squares": 196,
+      "pct": 2.6528423310690026,
+      "coarse_islands": 58,
+      "coarse_body": 1992,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2112,
+      "name": "The Jungle Cliffs",
+      "clip_steps": 317,
+      "legal_steps": 9855,
+      "clip_squares": 195,
+      "pct": 3.116397955171058,
+      "coarse_islands": 42,
+      "coarse_body": 1356,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2506,
+      "name": "Lair of the Orc Pit Boss",
+      "clip_steps": 351,
+      "legal_steps": 9243,
+      "clip_squares": 192,
+      "pct": 3.658536585365854,
+      "coarse_islands": 28,
+      "coarse_body": 1386,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 47,
+      "name": "Martyr's Battleground",
+      "clip_steps": 543,
+      "legal_steps": 11070,
+      "clip_squares": 191,
+      "pct": 4.675794368380264,
+      "coarse_islands": 56,
+      "coarse_body": 1685,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 598,
+      "name": "The Cragged Mountains",
+      "clip_steps": 334,
+      "legal_steps": 5924,
+      "clip_squares": 187,
+      "pct": 5.337168424416746,
+      "coarse_islands": 44,
+      "coarse_body": 863,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2504,
+      "name": "Obfal's Sepulchre",
+      "clip_steps": 501,
+      "legal_steps": 11464,
+      "clip_squares": 184,
+      "pct": 4.187212703719181,
+      "coarse_islands": 99,
+      "coarse_body": 1815,
+      "anchors": 3,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2510,
+          "dir": "west",
+          "at": {
+            "row": 12,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 21
+        }
+      ]
+    },
+    {
+      "room": 556,
+      "name": "Deep Forest of Farol",
+      "clip_steps": 550,
+      "legal_steps": 5289,
+      "clip_squares": 183,
+      "pct": 9.41942113375578,
+      "coarse_islands": 31,
+      "coarse_body": 858,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2122,
+      "name": "Headquarters for the Avar Warriors",
+      "clip_steps": 289,
+      "legal_steps": 9084,
+      "clip_squares": 182,
+      "pct": 3.0833244425477435,
+      "coarse_islands": 103,
+      "coarse_body": 1222,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 537,
+      "name": "Faronath, home of the TreeFolk",
+      "clip_steps": 386,
+      "legal_steps": 5265,
+      "clip_squares": 174,
+      "pct": 6.830649442576535,
+      "coarse_islands": 25,
+      "coarse_body": 793,
+      "anchors": 4,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 706,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 2503,
+      "name": "Aqueducts of Merb",
+      "clip_steps": 451,
+      "legal_steps": 16031,
+      "clip_squares": 167,
+      "pct": 2.736318407960199,
+      "coarse_islands": 91,
+      "coarse_body": 2504,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2500,
+      "name": "Ugol's Warren Entrance",
+      "clip_steps": 295,
+      "legal_steps": 3953,
+      "clip_squares": 162,
+      "pct": 6.944444444444445,
+      "coarse_islands": 66,
+      "coarse_body": 621,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 9000,
+      "name": "Historic Jasper",
+      "clip_steps": 245,
+      "legal_steps": 24314,
+      "clip_squares": 162,
+      "pct": 0.9975976220530152,
+      "coarse_islands": 36,
+      "coarse_body": 3477,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2505,
+      "name": "Konima's Ascension",
+      "clip_steps": 464,
+      "legal_steps": 11171,
+      "clip_squares": 159,
+      "pct": 3.987967339922647,
+      "coarse_islands": 71,
+      "coarse_body": 1812,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2502,
+      "name": "The Archaic Hollows",
+      "clip_steps": 322,
+      "legal_steps": 9356,
+      "clip_squares": 157,
+      "pct": 3.327133705311015,
+      "coarse_islands": 216,
+      "coarse_body": 860,
+      "anchors": 3,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 2507,
+          "dir": "north",
+          "at": {
+            "row": 1,
+            "col": 41
+          },
+          "on_solid_ground": false,
+          "island": 28
+        },
+        {
+          "to": 2501,
+          "dir": "east",
+          "at": {
+            "row": 47,
+            "col": 78
+          },
+          "on_solid_ground": false,
+          "island": 64
+        }
+      ]
+    },
+    {
+      "room": 599,
+      "name": "Ukgoth, Holy Land of Trolls",
+      "clip_steps": 204,
+      "legal_steps": 11038,
+      "clip_squares": 148,
+      "pct": 1.8146237324319516,
+      "coarse_islands": 56,
+      "coarse_body": 1679,
+      "anchors": 3,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 598,
+          "dir": "east",
+          "at": {
+            "row": 1,
+            "col": 66
+          },
+          "on_solid_ground": false,
+          "island": 5
+        }
+      ]
+    },
+    {
+      "room": 26,
+      "name": "The Forests of Meridian",
+      "clip_steps": 371,
+      "legal_steps": 8964,
+      "clip_squares": 140,
+      "pct": 3.9742903053026244,
+      "coarse_islands": 18,
+      "coarse_body": 1256,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2507,
+      "name": "Grog's Antechamber",
+      "clip_steps": 370,
+      "legal_steps": 10890,
+      "clip_squares": 134,
+      "pct": 3.285968028419183,
+      "coarse_islands": 81,
+      "coarse_body": 1735,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 579,
+      "name": "An ancient place, its origin forgotten",
+      "clip_steps": 358,
+      "legal_steps": 10480,
+      "clip_squares": 133,
+      "pct": 3.303192470935597,
+      "coarse_islands": 75,
+      "coarse_body": 1313,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 27,
+      "name": "A Deep, Dark, Spooky, Icky Cave",
+      "clip_steps": 353,
+      "legal_steps": 8344,
+      "clip_squares": 132,
+      "pct": 4.058870875014373,
+      "coarse_islands": 67,
+      "coarse_body": 1320,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 566,
+      "name": "Off the beaten path",
+      "clip_steps": 391,
+      "legal_steps": 5645,
+      "clip_squares": 132,
+      "pct": 6.477799867461895,
+      "coarse_islands": 93,
+      "coarse_body": 813,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 827,
+      "name": "Ancient Graveyard of Brax",
+      "clip_steps": 202,
+      "legal_steps": 3934,
+      "clip_squares": 132,
+      "pct": 4.8839458413926495,
+      "coarse_islands": 31,
+      "coarse_body": 550,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 826,
+          "dir": "west",
+          "at": {
+            "row": 3,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 5
+        }
+      ]
+    },
+    {
+      "room": 2508,
+      "name": "Brog's Antechamber",
+      "clip_steps": 372,
+      "legal_steps": 8032,
+      "clip_squares": 132,
+      "pct": 4.426463588767254,
+      "coarse_islands": 71,
+      "coarse_body": 1287,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 516,
+      "name": "The Hills",
+      "clip_steps": 346,
+      "legal_steps": 5992,
+      "clip_squares": 130,
+      "pct": 5.459135373934996,
+      "coarse_islands": 122,
+      "coarse_body": 903,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 515,
+          "dir": "north",
+          "at": {
+            "row": 1,
+            "col": 18
+          },
+          "on_solid_ground": false,
+          "island": 3
+        }
+      ]
+    },
+    {
+      "room": 557,
+      "name": "The Sweet Grass Prairies",
+      "clip_steps": 308,
+      "legal_steps": 7952,
+      "clip_squares": 121,
+      "pct": 3.7288135593220337,
+      "coarse_islands": 110,
+      "coarse_body": 1143,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 533,
+      "name": "Quilicia Wood",
+      "clip_steps": 316,
+      "legal_steps": 3962,
+      "clip_squares": 120,
+      "pct": 7.3866292660121555,
+      "coarse_islands": 118,
+      "coarse_body": 560,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 589,
+      "name": "Under the shadow of the Sentinel",
+      "clip_steps": 306,
+      "legal_steps": 5947,
+      "clip_squares": 120,
+      "pct": 4.893651047497201,
+      "coarse_islands": 55,
+      "coarse_body": 863,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 32,
+      "name": "The Berdonne Canyons",
+      "clip_steps": 333,
+      "legal_steps": 5334,
+      "clip_squares": 119,
+      "pct": 5.8761249338274215,
+      "coarse_islands": 46,
+      "coarse_body": 711,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 545,
+      "name": "West Merchant Way",
+      "clip_steps": 186,
+      "legal_steps": 34009,
+      "clip_squares": 119,
+      "pct": 0.5439391723936248,
+      "coarse_islands": 40,
+      "coarse_body": 4417,
+      "anchors": 7,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 556,
+          "dir": "south",
+          "at": {
+            "row": 49,
+            "col": 70
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 547,
+      "name": "Deep in the Forest of Farol",
+      "clip_steps": 322,
+      "legal_steps": 5968,
+      "clip_squares": 119,
+      "pct": 5.119236883942766,
+      "coarse_islands": 89,
+      "coarse_body": 848,
+      "anchors": 4,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 537,
+          "dir": "west",
+          "at": {
+            "row": 6,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 28
+        }
+      ]
+    },
+    {
+      "room": 50,
+      "name": "The Streets of Tos",
+      "clip_steps": 300,
+      "legal_steps": 8725,
+      "clip_squares": 114,
+      "pct": 3.3240997229916895,
+      "coarse_islands": 110,
+      "coarse_body": 1351,
+      "anchors": 35,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 541,
+      "name": "Dirhadrim",
+      "clip_steps": 333,
+      "legal_steps": 6209,
+      "clip_squares": 114,
+      "pct": 5.0901864873127485,
+      "coarse_islands": 84,
+      "coarse_body": 879,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 576,
+      "name": "The King's Way",
+      "clip_steps": 344,
+      "legal_steps": 65280,
+      "clip_squares": 114,
+      "pct": 0.524198463976594,
+      "coarse_islands": 67,
+      "coarse_body": 8533,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2131,
+      "name": "The Chasm",
+      "clip_steps": 130,
+      "legal_steps": 16131,
+      "clip_squares": 103,
+      "pct": 0.7994588278703647,
+      "coarse_islands": 111,
+      "coarse_body": 2349,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2143,
+      "name": "Deep in the Jungle",
+      "clip_steps": 302,
+      "legal_steps": 8294,
+      "clip_squares": 103,
+      "pct": 3.5132619823173568,
+      "coarse_islands": 66,
+      "coarse_body": 1178,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 829,
+      "name": "Within the Walls of Castle Brax",
+      "clip_steps": 163,
+      "legal_steps": 1661,
+      "clip_squares": 100,
+      "pct": 8.93640350877193,
+      "coarse_islands": 29,
+      "coarse_body": 265,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 522,
+      "name": "Lower Elhadrim",
+      "clip_steps": 270,
+      "legal_steps": 7921,
+      "clip_squares": 98,
+      "pct": 3.296300817970944,
+      "coarse_islands": 77,
+      "coarse_body": 1107,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 526,
+      "name": "Druid Hills",
+      "clip_steps": 157,
+      "legal_steps": 9625,
+      "clip_squares": 97,
+      "pct": 1.6049887548558577,
+      "coarse_islands": 67,
+      "coarse_body": 1508,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2142,
+      "name": "Territory of the Noble Avars",
+      "clip_steps": 244,
+      "legal_steps": 7904,
+      "clip_squares": 91,
+      "pct": 2.9945999018163967,
+      "coarse_islands": 79,
+      "coarse_body": 1141,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 567,
+      "name": "Off the beaten path",
+      "clip_steps": 242,
+      "legal_steps": 5274,
+      "clip_squares": 90,
+      "pct": 4.387237128353879,
+      "coarse_islands": 109,
+      "coarse_body": 760,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 597,
+      "name": "The Twisted Wood",
+      "clip_steps": 226,
+      "legal_steps": 6223,
+      "clip_squares": 89,
+      "pct": 3.504419289812374,
+      "coarse_islands": 62,
+      "coarse_body": 903,
+      "anchors": 5,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 37,
+          "dir": "go",
+          "at": {
+            "row": 15,
+            "col": 39
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 37,
+          "dir": "go",
+          "at": {
+            "row": 15,
+            "col": 38
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 2115,
+      "name": "Outside the Guard Tower",
+      "clip_steps": 124,
+      "legal_steps": 16037,
+      "clip_squares": 88,
+      "pct": 0.7672792525215024,
+      "coarse_islands": 156,
+      "coarse_body": 2313,
+      "anchors": 7,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2124,
+          "dir": "east",
+          "at": {
+            "row": 3,
+            "col": 63
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 2125,
+      "name": "Into the Jungle",
+      "clip_steps": 257,
+      "legal_steps": 6397,
+      "clip_squares": 88,
+      "pct": 3.8623384430417795,
+      "coarse_islands": 131,
+      "coarse_body": 966,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 49,
+      "name": "Kardde's Canyon",
+      "clip_steps": 185,
+      "legal_steps": 1512,
+      "clip_squares": 87,
+      "pct": 10.901591043017088,
+      "coarse_islands": 21,
+      "coarse_body": 231,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 45,
+          "dir": "south",
+          "at": {
+            "row": 27,
+            "col": 20
+          },
+          "on_solid_ground": false,
+          "island": 6
+        }
+      ]
+    },
+    {
+      "room": 2114,
+      "name": "Into the Jungle",
+      "clip_steps": 225,
+      "legal_steps": 8025,
+      "clip_squares": 87,
+      "pct": 2.727272727272727,
+      "coarse_islands": 218,
+      "coarse_body": 1099,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 531,
+      "name": "The Fey's Crossing",
+      "clip_steps": 248,
+      "legal_steps": 3641,
+      "clip_squares": 84,
+      "pct": 6.376960658266906,
+      "coarse_islands": 62,
+      "coarse_body": 537,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 950,
+      "name": "The Courtyard of Blackstone Keep",
+      "clip_steps": 245,
+      "legal_steps": 14333,
+      "clip_squares": 84,
+      "pct": 1.6806146247770613,
+      "coarse_islands": 15,
+      "coarse_body": 1979,
+      "anchors": 13,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 826,
+      "name": "Winding Caverns",
+      "clip_steps": 237,
+      "legal_steps": 1467,
+      "clip_squares": 82,
+      "pct": 13.908450704225352,
+      "coarse_islands": 39,
+      "coarse_body": 274,
+      "anchors": 4,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 578,
+          "dir": "west",
+          "at": {
+            "row": 6,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 7
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 44
+          },
+          "on_solid_ground": false,
+          "island": 6
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 44
+          },
+          "on_solid_ground": false,
+          "island": 6
+        }
+      ]
+    },
+    {
+      "room": 575,
+      "name": "The King's Way",
+      "clip_steps": 216,
+      "legal_steps": 9359,
+      "clip_squares": 80,
+      "pct": 2.255874673629243,
+      "coarse_islands": 48,
+      "coarse_body": 1310,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2111,
+      "name": "Cliff Hive",
+      "clip_steps": 108,
+      "legal_steps": 24660,
+      "clip_squares": 80,
+      "pct": 0.436046511627907,
+      "coarse_islands": 103,
+      "coarse_body": 3460,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2135,
+      "name": "Outside the Mad Scientist's Hut",
+      "clip_steps": 99,
+      "legal_steps": 10070,
+      "clip_squares": 80,
+      "pct": 0.9735470547743141,
+      "coarse_islands": 37,
+      "coarse_body": 1410,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 542,
+      "name": "Lower Dirhadrim",
+      "clip_steps": 226,
+      "legal_steps": 5842,
+      "clip_squares": 77,
+      "pct": 3.7244561634805535,
+      "coarse_islands": 61,
+      "coarse_body": 792,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 585,
+      "name": "The border of the Badlands",
+      "clip_steps": 168,
+      "legal_steps": 12916,
+      "clip_squares": 77,
+      "pct": 1.2840110058086212,
+      "coarse_islands": 7,
+      "coarse_body": 1888,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 562,
+      "name": "The sandy shores of the Great Ocean",
+      "clip_steps": 102,
+      "legal_steps": 16832,
+      "clip_squares": 76,
+      "pct": 0.6023384906106058,
+      "coarse_islands": 9,
+      "coarse_body": 2285,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 35,
+      "name": "The Spider Nest",
+      "clip_steps": 202,
+      "legal_steps": 3183,
+      "clip_squares": 72,
+      "pct": 5.967503692762186,
+      "coarse_islands": 57,
+      "coarse_body": 570,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 534,
+      "name": "Deep Woods of Ileria",
+      "clip_steps": 208,
+      "legal_steps": 3528,
+      "clip_squares": 72,
+      "pct": 5.56745182012848,
+      "coarse_islands": 42,
+      "coarse_body": 491,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 24,
+      "name": "The Forests of Meridian",
+      "clip_steps": 162,
+      "legal_steps": 5937,
+      "clip_squares": 71,
+      "pct": 2.6561731431382194,
+      "coarse_islands": 35,
+      "coarse_body": 776,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2141,
+      "name": "Lair of the Bone Priestess",
+      "clip_steps": 85,
+      "legal_steps": 11116,
+      "clip_squares": 70,
+      "pct": 0.7588608159985716,
+      "coarse_islands": 66,
+      "coarse_body": 1530,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2144,
+      "name": "The Clearing of the Trading Post",
+      "clip_steps": 265,
+      "legal_steps": 15344,
+      "clip_squares": 69,
+      "pct": 1.697738484207829,
+      "coarse_islands": 68,
+      "coarse_body": 2114,
+      "anchors": 18,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 2101,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 40
+          },
+          "on_solid_ground": false,
+          "island": 6
+        },
+        {
+          "to": 2101,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 40
+          },
+          "on_solid_ground": false,
+          "island": 14
+        },
+        {
+          "to": 2102,
+          "dir": "go",
+          "at": {
+            "row": 33,
+            "col": 42
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 825,
+      "name": "The Dungeon of Castle Brax",
+      "clip_steps": 188,
+      "legal_steps": 2052,
+      "clip_squares": 68,
+      "pct": 8.392857142857142,
+      "coarse_islands": 34,
+      "coarse_body": 457,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2134,
+      "name": "Origin of the Kriipa",
+      "clip_steps": 207,
+      "legal_steps": 10169,
+      "clip_squares": 68,
+      "pct": 1.994988434849653,
+      "coarse_islands": 121,
+      "coarse_body": 1447,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 73,
+      "name": "The Arena of Kraanan",
+      "clip_steps": 76,
+      "legal_steps": 898,
+      "clip_squares": 62,
+      "pct": 7.8028747433264884,
+      "coarse_islands": 25,
+      "coarse_body": 137,
+      "anchors": 22,
+      "anchors_on_solid": 6,
+      "bad": [
+        {
+          "to": 60,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 37
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 60,
+          "dir": "go",
+          "at": {
+            "row": 27,
+            "col": 34
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 60,
+          "dir": "go",
+          "at": {
+            "row": 25,
+            "col": 35
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 60,
+          "dir": "go",
+          "at": {
+            "row": 25,
+            "col": 34
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 60,
+          "dir": "go",
+          "at": {
+            "row": 23,
+            "col": 37
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 60,
+          "dir": "go",
+          "at": {
+            "row": 22,
+            "col": 37
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 2509,
+      "name": "A Tranquil Place",
+      "clip_steps": 165,
+      "legal_steps": 8919,
+      "clip_squares": 58,
+      "pct": 1.8163804491413473,
+      "coarse_islands": 22,
+      "coarse_body": 1174,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2151,
+      "name": "The Temple of Riija",
+      "clip_steps": 95,
+      "legal_steps": 19649,
+      "clip_squares": 57,
+      "pct": 0.48115883306320906,
+      "coarse_islands": 115,
+      "coarse_body": 2845,
+      "anchors": 6,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2152,
+          "dir": "south",
+          "at": {
+            "row": 68,
+            "col": 45
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 851,
+      "name": "Bourgeois Castle",
+      "clip_steps": 152,
+      "legal_steps": 15405,
+      "clip_squares": 55,
+      "pct": 0.9770521308735617,
+      "coarse_islands": 130,
+      "coarse_body": 2211,
+      "anchors": 34,
+      "anchors_on_solid": 10,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 13,
+            "col": 9
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 13,
+            "col": 8
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 41,
+            "col": 28
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 41,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 852,
+          "dir": "go",
+          "at": {
+            "row": 40,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 2600,
+      "name": "The crypt in Marion",
+      "clip_steps": 64,
+      "legal_steps": 4055,
+      "clip_squares": 55,
+      "pct": 1.5537751881524642,
+      "coarse_islands": 8,
+      "coarse_body": 811,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 852,
+      "name": "The Assembly Chamber",
+      "clip_steps": 96,
+      "legal_steps": 4849,
+      "clip_squares": 54,
+      "pct": 1.941354903943377,
+      "coarse_islands": 49,
+      "coarse_body": 667,
+      "anchors": 5,
+      "anchors_on_solid": 5,
+      "bad": [
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 35,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 35,
+            "col": 19
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 24
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 23
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 22
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 378,
+      "name": "The Sewers of Jasper",
+      "clip_steps": 146,
+      "legal_steps": 3634,
+      "clip_squares": 53,
+      "pct": 3.8624338624338623,
+      "coarse_islands": 62,
+      "coarse_body": 612,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2601,
+      "name": "Resting place of Marion's ancestors",
+      "clip_steps": 127,
+      "legal_steps": 3533,
+      "clip_squares": 53,
+      "pct": 3.469945355191257,
+      "coarse_islands": 17,
+      "coarse_body": 758,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 380,
+      "name": "The Ancient Smuggler's Crossing",
+      "clip_steps": 149,
+      "legal_steps": 6832,
+      "clip_squares": 52,
+      "pct": 2.1343647041971066,
+      "coarse_islands": 46,
+      "coarse_body": 644,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 379,
+          "dir": "south",
+          "at": {
+            "row": 50,
+            "col": 2
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 112,
+          "dir": "east",
+          "at": {
+            "row": 14,
+            "col": 59
+          },
+          "on_solid_ground": false,
+          "island": 69
+        }
+      ]
+    },
+    {
+      "room": 2113,
+      "name": "A notch in the jungle",
+      "clip_steps": 166,
+      "legal_steps": 31855,
+      "clip_squares": 52,
+      "pct": 0.5184097935729678,
+      "coarse_islands": 116,
+      "coarse_body": 4314,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 110,
+      "name": "A shadowy corner",
+      "clip_steps": 146,
+      "legal_steps": 782,
+      "clip_squares": 51,
+      "pct": 15.732758620689655,
+      "coarse_islands": 9,
+      "coarse_body": 81,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 5,
+      "name": "The Underground Lake",
+      "clip_steps": 153,
+      "legal_steps": 26500,
+      "clip_squares": 49,
+      "pct": 0.5740441976512963,
+      "coarse_islands": 12,
+      "coarse_body": 3486,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 27,
+          "dir": "go",
+          "at": {
+            "row": 75,
+            "col": 34
+          },
+          "on_solid_ground": false,
+          "island": 10
+        }
+      ]
+    },
+    {
+      "room": 48,
+      "name": "The Temple of Shal'ille",
+      "clip_steps": 109,
+      "legal_steps": 2770,
+      "clip_squares": 49,
+      "pct": 3.786036818339701,
+      "coarse_islands": 26,
+      "coarse_body": 391,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 71,
+      "name": "The Crypt",
+      "clip_steps": 131,
+      "legal_steps": 1366,
+      "clip_squares": 48,
+      "pct": 8.750835003340013,
+      "coarse_islands": 11,
+      "coarse_body": 230,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 828,
+      "name": "Decaying City of Brax",
+      "clip_steps": 49,
+      "legal_steps": 2990,
+      "clip_squares": 44,
+      "pct": 1.6123724909509707,
+      "coarse_islands": 17,
+      "coarse_body": 470,
+      "anchors": 20,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 832,
+          "dir": "go",
+          "at": {
+            "row": 20,
+            "col": 27
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 39,
+      "name": "Upstairs in Castle Victoria",
+      "clip_steps": 47,
+      "legal_steps": 3371,
+      "clip_squares": 43,
+      "pct": 1.3750731421884144,
+      "coarse_islands": 17,
+      "coarse_body": 295,
+      "anchors": 4,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 38,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 267
+        },
+        {
+          "to": 38,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 267
+        }
+      ]
+    },
+    {
+      "room": 356,
+      "name": "Abandoned Building",
+      "clip_steps": 56,
+      "legal_steps": 867,
+      "clip_squares": 40,
+      "pct": 6.067172264355363,
+      "coarse_islands": 4,
+      "coarse_body": 119,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2121,
+      "name": "The Cliffs",
+      "clip_steps": 106,
+      "legal_steps": 7478,
+      "clip_squares": 39,
+      "pct": 1.3976793248945147,
+      "coarse_islands": 140,
+      "coarse_body": 1071,
+      "anchors": 4,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2112,
+          "dir": "west",
+          "at": {
+            "row": 36,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 31
+        }
+      ]
+    },
+    {
+      "room": 554,
+      "name": "East Merchant Way through Ilerian Woods",
+      "clip_steps": 85,
+      "legal_steps": 8200,
+      "clip_squares": 38,
+      "pct": 1.0259505129752564,
+      "coarse_islands": 45,
+      "coarse_body": 1139,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 584,
+      "name": "The Flatlands",
+      "clip_steps": 87,
+      "legal_steps": 6487,
+      "clip_squares": 38,
+      "pct": 1.3233951931852754,
+      "coarse_islands": 51,
+      "coarse_body": 901,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 38,
+      "name": "Castle Victoria",
+      "clip_steps": 94,
+      "legal_steps": 4024,
+      "clip_squares": 36,
+      "pct": 2.282661486158329,
+      "coarse_islands": 4,
+      "coarse_body": 605,
+      "anchors": 20,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 712,
+      "name": "The home of the Friends of the Forest",
+      "clip_steps": 99,
+      "legal_steps": 2447,
+      "clip_squares": 36,
+      "pct": 3.8884524744697564,
+      "coarse_islands": 48,
+      "coarse_body": 233,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 563,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 18
+          },
+          "on_solid_ground": false,
+          "island": 52
+        },
+        {
+          "to": 563,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 52
+        }
+      ]
+    },
+    {
+      "room": 830,
+      "name": "Ruins of Castle Brax",
+      "clip_steps": 95,
+      "legal_steps": 2240,
+      "clip_squares": 36,
+      "pct": 4.0685224839400425,
+      "coarse_islands": 18,
+      "coarse_body": 250,
+      "anchors": 15,
+      "anchors_on_solid": 8,
+      "bad": [
+        {
+          "to": 825,
+          "dir": "south",
+          "at": {
+            "row": 32,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 33
+        },
+        {
+          "to": 825,
+          "dir": "south",
+          "at": {
+            "row": 32,
+            "col": 21
+          },
+          "on_solid_ground": false,
+          "island": 93
+        },
+        {
+          "to": 829,
+          "dir": "west",
+          "at": {
+            "row": 23,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 33
+        },
+        {
+          "to": 829,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 2
+          },
+          "on_solid_ground": false,
+          "island": 93
+        },
+        {
+          "to": 829,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 2
+          },
+          "on_solid_ground": false,
+          "island": 93
+        },
+        {
+          "to": 830,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 12
+          },
+          "on_solid_ground": false,
+          "island": 93
+        },
+        {
+          "to": 830,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 12
+          },
+          "on_solid_ground": false,
+          "island": 93
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 34
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 200,
+      "name": "Marion",
+      "clip_steps": 116,
+      "legal_steps": 44947,
+      "clip_squares": 35,
+      "pct": 0.25741739342698,
+      "coarse_islands": 308,
+      "coarse_body": 5827,
+      "anchors": 10,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 201,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 43
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 204,
+          "dir": "go",
+          "at": {
+            "row": 50,
+            "col": 21
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 375,
+      "name": "The Home of the Wise Man",
+      "clip_steps": 61,
+      "legal_steps": 502,
+      "clip_squares": 34,
+      "pct": 10.8348134991119,
+      "coarse_islands": 21,
+      "coarse_body": 71,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 377,
+      "name": "The Sewers of Jasper",
+      "clip_steps": 83,
+      "legal_steps": 2610,
+      "clip_squares": 34,
+      "pct": 3.0820646119569255,
+      "coarse_islands": 100,
+      "coarse_body": 130,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 351,
+      "name": "Old Granary",
+      "clip_steps": 56,
+      "legal_steps": 665,
+      "clip_squares": 31,
+      "pct": 7.766990291262136,
+      "coarse_islands": 6,
+      "coarse_body": 96,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 535,
+      "name": "West Merchant Way through Ilerian Woods",
+      "clip_steps": 75,
+      "legal_steps": 9948,
+      "clip_squares": 31,
+      "pct": 0.7482789583956899,
+      "coarse_islands": 56,
+      "coarse_body": 1313,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 801,
+      "name": "The Temple of Kraanan",
+      "clip_steps": 91,
+      "legal_steps": 10257,
+      "clip_squares": 31,
+      "pct": 0.8793969849246231,
+      "coarse_islands": 74,
+      "coarse_body": 1549,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2013,
+      "name": "The East Tower",
+      "clip_steps": 46,
+      "legal_steps": 2587,
+      "clip_squares": 31,
+      "pct": 1.7470565894417014,
+      "coarse_islands": 66,
+      "coarse_body": 394,
+      "anchors": 23,
+      "anchors_on_solid": 8,
+      "bad": [
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 38,
+            "col": 5
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 36,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 38,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 37,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 2115,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 41
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 17,
+            "col": 36
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 29
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 20,
+            "col": 23
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 111,
+      "name": "The Sewers of Barloque",
+      "clip_steps": 92,
+      "legal_steps": 4395,
+      "clip_squares": 30,
+      "pct": 2.0503677289948743,
+      "coarse_islands": 48,
+      "coarse_body": 678,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 802,
+      "name": "The Temple of Qor",
+      "clip_steps": 64,
+      "legal_steps": 3765,
+      "clip_squares": 30,
+      "pct": 1.67145468790807,
+      "coarse_islands": 43,
+      "coarse_body": 581,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1008,
+      "name": "The Grand Museum of Hazar",
+      "clip_steps": 77,
+      "legal_steps": 1327,
+      "clip_squares": 29,
+      "pct": 5.484330484330484,
+      "coarse_islands": 20,
+      "coarse_body": 191,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1018,
+      "name": "The Grand Museum of Raza",
+      "clip_steps": 77,
+      "legal_steps": 1327,
+      "clip_squares": 29,
+      "pct": 5.484330484330484,
+      "coarse_islands": 20,
+      "coarse_body": 191,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 532,
+      "name": "The Vale of Sorrows",
+      "clip_steps": 68,
+      "legal_steps": 14477,
+      "clip_squares": 28,
+      "pct": 0.46751460983155724,
+      "coarse_islands": 50,
+      "coarse_body": 1937,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 705,
+      "name": "West Tower Guild Hall in Ko'catan",
+      "clip_steps": 65,
+      "legal_steps": 2243,
+      "clip_squares": 28,
+      "pct": 2.8162911611785097,
+      "coarse_islands": 30,
+      "coarse_body": 200,
+      "anchors": 23,
+      "anchors_on_solid": 14,
+      "bad": [
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 46,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 705,
+          "dir": "go",
+          "at": {
+            "row": 40,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 109
+        },
+        {
+          "to": 705,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 109
+        },
+        {
+          "to": 705,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 109
+        },
+        {
+          "to": 705,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 50
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 50
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 50
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 53
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 53
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 48
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 47
+          },
+          "on_solid_ground": false,
+          "island": 75
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 36,
+            "col": 52
+          },
+          "on_solid_ground": false,
+          "island": 109
+        }
+      ]
+    },
+    {
+      "room": 2004,
+      "name": "The Neglected Arsenal",
+      "clip_steps": 74,
+      "legal_steps": 411,
+      "clip_squares": 28,
+      "pct": 15.257731958762887,
+      "coarse_islands": 17,
+      "coarse_body": 81,
+      "anchors": 7,
+      "anchors_on_solid": 5,
+      "bad": [
+        {
+          "to": 2010,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 8
+        },
+        {
+          "to": 2010,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 13
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 24
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 25
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 704,
+      "name": "The Wryn's Keep",
+      "clip_steps": 85,
+      "legal_steps": 8566,
+      "clip_squares": 27,
+      "pct": 0.9825453704774014,
+      "coarse_islands": 122,
+      "coarse_body": 1165,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 350,
+          "dir": "south",
+          "at": {
+            "row": 51,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 32
+        }
+      ]
+    },
+    {
+      "room": 2510,
+      "name": "A spring of vitality",
+      "clip_steps": 54,
+      "legal_steps": 4232,
+      "clip_squares": 27,
+      "pct": 1.2599160055996268,
+      "coarse_islands": 35,
+      "coarse_body": 534,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 355,
+      "name": "Abandoned Building",
+      "clip_steps": 67,
+      "legal_steps": 613,
+      "clip_squares": 26,
+      "pct": 9.852941176470589,
+      "coarse_islands": 4,
+      "coarse_body": 100,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 515,
+      "name": "Seafarer's Peak",
+      "clip_steps": 52,
+      "legal_steps": 13984,
+      "clip_squares": 26,
+      "pct": 0.3704759190652608,
+      "coarse_islands": 224,
+      "coarse_body": 2151,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 60,
+      "name": "The Arena of Kraanan",
+      "clip_steps": 34,
+      "legal_steps": 3216,
+      "clip_squares": 24,
+      "pct": 1.0461538461538462,
+      "coarse_islands": 20,
+      "coarse_body": 460,
+      "anchors": 12,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 593,
+      "name": "Main gate of Barloque-- Royal City of Meridian",
+      "clip_steps": 74,
+      "legal_steps": 9797,
+      "clip_squares": 24,
+      "pct": 0.7496707527099584,
+      "coarse_islands": 6,
+      "coarse_body": 1338,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 706,
+      "name": "The Old Dwarven Hall",
+      "clip_steps": 56,
+      "legal_steps": 1042,
+      "clip_squares": 24,
+      "pct": 5.100182149362477,
+      "coarse_islands": 26,
+      "coarse_body": 129,
+      "anchors": 3,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 536,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 22
+          },
+          "on_solid_ground": false,
+          "island": 15
+        },
+        {
+          "to": 537,
+          "dir": "go",
+          "at": {
+            "row": 19,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 17
+        },
+        {
+          "to": 535,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 10
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 2602,
+      "name": "Affirmation of the Forsaken",
+      "clip_steps": 24,
+      "legal_steps": 1932,
+      "clip_squares": 24,
+      "pct": 1.2269938650306749,
+      "coarse_islands": 18,
+      "coarse_body": 115,
+      "anchors": 12,
+      "anchors_on_solid": 8,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 32,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 16
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 16
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 14,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 102
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 14,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 102
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 23,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 18
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 22,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 102
+        },
+        {
+          "to": 2601,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 18
+          },
+          "on_solid_ground": false,
+          "island": 67
+        },
+        {
+          "to": 2601,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 67
+        }
+      ]
+    },
+    {
+      "room": 108,
+      "name": "The Sewers of Barloque",
+      "clip_steps": 58,
+      "legal_steps": 2562,
+      "clip_squares": 22,
+      "pct": 2.213740458015267,
+      "coarse_islands": 35,
+      "coarse_body": 577,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 603,
+      "name": "The Queen's Way",
+      "clip_steps": 55,
+      "legal_steps": 3317,
+      "clip_squares": 21,
+      "pct": 1.631079478054567,
+      "coarse_islands": 27,
+      "coarse_body": 416,
+      "anchors": 8,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 22,
+            "col": 15
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 21,
+            "col": 11
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 22,
+            "col": 10
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 563,
+      "name": "Source of the River Ille",
+      "clip_steps": 55,
+      "legal_steps": 16220,
+      "clip_squares": 19,
+      "pct": 0.3379416282642089,
+      "coarse_islands": 35,
+      "coarse_body": 2218,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2,
+      "name": "Outside Castle Victoria",
+      "clip_steps": 31,
+      "legal_steps": 3297,
+      "clip_squares": 18,
+      "pct": 0.9314903846153846,
+      "coarse_islands": 76,
+      "coarse_body": 482,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 350,
+      "name": "East Jasper",
+      "clip_steps": 49,
+      "legal_steps": 5378,
+      "clip_squares": 18,
+      "pct": 0.9028929426939377,
+      "coarse_islands": 42,
+      "coarse_body": 886,
+      "anchors": 20,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 715,
+      "name": "Inner Sanctum of Queen Venya'cyr",
+      "clip_steps": 47,
+      "legal_steps": 2478,
+      "clip_squares": 18,
+      "pct": 1.8613861386138615,
+      "coarse_islands": 42,
+      "coarse_body": 401,
+      "anchors": 6,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 825,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 5
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 825,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 825,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 3
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 1,
+      "name": "The Underworld",
+      "clip_steps": 32,
+      "legal_steps": 3860,
+      "clip_squares": 17,
+      "pct": 0.8221993833504625,
+      "coarse_islands": 8,
+      "coarse_body": 620,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 586,
+      "name": "Main gate to the city of Tos",
+      "clip_steps": 20,
+      "legal_steps": 8102,
+      "clip_squares": 17,
+      "pct": 0.2462447672986949,
+      "coarse_islands": 11,
+      "coarse_body": 1160,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2154,
+      "name": "Avar Village",
+      "clip_steps": 51,
+      "legal_steps": 50233,
+      "clip_squares": 17,
+      "pct": 0.10142391217882428,
+      "coarse_islands": 33,
+      "coarse_body": 6674,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 76,
+      "name": "Abandoned Fountain Tavern",
+      "clip_steps": 45,
+      "legal_steps": 461,
+      "clip_squares": 16,
+      "pct": 8.893280632411066,
+      "coarse_islands": 3,
+      "coarse_body": 80,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 75,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 12
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 50,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 7
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 710,
+      "name": "Jaarba's Abode",
+      "clip_steps": 51,
+      "legal_steps": 1278,
+      "clip_squares": 16,
+      "pct": 3.8374717832957113,
+      "coarse_islands": 21,
+      "coarse_body": 185,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 854,
+      "name": "Chamber of the Mocker",
+      "clip_steps": 18,
+      "legal_steps": 820,
+      "clip_squares": 16,
+      "pct": 2.1479713603818618,
+      "coarse_islands": 13,
+      "coarse_body": 112,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 856,
+      "name": "Madelia's Fine Peacockeries",
+      "clip_steps": 43,
+      "legal_steps": 747,
+      "clip_squares": 16,
+      "pct": 5.443037974683544,
+      "coarse_islands": 11,
+      "coarse_body": 113,
+      "anchors": 4,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 850,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 15
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 850,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 15
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 379,
+      "name": "The Sewers of Jasper",
+      "clip_steps": 49,
+      "legal_steps": 5196,
+      "clip_squares": 14,
+      "pct": 0.9342230695900858,
+      "coarse_islands": 54,
+      "coarse_body": 780,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2014,
+      "name": "The Hall of Heroes West",
+      "clip_steps": 26,
+      "legal_steps": 389,
+      "clip_squares": 14,
+      "pct": 6.265060240963855,
+      "coarse_islands": 0,
+      "coarse_body": 66,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 357,
+      "name": "Abandoned Building",
+      "clip_steps": 30,
+      "legal_steps": 818,
+      "clip_squares": 12,
+      "pct": 3.5377358490566038,
+      "coarse_islands": 0,
+      "coarse_body": 134,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 703,
+      "name": "The Den of Shadows",
+      "clip_steps": 23,
+      "legal_steps": 2322,
+      "clip_squares": 12,
+      "pct": 0.9808102345415778,
+      "coarse_islands": 86,
+      "coarse_body": 290,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 568,
+          "dir": "go",
+          "at": {
+            "row": 5,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 36
+        }
+      ]
+    },
+    {
+      "room": 853,
+      "name": "Royal Library of the Bourgeois Castle",
+      "clip_steps": 27,
+      "legal_steps": 2285,
+      "clip_squares": 12,
+      "pct": 1.1678200692041523,
+      "coarse_islands": 61,
+      "coarse_body": 323,
+      "anchors": 37,
+      "anchors_on_solid": 18,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 36
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 36
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 36
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 36
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 27,
+            "col": 22
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 27,
+            "col": 21
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 5,
+            "col": 10
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 10
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 10
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 852,
+          "dir": "go",
+          "at": {
+            "row": 27,
+            "col": 29
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 852,
+          "dir": "go",
+          "at": {
+            "row": 27,
+            "col": 26
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 850,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 850,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 14
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 29,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 14
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 29,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 14
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 701,
+      "name": "Mercenary Alley",
+      "clip_steps": 32,
+      "legal_steps": 1689,
+      "clip_squares": 11,
+      "pct": 1.8593840790238234,
+      "coarse_islands": 32,
+      "coarse_body": 193,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 21,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 35
+        }
+      ]
+    },
+    {
+      "room": 707,
+      "name": "Konima's Abandoned Dwelling",
+      "clip_steps": 26,
+      "legal_steps": 2705,
+      "clip_squares": 11,
+      "pct": 0.9520322226290736,
+      "coarse_islands": 58,
+      "coarse_body": 448,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 61,
+          "dir": "go",
+          "at": {
+            "row": 33,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 9002,
+      "name": "Historic North Barloque",
+      "clip_steps": 29,
+      "legal_steps": 19335,
+      "clip_squares": 11,
+      "pct": 0.1497624457756662,
+      "coarse_islands": 21,
+      "coarse_body": 2965,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 152,
+      "name": "The Adventurer's Hall of Cor Noth",
+      "clip_steps": 31,
+      "legal_steps": 372,
+      "clip_squares": 10,
+      "pct": 7.6923076923076925,
+      "coarse_islands": 7,
+      "coarse_body": 62,
+      "anchors": 6,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 8
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 8
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 3
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 358,
+      "name": "Abandoned Building",
+      "clip_steps": 17,
+      "legal_steps": 368,
+      "clip_squares": 10,
+      "pct": 4.415584415584416,
+      "coarse_islands": 2,
+      "coarse_body": 53,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 42,
+      "name": "Chamber of the Forgotten Heroes",
+      "clip_steps": 22,
+      "legal_steps": 2081,
+      "clip_squares": 9,
+      "pct": 1.0461245839277222,
+      "coarse_islands": 33,
+      "coarse_body": 277,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 583,
+      "name": "Outskirts of Barloque",
+      "clip_steps": 32,
+      "legal_steps": 13236,
+      "clip_squares": 9,
+      "pct": 0.2411817907747965,
+      "coarse_islands": 10,
+      "coarse_body": 1741,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 850,
+      "name": "Banquet Hall of the Bourgeois Castle",
+      "clip_steps": 24,
+      "legal_steps": 4068,
+      "clip_squares": 9,
+      "pct": 0.5865102639296188,
+      "coarse_islands": 75,
+      "coarse_body": 559,
+      "anchors": 16,
+      "anchors_on_solid": 7,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 26,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 25,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 853,
+          "dir": "go",
+          "at": {
+            "row": 24,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 32
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 32
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 16
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 851,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 15
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 855,
+      "name": "The Councilors' Chamber",
+      "clip_steps": 22,
+      "legal_steps": 2081,
+      "clip_squares": 9,
+      "pct": 1.0461245839277222,
+      "coarse_islands": 33,
+      "coarse_body": 277,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 951,
+      "name": "Blackstone Keep",
+      "clip_steps": 25,
+      "legal_steps": 5444,
+      "clip_squares": 9,
+      "pct": 0.45712196013896506,
+      "coarse_islands": 158,
+      "coarse_body": 635,
+      "anchors": 12,
+      "anchors_on_solid": 4,
+      "bad": [
+        {
+          "to": 950,
+          "dir": "go",
+          "at": {
+            "row": 42,
+            "col": 29
+          },
+          "on_solid_ground": false,
+          "island": 38
+        },
+        {
+          "to": 950,
+          "dir": "go",
+          "at": {
+            "row": 42,
+            "col": 28
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 950,
+          "dir": "go",
+          "at": {
+            "row": 42,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 950,
+          "dir": "go",
+          "at": {
+            "row": 42,
+            "col": 2
+          },
+          "on_solid_ground": false,
+          "island": 39
+        }
+      ]
+    },
+    {
+      "room": 1004,
+      "name": "Ravi's Magicks of Hazar's Crossing",
+      "clip_steps": 20,
+      "legal_steps": 58,
+      "clip_squares": 9,
+      "pct": 25.641025641025642,
+      "coarse_islands": 0,
+      "coarse_body": 15,
+      "anchors": 3,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 1002,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 1014,
+      "name": "Ravi's Magicks of Raza",
+      "clip_steps": 20,
+      "legal_steps": 58,
+      "clip_squares": 9,
+      "pct": 25.641025641025642,
+      "coarse_islands": 0,
+      "coarse_body": 15,
+      "anchors": 3,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 1012,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 6
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 363,
+      "name": "Dusty Chamber",
+      "clip_steps": 22,
+      "legal_steps": 996,
+      "clip_squares": 8,
+      "pct": 2.161100196463654,
+      "coarse_islands": 2,
+      "coarse_body": 149,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 833,
+      "name": "Goad's Grinder",
+      "clip_steps": 26,
+      "legal_steps": 1019,
+      "clip_squares": 8,
+      "pct": 2.488038277511962,
+      "coarse_islands": 8,
+      "coarse_body": 183,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 112,
+      "name": "The Sewers of Barloque",
+      "clip_steps": 21,
+      "legal_steps": 3607,
+      "clip_squares": 7,
+      "pct": 0.5788313120176406,
+      "coarse_islands": 48,
+      "coarse_body": 539,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 114,
+      "name": "Office of the Barloque Vaultman",
+      "clip_steps": 14,
+      "legal_steps": 102,
+      "clip_squares": 7,
+      "pct": 12.068965517241379,
+      "coarse_islands": 36,
+      "coarse_body": 25,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 107,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 12
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 370,
+      "name": "Yonder Inn of Jasper",
+      "clip_steps": 10,
+      "legal_steps": 395,
+      "clip_squares": 7,
+      "pct": 2.4691358024691357,
+      "coarse_islands": 2,
+      "coarse_body": 36,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 382,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 35
+        }
+      ]
+    },
+    {
+      "room": 596,
+      "name": "Outskirts of Tos",
+      "clip_steps": 19,
+      "legal_steps": 11507,
+      "clip_squares": 7,
+      "pct": 0.1648446989415235,
+      "coarse_islands": 14,
+      "coarse_body": 1665,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 708,
+      "name": "The Sewer Hideout",
+      "clip_steps": 17,
+      "legal_steps": 1618,
+      "clip_squares": 7,
+      "pct": 1.039755351681957,
+      "coarse_islands": 14,
+      "coarse_body": 248,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 45,
+      "name": "The Badlands",
+      "clip_steps": 10,
+      "legal_steps": 40942,
+      "clip_squares": 6,
+      "pct": 0.02441883180308654,
+      "coarse_islands": 141,
+      "coarse_body": 5717,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 56,
+      "name": "Abandoned Building",
+      "clip_steps": 10,
+      "legal_steps": 220,
+      "clip_squares": 6,
+      "pct": 4.3478260869565215,
+      "coarse_islands": 0,
+      "coarse_body": 36,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1001,
+      "name": "The Inn of Hazar",
+      "clip_steps": 15,
+      "legal_steps": 394,
+      "clip_squares": 6,
+      "pct": 3.667481662591687,
+      "coarse_islands": 0,
+      "coarse_body": 69,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1003,
+      "name": "The Blacksmith of Hazar",
+      "clip_steps": 15,
+      "legal_steps": 177,
+      "clip_squares": 6,
+      "pct": 7.8125,
+      "coarse_islands": 11,
+      "coarse_body": 29,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 1002,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 9
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 1011,
+      "name": "Raza Inn",
+      "clip_steps": 15,
+      "legal_steps": 394,
+      "clip_squares": 6,
+      "pct": 3.667481662591687,
+      "coarse_islands": 0,
+      "coarse_body": 69,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1013,
+      "name": "Raza Blacksmith",
+      "clip_steps": 15,
+      "legal_steps": 177,
+      "clip_squares": 6,
+      "pct": 7.8125,
+      "coarse_islands": 11,
+      "coarse_body": 29,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 1012,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 9
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 2003,
+      "name": "The Chimney House",
+      "clip_steps": 8,
+      "legal_steps": 200,
+      "clip_squares": 6,
+      "pct": 3.8461538461538463,
+      "coarse_islands": 24,
+      "coarse_body": 57,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2008,
+      "name": "The Barking Monster",
+      "clip_steps": 12,
+      "legal_steps": 2681,
+      "clip_squares": 6,
+      "pct": 0.4455997029335314,
+      "coarse_islands": 65,
+      "coarse_body": 403,
+      "anchors": 10,
+      "anchors_on_solid": 5,
+      "bad": [
+        {
+          "to": 2001,
+          "dir": "go",
+          "at": {
+            "row": 14,
+            "col": 17
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 2001,
+          "dir": "go",
+          "at": {
+            "row": 14,
+            "col": 16
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 31
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 31
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 30
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 2100,
+      "name": "The Bowmaker's Hut",
+      "clip_steps": 16,
+      "legal_steps": 144,
+      "clip_squares": 6,
+      "pct": 10,
+      "coarse_islands": 2,
+      "coarse_body": 25,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 155,
+      "name": "The Spindle and the Spinster",
+      "clip_steps": 13,
+      "legal_steps": 663,
+      "clip_squares": 5,
+      "pct": 1.9230769230769231,
+      "coarse_islands": 15,
+      "coarse_body": 85,
+      "anchors": 3,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 564,
+      "name": "East Merchant Way",
+      "clip_steps": 17,
+      "legal_steps": 14442,
+      "clip_squares": 5,
+      "pct": 0.11757382944878622,
+      "coarse_islands": 4,
+      "coarse_body": 1926,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 568,
+      "name": "Lake of Jala's Song",
+      "clip_steps": 13,
+      "legal_steps": 16305,
+      "clip_squares": 5,
+      "pct": 0.07966662581198676,
+      "coarse_islands": 93,
+      "coarse_body": 2303,
+      "anchors": 5,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 703,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 50
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 711,
+      "name": "The Ivory Chapel",
+      "clip_steps": 7,
+      "legal_steps": 975,
+      "clip_squares": 5,
+      "pct": 0.7128309572301426,
+      "coarse_islands": 20,
+      "coarse_body": 105,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 10
+          },
+          "on_solid_ground": false,
+          "island": 42
+        }
+      ]
+    },
+    {
+      "room": 1006,
+      "name": "Mausoleum",
+      "clip_steps": 13,
+      "legal_steps": 4453,
+      "clip_squares": 5,
+      "pct": 0.29108822212270485,
+      "coarse_islands": 16,
+      "coarse_body": 873,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1016,
+      "name": "Mausoleum",
+      "clip_steps": 13,
+      "legal_steps": 4453,
+      "clip_squares": 5,
+      "pct": 0.29108822212270485,
+      "coarse_islands": 16,
+      "coarse_body": 873,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2006,
+      "name": "The Crooked Hem Garment Shop",
+      "clip_steps": 9,
+      "legal_steps": 219,
+      "clip_squares": 5,
+      "pct": 3.9473684210526314,
+      "coarse_islands": 3,
+      "coarse_body": 32,
+      "anchors": 11,
+      "anchors_on_solid": 6,
+      "bad": [
+        {
+          "to": 2012,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 2
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 18,
+            "col": 10
+          },
+          "on_solid_ground": false,
+          "island": 30
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 15,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 30
+        },
+        {
+          "to": 2009,
+          "dir": "go",
+          "at": {
+            "row": 18,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 30
+        },
+        {
+          "to": 2009,
+          "dir": "go",
+          "at": {
+            "row": 17,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 30
+        }
+      ]
+    },
+    {
+      "room": 106,
+      "name": "Brownestone Inn",
+      "clip_steps": 14,
+      "legal_steps": 1128,
+      "clip_squares": 4,
+      "pct": 1.2259194395796849,
+      "coarse_islands": 25,
+      "coarse_body": 163,
+      "anchors": 11,
+      "anchors_on_solid": 9,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 17
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 12
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 6
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 5
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 5
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 17,
+            "col": 12
+          },
+          "on_solid_ground": false,
+          "island": 8
+        }
+      ]
+    },
+    {
+      "room": 952,
+      "name": "The Chambers of Duke Akardius",
+      "clip_steps": 10,
+      "legal_steps": 2478,
+      "clip_squares": 4,
+      "pct": 0.40192926045016075,
+      "coarse_islands": 23,
+      "coarse_body": 319,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 971,
+      "name": "Old Jailhouse",
+      "clip_steps": 4,
+      "legal_steps": 815,
+      "clip_squares": 4,
+      "pct": 0.4884004884004884,
+      "coarse_islands": 34,
+      "coarse_body": 127,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 2
+          },
+          "on_solid_ground": false,
+          "island": 12
+        },
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 12
+        }
+      ]
+    },
+    {
+      "room": 2012,
+      "name": "Up Chuk Creek without a paddle",
+      "clip_steps": 10,
+      "legal_steps": 1120,
+      "clip_squares": 4,
+      "pct": 0.8849557522123894,
+      "coarse_islands": 53,
+      "coarse_body": 246,
+      "anchors": 8,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 2010,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 12
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 38
+          },
+          "on_solid_ground": false,
+          "island": 23
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 76,
+            "col": 32
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 70,
+      "name": "The Graveyard of Tos",
+      "clip_steps": 3,
+      "legal_steps": 4694,
+      "clip_squares": 3,
+      "pct": 0.06387055567383436,
+      "coarse_islands": 4,
+      "coarse_body": 649,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 74,
+      "name": "The Cellar",
+      "clip_steps": 9,
+      "legal_steps": 282,
+      "clip_squares": 3,
+      "pct": 3.0927835051546393,
+      "coarse_islands": 3,
+      "coarse_body": 50,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 354,
+      "name": "Deserted Eating House",
+      "clip_steps": 3,
+      "legal_steps": 1440,
+      "clip_squares": 3,
+      "pct": 0.2079002079002079,
+      "coarse_islands": 58,
+      "coarse_body": 109,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 382,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 13
+          },
+          "on_solid_ground": false,
+          "island": 53
+        }
+      ]
+    },
+    {
+      "room": 555,
+      "name": "The Forest Shrine",
+      "clip_steps": 11,
+      "legal_steps": 697,
+      "clip_squares": 3,
+      "pct": 1.5536723163841808,
+      "coarse_islands": 3,
+      "coarse_body": 105,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 52,
+      "name": "Familiars",
+      "clip_steps": 6,
+      "legal_steps": 394,
+      "clip_squares": 2,
+      "pct": 1.5,
+      "coarse_islands": 3,
+      "coarse_body": 67,
+      "anchors": 8,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 59,
+      "name": "Hall of the Forgotten Heroes",
+      "clip_steps": 2,
+      "legal_steps": 861,
+      "clip_squares": 2,
+      "pct": 0.23174971031286212,
+      "coarse_islands": 5,
+      "coarse_body": 147,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 107,
+      "name": "The Ports of Barloque",
+      "clip_steps": 2,
+      "legal_steps": 10735,
+      "clip_squares": 2,
+      "pct": 0.018627177051317872,
+      "coarse_islands": 13,
+      "coarse_body": 1628,
+      "anchors": 32,
+      "anchors_on_solid": 4,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 13,
+            "col": 34
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 14,
+            "col": 32
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 29,
+            "col": 26
+          },
+          "on_solid_ground": false,
+          "island": 3
+        },
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 29,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 3
+        }
+      ]
+    },
+    {
+      "room": 201,
+      "name": "Ye Olde Slasher Salesman",
+      "clip_steps": 3,
+      "legal_steps": 185,
+      "clip_squares": 2,
+      "pct": 1.5957446808510638,
+      "coarse_islands": 13,
+      "coarse_body": 22,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 200,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 4
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 200,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 9
+        }
+      ]
+    },
+    {
+      "room": 362,
+      "name": "Old Barracks",
+      "clip_steps": 2,
+      "legal_steps": 496,
+      "clip_squares": 2,
+      "pct": 0.40160642570281124,
+      "coarse_islands": 0,
+      "coarse_body": 83,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 376,
+      "name": "The Royal Bank of Jasper",
+      "clip_steps": 4,
+      "legal_steps": 202,
+      "clip_squares": 2,
+      "pct": 1.941747572815534,
+      "coarse_islands": 9,
+      "coarse_body": 29,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 382,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 5
+        },
+        {
+          "to": 382,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 5
+        }
+      ]
+    },
+    {
+      "room": 574,
+      "name": "Main gate to Cor Noth",
+      "clip_steps": 3,
+      "legal_steps": 16005,
+      "clip_squares": 2,
+      "pct": 0.018740629685157422,
+      "coarse_islands": 15,
+      "coarse_body": 2090,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 702,
+      "name": "The Hall of Explorers",
+      "clip_steps": 8,
+      "legal_steps": 996,
+      "clip_squares": 2,
+      "pct": 0.796812749003984,
+      "coarse_islands": 13,
+      "coarse_body": 160,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 102,
+          "dir": "go",
+          "at": {
+            "row": 18,
+            "col": 34
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 713,
+      "name": "The Hall of the Slaughtered Command",
+      "clip_steps": 2,
+      "legal_steps": 2244,
+      "clip_squares": 2,
+      "pct": 0.08904719501335707,
+      "coarse_islands": 42,
+      "coarse_body": 304,
+      "anchors": 6,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 953,
+      "name": "The Duke's Feast Hall",
+      "clip_steps": 2,
+      "legal_steps": 3643,
+      "clip_squares": 2,
+      "pct": 0.05486968449931413,
+      "coarse_islands": 48,
+      "coarse_body": 498,
+      "anchors": 14,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 951,
+          "dir": "go",
+          "at": {
+            "row": 16,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 3
+        },
+        {
+          "to": 951,
+          "dir": "go",
+          "at": {
+            "row": 15,
+            "col": 25
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 970,
+      "name": "Office of the Justicar",
+      "clip_steps": 5,
+      "legal_steps": 972,
+      "clip_squares": 2,
+      "pct": 0.5117707267144319,
+      "coarse_islands": 9,
+      "coarse_body": 84,
+      "anchors": 4,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 970,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 11
+          },
+          "on_solid_ground": false,
+          "island": 60
+        },
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 2
+          },
+          "on_solid_ground": false,
+          "island": 60
+        },
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 60
+        }
+      ]
+    },
+    {
+      "room": 2007,
+      "name": "The Hall of Heroes",
+      "clip_steps": 2,
+      "legal_steps": 861,
+      "clip_squares": 2,
+      "pct": 0.23174971031286212,
+      "coarse_islands": 5,
+      "coarse_body": 147,
+      "anchors": 5,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2010,
+      "name": "A foul place to wander",
+      "clip_steps": 3,
+      "legal_steps": 415,
+      "clip_squares": 2,
+      "pct": 0.7177033492822966,
+      "coarse_islands": 11,
+      "coarse_body": 66,
+      "anchors": 7,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 2012,
+          "dir": "go",
+          "at": {
+            "row": 42,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 6
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 25,
+            "col": 6
+          },
+          "on_solid_ground": false,
+          "island": 47
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 25,
+            "col": 5
+          },
+          "on_solid_ground": false,
+          "island": 47
+        }
+      ]
+    },
+    {
+      "room": 2102,
+      "name": "The Cellar Rooms",
+      "clip_steps": 3,
+      "legal_steps": 54,
+      "clip_squares": 2,
+      "pct": 5.2631578947368425,
+      "coarse_islands": 0,
+      "coarse_body": 18,
+      "anchors": 4,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2110,
+      "name": "A dark, humid cavern",
+      "clip_steps": 3,
+      "legal_steps": 395,
+      "clip_squares": 2,
+      "pct": 0.7537688442211056,
+      "coarse_islands": 3,
+      "coarse_body": 63,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 75,
+      "name": "Secret Passage",
+      "clip_steps": 3,
+      "legal_steps": 108,
+      "clip_squares": 1,
+      "pct": 2.7027027027027026,
+      "coarse_islands": 0,
+      "coarse_body": 23,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 150,
+      "name": "Cor Noth",
+      "clip_steps": 1,
+      "legal_steps": 21387,
+      "clip_squares": 1,
+      "pct": 0.0046755189826070695,
+      "coarse_islands": 32,
+      "coarse_body": 3038,
+      "anchors": 24,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 152,
+          "dir": "go",
+          "at": {
+            "row": 25,
+            "col": 37
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 152,
+          "dir": "go",
+          "at": {
+            "row": 24,
+            "col": 37
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 156,
+      "name": "The Hall of Genealogy",
+      "clip_steps": 1,
+      "legal_steps": 3276,
+      "clip_squares": 1,
+      "pct": 0.030515715593530668,
+      "coarse_islands": 37,
+      "coarse_body": 507,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 202,
+      "name": "The Limping Toad Inn and Tavern",
+      "clip_steps": 2,
+      "legal_steps": 631,
+      "clip_squares": 1,
+      "pct": 0.315955766192733,
+      "coarse_islands": 33,
+      "coarse_body": 93,
+      "anchors": 11,
+      "anchors_on_solid": 7,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 16
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 15
+          },
+          "on_solid_ground": false,
+          "island": 3
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 12
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 11
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 5,
+            "col": 16
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 5,
+            "col": 15
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 200,
+          "dir": "go",
+          "at": {
+            "row": 12,
+            "col": 4
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 204,
+      "name": "The Adventurer's Hall of Marion",
+      "clip_steps": 2,
+      "legal_steps": 1731,
+      "clip_squares": 1,
+      "pct": 0.1154068090017311,
+      "coarse_islands": 21,
+      "coarse_body": 217,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 200,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 21
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": 200,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 21
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 615,
+      "name": "The Badlands",
+      "clip_steps": 1,
+      "legal_steps": 18585,
+      "clip_squares": 1,
+      "pct": 0.0053803938448294415,
+      "coarse_islands": 217,
+      "coarse_body": 2713,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 714,
+      "name": "The Bookmaker's Guild House",
+      "clip_steps": 1,
+      "legal_steps": 3882,
+      "clip_squares": 1,
+      "pct": 0.025753283543651816,
+      "coarse_islands": 28,
+      "coarse_body": 426,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 832,
+      "name": "Ancient Building",
+      "clip_steps": 1,
+      "legal_steps": 112,
+      "clip_squares": 1,
+      "pct": 0.8849557522123894,
+      "coarse_islands": 0,
+      "coarse_body": 26,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1005,
+      "name": "The Home of Roderic D'Stane",
+      "clip_steps": 3,
+      "legal_steps": 112,
+      "clip_squares": 1,
+      "pct": 2.608695652173913,
+      "coarse_islands": 2,
+      "coarse_body": 17,
+      "anchors": 3,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 1002,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": 1002,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 1015,
+      "name": "Raza Hut",
+      "clip_steps": 3,
+      "legal_steps": 112,
+      "clip_squares": 1,
+      "pct": 2.608695652173913,
+      "coarse_islands": 2,
+      "coarse_body": 17,
+      "anchors": 3,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 1012,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": 1012,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 3
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 2001,
+      "name": "The Aerie Guest House",
+      "clip_steps": 1,
+      "legal_steps": 361,
+      "clip_squares": 1,
+      "pct": 0.27624309392265195,
+      "coarse_islands": 7,
+      "coarse_body": 54,
+      "anchors": 8,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 3
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 3
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 2
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 2002,
+      "name": "Two Lizards Magic Shop",
+      "clip_steps": 1,
+      "legal_steps": 214,
+      "clip_squares": 1,
+      "pct": 0.46511627906976744,
+      "coarse_islands": 7,
+      "coarse_body": 43,
+      "anchors": 9,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 4,
+            "col": 8
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 4
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 2000,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 3
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 2015,
+      "name": "The Hall of Heroes East",
+      "clip_steps": 1,
+      "legal_steps": 208,
+      "clip_squares": 1,
+      "pct": 0.4784688995215311,
+      "coarse_islands": 5,
+      "coarse_body": 35,
+      "anchors": 3,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 5
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 9003,
+      "name": "Historic South Barloque",
+      "clip_steps": 1,
+      "legal_steps": 10548,
+      "clip_squares": 1,
+      "pct": 0.009479571523367144,
+      "coarse_islands": 1,
+      "coarse_body": 2268,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 3,
+      "name": "The Fields",
+      "clip_steps": 0,
+      "legal_steps": 8500,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 1,
+      "coarse_body": 1132,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 37,
+      "name": "The Hermit's Hut",
+      "clip_steps": 0,
+      "legal_steps": 287,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 10,
+      "coarse_body": 52,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 40,
+      "name": "The Throne Room of Victoria Castle",
+      "clip_steps": 0,
+      "legal_steps": 1322,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 193,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 41,
+      "name": "Underbasement of Victoria",
+      "clip_steps": 0,
+      "legal_steps": 3970,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 23,
+      "coarse_body": 555,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 43,
+      "name": "Out of Grace with the Higher Powers",
+      "clip_steps": 0,
+      "legal_steps": 220,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 36,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 51,
+      "name": "The Freelance Merchant and Menders Shop",
+      "clip_steps": 0,
+      "legal_steps": 214,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 9,
+      "coarse_body": 33,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 53,
+      "name": "Frisconar's Mysticals",
+      "clip_steps": 0,
+      "legal_steps": 139,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 7,
+      "coarse_body": 25,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 54,
+      "name": "First Royal Bank of Tos",
+      "clip_steps": 0,
+      "legal_steps": 325,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 10,
+      "coarse_body": 35,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 61,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 57,
+      "name": "Abandoned Building",
+      "clip_steps": 0,
+      "legal_steps": 220,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 36,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 58,
+      "name": "Forgotten Lover's Tryst",
+      "clip_steps": 0,
+      "legal_steps": 186,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 5,
+      "coarse_body": 36,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 61,
+      "name": "East Ende",
+      "clip_steps": 0,
+      "legal_steps": 16340,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 10,
+      "coarse_body": 2181,
+      "anchors": 23,
+      "anchors_on_solid": 4,
+      "bad": [
+        {
+          "to": 707,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 42
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 53
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 34
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 40,
+            "col": 1
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 72,
+      "name": "The Adventurer's Hall of Tos",
+      "clip_steps": 0,
+      "legal_steps": 1755,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 11,
+      "coarse_body": 239,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 101,
+      "name": "North Barloque",
+      "clip_steps": 0,
+      "legal_steps": 18102,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 46,
+      "coarse_body": 2990,
+      "anchors": 26,
+      "anchors_on_solid": 5,
+      "bad": [
+        {
+          "to": 970,
+          "dir": "go",
+          "at": {
+            "row": 35,
+            "col": 55
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 970,
+          "dir": "go",
+          "at": {
+            "row": 35,
+            "col": 54
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 714,
+          "dir": "go",
+          "at": {
+            "row": 21,
+            "col": 15
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 107,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 49
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 107,
+          "dir": "go",
+          "at": {
+            "row": 2,
+            "col": 48
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 102,
+      "name": "South Barloque",
+      "clip_steps": 0,
+      "legal_steps": 9265,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 25,
+      "coarse_body": 1982,
+      "anchors": 28,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 103,
+      "name": "The Bhrama & Falcon",
+      "clip_steps": 0,
+      "legal_steps": 2911,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 33,
+      "coarse_body": 410,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 22,
+            "col": 11
+          },
+          "on_solid_ground": false,
+          "island": 2
+        }
+      ]
+    },
+    {
+      "room": 104,
+      "name": "Joguer's Herbs and Roots",
+      "clip_steps": 0,
+      "legal_steps": 81,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 14,
+      "coarse_body": 11,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 4
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 105,
+      "name": "Adventurer's Hall of Barloque",
+      "clip_steps": 0,
+      "legal_steps": 2139,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 60,
+      "coarse_body": 241,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 101,
+          "dir": "go",
+          "at": {
+            "row": 26,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 3
+        }
+      ]
+    },
+    {
+      "room": 109,
+      "name": "The Sparkling Stone Shop",
+      "clip_steps": 0,
+      "legal_steps": 223,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 14,
+      "coarse_body": 43,
+      "anchors": 4,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 102,
+          "dir": "go",
+          "at": {
+            "row": 13,
+            "col": 4
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": 102,
+          "dir": "go",
+          "at": {
+            "row": 13,
+            "col": 3
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 113,
+      "name": "The Royal Blacksmith of Barloque",
+      "clip_steps": 0,
+      "legal_steps": 292,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 2,
+      "coarse_body": 55,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 151,
+      "name": "Solomon's Edibles",
+      "clip_steps": 0,
+      "legal_steps": 337,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 13,
+      "coarse_body": 57,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 153,
+      "name": "Cibilo Creek Inn",
+      "clip_steps": 0,
+      "legal_steps": 380,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 7,
+      "coarse_body": 65,
+      "anchors": 3,
+      "anchors_on_solid": 3,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 150,
+          "dir": "go",
+          "at": {
+            "row": 3,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 154,
+      "name": "The Weapon Master's Abode",
+      "clip_steps": 0,
+      "legal_steps": 372,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 9,
+      "coarse_body": 37,
+      "anchors": 4,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 1,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 23
+        },
+        {
+          "to": 154,
+          "dir": "go",
+          "at": {
+            "row": 5,
+            "col": 7
+          },
+          "on_solid_ground": false,
+          "island": 23
+        }
+      ]
+    },
+    {
+      "room": 203,
+      "name": "The home of the elder",
+      "clip_steps": 0,
+      "legal_steps": 307,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 5,
+      "coarse_body": 42,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 200,
+          "dir": "go",
+          "at": {
+            "row": 11,
+            "col": 4
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 205,
+      "name": "Lady Aftyn's Sanctuary",
+      "clip_steps": 0,
+      "legal_steps": 315,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 17,
+      "coarse_body": 60,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 352,
+      "name": "Icehouse",
+      "clip_steps": 0,
+      "legal_steps": 622,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 54,
+      "coarse_body": 46,
+      "anchors": 1,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 382,
+          "dir": "go",
+          "at": {
+            "row": 8,
+            "col": 1
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 353,
+      "name": "Old Schoolhouse",
+      "clip_steps": 0,
+      "legal_steps": 1349,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 20,
+      "coarse_body": 179,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 359,
+      "name": "Abandoned Building",
+      "clip_steps": 0,
+      "legal_steps": 528,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 97,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 360,
+      "name": "Disused Shop",
+      "clip_steps": 0,
+      "legal_steps": 446,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 74,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 361,
+      "name": "Abandoned Counting Room",
+      "clip_steps": 0,
+      "legal_steps": 380,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 70,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 364,
+      "name": "Warm Haven",
+      "clip_steps": 0,
+      "legal_steps": 1582,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 233,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 371,
+      "name": "Pietro's Wicked Brews",
+      "clip_steps": 0,
+      "legal_steps": 918,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 2,
+      "coarse_body": 142,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 372,
+      "name": "Adventurer's Hall of Jasper",
+      "clip_steps": 0,
+      "legal_steps": 1014,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 148,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 373,
+      "name": "General Store of Jasper",
+      "clip_steps": 0,
+      "legal_steps": 1780,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 0,
+      "coarse_body": 284,
+      "anchors": 2,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 350,
+          "dir": "go",
+          "at": {
+            "row": 19,
+            "col": 1
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 374,
+      "name": "Quintor's Smithy",
+      "clip_steps": 0,
+      "legal_steps": 1181,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 3,
+      "coarse_body": 169,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 382,
+      "name": "West Jasper",
+      "clip_steps": 0,
+      "legal_steps": 17304,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 52,
+      "coarse_body": 2565,
+      "anchors": 35,
+      "anchors_on_solid": 4,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 30,
+            "col": 22
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 377,
+          "dir": "go",
+          "at": {
+            "row": 35,
+            "col": 29
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 375,
+          "dir": "go",
+          "at": {
+            "row": 32,
+            "col": 28
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": 375,
+          "dir": "go",
+          "at": {
+            "row": 31,
+            "col": 27
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 511,
+      "name": "North Quilicia Wood",
+      "clip_steps": 0,
+      "legal_steps": 4165,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 2,
+      "coarse_body": 706,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 552,
+      "name": "The Great Ocean",
+      "clip_steps": 0,
+      "legal_steps": 32142,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 4,
+      "coarse_body": 4185,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 700,
+      "name": "The Guildmaster's Hall",
+      "clip_steps": 0,
+      "legal_steps": 1071,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 22,
+      "coarse_body": 141,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 709,
+      "name": "The Abandoned Warehouse",
+      "clip_steps": 0,
+      "legal_steps": 2826,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 26,
+      "coarse_body": 279,
+      "anchors": 2,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 107,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 24
+          },
+          "on_solid_ground": false,
+          "island": 61
+        },
+        {
+          "to": 107,
+          "dir": "go",
+          "at": {
+            "row": 9,
+            "col": 24
+          },
+          "on_solid_ground": false,
+          "island": 61
+        }
+      ]
+    },
+    {
+      "room": 831,
+      "name": "Ancient Building",
+      "clip_steps": 0,
+      "legal_steps": 155,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 1,
+      "coarse_body": 34,
+      "anchors": 3,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 901,
+      "name": "The meeting place of the Gods",
+      "clip_steps": 0,
+      "legal_steps": 1568,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 20,
+      "coarse_body": 208,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 902,
+      "name": "Meridian University",
+      "clip_steps": 0,
+      "legal_steps": 1759,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 59,
+      "coarse_body": 193,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 903,
+      "name": "object gallery",
+      "clip_steps": 0,
+      "legal_steps": 1759,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 59,
+      "coarse_body": 193,
+      "anchors": 0,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 954,
+      "name": "The Duke's Grand Ballroom",
+      "clip_steps": 0,
+      "legal_steps": 4640,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 20,
+      "coarse_body": 683,
+      "anchors": 9,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1002,
+      "name": "Hazar",
+      "clip_steps": 0,
+      "legal_steps": 10124,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 92,
+      "coarse_body": 1393,
+      "anchors": 25,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 1005,
+          "dir": "go",
+          "at": {
+            "row": 26,
+            "col": 52
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": 1005,
+          "dir": "go",
+          "at": {
+            "row": 26,
+            "col": 51
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 1007,
+      "name": "Eric's Stout Spirits",
+      "clip_steps": 0,
+      "legal_steps": 197,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 6,
+      "coarse_body": 39,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 1012,
+      "name": "Raza",
+      "clip_steps": 0,
+      "legal_steps": 10124,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 92,
+      "coarse_body": 1393,
+      "anchors": 25,
+      "anchors_on_solid": 2,
+      "bad": [
+        {
+          "to": 1015,
+          "dir": "go",
+          "at": {
+            "row": 26,
+            "col": 52
+          },
+          "on_solid_ground": false,
+          "island": 2
+        },
+        {
+          "to": 1015,
+          "dir": "go",
+          "at": {
+            "row": 26,
+            "col": 51
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    },
+    {
+      "room": 1017,
+      "name": "Raza Pub",
+      "clip_steps": 0,
+      "legal_steps": 197,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 6,
+      "coarse_body": 39,
+      "anchors": 1,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2000,
+      "name": "Ko'catan, the Island Settlement",
+      "clip_steps": 0,
+      "legal_steps": 22938,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 1,
+      "coarse_body": 3165,
+      "anchors": 58,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2005,
+      "name": "The Hungry Vaults",
+      "clip_steps": 0,
+      "legal_steps": 607,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 33,
+      "coarse_body": 107,
+      "anchors": 15,
+      "anchors_on_solid": 5,
+      "bad": [
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 24,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 24,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 6
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 6,
+            "col": 9
+          },
+          "on_solid_ground": false,
+          "island": 1
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 13
+          },
+          "on_solid_ground": true,
+          "island": 0
+        },
+        {
+          "to": -1,
+          "dir": "go",
+          "at": {
+            "row": 10,
+            "col": 4
+          },
+          "on_solid_ground": true,
+          "island": 0
+        }
+      ]
+    },
+    {
+      "room": 2009,
+      "name": "Ko'catan, the Island Settlement",
+      "clip_steps": 0,
+      "legal_steps": 26255,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 1,
+      "coarse_body": 3558,
+      "anchors": 44,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2101,
+      "name": "The Remote Trading Post of Wulfgang zax'Ak",
+      "clip_steps": 0,
+      "legal_steps": 577,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 7,
+      "coarse_body": 112,
+      "anchors": 7,
+      "anchors_on_solid": 0,
+      "bad": []
+    },
+    {
+      "room": 2136,
+      "name": "Hut of the Mad Scientist",
+      "clip_steps": 0,
+      "legal_steps": 244,
+      "clip_squares": 0,
+      "pct": 0,
+      "coarse_islands": 5,
+      "coarse_body": 33,
+      "anchors": 4,
+      "anchors_on_solid": 1,
+      "bad": [
+        {
+          "to": 2135,
+          "dir": "go",
+          "at": {
+            "row": 7,
+            "col": 8
+          },
+          "on_solid_ground": false,
+          "island": 1
+        }
+      ]
+    }
+  ]
+}

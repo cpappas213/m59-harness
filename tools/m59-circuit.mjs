@@ -51,6 +51,14 @@ export const ROUTES = {
                     why: 'Castle Victoria, then Barloque to sell, then the Tos bank' },
   'grand':        { legs: [38, 350, 101, 50], from: 50,
                     why: 'Tos -> Castle Victoria -> Jasper -> Barloque -> Tos, the full lap' },
+  // THE OPERATOR'S CYCLE, and the reason it is not `grand` with one room swapped: it is the
+  // only named route that crosses Ukgoth (599) TWICE, once in each direction, because both
+  // 50 -> 38 and 38 -> 150 route through it. Ukgoth is where the collision view is most
+  // permissive in the wrong direction (m59-clipsweep.mjs) and the only room in the world
+  // with a declared fall-jump (substrate/m59-falljumps.json), so a lap that does not go
+  // through it twice is not testing the thing that has been breaking.
+  'cor-noth-lap': { legs: [38, 150, 101, 50], from: 50,
+                    why: 'Tos -> Castle Victoria -> Cor Noth -> Barloque -> Tos, both ways through Ukgoth' },
 };
 
 export async function broker(name, args, { timeoutMs = 300000 } = {}) {
@@ -132,6 +140,16 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
 
     if (p.room === to && !p.busy)
       return { agent, to, from, arrived: true, ms: Date.now() - start, rooms, swings, lowest, deaths };
+    // A PROBE THAT FAILED IS NOT A CHARACTER THAT STOPPED.
+    //
+    // `probe` reads `status`, and under twenty-one walking characters that call times out —
+    // the broker is one event loop and a busy fleet is exactly when it is slowest. On a
+    // timeout it answered `{ room: null, busy: false }`, which is indistinguishable from
+    // "arrived nowhere and gave up", so the leg was abandoned WHILE EVERY CHARACTER WAS
+    // STILL WALKING: measured, 0/21 arrived after 200s wall, and the very next leg was
+    // refused for all twenty-one with `is busy: walk to North Barloque`. The fleet was
+    // fine; the instrument gave up on it. `STUCK in ?` — a null room — is the tell.
+    if (p.error) continue;
     if (!p.busy && Date.now() - lastSeen > pollMs * 3)
       return { agent, to, from, arrived: p.room === to, ms: Date.now() - start, rooms, swings, lowest,
                deaths, why: 'stopped being busy without arriving',
@@ -165,17 +183,40 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
   }
 
   const routeName = flag('route', 'tos-jasper');
-  const route = ROUTES[routeName];
-  if (!route) { console.error(`unknown route "${routeName}" — try --list`); process.exit(2); }
+  // AN ITINERARY THE TABLE DOES NOT NAME. A named route is what makes two runs comparable
+  // and is the right default, but a cycle can be entered anywhere and the fleet is rarely
+  // standing at a route's `from`. `--legs 150,101,50,38` walks the operator's lap starting
+  // from Cor Noth instead of repositioning twenty-one bodies to Tos first, which is itself
+  // an hour of the thing being measured.
+  const legsArg = flag('legs');
+  const route = legsArg
+    ? { legs: legsArg.split(',').map(Number).filter(Number.isFinite), from: null,
+        why: 'an itinerary given on the command line' }
+    : ROUTES[routeName];
+  if (!route || !route.legs?.length) { console.error(`unknown route "${routeName}" — try --list`); process.exit(2); }
   const laps = Number(flag('laps', 1));
+  // A leg's patience. The 15-minute default was measured with five bots on one boundary;
+  // twenty-one bodies queueing through a one-square aperture legitimately take longer, and
+  // a timeout shorter than the walk reports "stuck" for a character that was still moving.
+  const maxLegMs = Number(flag('max-leg', 900)) * 1000;
   const botArg = flag('bots', 'Alpha,Bravo,Charlie,Delta,Echo');
-  const bots = botArg === 'all' ? Object.keys(AGENTS).filter(n => n !== 'TESTER')
-                                : botArg.split(',').map(s => s.trim()).filter(Boolean);
+  // `all` is the ARENA's six throwaway characters, which is what this tool was written for.
+  // `fleet` is whoever the broker on this port is actually holding — the only form that
+  // works against a roster this file has never heard of, and the shadow fleet is one.
+  // Asked for by name it stays exact: an agent id passes through `agentFor` untouched.
+  const bots = botArg === 'all'   ? Object.keys(AGENTS).filter(n => n !== 'TESTER')
+             : botArg === 'fleet' ? await (async () => {
+                 const f = await broker('fleet', {}, { timeoutMs: 60000 });
+                 const list = (f?.fleet ?? []).map(a => a.agent).filter(Boolean);
+                 if (!list.length) { console.error('the broker is holding nobody — is it up on ' + PORT + '?'); process.exit(2); }
+                 return list;
+               })()
+             : botArg.split(',').map(s => s.trim()).filter(Boolean);
 
   // The baseline the fleet's own history predicts, so the slowdown is stated against
   // something rather than asserted. Its provenance is printed with it.
   let baseline = 0;
-  {
+  if (route.from != null) {
     let at = route.from;
     for (const leg of route.legs) {
       const e = await broker('travel_estimate', { from: at, to: leg }, { timeoutMs: 30000 });
@@ -184,8 +225,9 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
     }
   }
 
-  console.log(`route ${routeName}: ${route.why}`);
-  console.log(`  ${route.from} -> ${route.legs.join(' -> ')}   x${laps} lap(s)   bots: ${bots.join(', ')}`);
+  console.log(`route ${legsArg ? 'given on the command line' : routeName}: ${route.why}`);
+  console.log(`  ${route.from ?? 'wherever they are'} -> ${route.legs.join(' -> ')}   ` +
+              `x${laps} lap(s)   bots: ${bots.join(', ')}`);
   console.log(`  baseline from recorded history: ${Math.round(baseline / 1000)}s per lap`);
   console.log('  NOTE: 85.1% of that history predates collision routing, so it is optimistic;');
   console.log('  a measured slowdown against it is an UPPER BOUND on the real regression.\n');
@@ -198,7 +240,7 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
       // ALL BOTS AT ONCE, because that is how the fleet travels and because bodies
       // blocking bodies is one of the things being measured. Serialising them would
       // measure a world with one character in it.
-      const legs = await Promise.all(bots.map(b => runLeg(agentFor(b), leg)));
+      const legs = await Promise.all(bots.map(b => runLeg(agentFor(b), leg, { maxMs: maxLegMs })));
       const ok = legs.filter(r => r.arrived).length;
       const times = legs.filter(r => r.arrived).map(r => r.ms).sort((a, b) => a - b);
       const med = times.length ? times[Math.floor(times.length / 2)] : 0;
@@ -229,7 +271,7 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
   }
 
   const b = load();
-  b.runs.push({ at: Date.now(), route: routeName, laps, bots: bots.length,
+  b.runs.push({ at: Date.now(), route: legsArg ? `legs:${route.legs.join('/')}` : routeName, laps, bots: bots.length,
                 attempts: all.length, arrived: arrived.length, median_ms: median,
                 baseline_ms: baseline, swings, deaths,
                 stuck: all.filter(r => !r.arrived).map(r => ({ agent: r.agent, in: r.stuck_in, why: r.why })) });
