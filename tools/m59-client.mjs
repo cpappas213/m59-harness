@@ -1126,6 +1126,19 @@ export class M59Client {
   requestInventory()    { this.send(BP.REQ_INVENTORY); }
   requestSpells()       { this.send(BP.SEND_SPELLS); }
   requestSkills()       { this.send(BP.SEND_SKILLS); }
+  // WHO ARE WE. The reply is BP_PLAYER, whose handler re-assigns `selfId` and then
+  // re-requests the room contents, so this is the one packet that recovers an identity
+  // the server has renumbered underneath us — which it does on every garbage collection,
+  // and it collects on every save. `self` is `room.objects.get(selfId)`, so a stale
+  // `selfId` reads exactly like "I do not know where I am" and no amount of re-reading
+  // the room can fix it: the new contents are keyed by the NEW id.
+  //
+  // It is a METHOD here rather than a constant the broker sends by hand, because it was
+  // sent by hand — `c.send(BP_SEND_PLAYER)` — against an identifier that does not exist
+  // in that file. That is a ReferenceError at the moment of use, in two places, and both
+  // were the recovery path for a fault nobody could reproduce on purpose. A missing
+  // method fails at load; a missing free variable fails only when the world goes wrong.
+  requestPlayer()       { this.send(BP.SEND_PLAYER); }
   roomContents()        {
     const request = this.roomContentsRequested + 1;
     this.send(BP.SEND_ROOM_CONTENTS);

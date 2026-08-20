@@ -33,7 +33,7 @@ const ok = (what, cond) => { if (cond) pass++; else { fail++; console.log(`  FAI
 // BORROW THE REAL IMPLEMENTATION, NEVER A COPY — `m59-broker.mjs` cannot be imported,
 // importing it takes the fleet lock and starts rejoin timers, so the methods are lifted
 // out of the source by BRACE MATCHING.
-const src = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+const src = readFileSync(process.env.M59_BROKER_SRC ? new URL('file://' + process.env.M59_BROKER_SRC) : new URL('./m59-broker.mjs', import.meta.url), 'utf8');
 function lift(signature, name, deps = {}) {
   const start = src.indexOf('  ' + signature);
   ok(`the ${name} method was located`, start >= 0);
@@ -59,9 +59,13 @@ const retreatAlongBreadcrumbs = lift('async retreatAlongBreadcrumbs({', 'retreat
 // skip along them without tracing. These fixtures have no collision model at all, which is
 // exactly the case where it must decline — so null here is the real answer, not a stub of
 // one, and it keeps this suite testing the retreat rather than the pull.
+// `OFF_PLAN_STEP_BUDGET` is the module constant that decides how many packets a planned
+// square may cost — 3 in the broker, and 3 here so the fixtures measure what ships. Passing
+// it explicitly is what makes the lift useful: a constant the method reads and this file
+// does not name is a ReferenceError HERE, at test time, rather than mid-journey.
 const walkTo = lift('async walkTo(col, row, {', 'walkTo',
-  { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, isTerminalMovementReason: () => false,
-    provedSquares: () => null });
+  { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, PROVED_HOP_MAX_SQUARES: 13, OFF_PLAN_STEP_BUDGET: 3,
+    isTerminalMovementReason: () => false, provedSquares: () => null });
 
 // ---------------------------------------------------------------------------
 // The smallest thing that can stand in for a Session. Movement is on square centres;
@@ -78,7 +82,11 @@ function fakeSession({ at = { col: 5, row: 5 }, roomId = 587, legal = () => true
   const self = { ...start, ...at };
   const packets = [];
   const client = {
-    self,
+    // `self` is a GETTER here for the same reason it is one on the real client: it is
+    // `room.objects.get(selfId)` there, so it goes undefined whenever our own object is
+    // not in the room map. `missingSelf` is how a fixture stages that moment.
+    missingSelf: false,
+    get self() { return this.missingSelf ? undefined : self; },
     room: { id: roomId },
     moveTo(x, y) {
       packets.push({ x, y });
@@ -92,6 +100,17 @@ function fakeSession({ at = { col: 5, row: 5 }, roomId = 587, legal = () => true
     movementGeneration: 0,
     breadcrumbs: undefined,
     need() { return client; },
+    // WHAT THE WALKER DOES WHEN IT LOSES ITSELF. `client.self` is undefined for a moment
+    // after a room is rebuilt, and walkTo now ASKS rather than abandoning the journey.
+    // `resyncs` counts the asks and `selfComesBack` decides whether the answer arrives, so
+    // a fixture can express both "it was a transient gap" and "the server has gone quiet".
+    resyncs: 0,
+    selfComesBack: true,
+    async selfOrResync() {
+      session.resyncs++;
+      if (session.selfComesBack && client.missingSelf) client.missingSelf = false;
+      return client.self ?? null;
+    },
     movementWasCancelled() { return false; },
     cancelledMovement(extra) { return { cancelled: true, ...extra }; },
     threatsHere() { return null; },
@@ -234,6 +253,125 @@ console.log('walkTo escapes the pocket and then plans from where it lands');
   ok('it does not claim to have arrived', r.arrived === false);
   ok('the retreat is named rather than swallowed', r.retreated >= 1);
   ok('and the note says the escape was tried', /breadcrumbs/.test(r.note ?? ''));
+}
+
+// ---------------------------------------------------------------------------
+console.log('losing our own position is a question, not a verdict');
+{
+  // THE FAILURE THIS REPLACES, measured on a 21-character run to Castle Victoria with the
+  // routes and anchors both since proven correct: 47 of 51 hop failures were
+  // `own_position_unknown`, 17 of 21 characters ended their journey on one, and NOBODY
+  // DIED. The fleet was not killed and was not walled in — it stopped knowing where it was
+  // and gave up, one step into a room it had just entered.
+  //
+  // `client.self` is `room.objects.get(selfId)`, so it is undefined for a moment after a
+  // room is rebuilt. `step` deliberately does not await that re-read. So the gap is the
+  // ORDINARY state, and the cure is to ask.
+  const s = fakeSession();
+  s.client.missingSelf = true;                  // as if the room had just been rebuilt
+  const r = await walkTo.call(s, 8, 5, {});
+  ok('it asked the server where it was', s.resyncs >= 1);
+  ok('and the walk went on to arrive', r.arrived === true);
+  ok('rather than reporting own_position_unknown', r.reason !== 'own_position_unknown');
+}
+
+{
+  // AND A SERVER THAT HAS GENUINELY GONE QUIET STILL ENDS THE WALK. The re-read is bounded
+  // and answers null rather than throwing, so the old verdict survives — it is just no
+  // longer reached prematurely. Without this half the fix would be a hang, which is worse
+  // than the abandonment it replaces.
+  const s = fakeSession();
+  s.client.missingSelf = true;
+  s.selfComesBack = false;                      // the read never brings it back
+  const r = await walkTo.call(s, 8, 5, {});
+  ok('it tried to re-read', s.resyncs >= 1);
+  ok('it does not claim to have arrived', r.arrived !== true);
+  ok('and it still reports own_position_unknown', r.reason === 'own_position_unknown');
+  ok('with a note saying the re-read was tried', /re-read/.test(r.note ?? ''));
+}
+
+// ---------------------------------------------------------------------------
+console.log('the re-identify itself — lifted whole, because a free variable is invisible');
+{
+  // WHY THE REAL METHOD AND NOT THE FIXTURE'S STUB. Every assertion above about losing our
+  // own position drives `fakeSession.selfOrResync`, which is a hand-written stand-in — so
+  // this suite passed perfectly while the REAL `Session.selfOrResync` could not run at all.
+  // It sent `c.send(BP_SEND_PLAYER)` against an identifier that is bound NOWHERE in
+  // m59-broker.mjs: the packet constants live on `BP` in m59-client.mjs and that module
+  // never imports them. A free variable is a ReferenceError at the moment of use and
+  // never before — and the moment of use here is a recovery path, so it could only fail
+  // once the world had already gone wrong. `refreshRoomIdentity` had the same line, and
+  // had had it since the initial commit.
+  //
+  // Measured live on the arena server, 2026-08-20: the server renumbered Aaaa from 7420
+  // to 7400 during a save, `look` answered "not present in room contents yet" for four
+  // minutes with the new id plainly in the room list, and the journey ended in
+  // `own_position_unknown`.
+  //
+  // So this lifts the method out of the source and RUNS it against a client that
+  // renumbers. A missing binding fails here, at `node tools/m59-breadcrumb-test.mjs`.
+  const selfOrResync = lift('async selfOrResync({', 'selfOrResync', {});
+
+  /** A client whose id the server has renumbered, exactly as a garbage collection does. */
+  function renumberingClient({ answers = true } = {}) {
+    const objects = new Map([[7400, { id: 7400, col: 1, row: 47 }]]);   // the NEW id is present
+    const c = {
+      selfId: 7420,                                                     // the cached one is not
+      requestPlayerCalls: 0,
+      get self() { return this.selfId ? objects.get(this.selfId) : undefined; },
+      requestPlayer() {
+        this.requestPlayerCalls++;
+        // BP_PLAYER's handler re-assigns the id and re-requests the contents. Answering on
+        // a timer is the real shape: the poll has to wait the reply out.
+        if (answers) setTimeout(() => { c.selfId = 7400; }, 120);
+      },
+    };
+    return c;
+  }
+
+  const session = (c) => ({
+    need: () => c,
+    pacer: { submit: (_kind, fn) => Promise.resolve(fn()) },
+    confirms: 0,
+    async confirmPosition() { this.confirms++; },
+  });
+
+  {
+    const c = renumberingClient();
+    const s = session(c);
+    const me = await selfOrResync.call(s);
+    ok('it sent the re-identify request', c.requestPlayerCalls >= 1);
+    ok('and got our own object back under its new id', me?.id === 7400);
+    ok('with the cached id replaced, not the room re-read against a stale key', c.selfId === 7400);
+  }
+
+  {
+    // A server that never answers still ends bounded, and still answers null rather than
+    // throwing — which is what keeps the old `own_position_unknown` verdict reachable
+    // instead of turning half the fix into a hang.
+    const c = renumberingClient({ answers: false });
+    const s = session(c);
+    const me = await selfOrResync.call(s, { tries: 1 });
+    ok('a silent server gives null rather than throwing', me === null);
+    ok('and the room was re-read as the second half of the attempt', s.confirms === 1);
+  }
+
+  {
+    // THE OTHER CALL SITE, AND IT HAD THE SAME LINE FOR LONGER. `refreshRoomIdentity` is
+    // what asks the server which room we are in after an admin teleport or a reconnect,
+    // and it has sent the same unbound identifier since the initial commit — so that
+    // recovery has never once run. It is covered here for the same reason: no fixture
+    // reaches it by accident, and the failure only appears when something else is already
+    // wrong.
+    const refreshRoomIdentity = lift('async refreshRoomIdentity() {', 'refreshRoomIdentity', {});
+    let asked = 0, waited = null;
+    const c = { requestPlayer() { asked++; }, evSeq: 7,
+                waitFor(opts) { waited = opts; return Promise.resolve({ kind: 'room-entered' }); } };
+    await refreshRoomIdentity.call({ need: () => c, pacer: { submit: (_k, fn) => Promise.resolve(fn()) } });
+    ok('refreshRoomIdentity sends the request rather than throwing', asked === 1);
+    ok('and waits for the room it asked about', waited?.kinds?.includes('room-entered') === true);
+    ok('from the event sequence it read before asking', waited?.since === 7);
+  }
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

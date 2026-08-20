@@ -1039,12 +1039,19 @@ const ordinaryStep = compileSessionMethod(brokerSource,
     MOVE_INTERVAL_MS: 0, ROOM_RESYNC_MS: Number.POSITIVE_INFINITY,
     KOD_FINENESS, squaresPerSecond: () => 2.5,
   });
+// THE AIM, LIFTED LIKE EVERYTHING ELSE. `step` calls `this.aimInto` to decide where in the
+// next square to walk, so a fixture without it is a fixture testing a different method —
+// and this one is load-bearing: it is what stops the two-square bounce.
+const aimInto = compileSessionMethod(brokerSource,
+  'aimInto(from, row, col) {', 'aimInto', { KOD_FINENESS, protocolToClient });
 const walkFine = compileSessionMethod(brokerSource,
   'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason, KOD_FINENESS });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     provedSquares,
     isTerminalMovementReason, KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8,
+    // Thirteen, and the number is the server's speedhack check — see the constant.
+    PROVED_HOP_MAX_SQUARES: 13,
     // The coalescer's two, which were free identifiers here for as long as the coalescer
     // existed. No fixture reached that branch — they all have falsy `collisionReady` —
     // so nothing ever threw and nothing ever said so. The value matches the broker's own
@@ -1056,6 +1063,10 @@ const walkTo = compileSessionMethod(brokerSource,
     // all five are ordinary exports of modules that import without taking the fleet lock.
     finePath, pullFine, pointOfSquare, boundsAround, recordTactic,
     clientToProtocol,
+    // How many packets a planned square may cost. The broker's own default, duplicated
+    // for the same reason PIVOT_ARRIVE_WITHIN is: importing the module takes the fleet
+    // lock. It is not 1 because the mover slides and the router aims at centres.
+    OFF_PLAN_STEP_BUDGET: 3,
   });
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
@@ -1066,6 +1077,9 @@ const leaveVia = compileSessionMethod(brokerSource,
     // testing the imitations. `DOOR_SETTLE_MS` is zeroed for the same reason
     // MOVE_INTERVAL_MS is: the fake client answers immediately or not at all.
     boundedSilentGo, boundedRegionEntry, DOOR_SETTLE_MS: 0,
+    // Zero, which is the broker's own default and the measured one — see the constant.
+    // Declared rather than inherited so a change to it shows up here as a test to update.
+    LEAVE_VIA_CLEARANCE: 0,
     // Zero here, not the broker's 10s: these tests drive a fake client that answers
     // immediately or not at all, so the real wait would only add ten seconds per
     // never-crossing case. What the constant is FOR is live lag, which is not
@@ -1144,6 +1158,7 @@ function fakeBrokerSession(geometry, {
     validateFineTarget,
     queueValidatedMove,
     confirmPosition,
+    aimInto,
   };
   return { session, client, packets, turns };
 }
@@ -1240,12 +1255,19 @@ console.log('\nterminal movement propagation and edge packet authority');
        result.reason === 'room_geometry_mismatch' && stepCalls === 1 && result.replans === 0,
        JSON.stringify({ result, stepCalls }));
 
-    let pathCalls = 0;
+    let pathCalls = 0, resyncCalls = 0;
     const unknown = {
       client: { self: null }, world: { geometry: { path() { pathCalls++; } } },
       need() { return this.client; },
+      // walkTo now ASKS the server before giving up — losing our own object out of the
+      // room map is the ordinary state for a moment after a room is rebuilt. This fixture
+      // is the OTHER case: the read is made and still cannot answer, which is the only
+      // situation where the terminal verdict below is the right one.
+      async selfOrResync() { resyncCalls++; return null; },
     };
     const unknownResult = await walkTo.call(unknown, 2, 1, { maxSteps: 5, hardCap: 10 });
+    ok('walkTo asks the server before calling its own position unknown',
+       resyncCalls === 1, JSON.stringify({ resyncCalls }));
     ok('walkTo reports unknown own position as a terminal contract reason',
        unknownResult.reason === 'own_position_unknown' &&
        isTerminalMovementReason(unknownResult.reason) && pathCalls === 0,
