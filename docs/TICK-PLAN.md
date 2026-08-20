@@ -233,10 +233,10 @@ Four consequences, and they change the design more than anything else in this do
 - **COLLISION IS ENTIRELY OUR RESPONSIBILITY.** There is no oracle to defer to and no
   refusal to learn from. `blockedEdges`-style learning from "the server refused" cannot
   work, because the server never refuses. That whole idea in an earlier draft is dead.
-- **WE CAN MOVE IN LONG JUMPS.** Routing does not need square-by-square stepping at all:
-  a string-pulled path of 2 verified waypoints can be walked as 2 packets, not 25. This is
-  the single biggest simplification available and it was invisible while we assumed the
-  server was validating.
+- **WE COULD MOVE IN LONG JUMPS, AND WE MUST NOT.** The server would take a 2-packet
+  journey, but that is cheating — see the speed budget below. What the simplification
+  really buys is that a waypoint need not be a square: we walk TOWARD it at the legal
+  rate, and the path between waypoints does not have to be enumerated.
 - **BEING TOO PERMISSIVE IS NOT FREE.** The server will happily put a character inside
   geometry. What that costs — stuck bodies, rooms that cannot be left, something the
   server does notice later — is UNKNOWN and is the next thing worth measuring.
@@ -271,6 +271,47 @@ Four consequences, and they change the design more than anything else in this do
   **And it caught my own error:** the 24-square jump in the distance test above parked
   JayB INSIDE a wall at 65,29 and I did not notice, because I was checking `standable()`,
   which said the square was fine. He stood there through two subsequent test runs.
+
+### THE TWO OBLIGATIONS THAT FOLLOW FROM CLIENT AUTHORITY
+
+Nothing on the server enforces movement, so both of these are ours or they do not happen.
+
+**1. WE ARE THE COLLISION SYSTEM.** Not a predictor of one — the only one. And it must be
+the FINE model: `standable()` reads the coarse grid and is blind to 280 of 1792 cells in
+Raza (15.6%), because a fence is a wall SEGMENT and not a blocked square. Planning on
+`standable()`, which `geo.path()` and `moverStepLands()` both do, is planning on a map
+that does not have the walls in it.
+
+**2. WE MUST MOVE AT A LEGITIMATE SPEED.** The server will accept a 24-square jump in one
+packet — I sent one — and that is cheating, whoever is watching. The real client's own
+numbers, from the source on this machine:
+
+```c
+FINENESS   = 1024            // clientd3d/drawdefs.h:42   client units per square
+MOVEUNITS  = FINENESS >> 2   // clientd3d/draw3d.h:53     = 256 units
+MOVE_DELAY = 100             // clientd3d/move.c:49       ms between MOVEUNITS
+move_distance = MOVEUNITS        // walking
+move_distance = 2 * MOVEUNITS    // running   (move.c:184)
+```
+
+Which gives the budget, exactly:
+
+| | per 100ms | per second |
+|---|---|---|
+| walking | 0.25 squares (16 protocol units) | **2.5 squares** |
+| running | 0.50 squares (32 protocol units) | **5 squares** |
+
+and wading scales it by 3/4, 1/2 or 1/4 with depth (`move.c:196-201`).
+
+**`MOVE_DELAY` IS 100ms, SO THE REAL CLIENT'S MOVEMENT LOOP IS A 10hz TICK.** The cadence
+chosen for `TickLoop` is the game's own, which means one tick maps exactly to one legal
+move step. That is a coincidence worth keeping: **one tick, at most one MOVEUNITS of
+movement** is both the rate limit and the loop's natural shape, and it needs no extra
+budget-tracking machinery to enforce.
+
+This also retires the "long jumps" idea from the previous section. We CAN send a
+string-pulled 2-waypoint path as 2 packets — the server allows it — and we must not.
+A waypoint is a destination to walk toward at 16 units per tick, not a place to appear.
 
 **WHAT THIS SAMPLE DOES NOT SHOW, and must not be over-read:**
 
