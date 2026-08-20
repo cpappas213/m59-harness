@@ -28,11 +28,12 @@ export async function flee(client, session, _opts = {}) {
   const c = client;
   const s = session.s ?? session;
 
-  // Find the nearest hostile: anything that is attackable and not a player.
+  // Anything attackable that is not a player. Players are a PVP question and the
+  // playbook's, not this one's.
   const hostiles = (c.room?.objects instanceof Map)
     ? [...c.room.objects.values()].filter(o => {
         if (o.id === c.selfId) return false;
-        if (o.flags & OF.PLAYER) return false;  // players are PVP, not flee-from
+        if (o.flags & OF.PLAYER) return false;
         return affordances(o.flags ?? 0).includes('attack');
       })
     : (Array.isArray(c.room?.objects) ? c.room.objects.filter(o => o.hostile) : []);
@@ -40,8 +41,6 @@ export async function flee(client, session, _opts = {}) {
   if (!hostiles.length)
     return { sent: false, fled: false, reason: 'no hostiles in the room' };
 
-  // Find the nearest hostile (no for loop — the test regex flags
-  // any for/while that has an await later in the function).
   const me = c.self;
   if (!me) return { sent: false, fled: false, reason: 'own position unknown' };
 
@@ -50,79 +49,57 @@ export async function flee(client, session, _opts = {}) {
     return d < acc.nearestDist ? { nearest: h, nearestDist: d } : acc;
   }, { nearest: null, nearestDist: Infinity });
 
-  // Flee: walk to the farthest point from the nearest hostile.
-  // The world's approachSquare or a simple "walk away" heuristic.
   const room = c.room;
   const rows = room?.rows ?? 30, cols = room?.cols ?? 30;
 
-  // Walk away from the hostile: the direction is from hostile to me,
-  // extended to the edge of the room.
+  // ONE SQUARE, DIRECTLY AWAY FROM THE NEAREST THREAT.
+  //
+  // This used to walk 15 tiles and then, if that failed, loop eight moveToSquare calls
+  // with a 400ms sleep between them -- three-plus seconds inside one call, with nothing
+  // sampling health, WHILE BEING CHASED. That is the worst possible place to stop
+  // looking, and it is why the sweep forbids a loop around an await.
+  //
+  // The direction is recomputed from scratch on every call, which is the point: the
+  // thing chasing you MOVES, and a flee that committed to a vector eight steps ago is
+  // running to where the threat used to be. One step, re-aimed each pass.
   const dx = me.col - nearest.col;
   const dy = me.row - nearest.row;
   const dist = Math.max(1, Math.hypot(dx, dy));
-  const fx = me.col + (dx / dist) * 15;  // walk 15 tiles away
-  const fy = me.row + (dy / dist) * 15;
+  const nx = Math.max(1, Math.min(cols - 2, Math.round(me.col + (dx / dist))));
+  const ny = Math.max(1, Math.min(rows - 2, Math.round(me.row + (dy / dist))));
 
-  // Clamp to room bounds.
-  const tx = Math.max(1, Math.min(cols - 2, Math.round(fx)));
-  const ty = Math.max(1, Math.min(rows - 2, Math.round(fy)));
+  if (nx === me.col && ny === me.row)
+    return { sent: false, fled: false, reason: 'nowhere further from it inside this room',
+             threat: { id: nearest.id, col: nearest.col, row: nearest.row,
+                       dist: Math.round(nearestDist) } };
 
-  // Use the broker's walkTo to move.
-  const wasIn = c.room.id;
-  const before = c.evSeq;
-  const walk = await s.walkTo(tx, ty, { maxSteps: 30 }).catch(() => ({ arrived: false, reason: 'walk failed' }));
+  // The collision-validated mover when the session has one, because a step the geometry
+  // refuses is a step that does not move the character at all -- 92% of refused steps
+  // measured upstream. moveToSquare is the fallback: the server does the real collision.
+  const stepped = typeof s.walkTo === 'function'
+    ? await s.walkTo(nx, ny, { maxSteps: 1 }).catch(() => ({ arrived: false, reason: 'walk refused' }))
+    : await s.pacer?.submit?.('move', () => c.moveToSquare(nx, ny))
+        .then(() => ({ arrived: true })).catch(() => ({ arrived: false, reason: 'move refused' }));
 
-  // Check if we moved (even if not to the exact target).
-  const me2 = c.self;
-  const moved = me2 && (me2.col !== me.col || me2.row !== me.row);
-
-  // RAW FLEE FALLBACK: if walkTo failed and we didn't move, take
-  // direct moveToSquare steps in the flee direction. The server
-  // handles real collision; this ensures progress even when the
-  // local geometry (BSP/coarse grid) is wrong.
-  if (!moved) {
-    const meNow = c.self;
-    if (meNow) {
-      const ddx = me.col - nearest.col;
-      const ddy = me.row - nearest.row;
-      const dd = Math.max(1, Math.hypot(ddx, ddy));
-      const sx = Math.round(ddx / dd);
-      const sy = Math.round(ddy / dd);
-      for (let step = 0; step < 8; step++) {
-        const nx = meNow.col + sx;
-        const ny = meNow.row + sy;
-        if (nx < 1 || ny < 1 || nx > cols - 2 || ny > rows - 2) break;
-        try {
-          await s.pacer?.submit?.('move', () => c.moveToSquare(nx, ny));
-          await sleep(400);
-        } catch { break; }
-      }
-    }
-    // Re-check if we moved.
-    const me3 = c.self;
-    const moved2 = me3 && (me3.col !== me.col || me3.row !== me.row);
-    if (moved2) {
-      return {
-        sent: true, fled: true, reason: null,
-        from: { col: me.col, row: me.row },
-        to: { col: me3.col, row: me3.row },
-        threat: { id: nearest.id, col: nearest.col, row: nearest.row, dist: Math.round(nearestDist) },
-        raw: true,
-      };
-    }
-  }
+  const after = c.self;
+  const moved = !!after && (after.col !== me.col || after.row !== me.row);
 
   return {
     sent: true,
-    fled: !!moved || walk.arrived,
-    reason: moved ? null : (walk.reason ?? 'could not move'),
+    fled: moved,
+    reason: moved ? null : (stepped?.reason ?? 'could not move'),
     from: { col: me.col, row: me.row },
-    to: { col: me2?.col ?? null, row: me2?.row ?? null },
+    to: { col: after?.col ?? null, row: after?.row ?? null },
     threat: { id: nearest.id, col: nearest.col, row: nearest.row, dist: Math.round(nearestDist) },
   };
 }
 
 // GOAP metadata.
 flee.pre     = ['has_target'];
-flee.effects = ['!has_target'];  // the character is no longer in combat
+// ONE STEP DOES NOT CLEAR A THREAT, so this no longer claims it does. `flee_danger` is
+// the honest effect: distance was opened. `!has_target` and `healthy` were aspirational
+// -- the planner believed one flee ended the encounter, and when it had not, the goal
+// looked achieved while the character was still being chased. The planner re-evaluates
+// from the real room every pass and will simply plan another step.
+flee.effects = ['flee_danger'];
 flee.atomic  = 'flee';

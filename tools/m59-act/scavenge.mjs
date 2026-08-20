@@ -181,6 +181,13 @@ export async function scavenge(client, session, opts = {}) {
     console.error(`[scavenge] ${session.name ?? '?'} elevation filter: ${hostiles.length} hostiles, ${reachable.length} reachable (myHeight=${myHeight})`);
   }
   const sorted = reachable.sort((a, b) => {
+    // Sort by compendium level (weakest first), then distance.
+    // A baby spider (lv25) is always a better target than a giant rat (lv30),
+    // even if the rat is closer. The level filter already removed mobs above
+    // the ceiling, so all remaining mobs are "safe" — but weaker is safer.
+    const lvA = compendiumLevel(roomNum, client?.rsc?.get?.(a.nameRsc) ?? a.name ?? '') ?? 999;
+    const lvB = compendiumLevel(roomNum, client?.rsc?.get?.(b.nameRsc) ?? b.name ?? '') ?? 999;
+    if (lvA !== lvB) return lvA - lvB;
     if (mePos) {
       const da = Math.hypot((a.col ?? 0) - mePos.col, (a.row ?? 0) - mePos.row);
       const db = Math.hypot((b.col ?? 0) - mePos.col, (b.row ?? 0) - mePos.row);
@@ -192,62 +199,267 @@ export async function scavenge(client, session, opts = {}) {
   const { fight: doFight } = await import('../m59-skills.mjs');
 
   // All targets filtered by elevation — the character is on a different
-  // level than every hostile in the room. The GOAP should move the
-  // character to a different position or room.
+  // level than every hostile in the room. Wander to a random point in the
+  // room to find a staircase or connection to the other floor level.
   if (sorted.length === 0 && hostiles.length > 0) {
-    console.error(`[scavenge] ${session.name ?? '?'} all ${hostiles.length} hostiles unreachable by elevation (myHeight=${myHeight})`);
+    console.error(`[scavenge] ${session.name ?? '?'} all ${hostiles.length} hostiles unreachable by elevation (myHeight=${myHeight}), wandering to find a connection`);
+    // Pick a random walkable point in the room and walk there. This is
+    // how the character discovers staircases: by exploring, not by
+    // refusing to move.
+    // CHOOSE FIRST, THEN WALK ONCE. This tried five random points and walked up to 30
+    // steps at EACH of them inside the loop -- one call, up to 150 steps, nothing
+    // sampling health. Picking a square is pure arithmetic and costs nothing, so the
+    // search happens with no await in it and exactly one walk follows.
+    //
+    // `session.need()` is also gone: an atomic is handed a CLIENT and re-deriving it
+    // from the session is how this file came to depend on a Session method the fake
+    // does not have, which crashed the conformance sweep before it could check the
+    // rest of the file.
+    const c = client;
+    const geo = session.world?.geometry;
+    const me = c.self;
+    if (me && geo?.walkable) {
+      const candidates = [];
+      // Pure: no await anywhere in here.
+      for (let attempt = 0; attempt < 12; attempt++) {
+        const tc = me.col + Math.floor(Math.random() * 11) - 5;
+        const tr = me.row + Math.floor(Math.random() * 11) - 5;
+        if (!geo.walkable(tr, tc)) continue;
+        const targetH = geo.floorHeightAtCell?.(tr, tc);
+        const different = targetH != null && myHeight != null && Math.abs(targetH - myHeight) > 384;
+        candidates.push({ tc, tr, targetH, different });
+      }
+      // A DIFFERENT FLOOR HEIGHT IS THE STAIRCASE CLUE, so those sort first; a
+      // same-level square is still worth walking to, because standing still discovers
+      // nothing at all.
+      const pick = candidates.find(x => x.different) ?? candidates[0];
+      if (pick) {
+        console.error(`[scavenge] ${session.name ?? '?'} wandering to (${pick.tc},${pick.tr}) h=${pick.targetH} to find a level change`);
+        const walk = await session.walkTo(pick.tc, pick.tr, { maxSteps: 8 })
+                                  .catch(() => ({ arrived: false }));
+        if (walk.arrived) {
+          const newH = geo.floorHeightAtCell?.(c.self?.row, c.self?.col);
+          if (newH != null && myHeight != null && Math.abs(newH - myHeight) > 384)
+            return { sent: false, killed: false, reason: 'found a different level, re-evaluating targets', acted: true };
+        }
+        return { sent: true, killed: false, reason: 'wandered a step, looking for a way up' };
+      }
+    }
     return { sent: false, killed: false, reason: 'all hostiles on a different elevation' };
   }
 
-  // Try up to 3 nearest hostiles. Stop at the first one we can reach.
+  // SAFE-WALL FIGHT STRATEGY (ported from the legacy keeper's pull()).
+  //
+  // The legacy keeper's flow:
+  //   1. takeSafeSpot() — find and walk to a wall/corner
+  //   2. pull(quarry) — walk OUT to the mob, swing once, walk BACK
+  //   3. Fight from the wall (hold position)
+  //   4. observe() — stand still, verify the spot works (12s quiet = proven)
+  //
+  // The key insight: the safe spot is taken BEFORE engaging the mob.
+  // The pull() method walks out, swings once to engage, and walks back.
+  // The mob follows because it's now hostile. The fight happens at the
+  // wall, not in the open.
+  //
+  // Mobs are NOT hostile until you swing at them. Once you do, they
+  // chase you. The pull pattern exploits this: you choose where the
+  // fight happens, not the mob.
+  const { takeSafeSpot } = await import('./take-safe-spot.mjs');
+
+  // Try up to 3 nearest hostiles. Stop at the first one we can kill.
   let lastResult = null;
-  for (let i = 0; i < Math.min(3, sorted.length); i++) {
+    // ONE TARGET, ONE INTERACTION, AND THE LOOP IS GONE.
+  //
+  // This was `for (let i = 0; i < Math.min(3, sorted.length); i++)` wrapped around the
+  // whole engagement -- approach, take a wall, pull, fight -- so ONE "atomic" call could
+  // walk to three creatures in turn and fight each of them. Measured on this fleet that
+  // is exactly where the long passes come from: worst 138.8s inside a single call, while
+  // the fight path checks health once on entry and never again.
+  //
+  // Trying the next creature is the NEXT PASS's job -- the planner re-plans from the real
+  // room every pass, which is the whole point of planning continuously. A labelled block
+  // rather than a loop: with one candidate `continue` and `break` both mean "stop here",
+  // so the body keeps its own control flow unchanged.
+  ONE_TARGET: {
+    const i = 0;
     const target = sorted[i];
     const targetName = client?.rsc?.get?.(target.nameRsc) ?? target.name ?? 'creature';
     const targetHp = target.max_health ?? target.health ?? '?';
     const targetCol = target.col ?? null;
     const targetRow = target.row ?? null;
+    const foeId = target.id ?? target.obj_id ?? null;
+    const nm = session.name ?? '?';
 
     // PVP GATE
     if (target.is_player === true) {
       const armed = client?.equipment?.()?.equipped?.length > 0;
       const healthy = hpFrac != null && hpFrac >= 0.7;
       const inBand = typeof targetHp === 'number' && targetHp <= myLevel * 1.5;
-      if (!armed || !healthy || !inBand) continue; // skip this player, try next
+      if (!armed || !healthy || !inBand) break ONE_TARGET;
     }
 
-    const distToTarget = (mePos && targetCol != null && targetRow != null)
-      ? Math.abs(mePos.col - targetCol) + Math.abs(mePos.row - targetRow) : 0;
+    const dist = mePos && targetCol != null && targetRow != null
+      ? Math.hypot(targetCol - mePos.col, targetRow - mePos.row) : null;
+    console.error(`[scavenge] ${nm} targeting ${targetName} at (${targetCol},${targetRow}) dist=${dist ? dist.toFixed(1) : '?'}`);
 
-    const sClient = session.need();
-    const foeId = target.id ?? target.obj_id ?? null;
+    // PHASE 0: If the target is far and NOT aggroed, walk toward it
+    // first. A non-aggroed mob won't come to us — we have to go to it.
+    // The safe spot is taken AFTER closing the gap, so the character
+    // ends up at a wall near the target, not a wall across the room.
+    if (dist != null && dist > 8 && targetCol != null && targetRow != null) {
+      const isAggroed0 = !!(target.flags & OF.ENEMY);
+      if (!isAggroed0) {
+        const approach0 = session.world?.approachSquare?.(targetCol, targetRow);
+        if (approach0 && approach0.steps > 0) {
+          console.error(`[scavenge] ${nm} ${targetName} not aggroed, ${dist.toFixed(1)} away — walking to close gap before safe spot (maxSteps=${Math.min(approach0.steps, 8)})`);
+          const walk0 = await session.walkTo(approach0.col, approach0.row, { maxSteps: Math.min(approach0.steps, 8) }).catch(e => ({ arrived: false, reason: e.message }));
+          console.error(`[scavenge] ${nm} walk result: arrived=${walk0?.arrived} reason=${walk0?.reason ?? 'n/a'}`);
+          // Re-check position after the walk
+          const meAfter = client.self;
+          if (meAfter) {
+            const newDist = targetCol != null && targetRow != null
+              ? Math.hypot(targetCol - meAfter.col, targetRow - meAfter.row) : null;
+            console.error(`[scavenge] ${nm} closed gap, now at (${meAfter.col},${meAfter.row}), dist=${newDist ? newDist.toFixed(1) : '?'}`);
+            // Update targetCol/targetRow references for the safe-spot phase
+            // (mePos is const, so we just log the new position)
+          }
+        }
+      }
+    }
 
+    // PHASE 1: Take a safe spot (wall/corner) BEFORE engaging.
+    // The legacy keeper does this first: the safe spot is the anchor,
+    // and the fight happens at the wall, not where the mob spawned.
+    let spotCol = null, spotRow = null;
+    let atWall = false;
+    if (!opts.noSafeSpot) {
+      const spotResult = await takeSafeSpot(client, session, { maxSteps: 8 }).catch(() => null);
+      if (spotResult?.at_wall && spotResult.spot) {
+        spotCol = spotResult.spot.col;
+        spotRow = spotResult.spot.row;
+        atWall = true;
+        console.error(`[scavenge] ${nm} at safe spot (${spotCol},${spotRow}), pulling ${targetName}`);
+      } else if (spotResult?.at_wall) {
+        // Already at a wall but no specific spot coordinates.
+        // Still hold position — the character is at a wall, even if
+        // we don't know which one.
+        atWall = true;
+        console.error(`[scavenge] ${nm} already at a wall, holding position`);
+      } else {
+        console.error(`[scavenge] ${nm} no safe spot found (${spotResult?.reason ?? 'unknown'}), fighting in the open`);
+      }
+    }
+
+    // PHASE 2: If we have a safe spot, PULL the mob to it.
+    // Walk out to the mob, swing once (engages it), walk back.
+    // The mob follows because it's now hostile.
+    //
+    // BUDGET: the pull is only worth it for nearby mobs. Each walkTo step
+    // costs 250ms (coarse) or 1s (fine grid), and the pull is two walks.
+    // For a mob 20 steps away, that's 40+ seconds of walking — which blocks
+    // the broker's event loop for the entire time. The GOAP re-plans every
+    // second, so if the mob is far, we'll try again next pass when it's
+    // closer (or we'll have walked toward it during travel).
+    // Cap: only pull if the mob is within 12 steps.
+    if (spotCol != null && targetCol != null && targetRow != null) {
+      const c = client;
+      const s = session;
+      const approach = s.world?.approachSquare?.(targetCol, targetRow);
+      if (approach && approach.steps > 0 && approach.steps <= 12) {
+        const out = await s.walkTo(approach.col, approach.row, { maxSteps: approach.steps + 4 }).catch(() => ({ arrived: false }));
+        if (out.arrived) {
+          // Swing once to engage the mob
+          const liveFoe = c.room?.objects?.get?.(foeId);
+          if (liveFoe) {
+            const deg = Math.atan2(liveFoe.row - c.self.row, liveFoe.col - c.self.col) * 180 / Math.PI;
+            await s.pacer.submit('move', () => c.face(deg), 200).catch(() => {});
+            await s.pacer.submit('attack', () => c.attack(foeId), 1050).catch(() => {});
+            console.error(`[scavenge] ${nm} swung at ${targetName} to engage`);
+          }
+          // Walk back to the safe spot
+          const back = await s.walkTo(spotCol, spotRow, { maxSteps: approach.steps + 4 }).catch(() => ({ arrived: false }));
+          if (back.arrived) {
+            console.error(`[scavenge] ${nm} back at safe spot (${spotCol},${spotRow}), ${targetName} following`);
+          } else {
+            console.error(`[scavenge] ${nm} could not get back to safe spot: ${back.reason}`);
+          }
+        } else {
+          console.error(`[scavenge] ${nm} could not reach ${targetName} to pull: ${out.reason}`);
+        }
+      } else if (approach && approach.steps > 12) {
+        console.error(`[scavenge] ${nm} mob ${approach.steps} steps away — too far to pull, fighting in place`);
+      }
+    }
+
+    // PHASE 3: Fight from the safe spot (or in the open if no spot).
+    // holdPosition: true when at a safe spot — don't walk away.
+    // If the mob is out of reach, fight() returns out_of_reach
+    // and we wait for the next pass (the mob is still chasing).
     const r = await doFight(session, {
       target: targetName, preferId: foeId,
-      rounds: 30, swingsPerRound: 4, holdPosition: false, reach: 3,
+      rounds: 3, swingsPerRound: 1,
+      holdPosition: atWall, reach: 3,
     });
 
-    if (r?.killed || r?.won || (r?.fought && !r?.reason?.includes('could not get')))
-      return {
-        sent: true,
-        killed: r?.killed ?? r?.won ?? false,
-        reason: r?.killed || r?.won ? null : (r?.reason ?? 'fight did not end in a kill'),
-      };
+    if (r?.killed || r?.won)
+      return { sent: true, killed: true, reason: null };
 
-    // Walk failed or fight didn't start — log and try next target
-    lastResult = r;
-    if (r?.reason?.includes('could not get')) {
-      console.error(`[scavenge] ${session.name ?? '?'} target ${i+1}/${Math.min(3,sorted.length)} ${targetName} at (${targetCol},${targetRow}) unreachable: ${r.reason}`);
-      continue;
+    // out_of_reach: the mob hasn't reached us yet.
+    // If the mob IS aggroed (chasing), wait for it to close.
+    // If the mob is NOT aggroed, it won't come — walk toward it.
+    if (r?.out_of_reach) {
+      // Check if the target is aggroed
+      const liveFoe = client.room?.objects?.get?.(foeId);
+      const isAggroed = !!(liveFoe?.flags & OF.ENEMY);
+      if (!isAggroed && r.nearest?.distance > 5) {
+        // Not aggroed and far away — walk toward it to close the gap.
+        const tgt = client.room?.objects?.get?.(foeId);
+        if (tgt) {
+          const approach = session.world?.approachSquare?.(tgt.col, tgt.row);
+          if (approach && approach.steps > 0) {
+            console.error(`[scavenge] ${nm} ${targetName} not aggroed (${r.nearest.distance?.toFixed(1)} away), walking to close gap`);
+            // Cap the walk to 8 steps per pass. The GOAP re-plans
+            // every second, so the character walks 8 cells closer
+            // per pass and reaches the mob in 3-5 passes.
+            const cappedSteps = Math.min(approach.steps, 8);
+            const walkResult = await session.walkTo(approach.col, approach.row, { maxSteps: cappedSteps }).catch(() => ({ arrived: false, reason: 'walk error' }));
+            if (!walkResult.arrived) {
+              return {
+                sent: true, killed: false,
+                reason: `could not reach ${targetName}: ${walkResult.reason ?? 'walk failed'} (dist=${r.nearest?.distance ?? '?'})`,
+                holding: false,
+              };
+            }
+          }
+        }
+        return {
+          sent: true, killed: false,
+          reason: `closing gap to non-aggroed ${targetName} (dist=${r.nearest?.distance ?? '?'})`,
+          holding: false,
+        };
+      }
+      return {
+        sent: true, killed: false,
+        reason: `holding safe spot, waiting for ${targetName} to close (dist=${r.nearest?.distance ?? '?'})`,
+        holding: true,
+      };
     }
-    // Other failure (disengage, etc.) — don't try next target
-    break;
+
+    const unreachable = /could not get|ran out of steps|blocked|no approach/i.test(r?.reason ?? '');
+    if (unreachable) {
+      lastResult = r;
+      console.error(`[scavenge] ${nm} target ${i + 1} ${targetName} unreachable: ${r.reason}`);
+      break ONE_TARGET;
+    }
+
+    lastResult = r;
+    break ONE_TARGET;
   }
 
   // All targets unreachable or fight failed
   const firstTarget = sorted[0];
   const firstName = client?.rsc?.get?.(firstTarget.nameRsc) ?? firstTarget.name ?? 'creature';
-  if (lastResult?.reason?.includes('could not get')) {
+  if (/could not get|ran out of steps|blocked|no approach/i.test(lastResult?.reason ?? '')) {
     console.error(`[scavenge] ${session.name ?? '?'} all ${Math.min(3,sorted.length)} targets unreachable`);
     return { sent: true, killed: false, reason: `could not reach any of ${Math.min(3,sorted.length)} nearest hostiles (nearest: ${firstName})` };
   }
@@ -266,7 +478,7 @@ scavenge.pre = [];
 
 // Effect: optimistically, the fight produced loot. The next pass
 // re-evaluates has_loot from the actual inventory.
-scavenge.effects = ['has_loot', 'has_money'];  // fighting drops gold AND items
+scavenge.effects = ['_fight', 'has_loot', 'has_money'];  // fighting kills the target, drops gold AND items
 
 scavenge.atomic = 'scavenge';
 scavenge.mutates = true;  // sends combat packets; the room and inventory change

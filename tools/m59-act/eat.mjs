@@ -92,7 +92,7 @@ export async function eat(client, session, { itemId, filling = null, stomach = n
 }
 
 eat.pre     = ['has_food'];
-eat.effects = ['vigor_ok', '!has_food'];
+eat.effects = ['vigor_ok', 'vigor_comfortable', '!has_food'];
 eat.atomic  = 'eat';
 
 // ---------------------------------------------------------------------------

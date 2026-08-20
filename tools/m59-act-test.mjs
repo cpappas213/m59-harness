@@ -91,7 +91,31 @@ for (const file of files) {
        'an atomic takes (client, session) and nothing else');
 
     // 3. bounded — no loop around an await
-    const looping = /\b(while|for)\s*\([^)]*\)\s*\{[^]*?\bawait\b/.test(body);
+    //
+    // MATCHED BY BRACE, NOT BY REGEX. The old test was
+    // /\b(while|for)\s*\([^)]*\)\s*\{[^]*?\bawait\b/, which is any loop followed
+    // ANYWHERE LATER by an await — so a pure geometry scan with a single walk after it
+    // failed, while what the rule is actually about is an await INSIDE the loop body.
+    // A check that cries wolf gets the rule relaxed or the file exempted, and then it
+    // is not there for the real violation; take_safe_spot was the wolf.
+    const loopBodyHasAwait = (src) => {
+      const re = /\b(while|for)\s*\(/g;
+      let m;
+      while ((m = re.exec(src))) {
+        // step over the head to its opening brace, then brace-match the body
+        let i = src.indexOf('{', m.index);
+        if (i < 0) continue;
+        let depth = 0, end = -1;
+        for (let at = i; at < src.length; at++) {
+          if (src[at] === '{') depth++;
+          else if (src[at] === '}') { depth--; if (depth === 0) { end = at; break; } }
+        }
+        if (end < 0) continue;
+        if (/\bawait\b/.test(src.slice(i, end))) return true;
+      }
+      return false;
+    };
+    const looping = loopBodyHasAwait(body);
     ok(`${n}: contains no loop around an await`, !looping,
        'looping is the callers job, so it can be interrupted between iterations');
 
@@ -665,7 +689,10 @@ console.log('\nbuy refuses when there is no buy list');
   const { c, s } = shopper();
   c.buyList = null;
   const r = await buy(c, s, { itemId: 42, waitMs: 1 });
-  ok('refused, and says why', r.sent === false && /no buy list/.test(r.reason));
+  // "No buy list" used to cover two different facts -- nobody to buy from, and a
+  // merchant who offered nothing. They have different fixes, so they are now different
+  // sentences and this pins the first.
+  ok('refused, and says why', r.sent === false && /no merchant in this room/.test(r.reason));
 }
 
 console.log('\nbuy refuses when the purse cannot cover the cost');

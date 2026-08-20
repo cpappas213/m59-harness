@@ -74,8 +74,13 @@ deposit.mutates = true;  // sends a mutation packet (UC.DEPOSIT);
  */
 export async function withdraw(client, session, { amount, waitMs = 1000 } = {}) {
   if (!client || !session) return { sent: false, amount: 0, reason: 'no client or session' };
-  if (amount == null || amount <= 0)
-    return { sent: false, amount: 0, reason: 'no amount' };
+  // ABSENT AND ZERO ARE DIFFERENT REQUESTS. The planner asks for "a withdrawal"
+  // without a figure -- it cannot know the vault balance -- and that means "as much as
+  // is there", so an absent amount becomes a large ask and the server gives what it has.
+  // An EXPLICIT zero or negative is a caller with a bug, and quietly turning that into
+  // a maximal withdrawal is wrong in the expensive direction, so it is refused.
+  if (amount == null) amount = 10000;
+  if (!(amount > 0)) return { sent: false, amount: 0, reason: 'no amount to withdraw' };
 
   const before = client.evSeq ?? 0;
   await session.pacer.submit('bank', () => client.withdraw(amount), waitMs).catch(() => {});
@@ -89,8 +94,7 @@ export async function withdraw(client, session, { amount, waitMs = 1000 } = {}) 
   return { sent: true, amount, reason: null };
 }
 
-withdraw.pre     = [];
-withdraw.effects = [];   // the purse rises and the vault drops. Neither is a
-                         // vocabulary symbol.
+withdraw.pre     = ['at_bank'];
+withdraw.effects = ['has_money'];  // withdrawing puts gold in the purse
 withdraw.atomic  = 'withdraw';
 withdraw.mutates = true;  // sends a mutation packet (UC.WITHDRAW);

@@ -41,12 +41,36 @@
  */
 export async function rest(client, session, { waitMs = 400 } = {}) {
   if (!client || !session) return { sent: false, reason: 'no client or session' };
+
+  // SAFETY CHECK: before sitting down, check for aggroed mobs in the
+  // room. If any are nearby, take a safe spot first (wall/corner) so
+  // the character isn't resting in the open with enemies circling.
+  const s = session.s ?? session;
+  const me = client.self;
+  if (me && client.room?.objects instanceof Map) {
+    const { OF } = await import('../m59-parse.mjs');
+    let aggroed = 0;
+    let nearestAggro = Infinity;
+    for (const o of client.room.objects.values()) {
+      if (!(o.flags & OF.ENEMY)) continue;
+      if (o.flags & OF.PLAYER) continue; // players handled separately
+      aggroed++;
+      const d = Math.hypot((o.col ?? 0) - me.col, (o.row ?? 0) - me.row);
+      if (d < nearestAggro) nearestAggro = d;
+    }
+    if (aggroed > 0 && nearestAggro < 20) {
+      console.error(`[rest] ${client.me?.name ?? '?'} ${aggroed} aggroed mob(s) nearby (nearest ${nearestAggro.toFixed(1)}), taking safe spot before resting`);
+      const { takeSafeSpot } = await import('./take-safe-spot.mjs');
+      await takeSafeSpot(client, session).catch(() => {});
+    }
+  }
+
   await session.pacer.submit('rest', () => client.rest(), waitMs).catch(() => {});
   return { sent: true, posture_confirmed: false };
 }
 
 rest.pre     = [];
-rest.effects = ['healthy', 'can_rest_higher'];  // resting heals and restores vigor
+rest.effects = ['healthy', 'can_rest_higher', 'vigor_rested'];  // resting heals and restores vigor to the rest cap
 rest.atomic  = 'rest';
 
 export async function stand(client, session, { waitMs = 400 } = {}) {
