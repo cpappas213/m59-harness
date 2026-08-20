@@ -31,10 +31,38 @@ Measured across 11,854 GOAP passes on this fleet: median 80ms, p99 16.6s, worst 
 
 ## 1. The facts this rests on — each verified, not assumed
 
-- **The server pushes everything we need.** `BP_MOVE` writes our own position into
-  `room.objects` with `predicted` cleared; `BP_STAT` carries vitals, vigor and ability
-  levels; `BP_USE_LIST`/`BP_USE`/`BP_UNUSE` carry equipment. `client.vitals()` and
-  `client.self` are in-memory reads.
+- **THE SERVER DOES NOT PUSH OUR OWN POSITION. MEASURED 2026-08-20, AND IT BREAKS THE
+  ORIGINAL PREMISE OF THIS DOCUMENT.** An earlier draft said "`BP_MOVE` writes our own
+  position into `room.objects` with `predicted` cleared", on the strength of READING the
+  handler in `m59-client.mjs`. The handler exists. The packet does not arrive.
+
+  Three consecutive raw moves on JayB, each one landing:
+
+  ```
+  before   40,25    sent moveTo    after 1.2s: self 40,25 UNCHANGED, events: []
+  confirmPosition() -> 40,26       the move HAD landed; nothing was pushed
+  ```
+
+  Repeated three times, zero events each time. The client learns its own position only by
+  ASKING. Consequences, all of which invalidate something written above:
+
+  - **`confirmPosition()` is not redundant polling — it is the only way to know where we
+    are.** Its `CONFIRM_DEADLINE_MS` (8s) is the price of a real requirement, not a
+    mistake, and the "stopgap" reverted earlier (waiting for a pushed `moved` event) would
+    have waited for a packet that never comes.
+  - **`Sensor.read()` returns a STALE position** unless something polls. The tick loop as
+    built senses position that can be arbitrarily old.
+  - **The watchdog's position pulse is reading that stale value**, which is why it fired
+    `! NOT MOVING — travelling` during the live tick run on a character that was in fact
+    moving. That alarm was FALSE and the instrument was measuring nothing.
+  - `predicted: true` exists on objects for exactly this reason: the codebase already does
+    dead reckoning, and it has to.
+
+  **What is still true:** health/vitals and equipment are pushed (the watchdog has worked
+  off `client.vitals()` for a long time), and `evaluate()`/`planFor()` remain synchronous.
+  It is POSITION specifically that must be polled or predicted. A test that tried to
+  confirm the vitals half of this was inconclusive — vigor was already at its cap, so
+  there was nothing to push — and is not claimed either way here.
 - **The sense and decide halves were ALREADY synchronous.** `Session.snapshot()`,
   `view()` and `perception()` are not even declared `async`. `evaluate()` and `planFor()`
   are synchronous. Nothing in sense-or-decide ever needed to block.
@@ -56,7 +84,7 @@ Measured across 11,854 GOAP passes on this fleet: median 80ms, p99 16.6s, worst 
 
 ```
 every 100ms, never blocking:
-  frame  = sensor.read()        // free: pushed state only, sends nothing
+  frame  = sensor.read()        // free -- but POSITION IN IT MAY BE STALE, see §1
   intent = decide(frame)        // pure, synchronous, no awaits
   actuate(intent)               // enqueue one command; do not await
 ```
