@@ -319,6 +319,12 @@ const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
 // Two samples, one second apart, per the shape of the question: has it moved since last
 // time, and the time before that. A third would only delay the alert.
 const PULSE_SAMPLES = 3;
+// HOW LONG A STATIONARY, BLEEDING, INERT CHARACTER WAITS FOR ITS DRIVER BEFORE THE KEEPER
+// TAKES IT BACK. See `pulsePosition`'s inert branch and the rescue in `watchdogTick`. Four
+// seconds is four pulses: long enough that a driver pausing to turn or open a door is not
+// treated as an abandonment, short enough that these characters — 20 to 56 max health
+// against four ants at about half a point a second — are still alive at the end of it.
+const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
 
 // RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
 //
@@ -3003,17 +3009,43 @@ export class Autopilot {
   nearestSanctuary({ maxHops = 3 } = {}) {
     const s = this.s;
     const here = s.world?.room?.num;
+
+    // THE CONFINEMENT IS CHECKED HERE TOO, AND THAT IS THE POINT OF CHECKING IT TWICE.
+    //
+    // `retreatToSafety` was patched first and it was not enough: this is a SECOND chooser,
+    // reached by the post-death recovery walk, and on 2026-08-19 it took Camilla out of
+    // Castle Victoria through room 2 and on toward an inn ten legs away — through Ukgoth —
+    // minutes after the first patch went in. A confinement enforced at one of two doors is
+    // not a confinement, and the reason it reads as one is that both doors are survival
+    // code and neither announces itself as travel.
+    //
+    // `allowed` is a predicate rather than a filter on the list, because `preferred` below
+    // is returned before the list is ever built.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    const allowed = confine?.length
+      ? (n) => confine.map(Number).includes(Number(n))
+      : () => true;
+
     // A deliberately named exception before the generic search. Outside Castle
     // Victoria has no spawn-index row at all (because it spawns nothing), so it cannot
     // emerge from `quiet` below. It is the right short retreat from either floor of the
     // castle, but not a true player-safe inn; the returned metadata preserves that fact.
+    //
+    // AND IT IS THE FIRST THING THE CONFINEMENT HAS TO REFUSE: `PREFERRED_QUIET_RETREATS`
+    // maps BOTH 38 and 39 to room 2, so a character confined to the castle would be handed
+    // the one adjacent room a player can kill it in, by the code that exists to save it.
     const preferred = preferredQuietRetreat(s.world, { maxHops });
-    if (preferred) return preferred;
+    if (preferred && allowed(preferred.room)) return preferred;
+    if (preferred)
+      this.note('the preferred quiet retreat is outside the confinement', {
+        room: preferred.room, name: preferred.name, confined_to: confine,
+        why: 'monster-free is not player-safe, and this is the room the operator named' });
     const spawns = loadSpawns(SPAWN_FILE)?.rooms || {};
-    const inns = Object.values(CITY_INNS).map(x => x.inn).filter(n => n !== here);
+    const inns = Object.values(CITY_INNS).map(x => x.inn)
+      .filter(n => n !== here && allowed(n));
     const quiet = Object.keys(spawns)
       .filter(n => !(spawns[n] || []).some(x => x.huntable))
-      .map(Number).filter(n => n !== here && !inns.includes(n));
+      .map(Number).filter(n => n !== here && !inns.includes(n) && allowed(n));
     let best = null;
     for (const room of [...inns, ...quiet]) {
       const r = s.world?.route?.(room);
@@ -4254,6 +4286,41 @@ export class Autopilot {
 
   async travel(room, opts) {
     const { holdBetweenRooms = true, onHop, ...sessionOpts } = opts ?? {};
+    // ONE GATE, BECAUSE THERE IS MORE THAN ONE DOOR AND I KEPT FINDING NEW ONES.
+    //
+    // `confineRooms` was enforced first in `retreatToSafety`, and a character left anyway —
+    // through `nearestSanctuary`, a second chooser reached by the post-death recovery walk.
+    // Gating choosers one at a time is a losing game: each is survival code, none of them
+    // announces itself as travel, and the operator's rule is not about choosers at all. It
+    // is "a bot does not change maps outside the region it was confined to", full stop.
+    //
+    // So it is enforced HERE, at the single call every keeper-initiated journey passes
+    // through, and it is a REFUSAL rather than a re-plan: there is nowhere else to send a
+    // confined character, and the ordinary pass already knows how to hold a wall.
+    //
+    // Measured cost of not having this, prod 2026-08-19: Gonzo walked to room 2 twice and
+    // was killed there; Camilla was walked out of Castle Victoria through room 2 and on
+    // toward an inn TEN legs away, through Ukgoth, minutes after the first gate went in.
+    //
+    // Silence is the old behaviour: with no `confineRooms` this costs one array check.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    if (confine?.length && !confine.map(Number).includes(Number(room))) {
+      this.note('refused to leave the confinement', {
+        wanted: Number(room), confined_to: confine.map(Number),
+        here: this.s.world?.room?.num ?? null, doing: this.doing,
+        why: 'the operator confined this character to these rooms. A journey out of them is ' +
+             'the thing that has been killing it, and no destination is worth the road',
+        note: 'this refuses the JOURNEY, not the reason for it — the pass falls through to ' +
+              'whatever it does when it cannot travel, which is normally to hold a wall',
+      });
+      recordEvent(this.who(), 'confinement_refused_travel', {
+        wanted: Number(room), confined_to: confine.map(Number),
+        room: this.s.world?.room?.num ?? null,
+      });
+      return { arrived: false, refused: true, confined: true,
+               why: `room ${room} is outside the confinement ${confine.join('/')}` };
+    }
+
     // The same primitive crosses a nearby room boundary and undertakes a journey. Those
     // are different activities: upstairs-to-downstairs patrol movement is zoning, while
     // a route with intermediate rooms is travel. Decide from the route before the await
@@ -4744,8 +4811,16 @@ export class Autopilot {
     // reach (`SquaredDistanceTo <= GetAttackRange^2`, a disc of 2-3 squares) and a fact
     // about the game rather than a policy. What changes is how far we will WALK to put
     // ourselves inside it, which is the same distinction `pull` draws for monsters.
+    // AND IT IS A SETTING, BECAUSE TACTICS CHANGE FASTER THAN CODE DOES. `defendChase`
+    // off (the default, and the behaviour before any of this) engages only what has
+    // already closed to melee. On, it searches the room and walks to them. This shipped
+    // hardcoded for one afternoon and that was wrong: the operator reversed the decision
+    // within the hour, and reversing it meant editing this file and restarting a broker
+    // that holds twenty-one irreplaceable sessions.
+    const chase = this.policy.defendChase === true;
     const candidates = [...c.room.objects.values()]
-      .filter(o => o.id !== c.selfId)
+      .filter(o => o.id !== c.selfId &&
+                   (chase || Math.hypot(o.col - me.col, o.row - me.row) <= REACH))
       .map(o => {
         const name = c.rsc.get(o.nameRsc) || null;
         return { o, name, verdict: grudge.mayReturnFire({ name, flags: o.flags },
@@ -6703,6 +6778,50 @@ export class Autopilot {
   // during one of those, twice in a row, is the symptom the pocket trap presents with —
   // and it is the symptom nothing here could state, because every other stall number is
   // about the keeper and the keeper is working hard.
+  /**
+   * HAS THIS BODY GONE ANYWHERE, ASKED OVER THE WHOLE RING RATHER THAN THE LAST TWO SAMPLES.
+   *
+   * `stillHere` compares consecutive pulses on the exact square, which is right for the
+   * ordinary alarm and **blind to the two-square bounce** — and the bounce is the failure
+   * this repository has spent the longest chasing. Cccc died in the Cragged Mountains with
+   * its last three pulses reading 35,33 / 34,33 / 35,33: moving, by that test, between two
+   * squares, for ever, with fifteen things in the room.
+   *
+   * So this asks the question the bounce cannot dodge — every sample in the ring, same
+   * room, all within one square of the newest. A character walking somewhere leaves that
+   * neighbourhood in three seconds; one oscillating never does.
+   *
+   * Used ONLY on the inert branch, which is the branch that acts. The ordinary alarm keeps
+   * the exact-square test, because widening an instrument and widening a handbrake are
+   * different decisions and only one of them has been measured.
+   */
+  pennedIn(w) {
+    const ring = w.pulses;
+    if (ring.length < 3) return false;
+    const last = ring[ring.length - 1];
+    return ring.every(p => p.room === last.room
+      && Math.abs((p.col ?? 0) - (last.col ?? 0)) <= 1
+      && Math.abs((p.row ?? 0) - (last.row ?? 0)) <= 1);
+  }
+
+  /**
+   * IS THIS INERT CHARACTER LOSING HEALTH WHERE IT STANDS.
+   *
+   * `pennedIn` for the place and the two most recent pulses for the health. Pure and free —
+   * the ring is already in memory and `hp` came from the pushed vitals — because this runs
+   * on every keeper in a broker holding twenty-one sessions, twice a second.
+   *
+   * Two samples for the health rather than one, for the same reason `stillHere` uses two: a
+   * single low reading is a hit, and what this has to recognise is a character that is not
+   * going anywhere while they keep landing.
+   */
+  inertBleeding(w, hp) {
+    if (!this.pennedIn(w)) return false;
+    const prev = w.pulses[w.pulses.length - 2];
+    const now = hp?.value, before = prev?.health;
+    return Number.isFinite(now) && Number.isFinite(before) && now < before;
+  }
+
   pulsePosition(now, hp) {
     const w = this.watch, c = this.s?.client, me = c?.self;
     if (!w) return null;
@@ -6716,10 +6835,40 @@ export class Autopilot {
       if (w.pulses.length > PULSE_SAMPLES) w.pulses.shift();
     }
 
-    // Standing still on purpose is not a stall, and each of these is a different reason.
-    // Named rather than folded together, because "why was it not flagged" is a question
-    // somebody will ask of this instrument.
-    const excused = !at ? 'no position'
+    // A DRIVER THAT HAS STOPPED MOVING THE CHARACTER IS NOT DRIVING IT.
+    //
+    // `inert` used to be excused outright, on the argument that this keeper stood down
+    // deliberately and does not get to call the thing it stood down for a stall. That is
+    // right about the INSTRUMENT and wrong about the RESCUE, and the difference cost two
+    // characters in one leg.
+    //
+    // Measured on the arena fleet, 2026-08-20, walking North Barloque to Tos: Bbbb and
+    // Eeee both died in The Flatlands at 28,35 and 29,35, stationary for 268 and 111
+    // seconds, with four ants on them the whole time and health falling about half a point
+    // a second. Both post-mortems say `stood_down_for: "travelling to The Streets of Tos"`
+    // and `wedges: 0` — the position pulse, the one instrument that reads the CHARACTER's
+    // own clock rather than the keeper's, was switched off by exactly the state that was
+    // killing them. The keeper watched every frame of it and had nothing to say.
+    //
+    // So inert excuses standing still, and it does not excuse standing still WHILE LOSING
+    // HEALTH. That combination is not somebody else driving; it is somebody else having
+    // stopped, with the character still in the world. The wedge it opens is marked `inert`
+    // and `watchdogTick` is what acts on it — this function still only ever observes.
+    //
+    // `doing` is deliberately not consulted on this branch: while inert the keeper sets no
+    // `doing` at all, so the GOING test below would excuse it a second time.
+    //
+    // AND AN OPEN INERT WEDGE KEEPS IT OPEN, which is not a detail. Damage lands about once
+    // a second and the pulse also runs about once a second, so half the ticks see no drop —
+    // and the excused branch below CLEARS the wedge. The first version of this reset the
+    // episode on every quiet tick, so it never aged past one pulse and the rescue four
+    // seconds later could never fire: measured live, `wedges` climbed to 8 and `rescues`
+    // stayed at 0 while the character was being eaten. A wedge ends when the body MOVES,
+    // which `stillHere` below decides, and not when a single second happens to be painless.
+    const bleedingWhileInert = at && this.inert
+      && (this.inertBleeding(w, hp) || !!w.wedged?.inert);
+    const excused = bleedingWhileInert ? null
+      : !at ? 'no position'
       : this.inert ? 'inert — something else is driving'
       : this.hold ? 'holding a safe spot, which is standing still on purpose'
       : !GOING.includes(doing) ? `not going anywhere — ${doing ?? 'idle'}`
@@ -6734,8 +6883,13 @@ export class Autopilot {
     // fine coordinate: a character sliding along a wall is moving in fine units and going
     // nowhere, which is precisely the bounce this is here to catch, so a fine comparison
     // would report it as healthy movement.
-    const stillHere = prev && last && prev.room === last.room
-      && prev.col === last.col && prev.row === last.row;
+    // The ordinary test is the exact square. The inert branch has already satisfied itself
+    // with `pennedIn`, which is the wider question and the one the bounce cannot dodge —
+    // see that method. Without this second clause an oscillating character reads as moving
+    // and the rescue below never gets a wedge to act on.
+    const stillHere = (prev && last && prev.room === last.room
+                       && prev.col === last.col && prev.row === last.row)
+                      || (bleedingWhileInert && this.pennedIn(w));
     if (!stillHere) { w.wedged = null; return null; }
 
     // ONE EPISODE, NOT ONE PER TICK. The alert is raised once when it starts and carries
@@ -6750,7 +6904,10 @@ export class Autopilot {
     w.wedges++;
     w.wedged = { since: prev.at, for_ms: now - prev.at, doing,
                  at: { col: last.col, row: last.row, room: last.room },
-                 taking_hits: takingHits };
+                 taking_hits: takingHits,
+                 // Whose stall this is. An inert wedge is the one `watchdogTick` may act
+                 // on by taking the character back; an ordinary one is only ever reported.
+                 ...(this.inert ? { inert: this.inert.why ?? 'inert' } : {}) };
     this.tally.pulse_wedges = (this.tally.pulse_wedges || 0) + 1;
     // A frame, because this is the moment a post-mortem will want and the ring is
     // otherwise written on health changes — and a wedge is quiet until something finds you.
@@ -6800,6 +6957,59 @@ export class Autopilot {
 
     // 1b. THE POSITION PULSE. See PULSE_MS.
     if (now - w.lastPulseAt >= PULSE_MS) { w.lastPulseAt = now; this.pulsePosition(now, hp); }
+
+    // 1c. TAKE THE CHARACTER BACK FROM A DRIVER THAT HAS STOPPED DRIVING IT.
+    //
+    // The handbrake below cannot reach this case and never could: it is armed by the
+    // KEEPER's pass being stuck inside one await, and while something else owns the
+    // character this keeper's passes finish in milliseconds. So the character bleeds out
+    // in a healthy-looking keeper. See the measurement in `pulsePosition`.
+    //
+    // Every clause is load-bearing, and together they say "not moving, being hit, and
+    // already past the line at which this keeper would run away on its own account":
+    //
+    //   * an INERT wedge, which is the pulse's own answer about the body rather than a
+    //     number about the keeper;
+    //   * still open for INERT_RESCUE_MS, so a driver pausing at a door is left alone;
+    //   * `taking_hits`, so a character standing still safely is left alone;
+    //   * below `safety().fleeAt`, the same threshold the keeper uses for itself.
+    //
+    // What it does is the least it can: cancel the movement and stop being inert. It
+    // decides NOTHING — the next ordinary pass runs the survival ladder with real numbers,
+    // exactly as it would have if nothing had ever taken the character. That is the same
+    // contract the handbrake has, and the reason both are safe.
+    //
+    // AND IT IS THE PROTECTED FACULTY DOING IT, not a policy. Survival is refused to a bot
+    // unless the roster consents (PROTECTED_FACULTIES); a keeper that stood down for an
+    // errand and then watched the character die had given it away anyway.
+    const wedge = w.wedged;
+    if (this.inert && wedge?.inert && wedge.taking_hits
+        && (now - wedge.since) >= INERT_RESCUE_MS && w.rescuedPass !== this.passes) {
+      const frac = pct(hp);
+      if (frac !== null && frac < this.safety().fleeAt) {
+        w.rescuedPass = this.passes;
+        w.rescues = (w.rescues ?? 0) + 1;
+        this.tally.inert_rescues = (this.tally.inert_rescues || 0) + 1;
+        const stopped = (() => {
+          try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+        })();
+        const was = this.inert?.why ?? 'inert';
+        this.revive('the character stopped moving and started dying while ' + was);
+        this.note('WATCHDOG — took the character back from a driver that had stopped', {
+          health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
+          flee_at: Math.round(this.safety().fleeAt * 100) + '%',
+          stood_down_for: was, still_ms: now - wedge.since,
+          square: `${wedge.at.col},${wedge.at.row}`, room: wedge.at.room,
+          interrupted: stopped.interrupted ?? null,
+          why: 'not moving, being hit, and below the line this keeper flees at. Whatever ' +
+               'was driving is no longer moving the character, and standing still under ' +
+               'attack is not something to stand down for',
+          note: 'the walk is cancelled and this keeper is no longer inert — the next pass ' +
+                'decides, with real numbers. Nothing is decided here',
+        });
+        w.wedged = null;
+      }
+    }
 
     // 2. THE HANDBRAKE.
     const blockedFor = this.passStartedAt ? now - this.passStartedAt : 0;
@@ -8359,7 +8569,40 @@ export class Autopilot {
     const mustLeaveForHealth = belowRoomRetreatHealth(hp, this.policy.restBelow);
     if (mustLeaveForHealth && combatZone && !sheltered && !testing && !this.hold) {
       this.doing = 'travelling';
-      const ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
+      let ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
+
+      // THE THIRD DOOR, AND THE ONE THAT PROVES A CHOKE POINT HAS TO BE FOUND RATHER THAN
+      // ASSUMED. `confineRooms` was enforced at `retreatToSafety`, then at
+      // `nearestSanctuary`, then at `Autopilot.travel` — which I claimed was the single
+      // call every keeper journey passes through. It is not. This branch takes a room EXIT
+      // directly, so it never calls travel(), never recorded a refusal, and walked Rizzo
+      // out of Castle Victoria into room 2 with the gate showing zero refusals and his
+      // policy still reading confine [38,39].
+      //
+      // The trigger is worth reading before changing it: it fires when health is below the
+      // recovery line AND there is no reachable proven wall. Rizzo's room had TEN monsters
+      // and his safe spot was unreachable, so the honest state is "this room cannot be
+      // rested in" — and the confinement's answer is still no. That is the operator's
+      // instruction and it is not free: it trades a walk-out for a fight in place.
+      const confineOut = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+      if (confineOut?.length) {
+        const allowedOut = confineOut.map(Number);
+        const blocked = ways.filter(e => !allowedOut.includes(Number(e.to)));
+        ways = ways.filter(e => allowedOut.includes(Number(e.to)));
+        if (blocked.length)
+          this.note('exits refused by the confinement', {
+            confined_to: allowedOut, refused: blocked.map(e => ({ to: e.to, name: e.to_name })),
+            still_open: ways.map(e => e.to),
+            why: 'leaving to recover is still leaving. The operator confined this character ' +
+                 'to these rooms, and a walk out of them is what has been getting it killed',
+            cost: ways.length ? 'a permitted exit is still available'
+                              : 'no permitted exit — it stays and recovers where it stands, ' +
+                                'which is the trade the confinement makes' });
+        if (!ways.length) recordEvent(this.who(), 'confinement_refused_travel', {
+          wanted: blocked.map(e => Number(e.to)), confined_to: allowedOut,
+          room: s.world?.room?.num ?? null, via: 'leave-to-recover',
+        });
+      }
       const out = ways.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
       this.note('leaving the room to recover safely', {
         health: hp === null ? null : Math.round(hp * 100) + '%', vigor: vigorNow2,
@@ -8389,8 +8632,39 @@ export class Autopilot {
       //   so we come back with about one of them aware of us instead of twelve. It was
       //   only ever wired to stepping off a safe spot, which is the same problem in a
       //   politer setting.
+      // A CONFINED CHARACTER WITH NO PERMITTED EXIT TAKES A WALL, IT DOES NOT STAND THERE.
+      //
+      // The operator's rule, and it is a better one than "leave the room": a genuine safe
+      // spot cannot be reached by a monster at all, so a single room WITH safe spots and
+      // without players in it is safe — the wall is the answer to being surrounded, and
+      // walking is only the answer when there is no wall to be had. So when the
+      // confinement closes every exit, the fallback is the spot, not the bleeding.
+      //
+      // This is also where my own first patch was wrong and would have leaked: `tryOut`
+      // below falls back to `s.world.exits()` — EVERY exit — whenever `ways` is empty, so
+      // filtering the list down to nothing did not close the door, it opened all of them.
+      // Both the primary list and that fallback have to be filtered, which is why the
+      // confinement is applied inside `tryOut` rather than only to `ways`.
+      if (confineOut?.length && !ways.length) {
+        const took = await this.takeSafeSpot(
+          'confined to this room and hurt — a wall is the way to rest here', null,
+          { source: 'confinement' }).catch(() => null);
+        this.note(took?.took ? 'took a wall instead of leaving' : 'confined, hurt, and no wall yet', {
+          confined_to: confineOut.map(Number), spot: took?.spot ?? null,
+          why_not: took?.took ? undefined : (took?.why ?? 'no reason given'),
+          why: 'a genuine safe spot cannot be reached by a monster, so a room with one is a ' +
+               'place a confined character can recover without taking a door',
+          note: took?.took ? undefined
+            : 'no reachable spot this pass — the ordinary ladder keeps trying rather than ' +
+              'walking out, which is what the confinement is for' });
+        return;
+      }
+
       const tryOut = async () => {
-        const cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
+        let cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
+        // The fallback above is the whole-room exit list, so re-apply the confinement to it.
+        if (confineOut?.length)
+          cands = cands.filter(e => confineOut.map(Number).includes(Number(e.to)));
         if (!cands.length) return { left: false, reason: 'no exit from this room at all' };
         return await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
       };
@@ -13067,10 +13341,42 @@ export class Autopilot {
     // This explicit exception wins over a farther inn. From upstairs the route is
     // 39 -> 38 -> 2; from base Castle Victoria it is the door straight to room 2.
     const quiet = preferredQuietRetreat(s.world, { maxHops: 6 });
-    const ranked = [
+    let ranked = [
       ...(quiet ? [{ city: null, inn: quiet.room, innName: quiet.name, ...quiet }] : []),
       ...rankedInns.filter(i => i.inn !== quiet?.room),
     ];
+
+    // A CONFINEMENT THE REFUGE DOES NOT KNOW ABOUT IS NOT A CONFINEMENT.
+    //
+    // `confineRooms` is the operator saying "these rooms and nowhere else, whatever
+    // happens". Without it this function is the largest hole in any such arrangement,
+    // because it is SURVIVAL code and therefore runs exactly when everything else has
+    // already agreed the character should stay put.
+    //
+    // Measured on prod 2026-08-19, twice in one evening: Gonzo was farming room 39 with a
+    // flagged player in the room, crossed the flee line, and this walked him to room 2 —
+    // `PREFERRED_QUIET_RETREATS` maps BOTH 38 and 39 there. He died in room 2 at 6:57 PM
+    // (`killed_by: null`, no monster broadcast, which is what a player kill looks like from
+    // in here) and was walked to the same room again at 7:34, losing 19 of 26 health on the
+    // way. That table's "safety: no monsters spawn here" is TRUE and is not the same fact
+    // as player-safe, and the difference is the whole of this bug.
+    //
+    // The fallback is deliberately the local wall rather than the nearest permitted refuge:
+    // this function's own argument is that "a wall we can reach beats a refuge we cannot",
+    // and a refuge outside the confinement is one we have been told we cannot take.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    if (confine?.length) {
+      const allowed = new Set(confine.map(Number));
+      const refused = ranked.filter(r => !allowed.has(Number(r.inn)));
+      ranked = ranked.filter(r => allowed.has(Number(r.inn)));
+      if (refused.length)
+        this.note('refuge refused by the confinement', {
+          confined_to: [...allowed], refused: refused.map(r => ({ room: r.inn, name: r.innName })),
+          why: 'the operator confined this character to these rooms; a refuge outside them ' +
+               'is a journey, and the journey is what has been killing it',
+          falling_back_to: ranked.length ? 'a permitted refuge' : 'the local wall' });
+    }
+
     if (!ranked.length) {
       this.note('no refuge is routable from here — falling back to a local wall', why);
       await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});

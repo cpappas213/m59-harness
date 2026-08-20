@@ -28,17 +28,29 @@ const ok = (what, cond, detail) => {
 };
 
 const src = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
-const start = src.indexOf('  pulsePosition(now, hp) {');
-ok('the pulsePosition method was located', start >= 0);
-let depth = 0, end = -1;
-for (let at = src.indexOf(') {', start) + 2; at < src.length; at++) {
-  if (src[at] === '{') depth++;
-  else if (src[at] === '}') { depth--; if (depth === 0) { end = at + 1; break; } }
+const SOURCE = {};
+function lift(signature, name, deps = {}) {
+  const start = src.indexOf('  ' + signature);
+  ok(`the ${name} method was located`, start >= 0);
+  let depth = 0, end = -1;
+  for (let at = src.indexOf(') {', start) + 2; at < src.length; at++) {
+    if (src[at] === '{') depth++;
+    else if (src[at] === '}') { depth--; if (depth === 0) { end = at + 1; break; } }
+  }
+  const method = src.slice(start, end);
+  ok(`and ${name} is a whole method`, method.trim().endsWith('}'));
+  SOURCE[name] = method;
+  return new Function(...Object.keys(deps), `return ({${method}}).${name}`)(...Object.values(deps));
 }
-const method = src.slice(start, end);
-ok('and it is a whole method', method.trim().endsWith('}'));
-const pulsePosition = new Function('PULSE_SAMPLES',
-  `return ({${method}}).pulsePosition`)(3);
+const pulsePosition = lift('pulsePosition(now, hp) {', 'pulsePosition', { PULSE_SAMPLES: 3 });
+// `inertBleeding` is the other half of the inert branch and is lifted rather than stubbed
+// for the usual reason: a hand-written imitation would be testing the imitation, and this
+// one decides whether a character being eaten is visible at all.
+const inertBleeding = lift('inertBleeding(w, hp) {', 'inertBleeding', {});
+// `pennedIn` is what makes the inert branch see the two-square BOUNCE rather than only a
+// character standing perfectly still — the failure that killed Cccc with its last three
+// pulses reading 35,33 / 34,33 / 35,33.
+const pennedIn = lift('pennedIn(w) {', 'pennedIn', {});
 
 // ---------------------------------------------------------------------------
 // The smallest thing that can stand in for a keeper mid-walk.
@@ -48,7 +60,7 @@ function keeper({ doing = 'travelling', inert = null, hold = null,
   const self = { col, row, x: col * 64 + 32, y: row * 64 + 32 };
   const notes = [], frames = [];
   return {
-    doing, inert, hold, tally: {}, pulsePosition,
+    doing, inert, hold, tally: {}, pulsePosition, inertBleeding, pennedIn,
     watch: { pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 },
     s: { client: { self, room: { id: room } } },
     note: (what, detail) => notes.push({ what, detail }),
@@ -154,10 +166,14 @@ console.log('\nit decides nothing, and that is deliberate');
   // The handbrake acts on HEALTH and cancels movement. This is an instrument: the whole
   // point is to make a fault debuggable, and an instrument that also acts is one whose
   // false alarms cost characters rather than log lines.
+  // AND THAT STAYS TRUE NOW THAT AN INERT WEDGE IS ACTED ON. The rescue lives in
+  // `watchdogTick`, which is where the handbrake already is; this function's job is still
+  // only to say what the body is doing. Keeping the two apart is what makes it possible to
+  // test the observation without a session and the action without a fixture.
   ok('nothing in the method cancels movement',
-     !/cancelMovement|cancelledMovement/.test(method));
+     !/cancelMovement|cancelledMovement/.test(SOURCE.pulsePosition));
   ok('nothing in it moves the character',
-     !/walkTo|stepFine|leaveVia|travel\(/.test(method));
+     !/walkTo|stepFine|leaveVia|travel\(/.test(SOURCE.pulsePosition));
   ok('and it never throws on a character whose position is unknown', (() => {
     const k = keeper({ doing: 'travelling' });
     k.s.client.self = null;
@@ -169,6 +185,83 @@ console.log('\nit decides nothing, and that is deliberate');
   zoned.s.client.room.id = 588;
   ok('crossing into another room at the same coordinates is not a stall',
      zoned.tick(2000) === null);
+}
+
+// ---------------------------------------------------------------------------
+console.log('');
+console.log('inert excuses standing still, and not standing still while dying');
+{
+  // THE CASE THIS WAS BLIND TO, and it killed two characters in one leg. `inert` means an
+  // errand or a bot owns the character, and the pulse stood down for it — the instrument
+  // deferring to the driver, which is right until the driver stops driving.
+  //
+  // Measured on the arena fleet, 2026-08-20, North Barloque to Tos: Bbbb and Eeee died in
+  // The Flatlands stationary for 268 and 111 seconds with four ants on them, and both
+  // post-mortems read `stood_down_for: "travelling to The Streets of Tos"` with `wedges: 0`.
+  // The one instrument that reads the character's own clock was switched off by the state
+  // that was killing them.
+  //
+  // THREE SAMPLES, NOT TWO. `pennedIn` asks the whole ring, because the two-square bounce
+  // reads as movement to any test that only compares the last two — Cccc's last three
+  // pulses were 35,33 / 34,33 / 35,33 and it died there.
+  const dying = keeper({ doing: null, inert: { why: 'travelling to The Streets of Tos' } });
+  dying.tick(1000, { health: 20 });
+  dying.tick(2000, { health: 18 });
+  const wedged = dying.tick(3000, { health: 16 });
+  ok('an inert character losing health where it stands IS flagged', !!wedged);
+  ok('and the wedge says who had stood down for whom',
+     wedged?.inert === 'travelling to The Streets of Tos');
+  ok('and that it is taking hits', wedged?.taking_hits === true);
+
+  // AND THE EXCLUSION STILL HOLDS, which is the half that keeps this from becoming a false
+  // alarm generator: an errand walking a character through a quiet room is standing still
+  // for whole seconds at a time and is nobody's emergency.
+  const quiet = keeper({ doing: null, inert: { why: 'walking to the smith' } });
+  for (let t = 1000; t <= 30000; t += 1000) quiet.tick(t, { health: 50 });
+  ok('an inert character at steady health is still never flagged', quiet.watch.wedges === 0);
+
+  // Healing while inert is not dying either — the comparison is directional on purpose.
+  const mending = keeper({ doing: null, inert: { why: 'resting under orders' } });
+  mending.tick(1000, { health: 20 });
+  mending.tick(2000, { health: 24 });
+  ok('an inert character gaining health is not flagged', mending.watch.wedges === 0);
+
+  // Moving while inert and hurt is a driver that is still driving.
+  const walking = keeper({ doing: null, inert: { why: 'errand' } });
+  walking.tick(1000, { health: 20 });
+  ok('an inert character that is still moving is not flagged',
+     walking.tick(2000, { to: { col: 11, row: 10 }, health: 16 }) === null);
+
+  // A WEDGE SURVIVES A PAINLESS SECOND, and this is the assertion that would have caught
+  // the first version being useless. Damage lands about once a second and so does the
+  // pulse, so half the ticks see no drop — and the excused branch CLEARS the wedge. Live,
+  // that read as `wedges: 8, rescues: 0` on a character that then died: the episode never
+  // aged past one pulse, so the rescue four seconds later could never fire.
+  const intermittent = keeper({ doing: null, inert: { why: 'travelling' } });
+  intermittent.tick(1000, { health: 20 });
+  intermittent.tick(2000, { health: 18 });
+  intermittent.tick(3000, { health: 16 });          // hit — opens the wedge
+  intermittent.tick(4000, { health: 16 });          // quiet second
+  intermittent.tick(5000, { health: 16 });          // and another
+  const still = intermittent.tick(6000, { health: 12 });
+  ok('a quiet second does not end the episode', !!still && intermittent.watch.wedges === 1);
+  ok('and its duration keeps climbing across them', (still?.for_ms ?? 0) >= 3000);
+
+  // It ends when the BODY genuinely leaves, which is the only thing that means the driver
+  // is back. Two squares is outside `pennedIn`'s neighbourhood; one is not, which is the
+  // whole point — a body that alternates between two squares has not gone anywhere.
+  ok('and walking out of the neighbourhood ends it',
+     intermittent.tick(7000, { to: { col: 14, row: 14 }, health: 12 }) === null
+     && !intermittent.watch.wedged);
+
+  // THE BOUNCE ITSELF, which is the case the exact-square test cannot see: alternating
+  // between two adjacent squares for ever while something eats you.
+  const bouncing = keeper({ doing: null, inert: { why: 'travelling to Castle Victoria' }, col: 35, row: 33 });
+  bouncing.tick(1000, { health: 30 });
+  bouncing.tick(2000, { to: { col: 34, row: 33 }, health: 26 });
+  const caught = bouncing.tick(3000, { to: { col: 35, row: 33 }, health: 22 });
+  ok('a character oscillating between two squares while inert IS flagged', !!caught);
+  ok('and it is still recognised as taking hits', caught?.taking_hits === true);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
