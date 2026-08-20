@@ -13,6 +13,16 @@
 // apothecary. None of them look like travel. If somebody adds a fourteenth and does not
 // add it here, this suite passes and the fleet leaves town.
 
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+// ISOLATE FROM THE REAL TUNING FILE. `m59-tuning.mjs` layers over the profile, so without
+// this the suite asserts against whatever an operator happens to have set on this machine -
+// and it FAILED that way the moment the first override was written. TUNING_FILE() is lazy,
+// so setting this before any planProfile call is enough even though imports hoist. Same
+// reason m59-loadout-test.mjs sets M59_LOADOUT_DIR.
+process.env.M59_TUNING_FILE = join(tmpdir(), 'm59-profiles-test-no-such-tuning.json');
+
 import { planProfile, allowedRooms, PROFILES, TOWNS, PREY } from './m59-profiles.mjs';
 
 let pass = 0, fail = 0;
@@ -142,7 +152,7 @@ ok('but one in the wilderness is still refused',
    !planProfile({ at: 575, room: 70, maxHealth: 50, area: 'undead' }).ok);
 
 group('the one door out is named rather than assumed shut');
-ok('the leak is reported once, on the plan rather than in every note list', /only way out/.test(fromFamiliars.leak || ''));
+ok('the leak is reported once, on the plan rather than in every note list', /way out|ways out/.test(fromFamiliars.leak || ''));
 ok('and it names the actual exit, 70 -> 50',
    /70 -> 50/.test(fromFamiliars.leak || ''));
 ok('the map agrees the crypt is a dead end - one exit, and it is the graveyard',
@@ -154,6 +164,33 @@ ok('fieldrest - every other strategy carries restInTown:true', pol.strategy === 
 ok('and the assignment is the area room asked for', pol.assigned_room === 70);
 ok('the crypt assignment sticks too',
    planProfile({ at: 70, room: 71, maxHealth: 50, area: 'undead' }).policy.assigned_room === 71);
+
+group('Castle Victoria - a keep, and the room choice inside it is the whole point');
+const cv = { town: 'castle_victoria', area: 'keep' };
+ok('upstairs (39) is accepted', planProfile({ at: 39, room: 39, maxHealth: 41, ...cv }).ok);
+ok('the base (38) is accepted too - both maps are allowed', planProfile({ at: 39, room: 38, maxHealth: 41, ...cv }).ok);
+ok('the Throne Room is NOT', !planProfile({ at: 39, room: 40, maxHealth: 41, ...cv }).ok);
+ok('the Underbasement is NOT', !planProfile({ at: 39, room: 41, maxHealth: 41, ...cv }).ok);
+ok('Outside Castle Victoria is NOT - it leads on to Ukgoth',
+   !planProfile({ at: 39, room: 2, maxHealth: 41, ...cv }).ok);
+ok('all three doors out of the pair are named',
+   (planProfile({ at: 39, room: 39, maxHealth: 41, ...cv }).leak.match(/->/g) || []).length === 3);
+ok('and the wording is plural for three of them',
+   /3 ways out/.test(planProfile({ at: 39, room: 39, maxHealth: 41, ...cv }).leak));
+
+group('the ceiling is what makes 39 the right room and 38 the wrong one');
+ok('upstairs prey is the battered skeleton',
+   planProfile({ at: 39, room: 39, maxHealth: 41, ...cv }).policy.hunt === 'battered skeleton');
+ok('at 41 max health the battered skeleton (60) is inside a 150% ceiling of 61.5, so no note',
+   planProfile({ at: 39, room: 39, maxHealth: 41, ...cv }).notes.filter(n => /ceiling/.test(n)).length === 0);
+ok('and it pays - 60 is strictly above 41',
+   planProfile({ at: 39, room: 39, maxHealth: 41, ...cv }).notes.filter(n => /PAYS NOTHING/.test(n)).length === 0);
+ok('one point lower and the ceiling refuses it - 40 gives 60.0 against level 60... still allowed',
+   planProfile({ at: 39, room: 39, maxHealth: 40, ...cv }).notes.filter(n => /ceiling/.test(n)).length === 0);
+ok('at 39 max health the ceiling is 58.5 and it IS refused',
+   has(planProfile({ at: 39, room: 39, maxHealth: 39, ...cv }).notes, /ceiling refuses/));
+ok('a Tos area is not valid in the keep - areas belong to their place',
+   !planProfile({ at: 39, room: 39, maxHealth: 41, town: 'castle_victoria', area: 'undead' }).ok);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;

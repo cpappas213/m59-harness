@@ -1,4 +1,5 @@
 import { pathToFileURL } from 'node:url';
+import { tuningFor } from './m59-tuning.mjs';
 
 // A PROFILE IS A WHOLE POSTURE, NOT A NUMBER.
 //
@@ -71,14 +72,60 @@ export const TOWNS = {
       },
     },
   },
+
+  // NOT A TOWN - A KEEP. The same structure answers "which rooms are not a failure", and
+  // the reason to farm here is the one thing Tos could not offer on 2026-08-19: it is
+  // reported clear of the players who were killing this fleet for sport. The monsters are
+  // still a real fight and are the whole of the risk.
+  castle_victoria: {
+    name: 'Castle Victoria',
+    hub: 38,
+    rooms: [38, 39],
+    // Room 38 is a HUB, not a dead end: three ways out of the pair, and 2 leads on to
+    // Ukgoth. 39 is the dead end. Naming them is what makes "she must not leave" checkable.
+    boundary: [2, 40, 41],
+    farms: {
+      39: { prey: 'battered skeleton',
+            why: 'Upstairs in Castle Victoria - battered skeleton 60% (level 60), zombie 40% ' +
+                 '(level 55). THE ONE TO FARM: a dead end with one exit, and BOTH its spawns ' +
+                 'sit under a 150% ceiling for a character of 41+ max health, so nothing here ' +
+                 'has to be refused. Hunting the skeleton alone is fine - the zombies become ' +
+                 'cap blockers and capBlockers() clears what it may safely kill' },
+      38: { prey: 'zombie',
+            why: 'Castle Victoria - skeleton 40% at LEVEL 75 and zombie 20%. A worse room for ' +
+                 'a small character than its own upstairs: the 150% ceiling refuses the ' +
+                 'skeletons, so she would stand among things she cannot fight and cannot clear' },
+    },
+    areas: {
+      keep: {
+        name: 'Castle Victoria and Upstairs',
+        rooms: [38, 39],
+        leaks: [
+          // THE ONE THAT HAS ACTUALLY KILLED SOMEBODY. Inside the castle is reported clear
+          // of the players hunting this fleet; the front step is NOT, and Gonzo was murdered
+          // there on 2026-08-19 after drifting out of 38. `retreatToSafety` aims at exactly
+          // this room - PREFERRED_QUIET_RETREATS maps both 38 and 39 to 2 - so the harness's
+          // own survival path leads to the one square that is unsafe from players. It is
+          // monster-free, which is what that table means by safe, and that is not the same
+          // fact. Do not let a confinement here rely on nobody taking this door.
+          { from: 38, to: 2,  kind: 'door',
+            name: 'Outside Castle Victoria - NOT player-safe, and on to Ukgoth' },
+          { from: 38, to: 40, kind: 'door', name: 'The Throne Room of Victoria Castle' },
+          { from: 38, to: 41, kind: 'door', name: 'Underbasement of Victoria' },
+        ],
+        why: '39 is a dead end off 38; every way out of the pair is a door in 38',
+      },
+    },
+  },
 };
 
 // The two things worth knowing about each before sending anybody at them. Levels are from
 // substrate/m59-spawns.json. A kill only pays when the creature's level is STRICTLY above
 // base max health, and max health IS the level here.
 export const PREY = {
-  zombie:   { level: 55, rating: 405 },
-  skeleton: { level: 75, rating: 525 },
+  zombie:             { level: 55, rating: 405 },
+  'battered skeleton': { level: 60, rating: 420 },
+  skeleton:           { level: 75, rating: 525 },
 };
 
 // ---------------------------------------------------------------------------- the profile
@@ -114,6 +161,18 @@ export const PROFILES = {
       travel_hold_vigor: 80,
       // A bare fleet cannot out-trade a murderer, but standing still is not a defence.
       defend_against_players: true,
+      // A PREFERENCE, NOT A FILTER. The default (null) ranks by the character's existing
+      // proficiency, which only ever rewards what it is already best at - so a fleet that
+      // starts with a mace never trains anything else. Naming the hammer trains one skill
+      // across the whole fleet instead of twenty-one divergent ones, and because it is a
+      // preference rather than a filter a character holding nothing else still arms itself.
+      // Note the skill is called "wielding", not "hammer proficiency" - see WEAPON_PROFICIENCY.
+      weapon_priority: ['hammer'],
+      // NO CEILING ON FETCHING. `pull` walks out, hits it once and walks straight back to
+      // the wall, and the walk out happens before the thing has noticed us - so a long pull
+      // is the same danger for longer, not more danger. Refusing it leaves a character
+      // standing at a good wall with nothing to kill.
+      pull_within: 999,
       // --- the departures ---
       buy_food: false,
       buy_weapons: false,
@@ -200,9 +259,11 @@ export function planProfile({ character = null, at = null, room = null, maxHealt
   // property of the AREA and not of the character, so it is returned once rather than
   // pushed onto twenty-one identical note lists.
   const leak = ar?.leaks?.length
-    ? `the only way out of ${ar.name} is ` +
+    ? `the ${ar.leaks.length === 1 ? 'only way' : `${ar.leaks.length} ways`} out of ` +
+      `${ar.name}: ` +
       ar.leaks.map(l => `${l.from} -> ${l.to} (${l.kind}, ${l.name})`).join('; ') +
-      ' - watch that one door to know whether this is holding'
+      ` - watch ${ar.leaks.length === 1 ? 'that door' : 'those doors'} to know whether this ` +
+      'is holding'
     : null;
 
   // Not a refusal: a character that cannot engage the prey is safe, it just earns nothing,
@@ -219,8 +280,22 @@ export function planProfile({ character = null, at = null, room = null, maxHealt
                  `max health ${maxHealth}) - it can fight, but not level`);
   }
 
-  const policy = { ...spec.policy, assigned_room: Number(farm) };
+  // THE TACTICS OVERLAY GOES ON LAST, because a profile is a posture and tactics are the
+  // half somebody changes their mind about. Silence means the profile stands; an unusable
+  // value or an unknown key is REPORTED here rather than applied, so a typo shows up on the
+  // plan instead of quietly running on a live fleet. See m59-tactics.mjs.
+  const tac = tuningFor({ profile, character });
+  const policy = { ...spec.policy, ...tac.overrides, assigned_room: Number(farm) };
   if (preyName) policy.hunt = preyName;
+  // AN AREA IS A CONFINEMENT, SO SAY SO TO THE PART THAT MOVES A CHARACTER ANYWAY.
+  // `assigned_room` is where to farm and the survival refuge does not read it — which is
+  // how Gonzo was walked to room 2 and killed there twice on 2026-08-19 while his
+  // assignment still read 39. `confine_rooms` is the same list the area already holds,
+  // handed to the one code path that would otherwise ignore it.
+  if (ar?.rooms?.length) policy.confine_rooms = ar.rooms.slice();
+  for (const p of tac.problems) notes.push(`tuning ${p.where}: ${p.why}`);
+  const tuned = Object.keys(tac.overrides);
+  if (tuned.length) notes.push(`tuning overlay: ${tuned.map(k => `${k}=${JSON.stringify(tac.overrides[k])}`).join(', ')}`);
   return { ok: refusals.length === 0, character, town: t.name, area: ar?.name ?? null,
            confinedTo: ar?.rooms?.slice() ?? null, leak, profile, room: Number(farm),
            policy, refusals, notes };
@@ -270,6 +345,12 @@ async function main() {
   // of them is twenty characters waiting on one.
   const split = has('split') && area;
   const areaRooms = (TOWNS[town]?.areas?.[area]?.rooms) ?? [room];
+
+  // --agent/--character narrows to one. Micromanaging a single character is a real case:
+  // one may be somewhere safe that the rest of the fleet cannot reach.
+  const only = argOf('agent', null) ?? argOf('character', null);
+  if (only) fleet.fleet = (fleet.fleet || []).filter(
+    r => String(r.agent) === only || String(r.character).toLowerCase() === only.toLowerCase());
 
   const rows = (fleet.fleet || []).map((r, i) => {
     const max = Number(String(r.health ?? '0/0').split('/')[1]) || null;
