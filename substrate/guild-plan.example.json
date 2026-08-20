@@ -1,0 +1,12 @@
+{
+  "_what": "The SHAPE of substrate/guild-plan.json, which is gitignored. A guild WANT is an end state — 'chest 2 should hold 300 mushrooms' — not an errand, which is what makes it safe to hand to a whole fleet: the shortfall shrinks as others contribute, nobody owns it, and a satisfied plan produces no work and no walk. Written by the planner's Guild hall sheet, read by the keeper on every town trip.",
+  "_refusals": "It does nothing at all without a guild AND a hall. An unopened chest is never read as empty. Two chests cannot each be promised the whole stack. A contributor keeps its own loadout floor.",
+  "chests": {
+    "1": {
+      "items": [
+        { "item": "scale armor", "target": 12 },
+        { "item": "chain armor", "target": 12 }
+      ]
+    }
+  }
+}

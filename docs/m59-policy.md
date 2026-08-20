@@ -119,7 +119,10 @@ when it was made**, and two of them were shipped by editing `m59-autopilot.mjs` 
 restarting a broker holding twenty-one irreplaceable sessions. That is the wrong price for a
 decision somebody is entitled to change their mind about, so the tunables moved to
 `substrate/tuning.json`: read live, validated, layered over the profile by
-`planProfile`, no restart.
+`planProfile`, no restart. It is **gitignored** for the same reason
+`substrate/policy.local.json` is — it names characters on one roster and says how to fight
+with them, which is this machine's answer and nobody else's; `substrate/tuning.example.json`
+is the shape.
 
 **Layering is defaults → profile → character**, and the plan reports *which* line won, because
 "why is this character different" is the question an overlay creates. The four properties are

@@ -319,7 +319,10 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). Who buys what, what a loadout is, what
   TWENTY-ONE CHARACTERS.** A loadout says what one character should carry; a guild want says
   what should end up IN THE HALL, and it is answered by whoever walks past with the right
   thing. `substrate/guild-plan.json` holds it — per chest, per item, a target — written by
-  the planner's **Guild hall** sheet and read by the keeper on every town trip.
+  the planner's **Guild hall** sheet and read by the keeper on every town trip. It is
+  **gitignored**, because it is an instruction to a whole fleet about a hall on one server
+  and it withholds goods from vendors until it is satisfied; `substrate/guild-plan.example.json`
+  is the shape.
 
   Stating it as "chest 2 should hold 300 mushrooms" rather than "take 40 mushrooms to chest
   2" is the whole design: the shortfall shrinks as others contribute, nobody owns the
@@ -446,6 +449,14 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). Who buys what, what a loadout is, what
   `node tools/m59-compendium.mjs --open --to /planner/`) and read by the keeper every pass.
   `node tools/m59-loadout.mjs <name> --check` says what a character is short of; the
   `loadout` MCP tool says the same thing to an agent.
+
+  **THE DIRECTORY IS GITIGNORED, and that reverses an earlier decision** — see the argument
+  in `.gitignore`. A loadout is not a description of a character, it is an INSTRUCTION to
+  one, and orders belong to the machine that gives them: committed, every clone's planner
+  edits them back and two rosters hand each other conflicting orders through git, silently,
+  because a loadout that parses is a loadout the keeper obeys. The SHAPE is committed as
+  `substrate/loadouts.example.json`, deliberately outside the directory, because an example
+  inside it would be an extra character to `listLoadouts()`.
 
   **IT IS AN OVERLAY, NOT A REPLACEMENT, and that is the property to preserve.** Silence
   means "carry on as before" — every helper returns `null` for an absent or empty loadout,

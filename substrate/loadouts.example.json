@@ -1,0 +1,41 @@
+{
+  "_what": "The SHAPE of substrate/loadouts/<character>.json, which is gitignored. One file per character, named after the CHARACTER and not the agent handle, written by the compendium planner (P on the fleet terminal) or by hand. Read on every keeper pass, cached on mtime. Copy this to substrate/loadouts/<yourcharacter>.json and edit it.",
+  "_silence": "AN ABSENT OR EMPTY LOADOUT MEANS THE BEHAVIOUR THAT WAS ALREADY THERE, never 'protects nothing' and never 'carry nothing'. Every field below is optional; leave out what you have no opinion about.",
+  "format": "m59-loadout/1",
+  "character": "Example",
+  "agent": "t1",
+  "note": "why this character is set up this way — free text, for the next person",
+  "plan": {
+    "_what": "what to learn next. `schools` is a per-school level target; the queue is worked through in order by m59-outfit.mjs --learn.",
+    "schools": {},
+    "weapon_level": 5,
+    "learning_target": "weaponcraft",
+    "learning_queue": [{ "track": "weaponcraft", "level": 2 }],
+    "abilities": []
+  },
+  "gear": {
+    "_what": "what to fight in. A NAMED WANT IS NOT SATISFIED BY THE FAMILY: 'short sword' means that weapon, and a character holding a mace is still missing it.",
+    "weapon": ["mace", "hammer", "axe"],
+    "slots": {
+      "body": ["leather armor"],
+      "shield": ["small round shield"]
+    },
+    "why": "leave the reasoning here; m59-loadout.mjs prints it back when it explains a decision"
+  },
+  "carry": [
+    {
+      "_what": "min is a FLOOR that protects the stack up to the floor and triggers a supply trip below it; max is a ceiling to sell down to. A ceiling below a floor is a loop, and normalise() raises the ceiling and says so.",
+      "item": "elderberry",
+      "min": 0,
+      "max": 200,
+      "match": "exact",
+      "kind": "reagent",
+      "weight": 3,
+      "why": "create food is 2 elderberry AND 2 herbs, so castings are min(elder, herb)/2"
+    }
+  ],
+  "sell": ["long sword"],
+  "keep": [],
+  "purse": { "float": null, "bank_above": null },
+  "sell_why": "THE SELL LIST BEATS THE NAME GUARD, deliberately — but never what is worn, because plUsing is the server's own list."
+}

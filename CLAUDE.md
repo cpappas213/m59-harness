@@ -440,6 +440,30 @@ stayed out of a schema for a year with every keeper's audit switched off.
 walker tactic fired and whether it worked. This file was once written straight over it,
 which took the broker down.
 
+### AND NEITHER DO ORDERS. THE TOOLS ARE SHARED; THE FLEET IS NOT.
+
+The same argument runs past thresholds. **A loadout, a tuning line, a guild plan and a
+playbook are not descriptions of a character, they are INSTRUCTIONS TO ONE**, and an
+instruction that arrives from somebody else's afternoon is obeyed silently — a file that
+parses is a file the keeper acts on. So everything that tells a character what to do lives
+on the machine that owns the roster, and git carries the SHAPE instead:
+
+| this machine's | the shape, committed |
+|---|---|
+| `substrate/loadouts/<character>.json` | `substrate/loadouts.example.json` |
+| `substrate/tuning.json` | `substrate/tuning.example.json` |
+| `substrate/guild-plan.json` | `substrate/guild-plan.example.json` |
+| `substrate/policy.local.json` | `node tools/m59-localpolicy.mjs --example` |
+| `substrate/playbooks/`, `substrate/goap-goals.json` | `substrate/goap-goals.example.json` |
+| `substrate/fleet-default`, `substrate/gy-cycle.json`, `substrate/overhead-last.json` | — one machine's answer; regenerate or re-anchor |
+
+`.gitignore` carries the argument for each. **An example file goes BESIDE the directory the
+tools enumerate, never inside it** — `listLoadouts()` reads every `.json` in
+`substrate/loadouts/`, so an example in there is an extra character on the board.
+
+A fresh clone therefore gets every tool for running a fleet and no orders for ours, which
+is the only arrangement in which two people can both use this repository.
+
 ## Working in this repository
 
 - **A claim that contradicts what is already written down needs a reproduction before
