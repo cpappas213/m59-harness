@@ -93,11 +93,22 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
     // PHASE 2 -- open the shop. One request, one bounded wait.
     const before = c.evSeq;
     await session.pacer.submit('buy', () => c.buy(seller.id), 1000).catch(() => {});
-    const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 })
+    const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 1500 })
                       .catch(() => ({ events: [] }));
     const shop = ev.events?.find(e => e.kind === 'shop');
     if (!shop?.items?.length)
-      return { sent: true, bought: null, reason: `${sName} offered no list` };
+      // `bought: FALSE`, not null. Null is "not applicable yet" -- what the approach
+      // phase returns while it is genuinely making progress -- and didAct() reads only
+      // an explicit false as a refusal. Returning null here made a merchant with an
+      // empty counter report acted=true on every pass, so the keeper called progress(),
+      // the goal-skip that stops a hopeless goal after five failures NEVER COUNTED ONE,
+      // and JayB stood in front of Marcus in the Raza Inn opening an empty shop for ever.
+      // Watched from the client, which is the only place it looked like anything at all.
+      //
+      // The wait is 1500ms rather than 4000ms for the same episode: the list arrives at
+      // once or not at all, and burning four seconds per pass to learn nothing is four
+      // seconds of not looking at anything else.
+      return { sent: true, bought: false, reason: `${sName} offered no list` };
     buyList = { items: shop.items };
   }
 
@@ -149,7 +160,9 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
   const msgs = (ev.events ?? []).filter(e => e.text).map(e => e.text);
   const success = msgs.some(m => /bought|purchased/i.test(m));
   if (success) return { sent: true, bought: name, reason: null };
-  return { sent: true, bought: null, reason: msgs.join('; ') || 'no reply' };
+  // Same rule as above: a purchase that did not happen is `false`, so the caller can
+  // count it. "No error" has never meant success here.
+  return { sent: true, bought: false, reason: msgs.join('; ') || 'no reply' };
 }
 
 buy.pre     = ['has_money', 'at_shop'];  // the planner only plans a buy when

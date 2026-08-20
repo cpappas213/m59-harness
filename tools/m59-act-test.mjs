@@ -39,6 +39,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { validate, SYMBOL_NAMES, evaluate } from './m59-worldstate.mjs';
 import { fakeClient, fakeSession } from './m59-fake-client.mjs';
+import { didAct } from './m59-plan.mjs';
 
 const evaluateFor = (spec) => evaluate({ client: fakeClient(spec), policy: {} });
 const ACTDIR = join(dirname(fileURLToPath(import.meta.url)), 'm59-act');
@@ -693,6 +694,28 @@ console.log('\nbuy refuses when there is no buy list');
   // merchant who offered nothing. They have different fixes, so they are now different
   // sentences and this pins the first.
   ok('refused, and says why', r.sent === false && /no merchant in this room/.test(r.reason));
+}
+
+console.log('\nA BUY THAT BOUGHT NOTHING IS A REFUSAL, AND THE CALLER MUST BE ABLE TO COUNT IT');
+{
+  // Watched live 2026-08-20: JayB stood in the Raza Inn opening an empty shop on every
+  // pass for ever. The atomic was honest in its `reason` and returned `bought: null`,
+  // and didAct() reads only an explicit `false` as a refusal -- so the keeper scored it
+  // as progress, and the goal-skip that abandons a hopeless goal after five failures
+  // never counted a single one.
+  //
+  // `null` is reserved for "not applicable yet" -- the approach phase, which really is
+  // making progress. A purchase that did not happen is FALSE.
+  const { c, s } = shopper();
+  c.buyList = null;
+  c.room = { objects: new Map([[7, { id: 7, flags: 0, nameRsc: 1, col: 1, row: 1 }]]) };
+  c.self = { col: 1, row: 1 };
+  const r = await buy(c, s, { waitMs: 1 });
+  ok('a merchant with an empty counter is not an accomplishment',
+     r.bought === false || r.sent === false,
+     `got bought=${JSON.stringify(r.bought)} sent=${r.sent}`);
+  ok('and didAct agrees, which is what makes the goal-skip work',
+     didAct(r) === false, 'null would have read as success');
 }
 
 console.log('\nbuy refuses when the purse cannot cover the cost');
