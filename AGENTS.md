@@ -1,8 +1,12 @@
 # m59-harness — instructions for an agent working in this repository
 
 Read this if you are Codex, or any agent that does not read `CLAUDE.md`. The two
-files carry the same instructions; `CLAUDE.md` is the fuller version and
-[`docs/INSTALL.md`](docs/INSTALL.md) is the manual with troubleshooting.
+files carry the same instructions; `CLAUDE.md` is the fuller version, the subject
+files under `docs/` (`m59-routing.md`, `m59-combat.md`, `m59-keeper.md`,
+`m59-economy.md`, `m59-guilds.md`, `m59-protocol-traps.md`, `m59-boards.md`,
+`m59-operations.md`, `m59-policy.md`, `m59-boundary.md`, `m59-tests.md`) are where
+the traps are actually written down, and [`docs/INSTALL.md`](docs/INSTALL.md) is the
+manual with troubleshooting.
 
 This repository lets an agent play Meridian 59 as a real player character.
 
