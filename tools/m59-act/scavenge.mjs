@@ -235,7 +235,10 @@ export async function scavenge(client, session, opts = {}) {
       const pick = candidates.find(x => x.different) ?? candidates[0];
       if (pick) {
         console.error(`[scavenge] ${session.name ?? '?'} wandering to (${pick.tc},${pick.tr}) h=${pick.targetH} to find a level change`);
-        const walk = await session.walkTo(pick.tc, pick.tr, { maxSteps: 8 })
+        // ONE STEP. maxSteps:8 was still eight seconds inside one call with nothing
+        // sampling health -- better than the 150 it replaced, and still a batch. The
+        // wander is re-aimed every pass anyway, so a step is the whole unit.
+        const walk = await session.walkTo(pick.tc, pick.tr, { maxSteps: 1 })
                                   .catch(() => ({ arrived: false }));
         if (walk.arrived) {
           const newH = geo.floorHeightAtCell?.(c.self?.row, c.self?.col);
@@ -395,9 +398,20 @@ export async function scavenge(client, session, opts = {}) {
     // holdPosition: true when at a safe spot — don't walk away.
     // If the mob is out of reach, fight() returns out_of_reach
     // and we wait for the next pass (the mob is still chasing).
+    // ONE SWING PER PASS, NOT THREE ROUNDS.
+    //
+    // rounds:3 is ~4 seconds inside one await, and a fight is the single most dangerous
+    // place to stop looking -- it is where every long pass on this fleet came from, and
+    // the fight path itself checks health once on entry and never again. At one round
+    // the keeper re-reads health, target and threat between every swing, which is what
+    // "re-plan continuously" was supposed to mean.
+    //
+    // The planner loses nothing: `_fight` is re-selected next pass while the target is
+    // still there and still in band, so three swings is three passes rather than one
+    // blind burst -- and any of the three can now be interrupted by a flee.
     const r = await doFight(session, {
       target: targetName, preferId: foeId,
-      rounds: 3, swingsPerRound: 1,
+      rounds: 1, swingsPerRound: 1,
       holdPosition: atWall, reach: 3,
     });
 
@@ -460,8 +474,11 @@ export async function scavenge(client, session, opts = {}) {
   const firstTarget = sorted[0];
   const firstName = client?.rsc?.get?.(firstTarget.nameRsc) ?? firstTarget.name ?? 'creature';
   if (/could not get|ran out of steps|blocked|no approach/i.test(lastResult?.reason ?? '')) {
-    console.error(`[scavenge] ${session.name ?? '?'} all ${Math.min(3,sorted.length)} targets unreachable`);
-    return { sent: true, killed: false, reason: `could not reach any of ${Math.min(3,sorted.length)} nearest hostiles (nearest: ${firstName})` };
+    // The message said "any of 3 nearest hostiles" long after the 3-target loop was
+    // collapsed to one. A reason string that describes behaviour the code no longer has
+    // is how a reader is sent looking for a loop that is not there.
+    console.error(`[scavenge] ${session.name ?? '?'} target ${firstName} unreachable`);
+    return { sent: true, killed: false, reason: `could not reach ${firstName}` };
   }
   return {
     sent: true,

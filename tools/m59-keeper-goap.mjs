@@ -305,13 +305,13 @@ export class GOAPKeeper {
     const c = this.client;
     const hereRaw = c?.room?.num ?? c?.room?.id;
     if (hereRaw == null)
-      return { sent: false, reason: 'unknown room' };
+      return { sent: false, arrived: false, reason: 'unknown room' };
 
     // Convert objId to map num.
     const { objIdToNum } = await import('./m59-hunt-room.mjs');
     const here = objIdToNum(hereRaw) ?? hereRaw;
     if (here === to)
-      return { sent: false, reason: 'already there' };
+      return { sent: false, arrived: false, reason: 'already there' };
 
     // Use the broker's travel() first. The broker handles routing
     // internally (BFS, hazard avoidance, exit walking, etc.).
@@ -323,8 +323,14 @@ export class GOAPKeeper {
       // is how we get past the broker's maxHops limit: we don't ask it to route the whole
       // journey, we ask it for one room at a time.
       travelResult = await this.session.travel(to, { maxHops: 1 });
+      // BOTH NAMES, ON PURPOSE. This returned only `sent`, and the idle-wander caller
+      // tested `r?.arrived` -- which is never present, so a hop that WORKED reported
+      // "no wander" and the keeper scored the pass as nothing happening. JayB stood in
+      // Raza picking an exit and reporting failure every pass. Callers here are split
+      // between the atomic contract (`sent`) and the travel contract (`arrived`), so
+      // this states both rather than making the next caller guess which one it is.
       if (travelResult?.arrived)
-        return { sent: true, reason: null };
+        return { sent: true, arrived: true, reason: null };
     } catch (e) {
       travelResult = { arrived: false, reason: e.message };
     }
@@ -348,9 +354,9 @@ export class GOAPKeeper {
     } catch {}
     const bruteResult = await this._bruteForceExit(nextHop);
     if (bruteResult?.sent)
-      return bruteResult;
+      return { arrived: false, ...bruteResult };
 
-    return { sent: false, reason: travelResult?.reason ?? 'travel refused' };
+    return { sent: false, arrived: false, reason: travelResult?.reason ?? 'travel refused' };
   }
 
   /**
@@ -1090,11 +1096,20 @@ export class GOAPKeeper {
               // the character bouncing back and forth)
               const idx = this._passCount % exits.length;
               const dest = exits[idx].to;
-              console.error(`[goap] ${who} idle→wander: no hunt room, wandering to room ${dest} (exit ${exits[idx].direction})`);
+              console.error(`[goap] ${who} idle→wander: no hunt room, wandering to room ${dest} (exit ${exits[idx].direction ?? exits[idx].kind ?? '?'})`);
+              // WHAT THE POSITION PULSE READS. This branch returns before the plan
+              // step, so without it `doing` stays null and the pulse excuses a wedged
+              // character as "not going anywhere" -- the one case it exists to catch.
+              this.doing = 'travelling';
               const r = await this._travelOneHop(dest);
-              if (r?.arrived) {
-                return { acted: true, action: 'wander', reason: `idle→wander: moved to room ${dest}` };
+              // A hop that was SENT is progress even if the room has not changed yet;
+              // arrival is confirmed on the next pass, from the room itself.
+              if (r?.arrived || r?.sent) {
+                return { acted: true, action: 'wander',
+                         reason: r.arrived ? `idle→wander: moved to room ${dest}`
+                                           : `idle→wander: stepped toward room ${dest}` };
               }
+              console.error(`[goap] ${who} idle→wander: hop to ${dest} refused — ${r?.reason ?? '?'}`);
             }
           }
         } catch (e) {
@@ -1594,9 +1609,21 @@ export class GOAPKeeper {
     }
 
     if (!p.found) {
-      // No plan. This is an answer, not a failure: something the plan needs
-      // is absent. The character idles until the world changes.
-      this.note('goap no plan', { goal: this.goal, reason: p.reason ?? 'goal not reachable', pass: this._passCount });
+      // No plan. That is an ANSWER -- something the plan needs is absent -- but it is
+      // also the clearest possible evidence that THIS GOAL is unreachable right now,
+      // and it was the one outcome that never counted toward the goal-skip. The counter
+      // lives after the execute step, and this path returns before it, so a goal that
+      // could not be planned was re-selected on every pass for ever while every other
+      // kind of failure was counted after five.
+      //
+      // Watched live: JayB, standing in Raza, goal has_food, "exhausted 13 nodes without
+      // finding a plan", every pass, not moving. The keeper was being honest and still
+      // going nowhere.
+      this._goalFailCount = this._goalFailCount ?? {};
+      this._goalFailCount[active.goal] = (this._goalFailCount[active.goal] ?? 0) + 1;
+      if (this._goalFailCount[active.goal] === 5)
+        console.error(`[goap] ${who} goal ${active.goal} has no plan 5 times, skipping for 30 passes`);
+      this.note('goap no plan', { goal: this.goal, reason: p.reason ?? 'goal not reachable', pass: this._passCount, fails: this._goalFailCount[active.goal] });
       console.error(`[goap] ${this.policy.agent ?? this.session?.s?.name ?? '?'} pass ${this._passCount} NO PLAN: ${p.reason ?? 'goal not reachable'}`);
       return { acted: false, action: null, reason: `no plan: ${p.reason ?? 'goal not reachable'}` };
     }
