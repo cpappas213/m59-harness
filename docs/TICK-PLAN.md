@@ -43,8 +43,8 @@ Measured across 11,854 GOAP passes on this fleet: median 80ms, p99 16.6s, worst 
   server had already pushed. Live, one step cost 7.2 seconds that way.
 - **The collision model is baked into `substrate/`.** With `M59_ROOT` explicitly unset:
   `sharedRoomGeometry(map.rooms[1012])` returns geometry with `collisionReady: true` and
-  a step mask attached, and `geo.path(24,42 -> 8,44)` returns a **16-step route** —
-  which is JayB's real route to the Mausoleum staging square, around the fence.
+  a step mask attached, and the FINE planner returns JayB's real route to the Mausoleum
+  staging square — 7 waypoints, 2 after string-pulling, around the fence.
   **Motion planning needs no game install and no server.**
 - **`M59_ROOT` is on this machine** at `/Users/costas/Documents/Projects/Meridian59`
   (265 `.roo`, 1,232 `.kod`). Worth exporting for kod citations and the compendium; it
@@ -110,7 +110,7 @@ decide 4ms**, against the old model's p99 of 16.6s.
 
 ## 4. What is missing, in order
 
-### 4a. MOTION PLANNING — the next piece, and the reason for this document
+### 4a. MOTION PLANNING — ON THE FINE GRID, NOT THE COARSE ONE
 
 **The mover is not proven and must not be built on.** `walkTo`/`stepFine` carry
 `_bruteForceExit`, "TRULY STUCK", and a `confirmPosition` that blocks 8s. Upstream
@@ -121,27 +121,82 @@ moving the character at all.
 `me.col + sign(target.col - me.col)` — a beeline — and walked JayB into a fence, where he
 stood re-sending the same refused step. Watched from the client; invisible in the log.
 
-The fix is to plan on the model the mover enforces, which is present and free:
+**THE SQUARE IS THE WRONG UNIT AND THE COARSE PATH IS THE WRONG PLAN.** `moveToSquare`
+converts to the square's CENTRE, which is precisely the centre-to-centre stepping that
+failed 218 of 311 times. The client collides a CIRCLE OF RADIUS 256 FINE UNITS against
+wall segments (`fineWalkable`), not a point against a grid — so a square whose centre is
+clear can be untraversable, and a square whose centre is blocked can be walked through at
+its edge. Planning on squares asks a question the mover does not answer.
 
-1. **Plan.** `geo.path(fromRow, fromCol, toRow, toCol)` — A* that consults
-   `moverStepLands`, which is an **array index** when a step mask is baked
-   (`attachStepMasks`, 264 rooms). Produces a route that can actually be walked.
-2. **Verify.** `moverStepLands(from → to)` before every send. A step we cannot justify
-   is never sent.
-3. **Learn.** If the pushed position does not change after a step we believed in, record
-   that edge in `blockedEdges` — which `geo.path()` already accepts — and replan. **A
-   fence becomes knowledge instead of a thing we retry for ever.**
+Measured on JayB's real route (Raza, his position to the Mausoleum staging square):
 
-Tested against **synthetic** `RoomGeometry` fixtures (`m59-collision-test.mjs` already
-builds them), so the planner is tested rather than one server's map.
+| | result |
+|---|---|
+| `geo.path` (coarse squares) | **16 steps**, each independently refusable |
+| `geo.finePathProtocol` | **7 waypoints** |
+| after `geo.stringPull` | **2 points, 0 unverified** |
+
+Two verified moves instead of sixteen refusable ones. The fine planner uses
+`traceFineMoveClient` — the mover's own collision trace — for every visibility test, so a
+waypoint it returns is one the mover has already agreed it can reach.
+
+**THE DESIGN**
+
+1. **Plan in PROTOCOL FINE COORDINATES.** `finePathProtocol(fromX, fromY, toX, toY)` →
+   waypoints; `stringPull(waypoints)` → the fewest points the trace will verify.
+   `client.self.x/.y` are already protocol fine coordinates and
+   `client.moveTo(x, y, speed, room)` takes them, so nothing needs converting.
+   **`moveToSquare` is not used by this planner at all.**
+2. **Verify before sending.** `traceFineMoveClient(from → to)` must say `arrived` for the
+   leg we are about to send. A move we cannot justify is never sent.
+3. **Learn.** If the pushed position does not change after a leg the trace approved, the
+   trace was wrong about that leg: record it and replan around it. **An obstacle becomes
+   knowledge instead of a thing we retry for ever.**
+
+**THE COST, AND WHY IT DECIDES THE SHAPE**
+
+`finePathProtocol` is expensive and is NOT tick-safe:
+
+```
+blocked line (around the fence):  1384ms   19,831 nodes expanded
+clear line (direct):                 1ms        0 nodes  (short-circuits)
+the same query again:             1366ms   — there is no memo between calls
+```
+
+1.4 seconds of SYNCHRONOUS CPU. CLAUDE.md records this exact failure mode: collision-aware
+A* switched on fleet-wide "caused a rejoin storm: the trace is synchronous and CPU-bound,
+A* calls it tens of thousands of times, and every session in the broker shares one event
+loop — so a cold 1.2s path stops the loop, keepalives go unanswered, and twelve of
+twenty-one characters were out of the world in five minutes."
+
+**What has changed since then is Phase 3:** keepers are now separate processes, one per
+character, so a 1.4s stall costs ONE character's keepalive rather than the fleet's. That
+makes this affordable where it was fatal — but it is a bound, not a licence.
+
+So:
+
+- **PLANNING IS NOT A TICK OPERATION.** It runs on a route change, its result is cached as
+  waypoints, and the per-tick cost is arithmetic plus one `moveTo`.
+- **ALWAYS TRY THE DIRECT TRACE FIRST.** The short-circuit is 1ms and covers every case
+  where nothing is in the way, which is most legs of most journeys.
+- **BUDGET IT.** `step` and `maxNodes` are tunables (`step: 8`, `maxNodes: 20000` — and
+  19,831 expanded means the fence query nearly exhausted the cap, so some queries are
+  already failing silently at the limit). A path that hits the cap must report that it
+  did, not return "not found".
+- **BAKING IS THE ANSWER IF IT IS STILL TOO SLOW.** `tools/m59-routebake.mjs` already
+  precomputes step masks for 264 rooms offline; exit-to-exit fine waypoints are the same
+  trick applied one level down.
 
 **Two traps to keep:**
 
 - **EXITS ARE NOT 1:1.** Where you arrive is not where the return edge is, so a leg is
   recomputed on every room change and never reversed or remembered.
-- **`exits()` IS EXPENSIVE.** It runs flood fills; its own comment records one call
-  taking tens of seconds. It runs on a room change only, cached as the leg. Per-tick cost
-  must stay arithmetic.
+- **`exits()` IS EXPENSIVE TOO.** It runs flood fills; its own comment records one call
+  taking tens of seconds. Room change only, cached as the leg.
+
+**Tested against synthetic `RoomGeometry` fixtures** (`m59-collision-test.mjs` already
+builds them) so the planner is tested rather than one server's map — including a room
+with an obstacle whose square centres are clear.
 
 ### 4b. THE HUNT GOAL — "why do I have to assign a destination?"
 
