@@ -85,9 +85,25 @@ export async function eat(client, session, { itemId, filling = null, stomach = n
 
   return {
     sent: true,
+    // `changed` IS THE ANSWER THE CALLER ACTS ON, and it was missing. This measured
+    // `moved` for the stomach model and then returned a bare `sent: true`, so didAct()
+    // scored a mouthful that did nothing as a success -- and the goal-skip that
+    // abandons an unreachable goal after five failures never counted one.
+    //
+    // Watched live 2026-08-20: Sasquatch at vigor 80 with `vigor_comfortable` (180) as
+    // its goal, holding three purple mushrooms, planned `eat` 121 times in seven
+    // minutes. The mushroom count never dropped and the vigor never moved. The atomic
+    // knew both facts and reported neither.
+    //
+    // UNKNOWN IS NOT FALSE. If either reading is missing we cannot say the meal failed,
+    // and reporting `changed: false` on an unread bar would abandon eating on a slow
+    // stat packet. Only a bar we READ and saw not move is a refusal.
+    changed: before != null && after != null ? moved : null,
     vigor_before: before,
     vigor_after: after,
     gained: before != null && after != null ? after - before : null,
+    reason: (before != null && after != null && !moved)
+      ? 'ate it and the vigor bar did not move' : null,
   };
 }
 

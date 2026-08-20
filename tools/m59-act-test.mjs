@@ -696,6 +696,41 @@ console.log('\nbuy refuses when there is no buy list');
   ok('refused, and says why', r.sent === false && /no merchant in this room/.test(r.reason));
 }
 
+console.log('\nA MOUTHFUL THAT MOVED NOTHING IS A REFUSAL TOO');
+{
+  // Watched live 2026-08-20: Sasquatch, vigor 80, goal vigor_comfortable (180), three
+  // purple mushrooms in the pack, planned `eat` 121 times in seven minutes. The count
+  // never dropped and the bar never moved. eat() measured `moved` for its stomach model
+  // and then returned a bare `sent: true`, so the caller scored every one as progress.
+  const feed = (gain) => {
+    const st = { v: 80 };
+    return { st,
+      inventory: [{ id: 5, name: 'purple mushroom', amount: 3 }],
+      rsc: { get: () => 'purple mushroom' },
+      vitals: () => ({ vigor: { value: st.v }, health: { value: 20, max: 20 } }),
+      evSeq: 0, selfId: 1, apply() { st.v += gain; },
+      waitFor: async () => ({ events: [] }) };
+  };
+  const sess = { pacer: { submit: async (_k, f) => { await f(); } } };
+
+  const nothing = await eat(feed(0), sess, { itemId: 5, waitMs: 1 });
+  ok('a bar that did not move is reported as unchanged', nothing.changed === false);
+  ok('and didAct counts it, so the goal-skip can give up', didAct(nothing) === false);
+  ok('and it says so in words', /did not move/.test(nothing.reason ?? ''));
+
+  const fed = await eat(feed(40), sess, { itemId: 5, waitMs: 1 });
+  ok('a real meal still reads as acted', fed.changed === true && didAct(fed) === true);
+  ok('and reports what it gained', fed.gained === 40);
+
+  // UNKNOWN IS NOT FALSE. A missing vigor reading must not read as a failed meal, or a
+  // slow stat packet would stop a character eating at all.
+  const blind = { inventory: [{ id: 5, name: 'bread', amount: 1 }], rsc: { get: () => 'bread' },
+                  vitals: () => ({ health: { value: 20, max: 20 } }), evSeq: 0, selfId: 1,
+                  apply() {}, waitFor: async () => ({ events: [] }) };
+  const r = await eat(blind, sess, { itemId: 5, waitMs: 1 });
+  ok('an unreadable bar is null, never false', r.changed === null);
+}
+
 console.log('\nA BUY THAT BOUGHT NOTHING IS A REFUSAL, AND THE CALLER MUST BE ABLE TO COUNT IT');
 {
   // Watched live 2026-08-20: JayB stood in the Raza Inn opening an empty shop on every
