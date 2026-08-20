@@ -21,6 +21,7 @@
 //     find itself somewhere else can find out why.
 
 import * as skills from './m59-skills.mjs';
+import * as watchdog from './m59-watchdog.mjs';
 import { OF, affordances, dropSpec as dropSpecFor,
          playerClassName, flaggedAggressor } from './m59-parse.mjs';
 import * as grudge from './m59-grudge.mjs';
@@ -283,17 +284,14 @@ const HOLD_WHILE_HURT_MAX_MS = 3 * 60_000;
 // The tick is fast because it is free: it reads `client.vitals()`, which the server
 // pushes, and writes nothing to the wire. 500ms is well inside the ~1s pace at which
 // damage can arrive, so nothing lands between two ticks unseen.
-const WATCHDOG_MS = Number(process.env.M59_WATCHDOG_MS || 500);
 // How long a pass may be inside one await before the watchdog will interrupt it. Three
 // seconds is three normal passes — long enough that an ordinary slow call is not treated
 // as a stall, short enough that a character bleeding out is not left to it.
-const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000);
 // The longest the record may go without a frame while nothing is changing. Matches the
 // keeper's own resync interval, which is the same number the deaths page uses to decide
 // whether a keeper counts as having been watching (`WATCH_MS` in m59-postmortems.mjs).
 // Deliberately the same: the thing that reports blindness and the thing that prevents it
 // should not disagree about what it is.
-const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 
 // THE POSITION PULSE — "IS THE CHARACTER MOVING", ASKED OF THE CHARACTER.
 //
@@ -315,10 +313,8 @@ const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 // status, writes one frame, and counts. The debugging this exists for — "the board said
 // travelling and nobody moved" — needs a record, not another actor. The handbrake below
 // is the thing that acts, and it acts on health, which is a different question.
-const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
 // Two samples, one second apart, per the shape of the question: has it moved since last
 // time, and the time before that. A third would only delay the alert.
-const PULSE_SAMPLES = 3;
 
 // RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
 //
@@ -1822,25 +1818,9 @@ export class Autopilot {
     return false;
   }
 
-  safety() {
-    const v = this.s.client?.vitals?.();
-    const max = v?.health?.max ?? 0;
-    if (!max) return { fleeAt: this.policy.fleeBelow, engageAt: 0.85, maxHit: null };
-    const maxHit = Math.min(30, Math.floor((max + 2) / 3));
-    // Two hits of margin, not three. (base+2)/3 is the CAP on a single blow rather
-    // than what a giant rat typically lands, so budgeting three of them leaves so
-    // little of the bar to fight in that the character spends its life healing.
-    // Two is the number that survives the realistic bad case — one hit landing as
-    // the withdraw begins, and one more before it is out of reach — while still
-    // leaving a usable window to actually fight in.
-    const fleeAt = Math.max(this.policy.fleeBelow, Math.min(0.7, (2 * maxHit) / max));
-    return {
-      maxHit, fleeAt,
-      // Do not start a fight that cannot be finished. Below this, heal or rest
-      // first — going in at half health is how a survivable creature kills you.
-      engageAt: max < 30 ? 0.9 : 0.75,
-    };
-  }
+  // The arithmetic moved to skills.safetyFor(client, policy) so the GOAP keeper's
+  // watchdog reads the same withdraw line this one does. A move, not a fix.
+  safety() { return skills.safetyFor(this.s.client, this.policy); }
 
   // ------------------------------------------------------------- safe spots
   //
@@ -4972,6 +4952,28 @@ export class Autopilot {
       const stamp = new Date(record.at).toISOString().replace(/[:.]/g, '-');
       const file = `${POSTMORTEM_DIR}/${who}-${stamp}.json`;
       writeFileSync(file, JSON.stringify(record, null, 2));
+      // Also append a one-line summary to a single death log for easy grepping.
+      try {
+        const logLine = {
+          character: record.character ?? record.agent ?? 'unknown',
+          agent: record.agent ?? null,
+          at: new Date(record.at).toISOString(),
+          reason: record.reason ?? 'died',
+          room: record.where?.room ?? null,
+          room_num: record.where?.num ?? null,
+          col: record.where?.col ?? null,
+          row: record.where?.row ?? null,
+          level: record.vitals?.level ?? null,
+          last_health: record.vitals?.last_health ?? null,
+          was_doing: record.was?.doing ?? null,
+          hunting: record.was?.hunting ?? null,
+          in_safe_spot: record.was?.in_safe_spot ?? false,
+          nearby_threats: record.threats?.present_at_the_end ?? [],
+          players_present: record.threats?.players_present ?? [],
+        };
+        const { appendFileSync } = require('node:fs');
+        appendFileSync(POSTMORTEM_DIR + '/../deaths.jsonl', JSON.stringify(logLine) + '\n');
+      } catch { /* non-fatal */ }
       return file;
     } catch (e) {
       // A failed write must not take the keeper down on the one pass where it is
@@ -6592,178 +6594,17 @@ export class Autopilot {
   // ordinary pass — which already knows how to flee, rest and find a wall — does the rest.
   // A second decision-maker running concurrently with the first is how you get two
   // keepers arguing over one body.
-  startWatchdog() {
-    if (this.watchTimer) return;
-    this.watch = { ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
-                   lastHealth: null, blockedSince: null, interruptedPass: null,
-                   // The position pulse — see PULSE_MS. `pulses` is the ring, `wedged` is
-                   // the open episode (null when moving), `wedges` counts episodes rather
-                   // than ticks so a long one is one event and not six hundred.
-                   pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 };
-    this.watchTimer = setInterval(() => {
-      try { this.watchdogTick(); } catch (e) { this.watch.lastError = e.message; }
-    }, WATCHDOG_MS);
-    this.watchTimer.unref?.();
-  }
-
-  // ONE SAMPLE OF WHERE THE BODY IS, AND THE ONE QUESTION THAT NEEDS ASKING OF IT.
-  //
-  // Called from the watchdog tick, at most once per PULSE_MS. Everything here is memory:
-  // `client.self` is maintained from pushed packets and from our own dead reckoning, so
-  // this sends nothing and blocks on nothing, which is what makes it safe to run on every
-  // keeper in a broker holding twenty-one sessions.
-  //
-  // WHAT COUNTS AS STANDING STILL ON PURPOSE, because if this cannot tell those apart it
-  // is a false-alarm generator and will be turned off, which is how instruments die:
-  //
-  //   * resting and recovering — sitting down IS the behaviour; `restUntil` polls its own
-  //     vitals and aborts on damage, and it is supposed to take a while.
-  //   * holding a safe spot — the entire point is to stand exactly still on one square.
-  //     A wall that works looks identical to a wedge from the outside and is the opposite.
-  //   * inert — an errand or a bot owns the character. This keeper stood down deliberately
-  //     and does not get to call the thing it stood down for a stall.
-  //   * fighting, trading, waiting — none of them are going anywhere.
-  //
-  // What is left is `travelling`, `pulling`, `converging` and `zoning`: the states whose
-  // whole content is "the character should be getting closer to somewhere". Not moving
-  // during one of those, twice in a row, is the symptom the pocket trap presents with —
-  // and it is the symptom nothing here could state, because every other stall number is
-  // about the keeper and the keeper is working hard.
-  pulsePosition(now, hp) {
-    const w = this.watch, c = this.s?.client, me = c?.self;
-    if (!w) return null;
-    const doing = this.doing ?? null;
-    const GOING = ['travelling', 'pulling', 'converging', 'zoning'];
-    const at = me ? { at: now, room: c.room?.id ?? null, col: me.col ?? null,
-                      row: me.row ?? null, x: me.x ?? null, y: me.y ?? null,
-                      health: hp?.value ?? null, doing } : null;
-    if (at) {
-      w.pulses.push(at);
-      if (w.pulses.length > PULSE_SAMPLES) w.pulses.shift();
-    }
-
-    // Standing still on purpose is not a stall, and each of these is a different reason.
-    // Named rather than folded together, because "why was it not flagged" is a question
-    // somebody will ask of this instrument.
-    const excused = !at ? 'no position'
-      : this.inert ? 'inert — something else is driving'
-      : this.hold ? 'holding a safe spot, which is standing still on purpose'
-      : !GOING.includes(doing) ? `not going anywhere — ${doing ?? 'idle'}`
-      : null;
-    if (excused) {
-      if (w.wedged) { w.wedged = null; }
-      return null;
-    }
-
-    const [prev, last] = [w.pulses[w.pulses.length - 2], w.pulses[w.pulses.length - 1]];
-    // TWO SAMPLES, A SECOND APART, AT THE SAME SQUARE. Compared on the SQUARE and not the
-    // fine coordinate: a character sliding along a wall is moving in fine units and going
-    // nowhere, which is precisely the bounce this is here to catch, so a fine comparison
-    // would report it as healthy movement.
-    const stillHere = prev && last && prev.room === last.room
-      && prev.col === last.col && prev.row === last.row;
-    if (!stillHere) { w.wedged = null; return null; }
-
-    // ONE EPISODE, NOT ONE PER TICK. The alert is raised once when it starts and carries
-    // its own duration afterwards, so a five-minute wedge is one thing that happened for
-    // five minutes rather than three hundred identical notes.
-    const takingHits = prev.health != null && last.health != null && last.health < prev.health;
-    if (w.wedged) {
-      w.wedged.for_ms = now - w.wedged.since;
-      if (takingHits) w.wedged.taking_hits = true;
-      return w.wedged;
-    }
-    w.wedges++;
-    w.wedged = { since: prev.at, for_ms: now - prev.at, doing,
-                 at: { col: last.col, row: last.row, room: last.room },
-                 taking_hits: takingHits };
-    this.tally.pulse_wedges = (this.tally.pulse_wedges || 0) + 1;
-    // A frame, because this is the moment a post-mortem will want and the ring is
-    // otherwise written on health changes — and a wedge is quiet until something finds you.
-    this.recordFrame('! not moving while ' + doing);
-    this.note('! NOT MOVING — ' + doing + ', same square two pulses apart', {
-      square: `${last.col},${last.row}`, room: last.room,
-      taking_hits: takingHits,
-      health: hp ? `${hp.value}/${hp.max}` : null,
-      why: 'the position pulse reads the CHARACTER on its own clock, not the keeper. Every ' +
-           'other stall number here measures when the keeper last moved somebody, which ' +
-           'climbs while an errand walks the character perfectly well and stays quiet ' +
-           'while a wedged character is replanning into the same wall forever',
-      note: 'not resting, not holding a wall, not inert — so this is standing still with ' +
-            'somewhere to be. Flagged for debugging; nothing was cancelled',
-    });
-    return w.wedged;
-  }
-
-  stopWatchdog() {
-    if (!this.watchTimer) return;
-    clearInterval(this.watchTimer);
-    this.watchTimer = null;
-  }
-
-  watchdogTick() {
-    const s = this.s, c = s?.client;
-    if (!c || s.live !== true || c.state !== 'game') return;
-    const w = this.watch;
-    w.ticks++;
-    const now = Date.now();
-    const v = c.vitals?.();
-    const hp = v?.health;
-
-    // 1. A FRAME WHEN SOMETHING MOVED, OR WHEN NOTHING HAS FOR A WHILE.
-    //
-    // Gated on change rather than written every tick, because the frame ring is small and
-    // a three-minute quiet travel would otherwise evict the entire run-up to the death it
-    // is there to explain. A quiet walk produces one frame every WATCHDOG_FRAME_MS; a
-    // character being chewed on produces one per hit, which is exactly the resolution the
-    // record wants and the case the ring should be spent on.
-    const changed = hp?.value != null && hp.value !== w.lastHealth;
-    if (changed || now - (this.lastFrameAt ?? 0) >= WATCHDOG_FRAME_MS) {
-      this.recordFrame(changed ? 'watchdog: health moved' : 'watchdog');
-      w.frames++;
-    }
-    w.lastHealth = hp?.value ?? null;
-
-    // 1b. THE POSITION PULSE. See PULSE_MS.
-    if (now - w.lastPulseAt >= PULSE_MS) { w.lastPulseAt = now; this.pulsePosition(now, hp); }
-
-    // 2. THE HANDBRAKE.
-    const blockedFor = this.passStartedAt ? now - this.passStartedAt : 0;
-    if (blockedFor > w.longest_block_ms) w.longest_block_ms = blockedFor;
-    if (blockedFor < WATCHDOG_BLOCKED_MS) return;
-    w.blockedSince ??= this.passStartedAt;
-
-    // Not while something else is driving. An errand or a supply exchange owns the
-    // character deliberately, and cancelling its movement from underneath it would be
-    // this keeper fighting the thing it stood down for.
-    if (this.inert) return;
-    // Once per blocked pass. Cancelling twice does nothing useful and the note would
-    // repeat every tick.
-    if (w.interruptedPass === this.passes) return;
-
-    const frac = pct(hp);
-    if (frac === null) return;
-    const fleeAt = this.safety().fleeAt;
-    if (frac >= fleeAt) return;
-
-    w.interruptedPass = this.passes;
-    w.interrupts++;
-    this.tally.watchdog_interrupts = (this.tally.watchdog_interrupts || 0) + 1;
-    const stopped = (() => {
-      try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
-    })();
-    this.note('WATCHDOG — pulled the character out of a blind walk', {
-      health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
-      flee_at: Math.round(fleeAt * 100) + '%',
-      pass_blocked_for_s: Math.round(blockedFor / 1000),
-      interrupted: stopped.interrupted ?? null,
-      why: 'the pass has been inside one await long enough to have stopped looking, and ' +
-           'health crossed the withdraw threshold while it was not. The walk is cancelled ' +
-           'so the next pass can decide with real numbers — this keeper does not decide ' +
-           'anything itself',
-    });
-    this.progress('watchdog interrupted a blind walk');
-  }
+  // ── THE WATCHDOG ────────────────────────────────────────────────────────
+  // The guard itself now lives in m59-watchdog.mjs, over a HOST rather than a keeper,
+  // so the GOAP keeper can run the same one instead of going without. These four are
+  // thin delegations on purpose: `this` already satisfies the host interface (s, watch,
+  // inert, hold, doing, passes, passStartedAt, lastFrameAt, tally, safety, recordFrame,
+  // note, progress), and keeping the method NAMES here means every existing caller and
+  // m59-combat-test's direct ticks carry on untouched.
+  startWatchdog()          { return watchdog.start(this); }
+  stopWatchdog()           { return watchdog.stop(this); }
+  watchdogTick()           { return watchdog.tick(this); }
+  pulsePosition(now, hp)   { return watchdog.pulse(this, now, hp); }
 
   async loop() {
     // The outer loop is the other half of start()'s cancellation. Between leaving the
@@ -6909,7 +6750,7 @@ export class Autopilot {
         s.ap = this;
         r = await this._goapKeeper.pass(wsOverride);
       } catch (e) {
-        console.error(`[goap-debug] ${this.name ?? '?'} GOAP pass threw: ${e?.message ?? e}`);
+        console.error(`[goap-debug] ${this.name ?? '?'} GOAP pass threw: ${e?.message ?? e}\n${e?.stack?.split('\n').slice(0, 5).join('\n')}`);
         return;
       }
       if (r.acted) { this.progress('goap: ' + r.action); return; }

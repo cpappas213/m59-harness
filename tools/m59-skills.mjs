@@ -1740,8 +1740,8 @@ export async function fight(s, {
   // back to whatever is nearest throws away the work AND leaves a half-dead monster
   // to heal. Prefer the one we were already fighting, whenever it is still here.
   preferId = null,
-  rounds = 12,
-  swingsPerRound = 4,
+  rounds = 3,
+  swingsPerRound = 1,
   disengageAt = DEFAULT_DISENGAGE_AT,
   loot = true,
   equip = true,
@@ -1765,8 +1765,15 @@ export async function fight(s, {
   const say = (stage, detail) => { log.push({ stage, ...detail }); return detail; };
 
   // Refresh before choosing: an id from a stale look may be a corpse by now.
-  await s.pacer.submit('read', () => c.roomContents());
-  await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+  // SKIP THE REFRESH when holding position OR when the target is far away:
+  // the refresh costs 2.5s of paced I/O, and for a distance check or an
+  // out_of_reach return it is wasted. The room state is kept current by
+  // the server's push packets (BP_ROOM_CONTENTS arrives automatically).
+  const needRefresh = !holdPosition;
+  if (needRefresh) {
+    await s.pacer.submit('read', () => c.roomContents());
+    await c.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 });
+  }
 
   let candidates = findCreature(s, target, { includePlayers });
   if (exactTargetId != null) candidates = candidates.filter(object => object.id === Number(exactTargetId));
@@ -1785,7 +1792,17 @@ export async function fight(s, {
   // worse, `preferId` would keep re-selecting the same unreachable creature forever.
   const me0 = c.self;
   const within = o => !me0 || Math.hypot(o.col - me0.col, o.row - me0.row) <= reach;
-  const inReach = holdPosition ? candidates.filter(within) : candidates;
+  // Sort candidates by distance so we always pick the NEAREST match,
+  // not the first one in the room-contents list. Without this, a
+  // character standing on top of a spider might be sent to walk to
+  // a different spider 30 cells away.
+  const sorted = [...candidates].sort((a, b) => {
+    if (!me0) return 0;
+    const da = Math.hypot((a.col ?? 0) - me0.col, (a.row ?? 0) - me0.row);
+    const db = Math.hypot((b.col ?? 0) - me0.col, (b.row ?? 0) - me0.row);
+    return da - db;
+  });
+  const inReach = holdPosition ? sorted.filter(within) : sorted;
   if (holdPosition && !inReach.length) {
     const nearest = candidates[0];
     return {
@@ -1825,17 +1842,95 @@ export async function fight(s, {
   // Close and face. approachSquare routes to a square BESIDE it — you cannot stand
   // where a monster stands — and faceToward matters because an attack on something
   // behind you is refused with a message about view, not range.
-  const spot = holdPosition ? null : s.world?.approachSquare?.(foe.col, foe.row);
+  //
+  // NEARBY TARGET: if the foe is within 2 cells, skip the walk entirely.
+  // The coarse grid often can't find a path to a square that's 1-2 cells
+  // away (elevation step, diagonal wall, door), but the attack range is
+  // fine-grid and the target is close enough to hit. Just face and swing.
+  const meBefore = c.self;
+  const foeNearby = meBefore && foe.col != null && foe.row != null
+    ? Math.hypot((foe.col ?? 0) - meBefore.col, (foe.row ?? 0) - meBefore.row) <= 2
+    : false;
+
+  const spot = (holdPosition || foeNearby) ? null : s.world?.approachSquare?.(foe.col, foe.row);
   if (spot && spot.steps > 0) {
-    const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(60, spot.steps * 4), arriveWithin: 200 });
+    // CAP THE APPROACH: walking more than 8 grid steps (or 12 raw cells)
+    // to close on a mob blocks the broker for 2-40s (coarse vs fine grid).
+    // The GOAP re-plans every second; a long approach is better done across
+    // multiple passes. Check both grid steps and raw distance because the
+    // grid uses diagonal movement and can report fewer steps than the
+    // actual distance.
+    const rawDist = meBefore && foe.col != null ? Math.hypot(foe.col - meBefore.col, foe.row - meBefore.row) : spot.steps;
+    if (spot.steps > 6 || rawDist > 8) {
+      return { fought: false, out_of_reach: true, target: foeName,
+               foe_id: foe.id, reason: `target ${rawDist.toFixed(0)} cells away — too far to approach this pass`,
+               nearest: { distance: +rawDist.toFixed(1) }, log, note: 'the GOAP will travel closer on the next pass' };
+    }
+    let walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.min(10, Math.max(6, spot.steps * 2)), arriveWithin: 512 });
     say('approached', { arrived: walk.arrived, steps: walk.steps, reason: walk.reason });
-    if (!walk.arrived)
-      return { fought: false, reason: walk.reason || 'could not get to it', log,
-               note: 'the geometry may not connect, or something is in the way' };
+    if (!walk.arrived) {
+      // COARSE GRID FAILED — TRY FINE
+      const KOD_FINENESS = 512;
+      const half = KOD_FINENESS >> 1;
+      const fx = spot.col * KOD_FINENESS + half;
+      const fy = spot.row * KOD_FINENESS + half;
+      // Scale maxSteps with distance: a winding forest path can be
+      // 3-4x the straight-line distance. At stride 48, each step
+      // covers 48 fine units. Cap at 40 steps (40s) — the GOAP
+      // re-plans every second, so a longer walk is better done
+      // across multiple passes.
+      const distCells = spot.steps || 10;
+      const fineMaxSteps = Math.min(10, Math.max(8, Math.ceil(distCells * 512 / 48)));
+      say('fine_fallback', { to: [fx, fy], reason: walk.reason, maxSteps: fineMaxSteps });
+      walk = await s.walkFine(fx, fy, { maxSteps: fineMaxSteps, stride: 48, arriveWithin: 512 })
+                     .catch(e => ({ arrived: false, reason: e.message }));
+      say('fine_result', { arrived: walk.arrived, steps: walk.steps, reason: walk.reason });
+    }
+    if (!walk.arrived) {
+      if (foeNearby) {
+        // Close enough to try attacking even if the walk failed.
+        say('nearby_walk_failed', { reason: walk.reason });
+      } else {
+        return { fought: false, reason: walk.reason || 'could not get to it', log,
+                 note: 'neither coarse-grid walkTo nor fine-grid walkFine could reach the target' };
+      }
+    }
+  } else if (!spot && !foeNearby) {
+    // NO COARSE APPROACH SQUARE AT ALL AND NOT NEARBY — try fine grid
+    const KOD_FINENESS = 512;
+    const half = KOD_FINENESS >> 1;
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
+    let fineArrived = false;
+    for (const [dc, dr] of dirs) {
+      const fx = (foe.col + dc) * KOD_FINENESS + half;
+      const fy = (foe.row + dr) * KOD_FINENESS + half;
+      const distCells = Math.hypot((foe.col ?? 0) - (meBefore?.col ?? 0), (foe.row ?? 0) - (meBefore?.row ?? 0));
+      const fineMaxSteps2 = Math.max(60, Math.ceil(distCells * 512 / 48) * 2);
+      const r = await s.walkFine(fx, fy, { maxSteps: fineMaxSteps2, stride: 48, arriveWithin: 512 })
+                     .catch(e => ({ arrived: false, reason: e.message }));
+      if (r.arrived) { fineArrived = true; break; }
+    }
+    if (!fineArrived)
+      return { fought: false, reason: 'no approach square and fine-grid walk failed', log,
+               note: 'the coarse grid found no route beside the target, and the fine grid could not reach one either' };
+  } else if (foeNearby) {
+    // Nearby: skip all walking, just face and attack.
+    say('nearby_skip_walk', { dist: Math.hypot((foe.col ?? 0) - (c.self?.col ?? 0), (foe.row ?? 0) - (c.self?.row ?? 0)) });
   }
 
   let killed = false, disengaged = null, roundsFought = 0, drifted = null, stoodUp = false;
   const combatLines = [];
+
+  // FACE THE TARGET. An attack on something behind you is refused with a
+  // message about view, not range. The walk may have turned us the wrong
+  // way, or the target may have moved since we last faced it.
+  const meNow = c.self;
+  if (meNow && foe.col != null && foe.row != null) {
+    const deg = (Math.atan2(foe.row - meNow.row, foe.col - meNow.col) * 180 / Math.PI + 360) % 360;
+    await c.face(deg);
+    say('faced target', { deg: Math.round(deg), target: foeName });
+  }
+
   for (let r = 0; r < rounds; r++) {
     if (!c.room.objects.has(foe.id)) { killed = true; break; }
     // It backed off. Swinging at nothing is free, but the server refuses the swing
@@ -1851,6 +1946,13 @@ export async function fight(s, {
     const b = c.evSeq;
     // The threshold goes DOWN into the round, not just around it. Checking after four
     // swings meant checking once every four seconds against a death that takes two.
+    // Re-face the target each round — it may have moved.
+    const itNow = c.room.objects.get(foe.id);
+    const meRound = c.self;
+    if (itNow && meRound && itNow.col != null && meRound.col != null) {
+      const deg = (Math.atan2(itNow.row - meRound.row, itNow.col - meRound.col) * 180 / Math.PI + 360) % 360;
+      await c.face(deg);
+    }
     const res = await s.attackRounds(foe.id, swingsPerRound, { abortBelow: disengageAt });
     roundsFought++;
     combatLines.push(...res.messages);
@@ -2846,4 +2948,30 @@ export function deathBroadcastFor(name, events, at, { withinMs = 30_000 } = {}) 
     if (!best || dt < best.dt) best = { ...p, at: e.at, dt };
   }
   return best;
+}
+
+// WHEN TO WITHDRAW, AND WHEN NOT TO START. One home, because both keepers need it and a
+// survival threshold with two definitions is two opinions about when to run.
+//
+// Lifted verbatim from Autopilot.safety(); behaviour is unchanged. It takes a CLIENT and
+// a POLICY rather than a keeper, for the same reason isArmed does: whoever is driving,
+// the arithmetic is the same.
+export function safetyFor(client, policy = {}) {
+  const v = client?.vitals?.();
+  const max = v?.health?.max ?? 0;
+  if (!max) return { fleeAt: policy.fleeBelow, engageAt: 0.85, maxHit: null };
+  const maxHit = Math.min(30, Math.floor((max + 2) / 3));
+  // Two hits of margin, not three. (base+2)/3 is the CAP on a single blow rather
+  // than what a giant rat typically lands, so budgeting three of them leaves so
+  // little of the bar to fight in that the character spends its life healing.
+  // Two is the number that survives the realistic bad case -- one hit landing as
+  // the withdraw begins, and one more before it is out of reach -- while still
+  // leaving a usable window to actually fight in.
+  const fleeAt = Math.max(policy.fleeBelow, Math.min(0.7, (2 * maxHit) / max));
+  return {
+    maxHit, fleeAt,
+    // Do not start a fight that cannot be finished. Below this, heal or rest
+    // first -- going in at half health is how a survivable creature kills you.
+    engageAt: max < 30 ? 0.9 : 0.75,
+  };
 }

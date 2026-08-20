@@ -36,6 +36,12 @@
 
 import { evaluate, unknowns, SYMBOL_NAMES } from './m59-worldstate.mjs';
 import { planFor, stepPlan } from './m59-plan.mjs';
+import * as watchdog from './m59-watchdog.mjs';
+
+// The step's own name, however it is carried. `doing` is derived from it, and a wrong
+// answer makes the position pulse either blind or a false-alarm generator.
+const actionNameOf = (step, p) => step?.atomic ?? step?.action ?? p?.names?.[0] ?? null;
+import { safetyFor } from './m59-skills.mjs';
 import { loadMap, findPath } from './m59-map.mjs';
 import { objIdToNum } from './m59-hunt-room.mjs';
 import { readFileSync, existsSync } from 'node:fs';
@@ -191,7 +197,60 @@ export class GOAPKeeper {
     this.note = note;
     this._lastPlan = null;
     this._passCount = 0;
+    this._passBracket = 0;
+
+    // ── THE OUT-OF-BAND GUARD ───────────────────────────────────────────────
+    //
+    // The planner is in-band: it assumes pass() returns and that the next pass will
+    // re-read the world. Measured on this fleet, that assumption fails on 3.2% of
+    // passes -- p99 16.6s, worst 207s -- and the long ones are FIGHTS, where the fight
+    // path checks health once on entry and then trusts "the next pass", which can be
+    // two minutes away. The watchdog is the only thing sampling health during those.
+    //
+    // These fields ARE the host interface in m59-watchdog.mjs. They live here rather
+    // than in an adapter object so there is one place to look when the guard reports
+    // something, and so `doing` can be written by the executor as the plan runs.
+    this.doing = null;          // what the current step is -- the pulse reads this
+    this.hold = null;           // set while holding a safe spot: still ON PURPOSE
+    this.inert = false;         // this keeper IS the driver; nothing else owns it
+    this.passes = 0;            // the interrupt fires once per pass, keyed on this
+    this.passStartedAt = null;  // null between passes: blindness is measured from it
+    this.lastFrameAt = 0;
+    this.tally = {};
+    this.frames = [];           // a small ring, so a death here can still be placed
+    watchdog.start(this);
     this._shopDest = null; // cached shop destination room num
+    this._levelTracker = { lastMaxHp: null, targetMaxHp: policy?.levelTargetMaxHp ?? 30, lastLevelUpPass: null, name: null };
+  }
+
+  _agentName() {
+    if (this._levelTracker.name) return this._levelTracker.name;
+    const n = this.policy?.agent ?? this.session?.s?.name ?? this.session?.name ?? this.client?.me?.name ?? '?';
+    this._levelTracker.name = n;
+    return n;
+  }
+
+  /**
+   * Track max_health as a level proxy. Log when the character
+   * levels up (max_health increases) and track progress toward
+   * the target. Called once per pass.
+   */
+  _trackLevel(maxHp) {
+    if (maxHp == null) return;
+    const lt = this._levelTracker;
+    const who = this._agentName();
+    if (lt.lastMaxHp == null) {
+      lt.lastMaxHp = maxHp;
+      console.error(`[level] ${who} starting max_hp=${maxHp}, target=${lt.targetMaxHp}`);
+      return;
+    }
+    if (maxHp > lt.lastMaxHp) {
+      const remaining = lt.targetMaxHp - maxHp;
+      const status = maxHp >= lt.targetMaxHp ? 'TARGET REACHED' : remaining + ' to go';
+      console.error(`[level] ${who} LEVEL UP: max_hp ${lt.lastMaxHp} -> ${maxHp} (pass ${this._passCount}, ${status})`);
+      lt.lastLevelUpPass = this._passCount;
+    }
+    lt.lastMaxHp = maxHp;
   }
 
   /**
@@ -438,27 +497,83 @@ export class GOAPKeeper {
    * Returns { acted: boolean, action: string|null, reason: string|null }
    * so the autopilot can log what happened.
    */
+  // ── host interface for m59-watchdog.mjs ────────────────────────────────
+  // Every one of these answers harmlessly rather than throwing: an exception inside a
+  // watchdog tick would kill the timer and take the guard down silently, which is the
+  // one failure this control cannot have.
+  get s() { return this.session; }
+  safety() { return safetyFor(this.client, this.policy); }
+  recordFrame(why = null) {
+    this.lastFrameAt = Date.now();
+    this.frames.push({ at: this.lastFrameAt, why, doing: this.doing,
+                       health: this.client?.vitals?.()?.health?.value ?? null,
+                       room: this.client?.room?.id ?? null });
+    if (this.frames.length > 64) this.frames.shift();
+  }
+  // The planner has no notion of "progress" -- it replans from the world every pass, so
+  // there is no stall counter here to reset. Accepted and ignored on purpose.
+  progress() {}
+  stopWatchdog() { watchdog.stop(this); }
+
+  // THE BRACKET. `passStartedAt` is how the watchdog measures blindness, so it is set
+  // before any await and cleared in a finally -- null exactly when no pass is running.
+  // A wrapper rather than a try inside the body: the body has many returns, and a
+  // hand-placed finally around them is how a guard ends up not covering one of them.
   async pass(wsOverride = null) {
+    this.passes = ++this._passBracket;
+    this.passStartedAt = Date.now();
+    try {
+      return await this._pass(wsOverride);
+    } finally {
+      this.passStartedAt = null;
+      this.doing = null;
+    }
+  }
+
+  async _pass(wsOverride = null) {
     const c = this.client;
     if (!c) {
       return { acted: false, action: null, reason: 'no client' };
     }
 
     this._passCount++;
+    // WHAT THE WATCHDOG MEASURES BLINDNESS FROM. Set before any await and cleared in
+    // the finally below, so `passStartedAt` is null exactly when no pass is running.
+
+    // TRACK LEVEL: log max_health changes (level ups)
+    const _maxHp = c.vitals?.()?.health?.max;
+    this._trackLevel(_maxHp);
 
     // STUCK DETECTION: if the character's position hasn't changed in
     // the last 10 passes (~10 seconds), the character is stuck.
     // Force a travel to a nearby room to reset the position.
+    // EXCEPTION: if the character has a target in reach, they're
+    // fighting, not stuck. Don't count passes during combat.
     {
       const me = c.self;
+      // If position is unknown, wait for the server to send a
+      // position update. The server pushes BP_PLAYER on every tick,
+      // so this should resolve within a few passes.
+      if (!me || me.col == null || me.row == null) {
+        this._noPosCount = (this._noPosCount ?? 0) + 1;
+        if (this._noPosCount === 5) {
+          console.error(`[goap] ${this.policy.agent ?? '?'} position unknown for ${this._noPosCount} passes`);
+        }
+        return { acted: false, action: null, reason: 'position unknown, waiting' };
+      }
+      this._noPosCount = 0;
+      // inCombat is checked after ws is defined below; for now just track position
       if (me && me.col != null && me.row != null) {
-        const posKey = `${me.col},${me.row}`;
-        if (this._lastPosKey === posKey) {
+        // Round to 2-cell blocks so small oscillations (walkTo bounces)
+        // don't reset the counter. The character is stuck if it's been
+        // in the same 2x2 block for 10 passes.
+        const posKey = `${Math.floor(me.col / 2)},${Math.floor(me.row / 2)}`;
+        if (this._lastPosKey === posKey && !this._inCombatLastPass) {
           this._stuckCount = (this._stuckCount ?? 0) + 1;
           if (this._stuckCount === 10) {
             console.error(`[goap] ${this.policy.agent} STUCK at (${me.col},${me.row}) for ${this._stuckCount} passes`);
           }
-        } else {
+        } else if (!this._inCombatLastPass) {
           this._stuckCount = 0;
           this._lastPosKey = posKey;
         }
@@ -471,8 +586,22 @@ export class GOAPKeeper {
             const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
             const here = c.room?.num ?? c.room?.id;
             const resolved = resolveMapRoom(here, this._roomName());
-            const neighbors = nearestHuntRoom(resolved, 999);
-            if (neighbors) {
+            // Find a hunt room that is NOT the current room
+            const allRooms = await import('./m59-hunt-room.mjs').then(m => m.huntRoomsAtOrBelow(999));
+            const otherRooms = allRooms.filter(r => r.room !== resolved);
+            const neighbors = otherRooms.length > 0 ? nearestHuntRoom(resolved, 999, otherRooms[0].level) : null;
+            // If the nearest hunt room IS the current room, pick the next closest
+            if (neighbors && neighbors.room === resolved && otherRooms.length > 0) {
+              const next = otherRooms[0];
+              const travelResult = await this.session.travel(next.room, { maxHops: 1 });
+              if (travelResult?.arrived) {
+                console.error(`[goap] ${this.policy.agent} unstuck: moved to room ${next.room} (${next.creature} lv${next.level})`);
+                this._travelInFlight = true;
+                this._travelFromRoom = here;
+                this._travelStartedAt = Date.now();
+                return { acted: true, action: 'unstuck_travel', reason: 'stuck detection: moved to different hunt room' };
+              }
+            } else if (neighbors) {
               const travelResult = await this.session.travel(neighbors.room, { maxHops: 1 });
               if (travelResult?.arrived) {
                 console.error(`[goap] ${this.policy.agent} unstuck: arrived in room ${neighbors.room}`);
@@ -560,10 +689,60 @@ export class GOAPKeeper {
     const who = this.policy.agent ?? this.session?.s?.name ?? this.session?.name ?? '?';
     const ws = { ...evaluate({ client: c, policy: this.policy, agent: this.policy.agent }), ...(wsOverride ?? {}) };
 
+    // Set the combat flag for the stuck detection (which ran before ws was defined)
+    this._inCombatLastPass = ws.has_target === true && ws.in_reach === true;
+
     // 1b. TARGET DETECTION. The GOAP keeper must set _targetId so
     //     that has_target, in_reach, and target_in_band are produced
     //     from the actual room contents.
+    //     _targetId is persisted on `this` so the character sticks with
+    //     a target across passes instead of re-picking the nearest one
+    //     every 2 seconds (which whiplashes between mummies).
     {
+      // Restore persisted target from last pass
+      if (this._persistedTargetId != null) {
+        ws._targetId = this._persistedTargetId;
+        ws._targetLevel = this._persistedTargetLevel;
+        ws._threatCeiling = this._persistedThreatCeiling;
+        ws._targetIsPlayer = this._persistedTargetIsPlayer;
+        // Re-derive has_target and in_reach from the restored target.
+        // evaluate() ran without _targetId, so has_target is stale (false).
+        ws.has_target = !!c?.room?.objects?.has?.(ws._targetId);
+        if (ws.has_target) {
+          const tgt = c.room.objects.get(ws._targetId);
+          const myPos = c.self;
+          if (tgt && myPos) {
+            const dx = (tgt.col ?? 0) - (myPos.col ?? 0);
+            const dy = (tgt.row ?? 0) - (myPos.row ?? 0);
+            ws.in_reach = Math.hypot(dx, dy) <= 2;
+          } else { ws.in_reach = false; }
+          ws.target_in_band = ws._targetLevel != null ? ws._targetLevel <= ws._threatCeiling : false;
+          ws._fight = !ws.target_in_band;
+          // Re-check aggro from the live object — the mob may have
+          // lost interest (de-aggro) or just noticed us (aggro).
+          ws.target_aggro = !!(tgt?.flags & OF.ENEMY);
+          // Out-of-band and not aggroed: ignore it.
+          if (!ws.target_in_band && !ws.target_aggro) {
+            this._persistedTargetId = null;
+            this._persistedTargetLevel = null;
+            this._persistedThreatCeiling = null;
+            this._persistedTargetIsPlayer = null;
+            this._persistedTargetAggro = null;
+            ws.has_target = false;
+            ws.in_reach = false;
+            ws._fight = true;
+            ws.flee_danger = true;
+            ws.target_aggro = false;
+          } else {
+            ws.flee_danger = ws.target_in_band || !ws.target_aggro;
+          }
+        } else {
+          ws.in_reach = false;
+          ws.target_in_band = false;
+          ws._fight = true;
+          ws.flee_danger = true; // no target = no danger
+        }
+      }
       const room = c.room;
       if (room?.objects) {
         const list = room.objects instanceof Map
@@ -579,7 +758,16 @@ export class GOAPKeeper {
         // own level — fight mobs at or near your level.
         const charLevel = c.vitals?.()?.health?.max ?? 20;
         const huntLevel = this.policy.huntLevel ?? charLevel;
-        const band = this.policy?.threatBand ?? Math.floor(charLevel / 2); // +50% of level
+        const fullBand = this.policy?.threatBand ?? Math.floor(charLevel / 2);
+        // Unarmed characters deal less damage, so halve the band.
+        const eq = c?.equipment?.();
+        const isArmedNow = !eq || eq.known === false
+          ? true
+          : (eq.equipped || []).some(o => {
+              const nm = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
+              return /sword|mace|hammer|staff|club|axe|dagger|spear|bow|crossbow|weapon/i.test(nm);
+            });
+        const band = isArmedNow ? fullBand : Math.floor(fullBand / 2);
         const ceiling = huntLevel + band;
 
         const hostiles = list.filter(o => {
@@ -589,6 +777,10 @@ export class GOAPKeeper {
           // found, and the GOAP never saw any mobs in the room.
           const can = affordances(o.flags ?? 0);
           const name = c.rsc?.get?.(o.nameRsc) ?? '';
+          // Decoration objects (trees, flagpoles, etc.) have the attack
+          // affordance in their flags but are not hostiles. "Living tree"
+          // is a good creature, not a hostile — exclude it too.
+          if (/^(tree|living tree|flagpole|fence|wall|door|window|rock|boulder|bush|grass|flower|mushroom|log|stump)/i.test(name)) return false;
           return can.includes('attack')
             && !/friendly|pet|tame/i.test(name)
             && !(o.flags & OF.PLAYER); // players are handled separately by the PVP gate
@@ -658,6 +850,11 @@ export class GOAPKeeper {
           ws._threatCeiling = ceiling;
           ws._targetIsPlayer = isPlayer;
 
+          // A NEW TARGET IS A NEW OPPORTUNITY. Reset the has_loot fail
+          // count so the goal-skip doesn't block a fresh target that
+          // was unreachable in a different part of the room.
+          if (this._goalFailCount?.has_loot) delete this._goalFailCount.has_loot;
+
           // Re-derive the target-dependent symbols now that _targetId is set.
           // evaluate() already ran without it, so has_target/in_reach/
           // target_in_band are stale. Update them manually.
@@ -677,17 +874,78 @@ export class GOAPKeeper {
             ws.in_reach = false;
           }
           ws.target_in_band = targetLevel != null ? targetLevel <= ceiling : false;
+          // _fight: false when a fight is needed (target in band), true otherwise
+          ws._fight = !ws.target_in_band;
+          // Aggro check: the server sets OF.ENEMY when a mob targets us.
+          // An out-of-band mob that is NOT aggro is not a threat — we can
+          // walk past it. Only flee when the mob is actively hostile.
+          ws.target_aggro = !!(target.flags & OF.ENEMY);
+          // flee_danger: false when an out-of-band AND aggroed hostile is present
+          ws.flee_danger = ws.target_in_band || !ws.target_aggro; // true=safe
 
-          console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, hunt lv${huntLevel}, ceiling ${ceiling})`);
+          console.error(`[goap] ${who} target detected: ${targetName} (lv${targetLevel ?? '?'}, ${isPlayer ? 'PLAYER' : 'npc'}, hunt lv${huntLevel}, ceiling ${ceiling}, aggro=${ws.target_aggro})`);
+          // Persist the target across passes so the character sticks
+          // with it instead of re-picking the nearest every 2 seconds.
+          this._persistedTargetId = ws._targetId;
+          this._persistedTargetLevel = targetLevel;
+          this._persistedThreatCeiling = ceiling;
+          this._persistedTargetIsPlayer = isPlayer;
+          this._persistedTargetAggro = ws.target_aggro;
+          // An out-of-band mob that is NOT aggroed is not a threat.
+          // Clear it so the character can walk past it and the planner
+          // doesn't waste cycles on a mob that's ignoring us.
+          if (!ws.target_in_band && !ws.target_aggro) {
+            console.error(`[goap] ${who} ignoring out-of-band ${targetName} (not aggroed)`);
+            delete ws._targetId;
+            delete ws._targetLevel;
+            delete ws._threatCeiling;
+            delete ws._targetIsPlayer;
+            this._persistedTargetId = null;
+            this._persistedTargetLevel = null;
+            this._persistedThreatCeiling = null;
+            this._persistedTargetIsPlayer = null;
+            this._persistedTargetAggro = null;
+            ws.has_target = false;
+            ws.in_reach = false;
+            ws.target_in_band = false;
+            ws._fight = true;
+            ws.flee_danger = true;
+            ws.target_aggro = false;
+          }
         } else if (!hostiles.length && ws._targetId) {
-          // Target is gone. Clear it and the derived symbols.
+          // All hostiles are gone. Clear the target.
           delete ws._targetId;
           delete ws._targetLevel;
           delete ws._threatCeiling;
           delete ws._targetIsPlayer;
+          this._persistedTargetId = null;
+          this._persistedTargetLevel = null;
+          this._persistedThreatCeiling = null;
+          this._persistedTargetIsPlayer = null;
           ws.has_target = false;
           ws.in_reach = false;
           ws.target_in_band = false;
+          ws._fight = true; // no target = no fight needed
+          ws.flee_danger = true; // no target = no danger
+        } else if (ws._targetId && hostiles.length) {
+          // Target is set but may be dead. Check if it's still in the room.
+          if (!c?.room?.objects?.has?.(ws._targetId)) {
+            // The target died. Clear it so a new one gets picked next pass.
+            console.error(`[goap] ${who} target ${ws._targetId} died, clearing for re-target`);
+            delete ws._targetId;
+            delete ws._targetLevel;
+            delete ws._threatCeiling;
+            delete ws._targetIsPlayer;
+            this._persistedTargetId = null;
+            this._persistedTargetLevel = null;
+            this._persistedThreatCeiling = null;
+            this._persistedTargetIsPlayer = null;
+            ws.has_target = false;
+            ws.in_reach = false;
+            ws.target_in_band = false;
+            ws._fight = true; // will be re-evaluated next pass with new target
+            ws.flee_danger = true;
+          }
         }
       }
     }
@@ -705,32 +963,53 @@ export class GOAPKeeper {
     //    (has_food) > primary goal (vigor_ok or configured).
     const goalStack = [
       { goal: '!in_underworld', when: ws.in_underworld === true },
-      { goal: 'armed',         when: ws.armed === false },
+      // EAT_TO_COMFORTABLE: if the character has food and vigor < 180,
+      // eat before fighting. This uses the vigor_comfortable symbol (>=180)
+      // as the planning target, so the planner chains eat actions until
+      // vigor reaches the ideal fight threshold.
+      { goal: 'vigor_comfortable', when: ws.has_food === true && ws.vigor_comfortable === false },
+      // FIGHT: if there's a target in band, fight it.
+      // Vigor requirements:
+      //   - Hurt + in-band target: fight regardless of vigor (defend)
+      //   - Not hurt + has food + vigor < 180: eat first
+      //   - Not hurt + has food + vigor >= 180: fight freely
+      //   - Not hurt + no food: fight (need money for food)
+      // CRITICAL (< 30% HP): run from everything.
+      { goal: '_fight',        when: ws.has_target === true && ws.target_in_band === true && ws.critical !== true && (ws.hurt === true || (ws.has_food === true ? ws.vigor_comfortable !== false : ws.vigor_floor !== false)) },
+      // FLEE_DANGER: an out-of-band hostile is in the room. Do not
+      // fight it — run. But if the character is already traveling for
+      // a task (sell, bank, buy), the task takes priority: flee the
+      // spider AND keep going to the destination. The flee action
+      // produces !has_target, which clears the danger, and the travel
+      // action continues on the next pass.
+      { goal: 'flee_danger',   when: ws.has_target === true && ws.target_in_band === false && !this._shopDest },
       // HEALTHY: if the character is hurt, stop what it's doing,
       // flee from combat if there's a target, and rest to recover.
-      // This is priority 3 because a hurt character that keeps
-      // travelling or fighting will die.
       { goal: 'healthy',       when: ws.hurt === true },
-      // FIGHT: if there's a target in band and the character is armed,
-      // fight it. This takes priority over rest and food because
-      // a free kill is the best use of time. Uses has_loot as the goal
-      // symbol because has_money may already be true (character has
-      // gold but no reason to fight).
-      { goal: 'has_loot',      when: ws.armed === true && ws.has_target === true && ws.target_in_band === true },
+      // ARMED: try to get a weapon, but don't block combat or food.
+      // An unarmed character can still punch, scavenge for money,
+      // and buy a weapon later. This is a convenience goal, not a
+      // hard prerequisite.
+      { goal: 'armed',         when: ws.armed === false },
       // has_food: only try when the character CAN get food (has
       // reagents to cast create food, or has money to buy).
-      // Skip when there's a target in band — fighting is more
-      // important than food.
-      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) && !(ws.armed === true && ws.has_target === true && ws.target_in_band === true) && !(this.goal === 'has_loot' && ws.has_loot === false && ws.has_target === false) },
+      // Higher priority when vigor is low — a tired character with
+      // no food should provision before fighting.
+      { goal: 'has_food',      when: ws.has_food === false && (ws.has_reagents === true || ws.has_money === true) && !(this.goal === 'has_loot' && ws.has_loot === false && ws.has_target === false) },
+      // pack_room: if the pack is full (or nearly), go to a town to sell.
+      // This is higher priority than has_money because a full pack means
+      // the character can't loot, pick up, or buy anything.
+      { goal: 'pack_room',     when: ws.pack_room === false && ws.has_loot === true && ws.has_target === false },
       // has_money: earn or sell. The character needs money whether
       // it has loot to sell or not. But only trigger when the
       // character CAN make money: it has loot to sell and a shop
       // is reachable, or it's armed (can scavenge for gold).
       // When the shop is unreachable (blocked by a hazard), selling
       // is impossible, so the goal falls through to the next one.
-      { goal: 'has_money',     when: ws.has_money === false && (ws.has_loot === true && this._shopReachable() || ws.armed === true) },
-      { goal: 'can_rest_higher', when: ws.can_rest_higher === true },
-      { goal: this.goal,       when: ws[this.goal] !== true },
+      { goal: 'vigor_rested',   when: ws.vigor_rested === false },
+      { goal: 'vigor_ok',       when: ws.vigor_ok === false && ws.has_food === true },
+      { goal: 'has_money',     when: ws.has_money === false && (ws.has_loot === true && this._shopReachable() || ws.has_target === true) },
+      { goal: this.goal,       when: ws[this.goal] !== true && (this.goal !== 'vigor_ok' || ws.has_food === true) },
     ];
     // Goal-skip: if a goal's action has failed 5+ times in a row,
     // skip it for 30 passes. This prevents infinite loops when the
@@ -738,7 +1017,92 @@ export class GOAPKeeper {
     const active = goalStack.find(g => g.when && (this._goalFailCount?.[g.goal] ?? 0) < 5);
 
     if (!active) {
-      // All goals satisfied. Idle.
+      // All goals satisfied. But if there's no target in the room,
+      // the character should go find one. Treat as '_fight' so the
+      // hunt travel injection fires and the character moves to a
+      // room with in-band prey.
+      if (ws.has_target === false && ws.in_underworld === false) {
+        console.error(`[goap] ${who} pass ${this._passCount} goal=_fight (idle, no target, hunting) ${wsSummary}`);
+        // Fall through to planning with '_fight' as the goal.
+        const effectiveGoal = '_fight';
+        const _roomName = c?.roomNameRsc ? (c.rsc?.get?.(c.roomNameRsc) ?? '?') : (c.room?.name ?? '?');
+        console.error(`[goap] ${who} pass ${this._passCount} room=${_roomName}(${c.room?.id ?? '?'}) goal=${effectiveGoal} [idle→hunt] ${wsSummary}`);
+        // Inject hunt travel
+        const here = c.room?.num ?? c.room?.id;
+        if (here != null) {
+          try {
+            const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
+            const resolvedHere = resolveMapRoom(here, this._roomName());
+            const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
+            const eqH = c?.equipment?.();
+            const isArmedH = !eqH || eqH.known === false
+              ? true
+              : (eqH.equipped || []).some(o => {
+                  const nm = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
+                  return /sword|mace|hammer|staff|club|axe|dagger|spear|bow|crossbow|weapon/i.test(nm);
+                });
+            const fullBandH = this.policy?.threatBand ?? Math.floor(level / 2);
+            const bandH = isArmedH ? fullBandH : Math.floor(fullBandH / 2);
+            const ceilingH = level + bandH;
+            const hunt = nearestHuntRoom(resolvedHere, ceilingH);
+            if (hunt && hunt.hops > 0) {
+              const dest = hunt.path?.[0] ?? hunt.room;
+              const travelToHunt = (client, session) => this._travelOneHop(dest);
+              travelToHunt.atomic = 'travel_to';
+              travelToHunt.pre = [];
+              travelToHunt.effects = ['has_target', 'has_money', 'has_loot'];
+              travelToHunt.cost = hunt.hops;
+              const p = planFor(c, '_fight', { session: this.session, policy: this.policy, agent: this.policy.agent, ws, extra: [travelToHunt] });
+              if (p.found) {
+                const step = p.names?.[0];
+                if (step === 'travel_to') {
+                  this._travelInProgress = true;
+                  const r = await this._travelOneHop(dest);
+                  this._travelInProgress = false;
+                  return { acted: true, action: 'travel_to', reason: `idle→hunt: travelling to ${hunt.creature ?? 'prey'} in room ${dest}` };
+                }
+              }
+            }
+          } catch (e) {
+            console.error(`[goap] ${who} idle→hunt failed: ${e.message}`);
+          }
+        }
+        // WANDER FALLBACK: no hunt room found (or already in one with
+        // no in-band prey). Pick a random adjacent room and walk there.
+        // This keeps the character moving and exploring, so the next
+        // pass might find a room with in-band mobs.
+        try {
+          const map = loadMap();
+          const roomNum = c.room?.num ?? c.room?.id;
+          const resolvedHere = resolveMapRoom(roomNum, this._roomName());
+          const roomData = resolvedHere != null ? map.rooms?.[String(resolvedHere)] : null;
+          if (roomData) {
+            const { exitsOf } = await import('./m59-map.mjs');
+            const allExits = exitsOf(roomData).filter(e => e.to != null && e.kind !== 'locked');
+            // Prefer edge exits (room boundaries) over go exits (doors).
+            // Go exits are only used when there are no edge exits,
+            // because the character is trapped in a room with only doors.
+            const exits = allExits.filter(e => e.kind === 'edge').length > 0
+              ? allExits.filter(e => e.kind === 'edge')
+              : allExits;
+            if (exits.length > 0) {
+              // Pick a random exit (deterministic by pass count to avoid
+              // the character bouncing back and forth)
+              const idx = this._passCount % exits.length;
+              const dest = exits[idx].to;
+              console.error(`[goap] ${who} idle→wander: no hunt room, wandering to room ${dest} (exit ${exits[idx].direction})`);
+              const r = await this._travelOneHop(dest);
+              if (r?.arrived) {
+                return { acted: true, action: 'wander', reason: `idle→wander: moved to room ${dest}` };
+              }
+            }
+          }
+        } catch (e) {
+          console.error(`[goap] ${who} idle→wander failed: ${e.message}`);
+        }
+        this.note('goap idle-hunt', { reason: 'no goal matched, no target, no hunt room, wander failed', pass: this._passCount });
+        return { acted: false, action: null, reason: 'all goals satisfied, no hunt room, no wander' };
+      }
       this.note('goap idle', { goal: this.goal, reason: 'all goals satisfied', pass: this._passCount });
       console.error(`[goap] ${who} pass ${this._passCount} goal=${this.goal} ${wsSummary} [idle: all goals satisfied]`);
       return { acted: false, action: null, reason: 'all goals satisfied' };
@@ -753,6 +1117,47 @@ export class GOAPKeeper {
     //     at a shop. Find the nearest shop and create a parameterized
     //     travel_to action with the destination pre-set.
     let extra = [];
+    // Inject withdraw when at a bank and the character needs money.
+    // The planner chains: at_bank -> withdraw -> has_money -> buy -> armed.
+    if (ws.at_bank === true && ws.has_money === false) {
+      const { withdraw } = await import('./m59-act/bank.mjs');
+      extra.push(withdraw);
+    }
+    // Inject travel_to bank when the character needs money but is not at a bank.
+    // Chain: at_bank -> withdraw -> has_money -> at_shop -> buy -> armed.
+    if (ws.has_money === false && ws.at_bank === false && ws.at_shop === false) {
+      const here = c.room?.num ?? c.room?.id;
+      if (here != null) {
+        const { objIdToNum } = await import('./m59-hunt-room.mjs');
+        const mapNum = objIdToNum(here) ?? here;
+        const { loadMap, findPath } = await import('./m59-map.mjs');
+        const map = loadMap();
+        const resolved = resolveMapRoom(here, this._roomName());
+        // Find the nearest room with a bank
+        let bestBank = null;
+        for (const [num, r] of Object.entries(map.rooms ?? {})) {
+          if (Number(num) === mapNum) continue;
+          if (!/bank/i.test(r.name ?? '')) continue;
+          const p = findPath(map, resolved, Number(num));
+          if (!p.found || p.hops.length === 0) continue;
+          if (!bestBank || p.hops.length < bestBank.hops.length) {
+            bestBank = { num: Number(num), hops: p.hops };
+          }
+        }
+        if (bestBank) {
+          const dest = bestBank.hops[0]?.to ?? bestBank.num;
+          const travelToBank = (client, session) => {
+            return this._travelOneHop(dest);
+          };
+          travelToBank.atomic = 'travel_to';
+          travelToBank.pre = [];
+          travelToBank.effects = ['at_bank'];
+          travelToBank.cost = 1;
+          extra.push(travelToBank);
+          console.error(`[goap] ${who} bank travel injected: ${mapNum} -> ${dest} (nearest bank: ${bestBank.num})`);
+        }
+      }
+    }
     if (ws.in_underworld === true) {
       // Inject the escape_underworld atomic.
       const { escapeUnderworldAtomic } = await import('./m59-act/escape-underworld.mjs');
@@ -772,7 +1177,16 @@ export class GOAPKeeper {
       // mobless room. The travel_to injection below is the right action in that case.
       const here = c.room?.num ?? c.room?.id;
       const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
-      const levelCeiling2 = level + (this.policy?.threatBand ?? Math.floor(level / 2));
+      const eq2 = c?.equipment?.();
+      const isArmed2 = !eq2 || eq2.known === false
+        ? true
+        : (eq2.equipped || []).some(o => {
+            const nm = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
+            return /sword|mace|hammer|staff|club|axe|dagger|spear|bow|crossbow|weapon/i.test(nm);
+          });
+      const fullBand2 = this.policy?.threatBand ?? Math.floor(level / 2);
+      const band2 = isArmed2 ? fullBand2 : Math.floor(fullBand2 / 2);
+      const levelCeiling2 = level + band2;
 
       let inHuntRoom = false;
       if (ws.armed === true && combatGoal && ws.has_target === false && here != null) {
@@ -789,12 +1203,25 @@ export class GOAPKeeper {
       // with in-band prey. When hurt, still inject scavenge + flee so the
       // character can disengage.
       const targetEngageable = ws.has_target === true && (ws.target_in_band === true || ws.hurt === true);
-      if (targetEngageable || ws.hurt === true || (ws.armed === true && combatGoal && inHuntRoom)) {
+      // Unarmed characters can still scavenge (punch) to earn money
+      // for a weapon, so don't gate the inHuntRoom case on armed.
+      // Also include flee_danger: an out-of-band hostile is present,
+      // the character needs flee (but not scavenge/attack).
+      const needsFlee = effectiveGoal === 'flee_danger' || effectiveGoal === 'healthy' || (this._shopDest && ws.has_target === true && ws.target_in_band === false);
+      if (targetEngageable || ws.hurt === true || (combatGoal && inHuntRoom) || needsFlee) {
         const { attackOf } = await import('./m59-act/attack.mjs');
         const { scavenge } = await import('./m59-act/scavenge.mjs');
         const { takeSafeSpot } = await import('./m59-act/take-safe-spot.mjs');
         const { flee } = await import('./m59-act/flee.mjs');
-        extra.push(attackOf(ws), scavenge, takeSafeSpot, flee);
+        // For flee_danger: only inject flee, not attack/scavenge.
+        // The character should run, not fight.
+        if (effectiveGoal === 'flee_danger') {
+          extra.push(flee);
+          // Block scavenge and attack so the planner can't pick them.
+          this._fleeDangerFilter = new Set(['scavenge', 'attack', 'take_safe_spot']);
+        } else {
+          extra.push(attackOf(ws), scavenge, takeSafeSpot, flee);
+        }
 
         // When the goal is 'healthy', inject a composite 'recover'
         // atomic. The strategy depends on the threat:
@@ -890,7 +1317,7 @@ export class GOAPKeeper {
                   this._innDest = bestInn.num;
                   console.error(`[goap] ${who} recovering to inn: ${mapNum} -> ${bestInn.num} (${bestInn.name}) hops=${bestInn.hops.length}`);
                   const travelToInn = (client, session) => {
-                    return this._travelOneHop(bestInn.hops[0] ?? bestInn.num);
+                    return this._travelOneHop(bestInn.hops[0]?.to ?? bestInn.num);
                   };
                   travelToInn.atomic = 'travel_to';
                   travelToInn.pre = [];
@@ -935,17 +1362,110 @@ export class GOAPKeeper {
           }
         }
       }
+      // HUNT ROOM TRAVEL: when there's no target in the room and the
+      // character is in a hunting zone (not a town), travel to the
+      // nearest room that has in-band mobs. This prevents the character
+      // from sitting in an empty room waiting for prey that won't spawn.
+      // Only inject when:
+      //   - No target in the room (has_target=false)
+      //   - Not at a shop/bank/inn (those goals handle their own travel)
+      //   - Not already traveling (travel in progress)
+      //   - The current room is NOT already a hunt room (hops > 0)
+      //   - The goal is a combat/economy goal (has_money, has_loot, _fight)
+      if (ws.has_target === false && !this._shopDest && !this._travelInProgress &&
+          !this._blockTravel && ws.in_underworld === false) {
+        const combatOrEconGoal = effectiveGoal === 'has_money' || effectiveGoal === 'has_loot' || effectiveGoal === '_fight';
+        if (combatOrEconGoal) {
+          const here = c.room?.num ?? c.room?.id;
+          if (here != null) {
+            try {
+              const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
+              const resolvedHere = resolveMapRoom(here, this._roomName());
+              const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
+              const eqH = c?.equipment?.();
+              const isArmedH = !eqH || eqH.known === false
+                ? true
+                : (eqH.equipped || []).some(o => {
+                    const nm = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
+                    return /sword|mace|hammer|staff|club|axe|dagger|spear|bow|crossbow|weapon/i.test(nm);
+                  });
+              const fullBandH = this.policy?.threatBand ?? Math.floor(level / 2);
+              const bandH = isArmedH ? fullBandH : Math.floor(fullBandH / 2);
+              const ceilingH = level + bandH;
+              const hunt = nearestHuntRoom(resolvedHere, ceilingH);
+              if (hunt && hunt.hops > 0) {
+                const dest = hunt.path?.[0] ?? hunt.room;
+                const travelToHunt = (client, session) => {
+                  return this._travelOneHop(dest);
+                };
+                travelToHunt.atomic = 'travel_to';
+                travelToHunt.pre = [];
+                travelToHunt.effects = ['has_target', 'has_money', 'has_loot'];
+                travelToHunt.cost = hunt.hops;
+                extra.push(travelToHunt);
+                console.error(`[goap] ${who} hunt travel injected: ${resolvedHere} -> ${dest} (${hunt.creature ?? '?'} lv${hunt.level ?? '?'}) hops=${hunt.hops}`);
+              }
+            } catch (e) {
+              console.error(`[goap] ${who} hunt travel failed: ${e.message}`);
+            }
+          }
+        }
+      }
       // Rest is already in ALWAYS (the standard action set), so
       // no need to inject it here. The can_rest_higher goal
       // already has rest available.
-      // Inject travel_to a hunt room when the character is armed but
-      // has no target. The character needs to go fight something to
-      // generate money/loot. Find the nearest room with huntable mobs
-      // at or below the character's level.
-      if (ws.armed === true && (ws.has_target === false || ws.target_in_band === false)) {
+      // Force room change: scavenge failed 3+ times in this room.
+      // The geometry is broken — leave and come back later.
+      if (this._forceRoomChange) {
+        this._forceRoomChange = false;
+        const here = c.room?.num ?? c.room?.id;
+        if (here != null) {
+          const { objIdToNum } = await import('./m59-hunt-room.mjs');
+          const mapNum = objIdToNum(here) ?? here;
+          const { loadMap, findPath } = await import('./m59-map.mjs');
+          const map = loadMap();
+          const resolved = resolveMapRoom(here, this._roomName());
+          // Find the nearest reachable room that ISN'T the current one
+          let best = null;
+          for (const [num, r] of Object.entries(map.rooms ?? {})) {
+            if (Number(num) === mapNum) continue;
+            const p = findPath(map, resolved, Number(num));
+            if (!p.found || p.hops.length === 0) continue;
+            if (!best || p.hops.length < best.hops.length) {
+              best = { num: Number(num), hops: p.hops };
+            }
+          }
+          if (best) {
+            const forceTravel = (client, session) => {
+              return this._travelOneHop(best.hops[0]?.to ?? best.num);
+            };
+            forceTravel.atomic = 'travel_to';
+            forceTravel.pre = [];
+            forceTravel.effects = ['!has_target', 'flee_danger', 'has_money', 'has_loot'];
+            forceTravel.cost = 1;
+            extra.push(forceTravel);
+            console.error(`[goap] ${who} force room change: ${mapNum} -> ${best.hops[0]?.to ?? best.num} (nearest reachable)`);
+          }
+        }
+      }
+      // Inject travel_to a hunt room when the character has no target.
+      // Works armed or unarmed — an unarmed character still needs to
+      // fight something to earn money for a weapon.
+      if (ws.has_target === false || ws.target_in_band === false) {
         const here = c.room?.num ?? c.room?.id;
         const level = this.policy.huntLevel ?? c.vitals?.()?.health?.max ?? 20;
-        const levelCeiling3 = level + (this.policy?.threatBand ?? Math.floor(level / 2));
+        // Use the same reduced band for unarmed characters as the
+        // target detection, so the hunt room matches what he can fight.
+        const eq3 = c?.equipment?.();
+        const isArmed3 = !eq3 || eq3.known === false
+          ? true
+          : (eq3.equipped || []).some(o => {
+              const nm = o.name ?? c.rsc?.get?.(o.nameRsc) ?? '';
+              return /sword|mace|hammer|staff|club|axe|dagger|spear|bow|crossbow|weapon/i.test(nm);
+            });
+        const fullBand3 = this.policy?.threatBand ?? Math.floor(level / 2);
+        const band3 = isArmed3 ? fullBand3 : Math.floor(fullBand3 / 2);
+        const levelCeiling3 = level + band3;
         if (here != null) {
           const { nearestHuntRoom } = await import('./m59-hunt-room.mjs');
           const resolvedHere = resolveMapRoom(here, this._roomName());
@@ -965,6 +1485,8 @@ export class GOAPKeeper {
             travelToHunt.cost = 1;
             extra.push(travelToHunt);
             console.error(`[goap] ${who} hunting: room=${here} -> hunt=${hunt.room} (${hunt.creature} lv${hunt.level}) hops=${hunt.hops}`);
+          } else {
+            console.error(`[goap] ${who} hunting: room=${here} resolved=${resolvedHere} hunt=${hunt ? `hops=${hunt.hops} room=${hunt.room}` : 'null'} ceiling=${levelCeiling3}`);
           }
           // If hunt.hops === 0, we're already in a hunt room.
           // Mobs may be respawning; inject scavenge so the planner
@@ -983,7 +1505,7 @@ export class GOAPKeeper {
       // something (food or money) but isn't at a shop. Armed
       // characters earn money by scavenging, but they still need
       // to buy food.
-      if ((effectiveGoal === 'has_money' && ws.armed === false) || effectiveGoal === 'has_food') {
+      if ((effectiveGoal === 'has_money' && ws.armed === false) || effectiveGoal === 'has_food' || effectiveGoal === 'pack_room' || effectiveGoal === 'armed') {
         const here = c.room?.num ?? c.room?.id;
         if (here != null && ws.at_shop === false) {
           const { objIdToNum } = await import('./m59-hunt-room.mjs');
@@ -1029,13 +1551,22 @@ export class GOAPKeeper {
     // a mob is in reach is how characters die.
     const planFilter = new Set();
     if (effectiveGoal === 'healthy' && ws.has_target === true) planFilter.add('rest');
-    // When hurt and a hostile is present, block scavenge too. The
-    // character should flee/recover, not start another swing.
-    // Without this, the planner keeps picking scavenge (lower cost)
-    // and the character takes damage until the fight ends.
-    if (ws.hurt === true && ws.has_target === true) planFilter.add('scavenge');
+    if (effectiveGoal === 'flee_danger') {
+      // When fleeing a dangerous mob, block everything except flee.
+      // The character should run, not fight, rest, or scavenge.
+      planFilter.add('scavenge');
+      planFilter.add('attack');
+      planFilter.add('take_safe_spot');
+      planFilter.add('rest');
+      planFilter.add('recover');
+    }
+    // When CRITICAL and a hostile is present, block scavenge. The
+    // character should flee, not fight. But a merely hurt character
+    // (HP > 30%) can still fight an in-band target — fleeing from a
+    // rat you can kill is worse than taking a few hits.
+    if (ws.critical === true && ws.has_target === true) planFilter.add('scavenge');
     if (this._blockTravel) planFilter.add('travel_to');
-    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra, filter: planFilter.size ? planFilter : null });
+    const p = planFor(c, { [effectiveGoal]: true }, { session: this.session, policy: this.policy, agent: this.policy.agent, extra, filter: planFilter.size ? planFilter : null, ws });
     // Record the plan for the dashboard / hero page. A visible plan is
     // the only plan you can argue with.
     this._lastPlan = {
@@ -1084,15 +1615,61 @@ export class GOAPKeeper {
     const charLevel2 = c.vitals?.()?.health?.max ?? 20;
     const mapRoomNum = resolveMapRoom(c.room?.num ?? c.room?.id ?? null, this._roomName());
     const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? charLevel2, threatBand: this.policy.threatBand ?? Math.floor(charLevel2 / 2), mapRoomNum };
+    // MAX PASS GUARD: if this step takes longer than 8s, the broker's
+    // event loop has been monopolised for too long. We cannot abort the
+    // atomic mid-flight (it's awaiting socket I/O), but we log the
+    // offence so the offending atomic can be found and fixed. The reduced
+    // fight params (3 rounds, 1 swing) should keep passes well under this.
+    // WHAT THE POSITION PULSE READS. It flags only a character that is NOT MOVING while
+    // it has somewhere to be -- 'travelling' is in its GOING set and everything else is
+    // excused as standing still on purpose. So anything that walks maps to travelling;
+    // a fight or a rest deliberately does not, because standing still IS those.
+    const _stepName = actionNameOf(p.steps?.[0], p);
+    this.doing = /travel|walk|scavenge|approach|flee/i.test(String(_stepName))
+      ? 'travelling' : (_stepName || null);
+    const passStart = Date.now();
     const result = await stepPlan(c, this.session, p, { index: 0, args: execArgs });
-    console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'}`);
+    const passMs = Date.now() - passStart;
+    if (passMs > 8000) {
+      console.error(`[goap] ${who} pass ${this._passCount} SLOW: step=${p.steps[0]?.atomic} took ${passMs}ms (>8000ms) — broker was unresponsive during this time`);
+    }
+    console.error(`[goap] ${who} pass ${this._passCount} EXEC done acted=${result.acted} reason=${result.reason ?? 'none'} (${passMs}ms)`);
+
+    const stepName = p.names?.[0] ?? result.action ?? '';
+
+    // If scavenge failed because targets were unreachable, clear the
+    // persisted target so the next pass picks a different one. Without
+    // this, the GOAP keeps re-picking the same unreachable target every
+    // pass and the character stands still.
+    if (stepName === 'scavenge' && /could not reach|could not get|unreachable|no approach|ran out of steps|nothing here matches/i.test(result.reason ?? '')) {
+      console.error(`[goap] ${who} scavenge unreachable, clearing target ${this._persistedTargetId} for re-pick`);
+      this._persistedTargetId = null;
+      this._persistedTargetLevel = null;
+      this._persistedThreatCeiling = null;
+      this._persistedTargetIsPlayer = null;
+      // Track scavenge failures per room. After 3 failures in the
+      // same room, the geometry is broken — force a room change.
+      const roomNum = c.room?.num ?? c.room?.id;
+      if (this._scavFailRoom === roomNum) {
+        this._scavFailCount = (this._scavFailCount ?? 0) + 1;
+      } else {
+        this._scavFailRoom = roomNum;
+        this._scavFailCount = 1;
+      }
+      if (this._scavFailCount >= 3) {
+        console.error(`[goap] ${who} scavenge failed ${this._scavFailCount}x in room ${roomNum}, forcing room change`);
+        this._scavFailCount = 0;
+        this._scavFailRoom = null;
+        // Force travel to a different room on the next pass
+        this._forceRoomChange = true;
+      }
+    } else {
+      // Successful action resets the fail counter
+      this._scavFailCount = 0;
+      this._scavFailRoom = null;
+    }
 
     // Track travel in progress: if this step WAS a travel_to
-    // (regardless of whether it completed), mark it so the next
-    // pass doesn't cancel it with a new travel command. The
-    // broker's travel() can take many seconds, and a new travel
-    // issued during that time cancels the old one.
-    const stepName = p.names?.[0] ?? result.action ?? '';
     // Only track travel in progress when the travel ACTUALLY SENT A PACKET
     // (acted=true). If the travel was refused (acted=false), do NOT set the guard —
     // let the next pass re-plan immediately, possibly with a different approach.

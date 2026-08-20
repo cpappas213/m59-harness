@@ -3,42 +3,22 @@
 //
 //   node tools/m59-pulse-test.mjs
 //
-// Offline. The real `Autopilot.pulsePosition` is lifted out of `m59-autopilot.mjs` by
-// brace matching and driven against a fake keeper, because what is under test is a
+// Offline, and it drives the REAL function: `pulse()` is imported from
+// m59-watchdog.mjs and run against a fake host, because what is under test is a
 // DECISION about a sequence of samples, and a sequence is something a fixture can state
 // exactly and a live fleet cannot.
 //
-// WHAT IT IS FOR. Every other stall number in this repository measures the KEEPER.
-// `ms_since_moved` is when the keeper last moved somebody, so it climbs while an errand
-// walks the character perfectly well — which is how a post-mortem came to report
-// `doing: "stalled", 8 minutes since it last moved` about a character the frames put in
-// three different rooms — and it stays quiet while a wedged character replans into the
-// same wall forever, because the keeper is working hard the whole time. The pulse asks
-// the other question, of the character, on its own clock.
+// It used to lift the method out of m59-autopilot.mjs by brace matching, which worked
+// only while the guard lived inside the monolith and broke the moment it moved. Testing
+// a real import instead of a string slice is the point of having extracted it.
 //
-// THE FAILURE MODE OF AN INSTRUMENT IS FALSE ALARMS, so most of this file is the
-// exclusions. A detector that shouts every time somebody sits down to rest gets switched
-// off within a day, and then it is not there on the day it was needed.
-import { readFileSync } from 'node:fs';
+import { pulse } from './m59-watchdog.mjs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, detail) => {
   if (cond) { pass++; console.log(`  ok   ${what}`); }
   else { fail++; console.log(`  FAIL ${what}${detail ? ' — ' + detail : ''}`); }
 };
-
-const src = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
-const start = src.indexOf('  pulsePosition(now, hp) {');
-ok('the pulsePosition method was located', start >= 0);
-let depth = 0, end = -1;
-for (let at = src.indexOf(') {', start) + 2; at < src.length; at++) {
-  if (src[at] === '{') depth++;
-  else if (src[at] === '}') { depth--; if (depth === 0) { end = at + 1; break; } }
-}
-const method = src.slice(start, end);
-ok('and it is a whole method', method.trim().endsWith('}'));
-const pulsePosition = new Function('PULSE_SAMPLES',
-  `return ({${method}}).pulsePosition`)(3);
 
 // ---------------------------------------------------------------------------
 // The smallest thing that can stand in for a keeper mid-walk.
@@ -48,7 +28,7 @@ function keeper({ doing = 'travelling', inert = null, hold = null,
   const self = { col, row, x: col * 64 + 32, y: row * 64 + 32 };
   const notes = [], frames = [];
   return {
-    doing, inert, hold, tally: {}, pulsePosition,
+    doing, inert, hold, tally: {},
     watch: { pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 },
     s: { client: { self, room: { id: room } } },
     note: (what, detail) => notes.push({ what, detail }),
@@ -57,7 +37,7 @@ function keeper({ doing = 'travelling', inert = null, hold = null,
     // Move the body, or do not, and take a sample.
     tick(t, { to = null, health = 50 } = {}) {
       if (to) { self.col = to.col; self.row = to.row; self.x = to.col * 64 + 32; }
-      return this.pulsePosition(t, { value: health, max: 50 });
+      return pulse(this, t, { value: health, max: 50 });
     },
   };
 }
@@ -154,7 +134,11 @@ console.log('\nit decides nothing, and that is deliberate');
   // The handbrake acts on HEALTH and cancels movement. This is an instrument: the whole
   // point is to make a fault debuggable, and an instrument that also acts is one whose
   // false alarms cost characters rather than log lines.
-  ok('nothing in the method cancels movement',
+  // Asserted against the REAL function's own source, not a slice of a file: the
+  // separation being pinned is that the pulse OBSERVES and the handbrake ACTS, and
+  // that has to stay true of the thing that actually runs.
+  const method = pulse.toString();
+  ok('nothing in the pulse cancels movement',
      !/cancelMovement|cancelledMovement/.test(method));
   ok('nothing in it moves the character',
      !/walkTo|stepFine|leaveVia|travel\(/.test(method));
