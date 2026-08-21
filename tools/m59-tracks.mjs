@@ -199,6 +199,30 @@ export function crossings(samples, { joinWithinMs = 15000, neighbours = null, ex
  * `geoFor` is injected rather than imported so this stays testable without a map — a caller
  * with no geometry still gets loop-elided trails, which are worse tracks and not wrong ones.
  */
+// HOW MANY OF THESE LEGS COULD ACTUALLY BE SENT? `rideTrack` sends each leg as the single
+// validated move `straighten` proved it to be, so the honest question about a track is that
+// same `lands` test, leg by leg.
+//
+// It is worth asking because `straighten` DOES emit legs that fail it. When no long leg
+// raycasts from the current anchor it falls back to `best = anchor + 1` and pushes the next
+// raw sample WITHOUT proving it -- and consecutive trail samples can be seconds and several
+// squares apart, around a corner a straight line does not survive. Measured on this fleet's
+// book: 105 of 321 tracks carry at least one such leg, 19.5% of all legs, and in 578 The
+// Cragged Mountains it is 14 legs of 18. A track that cannot be sent is not a fast crossing;
+// it is `walkFine` groping between waypoints, which is the behaviour the track existed to
+// replace.
+export function unprovedLegs(geo, points) {
+  if (!geo?.collisionReady || typeof geo.traceFineMoveClient !== 'function') return 0;
+  let n = 0;
+  for (let i = 1; i < points.length; i++) {
+    const a2 = points[i - 1], b2 = points[i];
+    const t = geo.traceFineMoveClient(protocolToClient(a2.x), protocolToClient(a2.y),
+                                      protocolToClient(b2.x), protocolToClient(b2.y), { slide: true });
+    if (!t || Math.hypot(t.x - protocolToClient(b2.x), t.y - protocolToClient(b2.y)) > 40) n++;
+  }
+  return n;
+}
+
 export function comb(crossingList, geoFor = () => null) {
   const best = new Map();
   // Every straightened walk per key, kept so the good halves can be stitched together —
@@ -208,19 +232,24 @@ export function comb(crossingList, geoFor = () => null) {
   for (const c of crossingList) {
     const key = trackKey(c.room, c.cameFrom, c.goingTo);
     const had = best.get(key);
-    {
-      const geo = geoFor(c.room);
-      const pts = straighten(geo, c.points);
-      if (pts.length >= 2) {
-        const list = seenWalks.get(key) ?? [];
-        list.push({ points: pts, ms: c.ms });
-        seenWalks.set(key, list);
-      }
-    }
-    if (had && had.ms <= c.ms) { had.seen++; continue; }
     const geo = geoFor(c.room);
     const points = straighten(geo, c.points);
+    if (points.length >= 2) {
+      const list = seenWalks.get(key) ?? [];
+      list.push({ points, ms: c.ms });
+      seenWalks.set(key, list);
+    }
     if (points.length < 2) continue;
+
+    // RIDABILITY OUTRANKS TIME. This used to keep whichever crossing was quickest, on the
+    // argument that monsters wander so a death says nothing about a route -- which is right
+    // about deaths and silent about whether the route can be SENT. A crossing whose legs do
+    // not raycast is not quick; it is `walkFine` feeling its way between the waypoints, and
+    // it wins the time comparison only because the body that walked it was lucky. So the
+    // track with fewer refused legs wins, and time decides between equals.
+    const unproved = unprovedLegs(geo, points);
+    if (had && (had.unproved ?? 0) <= unproved
+             && !((had.unproved ?? 0) === unproved && c.ms < had.ms)) { had.seen++; continue; }
     // WHICH STATIONS ARE SHELTER.
     //
     // The tight squares that make these crossings awkward are the SAME squares a monster
@@ -251,6 +280,7 @@ export function comb(crossingList, geoFor = () => null) {
                     ...(safeAt.length ? { shelter: safeAt } : {}),
                     entered: c.entered, left: c.left,
                     samples: c.points.length, seen: (had?.seen ?? 0) + 1,
+                    ...(unproved ? { unproved } : {}),
                     straightened: geo ? true : false });
   }
   // STITCH, WHERE THERE IS ANYTHING TO STITCH. A key seen once is its own best walk; a key
@@ -265,6 +295,12 @@ export function comb(crossingList, geoFor = () => null) {
       n += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y); return n; };
     // Only if it is actually shorter than the best single walk. A stitch that ties is not
     // worth preferring: the walked one has been ridden and this one has not.
+    // A STITCH THAT IS SHORTER AND LESS RIDABLE IS NOT AN IMPROVEMENT. Every sewn leg is
+    // meant to pass the mover's raycast; where it does not, taking it would trade a route
+    // that can be sent for one that has to be groped, which is the same mistake ranking on
+    // time alone was making.
+    const sewnUnproved = unprovedLegs(geo, sewn);
+    if (sewnUnproved > (entry.unproved ?? 0)) continue;
     if (length(sewn) < length(entry.waypoints) * 0.98) {
       // KEEP THE WALKED ROUTE. A STITCH IS PROVED ON PAPER, NOT IN PRACTICE.
       //
@@ -281,6 +317,7 @@ export function comb(crossingList, geoFor = () => null) {
       entry.walked_length = Math.round(length(entry.waypoints));
       entry.waypoints = sewn.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
       entry.stitched_length = Math.round(length(sewn));
+      if (sewnUnproved) entry.unproved = sewnUnproved; else delete entry.unproved;
       entry.proven = false;
     }
   }
