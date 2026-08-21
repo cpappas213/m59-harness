@@ -11143,6 +11143,27 @@ const TOOLS = [
           'creature cannot path to, and it was a deadlock besides: resting is how vigor comes ' +
           'back and the gate on resting was vigor. Set it to 80 or 100 to restore either older ' +
           'behaviour.' },
+      travel_wall_below: { type: 'number',
+        description: 'the health FRACTION at which a character MID-HOP detours to a safe wall ' +
+          'it is passing. Default 0.6. Separate from travel_hold_below (0.75, the hop-boundary ' +
+          'rest) because the two stops cost different things: at a boundary the journey is ' +
+          'already paused and a rest is nearly free, while mid-hop the mover has to be stopped ' +
+          'and the hop replanned. It exists at all because the refuge question used to be asked ' +
+          'only at boundaries, and a big room kills a character long before it offers one — ' +
+          'seven of eleven deaths in one window were inside the Cragged Mountains, 2,450 ' +
+          'squares, at 1, 2 and 5 health, with no refuge taken there at all.' },
+      travel_flee_from: { type: 'string', enum: ['players', 'anything', 'never'],
+        description: 'WHAT IS WORTH ABANDONING A JOURNEY FOR. Default "players". Being ' +
+          'attacked on the road is the ordinary condition of travel here, not an emergency: ' +
+          'there is no safe route, and a trip that turns back every time something bites ' +
+          'never arrives, it just takes the same damage in both directions. So by default a ' +
+          'monster does not end a journey — the wall rung takes shelter instead, and where ' +
+          'there is no wall the way out is THROUGH. A PLAYER is a different animal: a wall ' +
+          'stops monsters and says nothing about a person, who can walk to the same square, ' +
+          'swing first and take the pack, so dying to the troll costs the walk back and dying ' +
+          'to the player costs everything carried. "anything" is the behaviour before this ' +
+          'existed; "never" walks the road whatever happens. Gates flee and fight_back; ' +
+          'play_dead and arm are last-ditch and are not about who is attacking.' },
       travel_guard: {
         description: 'WHAT THE KEEPER IS STILL ALLOWED TO DO WHILE A JOURNEY IS STEERING. An ' +
           'object of booleans, or the string "on"/"off" for all of them at once. A journey used ' +
@@ -11427,6 +11448,18 @@ const TOOLS = [
       //
       // `null` clears the override and restores the defaults; the whole point of the state
       // is that a character with no opinion about it still defends itself.
+      if (a.travel_wall_below !== undefined) {
+        const n = Number(a.travel_wall_below);
+        if (!(n > 0 && n <= 1))
+          throw new Error(`travel_wall_below is a fraction between 0 and 1 — got ${a.travel_wall_below}`);
+        p.policy.travelWallBelow = n;
+      }
+      if (a.travel_flee_from !== undefined) {
+        const want = String(a.travel_flee_from);
+        if (!['players', 'anything', 'never'].includes(want))
+          throw new Error(`travel_flee_from must be one of players, anything, never — got ${want}`);
+        p.policy.travelFleeFrom = want;
+      }
       if (a.travel_guard !== undefined) {
         const want = a.travel_guard;
         if (want == null) p.policy.travelGuard = null;

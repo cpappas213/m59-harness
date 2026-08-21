@@ -370,5 +370,41 @@ console.log('a refusal leaves a trace');
   keeper.policy = { travelHold: 'on', travelHoldBelow: 0.75 };
 }
 
+console.log('');
+console.log('a wall is nearer than the next room -- the mid-hop rung');
+{
+  // THE RUNG THAT WAS MISSING. Every other mid-hop rung fires late by construction: the flee
+  // line, two hits from death, an emptying bar. That is right when the only choices are run
+  // or stand, and wrong when there is a square a creature cannot path to a few steps away.
+  // Seven of eleven deaths in one clean window were inside the Cragged Mountains -- 2,450
+  // squares -- with no refuge taken there at all, because the refuge question was only ever
+  // asked at a hop BOUNDARY and a body never reached one.
+  const SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  const rung = SRC.indexOf('A WALL IS NEARER THAN THE NEXT ROOM');
+  const flee = SRC.indexOf('BELOW THE LINE THIS KEEPER FLEES AT');
+  const dying = SRC.indexOf('LOSING HEALTH FAST ENOUGH THAT THE ROAD WILL NOT END FIRST');
+  const twoHits = SRC.indexOf('INSIDE TWO HITS OF DEATH');
+  ok('the rung exists at all', rung > 0);
+  // ORDER IS THE WHOLE POINT. Above the flee line, so a character with a wall in reach walks
+  // to it instead of running; below the emergencies, which know better than any detour does.
+  ok('it is asked BEFORE the flee line', rung > 0 && flee > 0 && rung < flee);
+  ok('and before the emptying-bar test', rung > 0 && dying > 0 && rung < dying);
+  ok('but AFTER two hits from death, which knows better than a detour does',
+     twoHits > 0 && rung > twoHits);
+  const body = SRC.slice(rung, flee);
+  // It must be switchable like every other faculty, and must reuse the guard key the
+  // boundary version already uses rather than inventing a second one.
+  ok('it is gated on the safe_spot faculty, not hard-wired',
+     body.includes("travelAllows('safe_spot')"));
+  ok('it only fires when a spot was actually found', /if \(spot\)/.test(body));
+  ok('it uses the same reach the boundary hold uses', /travelHoldWithin/.test(body));
+  ok('it hands back rather than steering, like the rungs around it', /takeBack\(/.test(body));
+  ok('and it fires at its own threshold, well above the health people die at',
+     /travelWallBelow/.test(body));
+  ok('which defaults to 60% — the deaths were at 1, 2 and 5 health, where no detour is walkable',
+     /travelWallBelow \?\? 0\.6/.test(body));
+  ok('the clock says safe_spot is on both', /safe_spot: 'both'/.test(SRC));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

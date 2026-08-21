@@ -406,7 +406,13 @@ export const TRAVEL_GUARD_KEYS = Object.freeze(Object.keys(TRAVEL_GUARD_DEFAULTS
 // knows whether they have disabled an interruption or a pause.
 export const TRAVEL_GUARD_CLOCK = Object.freeze({
   flee: 'mid-hop', fight_back: 'mid-hop', play_dead: 'mid-hop', arm: 'mid-hop',
-  rest: 'hop boundary', safe_spot: 'hop boundary',
+  rest: 'hop boundary',
+  // BOTH CLOCKS, and it had to be. At a boundary the journey pauses and the character rests
+  // at a wall to full. MID-HOP it hands back so the ordinary ladder can take one, because a
+  // big room kills a character long before it offers a boundary to be asked at: seven of
+  // eleven deaths in one window were inside the Cragged Mountains, which is 2,450 squares,
+  // with no refuge taken there at all.
+  safe_spot: 'both',
 });
 
 // HOW SOON THE DAMAGE WOULD KILL US BEFORE A JOURNEY IS WORTH INTERRUPTING OVER.
@@ -8503,6 +8509,37 @@ export class Autopilot {
       o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
       Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
 
+    // WHAT IS WORTH ABANDONING A JOURNEY FOR, AND MONSTERS ARE NOT IT BY DEFAULT.
+    //
+    // Being attacked on the road is the ordinary condition of travel in this game, not an
+    // emergency: there is no safe route, and a trip that turns back every time something
+    // bites is a trip that never arrives — it just accumulates the same damage in both
+    // directions. The way out of an attack during travel is THROUGH, and where it is not,
+    // the rung above this one takes a wall.
+    //
+    // A PLAYER IS A DIFFERENT ANIMAL. A wall stops monsters and says nothing whatever about
+    // a person, who can walk to the same square, swing first, and take the pack — so dying
+    // to the troll costs the walk back and dying to the player costs everything carried.
+    // That asymmetry is already why `travel_hold_pvp` refuses a rest with people about, and
+    // it is the same argument here.
+    //
+    //   'players'  (default) only a stranger ends a journey; monsters are expected
+    //   'anything'           the behaviour before this — any attacker ends it
+    //   'never'              nothing does; the road is walked whatever happens
+    //
+    // `party.isFleetmate` tells one of ours from a stranger, and a keeper that has not had a
+    // pass yet is absent from that roster — so this can briefly call a fleetmate a stranger
+    // after a restart. Being wrong that way ends a journey that could have continued, which
+    // is the cheap direction.
+    const fleeFrom = this.policy.travelFleeFrom ?? 'players';
+    const strangers = me && c?.room ? [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+      !party.isFleetmate(c.rsc?.get(o.nameRsc)) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
+    const worthEnding = fleeFrom === 'never' ? []
+                      : fleeFrom === 'anything' ? [...near, ...strangers]
+                      : strangers;
+
     // ---- 2. INSIDE TWO HITS OF DEATH.
     //
     // The ordinary ladder's own test, borrowed rather than reinvented: below two of the
@@ -8517,7 +8554,59 @@ export class Autopilot {
                       `single hit here is about ${worstHit}`,
                       { adjacent: near.length, worst_single_hit: worstHit });
 
-    // ---- 3. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
+    // ---- 3. A WALL IS NEARER THAN THE NEXT ROOM.
+    //
+    // THE RUNG THAT WAS MISSING, AND THE ROOM THAT PROVED IT. Everything below this fires
+    // LATE by construction: the flee line, two hits from death, an emptying bar. That is the
+    // right shape when the only choices are run or stand — but it is the wrong shape when
+    // there is a square nearby that a creature CANNOT PATH TO, because reaching one ends the
+    // fight rather than gambling on it.
+    //
+    // Measured on the arena fleet, one clean window: eleven deaths, SEVEN of them in the
+    // Cragged Mountains, at 1/45, 2/22, 4/49, 5/49, 5/52 and 2/53 health — and not one
+    // refuge taken in that room. The refuge question was only ever asked at a hop BOUNDARY
+    // (see TRAVEL_GUARD_CLOCK), and 578 is 2,450 squares: a body is found, fought and killed
+    // deep inside it without ever reaching a boundary to be asked at.
+    //
+    // So it is asked here too, and it is asked EARLIER than the emergencies — at
+    // `travel_hold_below` rather than at the flee line — because a wall is only worth
+    // detouring to while there is still enough health to walk to it. It costs nothing when
+    // there is no wall: `nearestSafeSpot` answers null and the ladder carries on to the
+    // rungs that were already here.
+    //
+    // Handing back rather than steering from here is deliberate and is the same rule the
+    // rungs around it obey: mid-hop the mover is walking, and only one thing may ever drive
+    // a body. The ordinary ladder takes the wall on this same pass, with real numbers.
+    // ITS OWN THRESHOLD, AND HIGHER THAN THE DYING. The deaths this rung exists for happened
+    // at 1, 2 and 5 health — by which point no detour is walkable. Sixty per cent is where a
+    // character can still reach a wall a few steps away and has something left to protect.
+    //
+    // It is separate from `travel_hold_below` (0.75) rather than sharing it because the two
+    // stops cost different things. At a hop boundary the journey is already paused and a rest
+    // is nearly free, so it is worth taking early. Mid-hop the mover has to be stopped and
+    // the hop replanned, so it waits a little longer — but nothing like as long as dying.
+    if (this.travelAllows('safe_spot') && hp !== null && near.length
+        && hp < (this.policy.travelWallBelow ?? 0.6)) {
+      const geo = this.s.world?.geometry;
+      let spot = null;
+      if (geo && me) {
+        try {
+          spot = nearestSafeSpot(geo, me, { book: this.book,
+                                            room: this.s.world?.room?.num ?? null,
+                                            within: this.policy.travelHoldWithin ?? 10 });
+        } catch { spot = null; }
+      }
+      if (spot)
+        return takeBack('a wall is nearer than the next room',
+                        `${Math.round(hp * 100)}% health with ${near.length} on us, and a ` +
+                        `defensible square ${spot.steps_away ?? '?'} step(s) away. A creature ` +
+                        'cannot path to it, so reaching it ends this rather than outrunning it',
+                        { adjacent: near.length,
+                          spot: { col: spot.col, row: spot.row, steps: spot.steps_away ?? null,
+                                  proven: !!spot.proven } });
+    }
+
+    // ---- 4. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
     //
     // THIS IS THE ONE THAT WOULD HAVE SAVED CCCC, and it is worth being exact about why
     // it is not the rescue that already existed. He entered West Merchant Way at 10 of 37
@@ -8529,21 +8618,25 @@ export class Autopilot {
     // Movement is not consulted here at all. Below the flee line with something adjacent
     // is a fight the keeper has already decided it does not take, and a journey is not a
     // reason to take it.
-    if (this.travelAllows('flee') && hp !== null && near.length
+    if (this.travelAllows('flee') && hp !== null && worthEnding.length
         && hp < this.safety().fleeAt)
-      return takeBack('below the flee line with something adjacent',
+      return takeBack('below the flee line with someone adjacent',
                       'the keeper flees at this fraction when it is driving, and a journey ' +
                       'is not a reason to stand and take it',
-                      { adjacent: near.length });
+                      { adjacent: worthEnding.length, monsters_near: near.length,
+                        players_near: strangers.length, flee_from: fleeFrom });
 
-    // ---- 4. LOSING HEALTH FAST ENOUGH THAT THE ROAD WILL NOT END FIRST.
+    // ---- 5. LOSING HEALTH FAST ENOUGH THAT THE ROAD WILL NOT END FIRST.
     //
     // The rate, not the position. A character being eaten while it walks is in exactly as
     // much trouble as one being eaten while it stands, and it is harder to see — every
     // stall instrument in this file reads it as healthy. `damageRate` reads the position
     // pulse ring, which is on the CHARACTER's clock rather than the keeper's, so it keeps
     // measuring through a travel await that nothing else can see into.
-    if (this.travelAllows('fight_back')) {
+    // Gated the same way: an emptying bar with only monsters on it is the road doing what
+    // the road does, and the wall rung above is the answer to it. A stranger emptying it is
+    // somebody choosing to, which is worth ending a journey over.
+    if (this.travelAllows('fight_back') && (fleeFrom === 'anything' || worthEnding.length)) {
       const ttl = this.timeToDeath();
       if (ttl !== null && ttl <= TRAVEL_RESCUE_TTL_MS)
         return takeBack('dying faster than this journey can finish',
@@ -8555,7 +8648,7 @@ export class Autopilot {
                           adjacent: near.length });
     }
 
-    // ---- 5. NOTHING WORTH STOPPING FOR. The journey keeps the character.
+    // ---- 6. NOTHING WORTH STOPPING FOR. The journey keeps the character.
     //
     // NOT A STALL, for the same reason inert is not: the supervisor restarts keepers that
     // report no progress, and this one is doing what it was asked to do.
