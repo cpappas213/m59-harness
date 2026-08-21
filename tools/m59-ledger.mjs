@@ -203,6 +203,24 @@ export function recordSample(rows = []) {
           killer_is_a_guess: d.killed_by_is_a_guess ?? false,
           unattended: d.unattended ?? false,
           hunting: d.hunting, strategy: d.strategy, flee_threshold: d.flee_threshold,
+          // WAS IT AT A WALL, AND WAS THAT WALL PROVEN? The keeper reconstructs this into
+          // `lastDeath.in_safe_spot` and the ledger was dropping it on the floor, so the one
+          // question the whole safe-spot thesis turns on could not be asked of the record.
+          //
+          // The thesis predicts near-never: a working spot cannot be hit out of unless you
+          // swing first, so a death in one means the square does not work, or the character
+          // was caught walking in or out. Those are different problems with different fixes
+          // and only this tells them apart. Asked of prod after seven deaths, the answer had
+          // to be pieced together from tally counters instead -- five in the open, two on
+          // UNPROVEN squares, none on a proven one -- which is the thesis holding up, and it
+          // should not have taken that much work to find out.
+          in_safe_spot: d.in_safe_spot
+            ? { at: d.in_safe_spot.at ?? null, proven: !!d.in_safe_spot.proven,
+                held_s: d.in_safe_spot.held_s ?? null }
+            : (d.in_safe_spot === false ? false : null),
+          // `false` means it was asked and the answer was no; `null` means nobody asked,
+          // which is the distinction that made the old records unreadable.
+          fled_in_time: d.fled_in_time ?? null,
           ...(thin ? { detail_missing: true,
                        note: 'the keeper had not finished reconstructing this death when the ' +
                              'sample caught it — room and level come from the sampler, the ' +

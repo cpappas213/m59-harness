@@ -15,6 +15,7 @@
 // Uses M59_LEDGER_DIR against a scratch directory, so it never reads or writes a real
 // fleet's history.
 
+import { readFileSync } from 'node:fs';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -166,5 +167,30 @@ console.log('\nkills in the last half hour');
 }
 
 rmSync(dir, { recursive: true, force: true });
+console.log('');
+console.log('a death says whether it happened at a wall');
+{
+  // THE ONE QUESTION THE SAFE-SPOT THESIS TURNS ON, and the ledger was dropping it. The
+  // thesis predicts near-never: a working spot cannot be hit out of unless you swing first,
+  // so a death in one means either the square does not work or the character was caught
+  // walking in or out. Those are different problems with different fixes, and only this
+  // tells them apart. Asked of prod after seven deaths it had to be reconstructed from tally
+  // counters instead.
+  const SRC = readFileSync(new URL('./m59-ledger.mjs', import.meta.url), 'utf8');
+  const at = SRC.indexOf("recordEvent(name, 'died'");
+  const body = SRC.slice(at, at + 2600);
+  ok('the died event carries in_safe_spot', /in_safe_spot: d\.in_safe_spot/.test(body));
+  ok('with whether the wall was PROVEN, since an unproven one failing is a different fact',
+     /proven: !!d\.in_safe_spot\.proven/.test(body));
+  ok('and how long it had been held', /held_s/.test(body));
+  // FALSE AND NULL ARE NOT THE SAME. `false` is "asked, and it was not at a wall"; `null` is
+  // "nobody asked" -- which is exactly what made the old records unreadable, because a
+  // missing field and a negative answer looked identical.
+  ok('false means asked-and-no, null means nobody asked',
+     /d\.in_safe_spot === false \? false : null/.test(body));
+  ok('and how hurt it was when it should have fled comes along too',
+     /fled_in_time/.test(body));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
