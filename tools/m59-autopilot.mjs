@@ -8540,21 +8540,7 @@ export class Autopilot {
                       : fleeFrom === 'anything' ? [...near, ...strangers]
                       : strangers;
 
-    // ---- 2. INSIDE TWO HITS OF DEATH.
-    //
-    // The ordinary ladder's own test, borrowed rather than reinvented: below two of the
-    // biggest hits this game lands, with something adjacent. Out on a road there is no
-    // safe spot to make the sheltered case apply, so this is always the open-ground
-    // version — and the ladder will choose between running for a town and playing dead.
-    const worstHit = Math.min(30, Math.floor(((v?.health?.max ?? 0) + 2) / 3));
-    if (this.travelAllows('play_dead') && near.length && v?.health?.value != null
-        && v.health.value <= worstHit * 2)
-      return takeBack('two hits from death',
-                      `${v.health.value} health with ${near.length} adjacent, and the biggest ` +
-                      `single hit here is about ${worstHit}`,
-                      { adjacent: near.length, worst_single_hit: worstHit });
-
-    // ---- 3. A WALL IS NEARER THAN THE NEXT ROOM.
+    // ---- 2. A WALL IS NEARER THAN THE NEXT ROOM.
     //
     // THE RUNG THAT WAS MISSING, AND THE ROOM THAT PROVED IT. Everything below this fires
     // LATE by construction: the flee line, two hits from death, an emptying bar. That is the
@@ -8585,8 +8571,26 @@ export class Autopilot {
     // stops cost different things. At a hop boundary the journey is already paused and a rest
     // is nearly free, so it is worth taking early. Mid-hop the mover has to be stopped and
     // the hop replanned, so it waits a little longer — but nothing like as long as dying.
+    //
+    // AND IT HAD TO MOVE ABOVE PLAYING DEAD, BECAUSE BELOW IT IT WAS DEAD CODE. `play_dead`
+    // fires at `worstHit * 2`, and for a fleet whose maxima run 22 to 56 that is 67% to 73%
+    // of the bar -- ABOVE this rung's 60%, so it always won and the wall was never reached.
+    // Measured over 26 minutes: fifteen journeys taken back, every one of them "two hits
+    // from death", against six refuges and all six of those in towns where nothing was
+    // attacking. Fourteen deaths.
+    //
+    // So it is asked first, and it is asked at its own threshold OR wherever playing dead
+    // would have fired, whichever comes sooner. That second clause is the point: playing
+    // dead is a gamble on what the room does next, and a wall is geometry. Where both are
+    // available the wall is strictly better, and where there is no wall this falls straight
+    // through to the gamble, which is what it is for.
+    // The same fraction the ordinary ladder uses, borrowed rather than reinvented — see
+    // `doomedAt` there. At 0.4 it now sits BELOW this rung's 0.6, so the wall is reached
+    // first on the way down and this clause is a backstop rather than the usual trigger.
+    const wouldPlayDead = near.length && hp !== null
+      && hp < (this.policy.doomedInOpenBelow ?? 0.4);
     if (this.travelAllows('safe_spot') && hp !== null && near.length
-        && hp < (this.policy.travelWallBelow ?? 0.6)) {
+        && (hp < (this.policy.travelWallBelow ?? 0.6) || wouldPlayDead)) {
       const geo = this.s.world?.geometry;
       let spot = null;
       if (geo && me) {
@@ -8605,6 +8609,21 @@ export class Autopilot {
                           spot: { col: spot.col, row: spot.row, steps: spot.steps_away ?? null,
                                   proven: !!spot.proven } });
     }
+
+
+    // ---- 3. INSIDE TWO HITS OF DEATH, AND NO WALL TO PUT AT OUR BACK.
+    //
+    // The ordinary ladder's own test, borrowed rather than reinvented: below two of the
+    // biggest hits this game lands, with something adjacent. Out on a road there is no
+    // safe spot to make the sheltered case apply, so this is always the open-ground
+    // version — and the ladder will choose between running for a town and playing dead.
+    // `worstHit` is computed by the wall rung above, which asks the same question first.
+    if (this.travelAllows('play_dead') && wouldPlayDead)
+      return takeBack('two hits from death',
+                      `${v.health.value} health with ${near.length} adjacent, and no wall ` +
+                      `within reach to put at our back`,
+                      { adjacent: near.length,
+                        doomed_below: this.policy.doomedInOpenBelow ?? 0.4 });
 
     // ---- 4. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
     //
@@ -9115,9 +9134,17 @@ export class Autopilot {
     // from and we choose which one we swing at. Cedric logged off three times in five
     // minutes at 71%, and each of those minutes was a minute of not healing and not
     // killing anything. Below a third of health it is still worth it.
-    const doomedAt = this.hold
-      ? Math.round((v.health?.max ?? 0) * (this.policy.doomedInSpotBelow ?? 0.35))
-      : worstHit * 2;
+    // AND IN THE OPEN IT IS A FRACTION NOW TOO, FOR THE SAME REASON. `worstHit * 2` is a
+    // real arithmetic about this game's biggest single hit, and on this fleet it lands at
+    // 67% to 73% of the bar — the note above already calls 70% absurd behind a wall, and it
+    // is not much better in the open. Playing dead is a MONSTER-FIGHTING move, not a
+    // response to being two thirds healthy: freezing at 70% spends a minute of not healing
+    // and not killing anything, and it pre-empts every rung that would have done something
+    // useful. Measured over 26 minutes of commuting: fifteen journeys taken back, every one
+    // of them "two hits from death", six refuges, fourteen deaths.
+    const doomedAt = Math.round((v.health?.max ?? 0) * (this.hold
+      ? (this.policy.doomedInSpotBelow ?? 0.35)
+      : (this.policy.doomedInOpenBelow ?? 0.4)));
     const doomed = hp !== null && near.length && v.health?.value != null &&
                    v.health.value <= doomedAt;
     // PLAY DEAD ONLY WHERE STANDING STILL IS ALREADY SAFE. FLEE EVERYWHERE ELSE.

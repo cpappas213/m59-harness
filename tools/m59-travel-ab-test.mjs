@@ -389,8 +389,14 @@ console.log('a wall is nearer than the next room -- the mid-hop rung');
   // to it instead of running; below the emergencies, which know better than any detour does.
   ok('it is asked BEFORE the flee line', rung > 0 && flee > 0 && rung < flee);
   ok('and before the emptying-bar test', rung > 0 && dying > 0 && rung < dying);
-  ok('but AFTER two hits from death, which knows better than a detour does',
-     twoHits > 0 && rung > twoHits);
+  // AND ABOVE PLAYING DEAD, WHICH IS WHERE IT HAD TO MOVE. Below it the rung was dead code:
+  // play_dead fires at worstHit*2, which for maxima of 22 to 56 is 67% to 73% of the bar and
+  // therefore always beat this rung's 60%. Measured over 26 minutes, fifteen journeys taken
+  // back and every one of them "two hits from death", six refuges and all six in towns.
+  ok('and ABOVE playing dead, because a wall is geometry and playing dead is a gamble',
+     twoHits > 0 && rung < twoHits);
+  ok('it also fires wherever playing dead would have, when a wall is there to take instead',
+     /wouldPlayDead/.test(SRC.slice(rung, twoHits)));
   const body = SRC.slice(rung, flee);
   // It must be switchable like every other faculty, and must reuse the guard key the
   // boundary version already uses rather than inventing a second one.

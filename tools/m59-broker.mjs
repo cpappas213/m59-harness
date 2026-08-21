@@ -11143,6 +11143,17 @@ const TOOLS = [
           'creature cannot path to, and it was a deadlock besides: resting is how vigor comes ' +
           'back and the gate on resting was vigor. Set it to 80 or 100 to restore either older ' +
           'behaviour.' },
+      doomed_in_open_below: { type: 'number',
+        description: 'the health FRACTION at which a character on open ground plays dead. ' +
+          'Default 0.4. It used to be `worstHit * 2` — real arithmetic about the biggest ' +
+          'single hit this game lands, which on a fleet with maxima of 22 to 56 works out at ' +
+          '67% to 73% of the bar. Playing dead is a monster-fighting move, not a response to ' +
+          'being two thirds healthy: freezing there spends a minute of not healing and not ' +
+          'killing anything, and it pre-empts every rung that would have done something ' +
+          'useful — measured over 26 minutes of commuting, fifteen journeys were taken back ' +
+          'and every one of them read "two hits from death". Behind a wall the trigger is ' +
+          'doomed_in_spot_below (0.35), lower again because a spot already keeps most of it ' +
+          'off.' },
       travel_wall_below: { type: 'number',
         description: 'the health FRACTION at which a character MID-HOP detours to a safe wall ' +
           'it is passing. Default 0.6. Separate from travel_hold_below (0.75, the hop-boundary ' +
@@ -11448,6 +11459,12 @@ const TOOLS = [
       //
       // `null` clears the override and restores the defaults; the whole point of the state
       // is that a character with no opinion about it still defends itself.
+      if (a.doomed_in_open_below !== undefined) {
+        const n = Number(a.doomed_in_open_below);
+        if (!(n > 0 && n <= 1))
+          throw new Error(`doomed_in_open_below is a fraction between 0 and 1 — got ${a.doomed_in_open_below}`);
+        p.policy.doomedInOpenBelow = n;
+      }
       if (a.travel_wall_below !== undefined) {
         const n = Number(a.travel_wall_below);
         if (!(n > 0 && n <= 1))
