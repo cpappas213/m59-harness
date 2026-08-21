@@ -6717,6 +6717,10 @@ export class Autopilot {
   }
 
   revive(why = null) {
+    // The journey is over, so the route it was diverting along is too. Left set, this would
+    // offer a stop on somebody else's walk — an errand, a fight, a shopping trip — none of
+    // which have a route ahead to fold one into.
+    this.s.shelterPolicy = null;
     if (!this.inert) return null;
     const held = Date.now() - this.inert.at;
     const wasTravelling = !!this.inert.travelling;
@@ -6747,6 +6751,35 @@ export class Autopilot {
     // silence and got it — so the journey does not get to quietly upgrade itself.
     if (this.inert) return this.inertStatus();
     const allow = this.travelGuard(guard);
+    // THE FUEL-STOP POLICY, HANDED TO THE MOVER FOR THE LENGTH OF THE JOURNEY.
+    //
+    // Without this the planner in `walkTo` is dead code — it checks `shelterPolicy` and
+    // finds nothing, so no crossing ever carries its shelters and the whole point is lost.
+    // Set here rather than per walk because it is a property of BEING ON A JOURNEY: an
+    // errand, a fight or a shopping trip has no route ahead to divert along.
+    //
+    // `need()` is read by the walker between legs, so it must be cheap and must answer about
+    // NOW rather than about when the journey started.
+    if (allow.safe_spot) {
+      this.s.shelterPolicy = {
+        book: this.book,
+        within: this.policy.travelHoldWithin ?? 10,
+        // Four squares off the road. A wall further than that is not shelter when a full bar
+        // is nine and a half seconds; it is a longer way to die.
+        maxDetour: this.policy.travelShelterDetour ?? 4,
+        need: () => {
+          const v = this.s.client?.vitals?.();
+          const hp = v?.health?.max ? v.health.value / v.health.max : null;
+          return hp !== null && hp < (this.policy.travelWallBelow ?? 0.8);
+        },
+        onDivert: (stop, at) => this.note('taking a wall on the way past', {
+          where: { col: stop.col, row: stop.row }, proven: stop.proven,
+          off_the_road: stop.detour, at_step: at.atStep,
+          why: 'hurt, and this was already on the route — no stop, no replan, one more ' +
+               'waypoint than the crossing had a moment ago',
+        }),
+      };
+    }
     this.inert = { why, at: Date.now(), maxMs, travelling: true, guard: allow };
     this.book.save();
     uptime.record(this.s.name, 'travelling',

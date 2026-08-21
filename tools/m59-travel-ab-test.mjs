@@ -412,5 +412,25 @@ console.log('a wall is nearer than the next room -- the mid-hop rung');
   ok('the clock says safe_spot is on both', /safe_spot: 'both'/.test(SRC));
 }
 
+console.log('');
+console.log('the fuel-stop policy is actually handed to the mover');
+{
+  // A MECHANISM NOBODY SETS IS A MECHANISM THAT DOES NOTHING. `walkTo` reads
+  // `shelterPolicy` off the session; if the keeper never writes it, every crossing plans no
+  // shelters and the whole thing is dead code that tests green.
+  const SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  const go = SRC.indexOf('goTravelling(why = null');
+  const body = SRC.slice(go, go + 2600);
+  ok('goTravelling sets it', /this\.s\.shelterPolicy = \{/.test(body));
+  ok('and only when the safe_spot faculty is allowed', /allow\.safe_spot/.test(body));
+  ok('need() reads health at the moment it is asked, not when the journey began',
+     /need: \(\) => \{[\s\S]{0,220}vitals/.test(body));
+  ok('and it asks the same threshold the ladder does', /travelWallBelow/.test(body));
+  // AND IT IS CLEARED. Left set, it would offer a stop on an errand or a shopping trip,
+  // neither of which has a route ahead to fold one into.
+  const rev = SRC.indexOf('revive(why = null)');
+  ok('revive clears it', /this\.s\.shelterPolicy = null/.test(SRC.slice(rev, rev + 700)));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
