@@ -140,32 +140,27 @@ console.log('\nthe gate that decides a candidate moment');
   ok('healthy enough is not a candidate', ask(keeper(40, 44, 150)).candidate === false);
   ok('ARRIVING HURT IS FINE — the last room of a journey is somebody else\'s decision',
      ask(keeper(20, 44, 150), 0).candidate === false);
-  // TOO TIRED FOR THE POINTS TO COME. Health returns at a rate set by vigor, so far enough
-  // below the floor a top-up costs longer than the journey and buys little.
+  // VIGOR DOES NOT REFUSE REFUGE. This gate was wrong three times and only the third fix
+  // was about the right thing. At 100 it was above anything an unfed fleet can present, so
+  // the hold never fired. At 80 it sat on REST_VIGOR_CAP — the most resting can give you —
+  // so a character slightly under was refused while vigor drains as it walks; measured, 8 of
+  // 18 deaths were characters down to 1 or 2 health refused at 74, 76, 78.
   //
-  // THE FLOOR HAS BEEN WRONG TWICE AND BOTH TIMES IT WAS A CLIFF IN THE WRONG PLACE. At 100
-  // it was above anything an unfed fleet could present and the hold never fired at all. At
-  // 80 it sat on REST_VIGOR_CAP itself — the most resting can give you — so a character even
-  // slightly under was refused, while vigor drains as you walk. Measured: 8 of 18 deaths were
-  // characters down to 1 or 2 health refused for vigor at 74, 76, 78. A deadlock, since
-  // resting is how vigor comes back.
-  //
-  // And the mechanic is CONTINUOUS, not a cliff: CalculateHealthTime (player.kod:5613) is
-  // ((200-vigor)^2)/6 + 1000 ms per point, so 78 is 2% slower than 80 and 40 is 55% slower —
-  // still eleven points a minute, which is worth having at 2 health.
-  ok('TOO TIRED FOR THE POINTS TO COME — far below the floor a top-up buys little',
-     ask(keeper(20, 44, 20)).candidate === false &&
-     /too tired/.test(ask(keeper(20, 44, 20)).why));
-  ok('AND 80 IS NOT TOO TIRED, because 80 is where an unfed fleet lives',
-     ask(keeper(20, 44, 80)).candidate === true);
-  // THE ONE THAT WAS KILLING CHARACTERS. Two points under the resting cap is not a different
-  // situation from being on it, and a body at 20 of 44 health must not be turned away for it.
-  ok('and 78 is not too tired either — two points under the cap was refusing the dying',
-     ask(keeper(20, 44, 78)).candidate === true);
-  ok('nor 74, nor 54', ask(keeper(20, 44, 74)).candidate === true &&
-                       ask(keeper(20, 44, 54)).candidate === true);
-  ok('the floor is half the cap, so 40 still qualifies and 39 does not',
-     ask(keeper(20, 44, 40)).candidate === true && ask(keeper(20, 44, 39)).candidate === false);
+  // The exposure argument for having a floor does not apply to a SAFE SPOT, which is a square
+  // a creature cannot path to — that is the whole mechanism. And it was a deadlock besides:
+  // resting is how vigor comes back, and the gate on resting was vigor.
+  ok('a hurt traveller at the resting cap is offered a wall', ask(keeper(20, 44, 80)).candidate === true);
+  ok('and two points under it, which is where they were dying', ask(keeper(20, 44, 78)).candidate === true);
+  ok('and at 54, and at 20, and at 1 — none of these is a reason to walk on bleeding',
+     [74, 54, 20, 1].every(v => ask(keeper(20, 44, v)).candidate === true));
+  ok('vigor 0 is not a refusal either', ask(keeper(20, 44, 0)).candidate === true);
+  // THE KNOB SURVIVES for a fleet that would rather press on, and nothing is the default.
+  ok('a fleet that sets a floor still gets one',
+     ask({ ...keeper(20, 44, 40), policy: { travelHold: 'on', travelHoldBelow: 0.75, travelHoldVigor: 80 } })
+       .candidate === false);
+  ok('and that refusal names the floor the fleet chose, not a mechanic',
+     /floor this fleet set at 80/.test(
+       ask({ ...keeper(20, 44, 40), policy: { travelHold: 'on', travelHoldBelow: 0.75, travelHoldVigor: 80 } }).why));
   ok('something already swinging is a fight, not a pause — the ordinary pass is better ' +
      'at both halves of that than a hold is',
      ask(keeper(20, 44, 150, 2)).candidate === false);
@@ -173,7 +168,8 @@ console.log('\nthe gate that decides a candidate moment');
      ask({ ...keeper(20, 44, 150), s: { client: { vitals: () => ({}) } } }).candidate === false);
   ok('and every refusal says why, because a gate that silently never fires is an ' +
      'experiment that measures nothing',
-     [keeper(40, 44, 150), keeper(20, 44, 20), keeper(20, 44, 150, 2)]
+     [keeper(40, 44, 150), keeper(20, 44, 150, 2),
+      { ...keeper(20, 44, 40), policy: { travelHold: 'on', travelHoldBelow: 0.75, travelHoldVigor: 80 } }]
        .every(k => typeof ask(k).why === 'string' && ask(k).why.length > 0));
 }
 

@@ -11092,9 +11092,13 @@ const TOOLS = [
           'fine, because the destination is somebody\'s decision and there is usually a reason to ' +
           'be there.' },
       travel_hold_to: { type: 'number',
-        description: 'the health fraction a mid-journey rest stops at. Default 0.9. Not 1.0 on ' +
-          'purpose: the last tenth costs as long as the first half and every second of it is a ' +
-          'second something can find you.' },
+        description: 'the health fraction a mid-journey rest stops at. Default 1 — full. It was ' +
+          '0.9, on the argument that the last tenth costs as long as the first half and every ' +
+          'second of it is a second something can find you: true on open ground, and not true on ' +
+          'a square a creature cannot path to, which is what a safe spot is. A traveller that has ' +
+          'gone to the trouble of reaching a wall should leave it healed, and restUntil aborts on ' +
+          'damage if the wall turns out to be wrong. Vigor is rested to the resting cap alongside ' +
+          'it, since that is the most an unfed character can reach.' },
       travel_start_health: { type: 'number',
         description: 'the health FRACTION a character rests to before setting out on a journey, ' +
           'when it is somewhere safe to sit down. Default 1 — full. An inn is the one place ' +
@@ -11130,15 +11134,15 @@ const TOOLS = [
           'of a 3-square disc; off, the fleet never leaves its wall to chase somebody. The melee ' +
           'reach itself belongs to the SERVER and is not a setting.' },
       travel_hold_vigor: { type: 'number',
-        description: 'the vigor a character must have before it will stop mid-journey to heal at a ' +
-          'safe wall. Default 40. It was 100 — which no fleet with an empty larder can ever present, ' +
-          'so the hold never fired — and then 80, which is the RESTING CAP and therefore a cliff at ' +
-          'exactly the highest an unfed character reaches: measured, 8 of 18 deaths were characters ' +
-          'down to 1 or 2 health refused for vigor, most of them two to six points under the line, ' +
-          'which is a deadlock because resting is how vigor comes back. The mechanic is continuous ' +
-          'rather than a cliff — CalculateHealthTime (player.kod:5613) is ((200-vigor)^2)/6+1000 ms ' +
-          'per point, so 78 heals 2% slower than 80 and 40 heals 55% slower, still eleven points a ' +
-          'minute. Raise it to 80 or 100 to restore either older behaviour.' },
+        description: 'OPTIONAL floor on vigor before a mid-journey rest at a wall. Default 0 — ' +
+          'no floor, because vigor is not a reason to refuse refuge. It was 100 (above anything ' +
+          'an unfed fleet can present, so the hold never fired), then 80 (REST_VIGOR_CAP itself, ' +
+          'so a character slightly under was refused while vigor drains as it walks — measured, ' +
+          '8 of 18 deaths were characters down to 1 or 2 health refused at 74, 76, 78). The ' +
+          'exposure argument for a floor does not apply to a safe spot, which is a square a ' +
+          'creature cannot path to, and it was a deadlock besides: resting is how vigor comes ' +
+          'back and the gate on resting was vigor. Set it to 80 or 100 to restore either older ' +
+          'behaviour.' },
       travel_guard: {
         description: 'WHAT THE KEEPER IS STILL ALLOWED TO DO WHILE A JOURNEY IS STEERING. An ' +
           'object of booleans, or the string "on"/"off" for all of them at once. A journey used ' +

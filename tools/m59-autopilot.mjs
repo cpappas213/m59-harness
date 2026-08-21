@@ -4300,50 +4300,37 @@ export class Autopilot {
     // a reason to be there. Only the rooms in the MIDDLE are ours to stop in.
     if (!(at.remaining > 0)) return { candidate: false, why: 'last room of the journey' };
     if (frac >= below) return { candidate: false, why: `healthy enough (${Math.round(frac * 100)}%)`, frac };
-    // VIGOR GATES IT, and this is the part that is easy to leave out. Health comes back at
-    // a rate set by vigor (player.kod:5611): at 80 it is ~6s a point and a useful top-up
-    // costs longer than the whole journey, so holding at the resting cap buys almost
-    // nothing and pays full price in exposure.
-    // BUT 100 IS UNREACHABLE FOR A FLEET WITH AN EMPTY LARDER, AND THAT IS THE COMMON CASE.
-    // Resting caps at REST_VIGOR_CAP (80 of 200) and everything above it has to be EATEN, so a
-    // fleet that cannot cook sits at 80 for ever — and 80 < 100 meant this hold NEVER FIRED for
-    // any of them. Measured on prod 2026-08-19: 21 characters all capped at 80, and 14 died in
-    // transit across the Ileria->Tos wilderness inside one 35-minute window, every one of them
-    // walking hurt past walls it was entitled to stop at. The exposure argument above is real,
-    // but it is an argument about a CHOICE between holding and walking on; at 80 with no food
-    // there was no choice being made — the feature was simply off.
+    // VIGOR DOES NOT GATE REFUGE, AND IT NEVER SHOULD HAVE.
     //
-    // AND 80 WAS STILL A CLIFF AT EXACTLY THE CAP, WHICH IS WHY THIS IS NOW 40.
+    // This gate has now been wrong three times and the third time is the interesting one,
+    // because the first two were about the NUMBER and the number was never the problem.
     //
-    // Dropping the floor from 100 to the resting cap fixed the wrong end of it. 80 IS the cap
-    // — the most an unfed character can rest to — so a character even slightly below it is
-    // refused, and vigor drains while walking. Measured on the arena fleet, 18 deaths in one
-    // window, with the health and vigor each character died holding:
+    //   100  above anything an unfed fleet can present, so the hold never fired at all
+    //    80  REST_VIGOR_CAP itself — the most resting can give you — so a character even
+    //        slightly under was refused while vigor drains as it walks. Measured: 8 of 18
+    //        deaths were characters down to 1 or 2 health refused at 74, 76, 78.
+    //   none this
     //
-    //     Pppp  1/56   2%   vigor 76      Kkkk  2/45   4%   vigor 54
-    //     Nnnn  2/30   7%   vigor 74      Cccc  2/37   5%   vigor 74
-    //     Ffff  2/38   5%   vigor  1      Cccc  7/37  19%   vigor 76
-    //     Nnnn 18/30  60%   vigor 78      Eeee 12/49  24%   vigor  6
+    // The argument for having one was exposure: health returns at a rate set by vigor, so a
+    // top-up at low vigor costs more standing still than it buys. THAT ARGUMENT DOES NOT
+    // APPLY HERE, because the place being stood in is a safe spot — a square the coarse grid
+    // offers and the mover refuses, which is exactly why a creature cannot path to it. The
+    // whole mechanism is that standing there is not exposure. And where the square turns out
+    // to be wrong, `restUntil` aborts the moment health falls rather than sitting out the
+    // leash, so a bad wall costs one interrupted rest and not a death.
     //
-    // EIGHT OF EIGHTEEN were hurt enough to want a wall and were refused for vigor, most of
-    // them two to six points under the line. It is a deadlock: resting is how vigor comes
-    // back, and the gate on resting was vigor.
+    // It was also a deadlock in its own right: resting is how vigor comes back, and the gate
+    // on resting was vigor. A character at 2 health and 74 vigor was refused the only thing
+    // that would have fixed either number.
     //
-    // The mechanic does not support a cliff there either, because the rate is CONTINUOUS.
-    // `CalculateHealthTime` (player.kod:5613) is `((200 - vigor)^2)/6 + 1000` milliseconds
-    // per health point:
-    //
-    //     vigor 80  3,400ms      vigor 74  3,646ms  (+7%)
-    //     vigor 78  3,480ms      vigor 40  5,266ms  (+55%)
-    //
-    // A character at 78 heals two per cent slower than one at 80 and was turned away. Even at
-    // 40 it is eleven points a minute, which is worth having when the alternative is walking
-    // on at 2 health. So the floor goes to half the cap, where it is a real judgement about
-    // exposure rather than an accident of where resting stops.
-    // Set travel_hold_vigor to 80 or 100 to restore either older behaviour.
-    const minVigor = this.policy.travelHoldVigor ?? 40;
-    if (vig != null && vig < minVigor)
-      return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
+    // So a traveller that is hurt and has a wall rests, and rests to FULL health and at least
+    // the resting cap of vigor — see the restUntil call below, which asks for both. The knob
+    // survives for anyone who wants the old behaviour (`travel_hold_vigor: 80`), and nothing
+    // is the default.
+    const minVigor = this.policy.travelHoldVigor ?? 0;
+    if (minVigor > 0 && vig != null && vig < minVigor)
+      return { candidate: false, why: `vigor ${vig} — under the floor this fleet set at ${minVigor}`,
+               frac, vigor: vig };
     // Something already swinging at us is a fight or a flight, and the ordinary pass
     // decides both far better than a hold does.
     const inReach = this.inReachOfUs();
@@ -4530,7 +4517,12 @@ export class Autopilot {
     // here: a wall that is being hit is not a wall, and walking on is the better of two
     // bad options once that is known.
     const rest = await skills.restUntil(this.s, {
-      health: this.policy.travelHoldTo ?? 0.9,
+      // FULL, NOT NINE TENTHS. The old default stopped at 0.9 on the argument that the last
+      // tenth costs as long as the first half and every second of it is a second something
+      // can find you — true on open ground, and not true on a square a creature cannot path
+      // to. A traveller that has gone to the trouble of reaching a wall should leave it
+      // healed, and `restUntil` aborts on damage if the wall was wrong.
+      health: this.policy.travelHoldTo ?? 1,
       vigor: REST_VIGOR_CAP,
       maxSeconds: Math.round(Math.min(90_000, budget - this.travelHeldMs) / 1000),
     }).catch(e => ({ error: e.message }));
