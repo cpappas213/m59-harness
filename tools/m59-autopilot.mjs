@@ -13370,6 +13370,28 @@ export class Autopilot {
   // fight we get to have again.
   async playDead(why) {
     const s = this.s;
+
+    // WE ARE ALREADY BEHIND THE WALL WITH THE CLOCK RUNNING. DO NOT STOP IT.
+    //
+    // A reconnect clears PFLAG_MOVED_SINCE_ENTRY, so freezing again from a spot we have
+    // already come back to and turned on would UNDO the one thing that made the last
+    // freeze worth anything — we would go back to unreachable-and-healing-at-zero, which
+    // is the state this whole branch exists to get out of.
+    //
+    // The livelock guard below catches this eventually, but only on the third attempt and
+    // only by counting failures. This catches it on the first, and for the right reason:
+    // there is nothing left for a freeze to buy here. Nothing can reach the square, and
+    // the health timer is armed. Resting is strictly better, because it actually heals.
+    if (this.hold?.reclaimed && this.turnedAt && this.turnedAt >= this.hold.takenAt) {
+      this.note('not freezing again — we are on the spot and already healing', {
+        health: s.client?.vitals?.()?.health?.value ?? null,
+        where: { col: this.hold.col, row: this.hold.row },
+        armed_ms_ago: Date.now() - this.turnedAt,
+        why: 'logging off would clear the moved-since-entry flag this spot was reclaimed to ' +
+             'set, and playing dead recovers vigor and never health. Rest here instead.' });
+      return false;      // the caller falls through to resting, which is what we want
+    }
+
     // A FREEZE THAT CHANGED NOTHING MUST NOT BE REPEATED.
     //
     // Freezing buys safety by not acting, and the same flag that keeps the monsters
@@ -13454,16 +13476,53 @@ export class Autopilot {
       const me = s.client?.self;
       const back = me && me.col === spot.col && me.row === spot.row;
       if (back) {
-        // Not frozen: the walls are doing the work, so the grace period is ours to
-        // spend. The ordinary rest branch takes it from here — it turns to arm the
-        // timer, rests to full, and observe() keeps checking that nothing lands.
         this.hold = { ...spot, takenAt: Date.now(), quietMs: 0, reclaimed: true };
         this.tally.mulligans = (this.tally.mulligans || 0) + 1;
+
+        // TURN. NOW. THIS IS THE WHOLE REASON A SAFE SPOT IS WORTH ANYTHING.
+        //
+        // A reconnect is a fresh entry into the room, so PFLAG_MOVED_SINCE_ENTRY comes
+        // back CLEAR and HealthTimer awards nothing until something sets it again
+        // (player.kod:5613). That is the same trade playing dead already made — safety
+        // bought by not acting — and out in the open there is no way out of it, because
+        // the only thing that arms the timer is moving and moving is what gets you hit.
+        //
+        // On a safe spot there is a way out, and it is the entire point of the spot: a
+        // TURN sets the flag and gives up no ground. Nothing can reach this square, so
+        // waking the room costs exactly nothing and buys the health timer. Standing here
+        // unarmed is being unreachable and healing at zero — which looks identical to
+        // working, and is how a character sits behind a wall that holds perfectly at four
+        // health until something eventually changes around it.
+        //
+        // It happens HERE rather than being left to the rest branch on some later pass,
+        // because there is no later pass at this health: playing dead recovers vigor and
+        // never health, so the next round is still doomed and still sheltered and logs
+        // off again. The turn only ever arrived on the third attempt, after
+        // freezesWithoutGain tripped — two wasted logoffs at the health that could least
+        // afford them.
+        //
+        // verify:false on purpose. The verifying path sleeps 300ms and then round-trips
+        // room-contents, and comparing a position across up to 2.3 seconds of live combat
+        // is what once reported a turn had "moved us off the square" and cost Animal a
+        // proven spot he was standing on. We do not need the answer: REQ_TURN carries no
+        // coordinates, and the next observe() reads the position anyway.
+        const armed = await skills.turnInPlace(this.s, { verify: false })
+                                  .catch(e => ({ turned: false, why: e.message }));
+        if (armed.turned) this.turnedAt = Date.now();
+
         this.note('back on the safe spot', {
           where: { col: spot.col, row: spot.row }, proven: spot.proven,
-          plan: 'turn to wake the room and arm health regeneration, then rest to full here',
-          why: 'a reconnect puts us back exactly where we were, and nothing about the walls ' +
-               'changed while we were gone' });
+          turned: armed.turned, facing: armed.to ?? null,
+          plan: armed.turned
+            ? 'health regeneration is armed and nothing can reach this square — rest to full here'
+            : 'REST WILL PAY NOTHING until something sets the moved-since-entry flag',
+          why: armed.turned
+            ? 'a reconnect clears PFLAG_MOVED_SINCE_ENTRY, and a turn is the only thing that ' +
+              'sets it again without giving up the square the walls are protecting'
+            : 'the turn did not go through: ' + (armed.why || 'unknown') });
+        // A turn that did not go through leaves us unreachable and healing at zero, which
+        // is not a state to sit in quietly. Say so, and let the rest branch try again.
+        if (!armed.turned) this.noProgress('back on the safe spot but could not turn to arm healing');
         return true;
       }
       // We came back somewhere else. Say so rather than carry on believing in a

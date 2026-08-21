@@ -20,6 +20,18 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   destructive verbs are chosen by an argument is refused when the argument is omitted. It
   caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
   token separator) and
+  `node tools/m59-playdead-test.mjs` (23 — **the turn that makes a safe spot worth having**:
+  playing dead buys safety by not acting, and the same flag that keeps the monsters off keeps
+  HealthTimer off with it, so a freeze recovers vigor and NEVER health. Out in the open that is
+  the whole trade. On a safe spot it is not: nothing can reach the square, so a TURN sets
+  PFLAG_MOVED_SINCE_ENTRY and gives up no ground, and being unreachable AND healing is
+  available there and nowhere else. So this pins that the reconnect actually TURNS — a
+  reconnect is a fresh entry and the flag comes back clear — that it does not round-trip
+  room-contents to verify a packet carrying no coordinates, that a second freeze from an armed
+  spot is REFUSED because it would clear the flag the first one was reclaimed to set, and that
+  coming back somewhere else gives up the hold rather than turning for nothing. The failure it
+  guards is invisible from outside: the wall holds, nothing reaches us, and the health sits at
+  four for ever) and
   `node tools/m59-follow-test.mjs` (26 — **leading the fleet by walking in front of it, and
   the one line that must not move**: say "follow me" while piloting one of your own and every
   fleet member in the room walks the squares you stood on. ONLY OUR OWN PEOPLE MAY GIVE THAT
