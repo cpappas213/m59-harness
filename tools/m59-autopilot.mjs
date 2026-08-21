@@ -2563,8 +2563,14 @@ export class Autopilot {
       if (!arrival.arrived) {
         releaseSpot(this.s.name);      // hand the reservation back
         this.note('could not reach the safe spot', {
-          spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason });
-        return { took: false, why: arrival.why || arrival.reason || 'could not get there' };
+          spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason,
+          ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) });
+        // `fine_tried` says what the sliding-fan approach answered once the square walk had
+        // already failed. Without it "could not walk back to the square" cannot distinguish
+        // a fallback that ran and lost from one that never ran at all, and that is the whole
+        // question about the last mile into a wall.
+        return { took: false, why: arrival.why || arrival.reason || 'could not get there',
+                 ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) };
       }
     }
 
@@ -4234,7 +4240,34 @@ export class Autopilot {
     const mode = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
     if (mode === 'off') return;
     const look = this.travelHoldCandidate(at);
-    if (!look.candidate) return;
+    if (!look.candidate) {
+      // A REFUSAL THAT LEAVES NO TRACE CANNOT BE ARGUED WITH.
+      //
+      // This used to `return` here and write nothing, and the cost of that was exact: across
+      // one window of 1,599 travel-journey events and 13 deaths, the ledger held FOUR hold
+      // decisions. Asked "of the characters that died, how many tried to shelter at a wall",
+      // the honest answer was that the record could not say -- 7 of the 10 had the question
+      // refused silently, and which of the six gates did it was unknowable after the fact.
+      // That is the same shape as `purpose` sitting outside a schema for a year with every
+      // keeper's audit switched off: a decision that does nothing and says nothing.
+      //
+      // Not every refusal is worth a line. Two of them are the system working -- a healthy
+      // character has no business stopping, and the last room of a journey is the caller's
+      // to arrive hurt in -- and writing those would put a record on every hop of every
+      // journey and drown the ones that matter. So the ones recorded are exactly the ones
+      // where the character WANTED to stop and something else refused it: hurt, mid-journey,
+      // and turned away by vigor, by a fight, or by people about.
+      if (look.frac != null && look.frac < (this.policy.travelHoldBelow ?? 0.75) && at.remaining > 0)
+        this.ledgerEvent('travel_pause', {
+          journey: at.journey, arm, room: at.room?.num ?? null, room_name: at.room?.name ?? null,
+          hops_done: at.hops_done, remaining: at.remaining,
+          health: look.health ?? null, max: look.max ?? null, vigor: look.vigor ?? null,
+          spot: null, did: 'did not consider a wall', why: look.why,
+          note: 'hurt and mid-journey, so this is a refusal worth counting rather than the ' +
+                'ordinary case of a character that did not need to stop',
+        });
+      return;
+    }
 
     // A spot is looked for in BOTH arms. Whether one exists is a fact about the room, not
     // about the arm, and the control arm's record is worth nothing without it: "we would
@@ -4290,7 +4323,12 @@ export class Autopilot {
                                           { source: 'travel' })
       .catch(e => ({ took: false, why: e.message }));
     if (!took?.took) {
-      this.ledgerEvent('travel_pause', { ...base, did: 'could not take the spot', why: took?.why ?? 'unknown' });
+      // `fine_tried` is what the fine approach said when the square walk had already failed.
+      // Carried through because "could not walk back to the square" is the commonest refusal
+      // here and on its own it does not say whether the fallback ran, let alone why it lost.
+      this.ledgerEvent('travel_pause', { ...base, did: 'could not take the spot',
+                                         why: took?.why ?? 'unknown',
+                                         ...(took?.fine_tried ? { fine_tried: took.fine_tried } : {}) });
       return;
     }
     // restUntil polls every 3s and aborts on damage, which is exactly the behaviour wanted

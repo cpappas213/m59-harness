@@ -281,5 +281,65 @@ console.log('\ndo not set out hurt from a place that is free to heal in');
      !/vig >= wantVigor[\s\S]{0,40}vigor\?\.value/.test(AUTOPILOT_SRC));
 }
 
+console.log('');
+console.log('a refusal leaves a trace');
+{
+  // The gate has six ways to say no and the caller used to throw all six away, so a window
+  // with 1,599 journeys and 13 deaths held FOUR hold decisions and could not answer the only
+  // question worth asking of it: did the characters that died try to shelter at a wall?
+  //
+  // These pin which refusals earn a line -- the ones where the character WANTED to stop,
+  // hurt and mid-journey, and something else turned it away -- and which must stay silent.
+  // A healthy character not stopping is the system working; writing that would put a row on
+  // every hop of every journey and drown the rows that matter.
+  const events = [];
+  const keeper = {
+    policy: { travelHold: 'on', travelHoldBelow: 0.75 },
+    ledgerEvent: (kind, rec) => events.push({ kind, ...rec }),
+    travelHoldCandidate: null,
+    inReachOfUs: () => [],
+    s: { client: null, world: null },
+    book: null,
+    note: () => {},
+  };
+  const mid = { journey: 'j1', room: { num: 578, name: 'The Cragged Mountains' },
+                hops_done: 3, remaining: 4 };
+  const run = async (look, at = mid) => {
+    events.length = 0;
+    keeper.travelHoldCandidate = () => look;
+    await Autopilot.prototype.travelHold.call(keeper, at, 'hold');
+    return events;
+  };
+
+  let e = await run({ candidate: false, why: 'vigor 40 -- too tired for the points to come',
+                      frac: 0.4, health: 20, max: 50, vigor: 40 });
+  ok('a hurt character refused for vigor is recorded', e.length === 1, JSON.stringify(e));
+  ok('and says it never got as far as looking', e[0] && e[0].did === 'did not consider a wall');
+  ok('and carries the reason the gate gave, not a summary', !!e[0] && /vigor 40/.test(e[0].why));
+  ok('and keeps the vitals that explain it', !!e[0] && e[0].health === 20 && e[0].vigor === 40);
+
+  e = await run({ candidate: false, why: '3 already in reach -- this is a fight, not a pause',
+                  frac: 0.3, health: 15, max: 50 });
+  ok('refused because something is already swinging is recorded too', e.length === 1);
+  ok('with that reason intact', !!e[0] && /in reach/.test(e[0].why));
+
+  e = await run({ candidate: false, why: 'healthy enough (92%)', frac: 0.92, health: 46, max: 50 });
+  ok('a healthy character not stopping writes nothing', e.length === 0, JSON.stringify(e));
+
+  e = await run({ candidate: false, why: 'last room of the journey', frac: 0.3, health: 15, max: 50 },
+                { ...mid, remaining: 0 });
+  ok('arriving hurt at the destination is not a refusal to shelter', e.length === 0);
+
+  e = await run({ candidate: false, why: 'health unreadable' });
+  ok('an unreadable vital is not counted as a refusal either', e.length === 0);
+
+  // OFF MEANS OFF, and it must stay ahead of the recording: a fleet that has switched the
+  // feature off is not refusing anything and should not be filling a ledger with rows.
+  keeper.policy = { travelHold: 'off', travelHoldBelow: 0.75 };
+  e = await run({ candidate: false, why: 'vigor 40 -- too tired', frac: 0.4, health: 20, max: 50 });
+  ok('with the hold switched off nothing is recorded at all', e.length === 0);
+  keeper.policy = { travelHold: 'on', travelHoldBelow: 0.75 };
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
