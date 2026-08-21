@@ -316,9 +316,25 @@ const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 // travelling and nobody moved" — needs a record, not another actor. The handbrake below
 // is the thing that acts, and it acts on health, which is a different question.
 const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
-// Two samples, one second apart, per the shape of the question: has it moved since last
-// time, and the time before that. A third would only delay the alert.
-const PULSE_SAMPLES = 3;
+// SIX SAMPLES, AND THE MOVEMENT TESTS STILL ONLY READ THREE OF THEM.
+//
+// Two questions share this ring and they want different windows. "Has it moved since last
+// time, and the time before that" is answered by three samples and a fourth would only
+// delay the alert — so `pennedIn` and `stillHere` still take the newest three and are
+// unchanged by this.
+//
+// "How fast is it losing health" cannot be asked of three. Damage lands about once a
+// second and a two-second window is one hit wide, so the rate it computes is either zero
+// or enormous depending on which second you look at. Cccc died in West Merchant Way losing
+// 7 health over 22 seconds — half a point a second, perfectly steady, and invisible to
+// every two-second window in it. Six samples is five seconds of history, which is enough
+// to see a rate and short enough to still be about NOW.
+const PULSE_SAMPLES = 6;
+// The newest few, for the two questions that are about the body having moved rather than
+// about how much time is left. Kept as its own constant so widening the ring above can
+// never quietly widen these — `pennedIn` gets STRICTER as the ring grows, so a careless
+// change there would switch off the rescue it feeds rather than loosening it.
+const PULSE_MOVEMENT_SAMPLES = 3;
 // HOW LONG A STATIONARY, BLEEDING, INERT CHARACTER WAITS FOR ITS DRIVER BEFORE THE KEEPER
 // TAKES IT BACK. See `pulsePosition`'s inert branch and the rescue in `watchdogTick`. Four
 // seconds is four pulses: long enough that a driver pausing to turn or open a door is not
@@ -326,18 +342,110 @@ const PULSE_SAMPLES = 3;
 // against four ants at about half a point a second — are still alive at the end of it.
 const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
 
-// RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
+// ==================== TRAVELLING: STOOD DOWN WITHOUT STANDING THERE ====================
 //
-//   ab       half the journeys hold, half walk on, decided per journey. The experiment.
+// `goInert` is the right state for an ERRAND — a shopping trip, a supply exchange, a
+// pilot claim — because those take the character somewhere the keeper has no opinion
+// about and the keeper genuinely should not interfere. It is the WRONG state for a
+// JOURNEY, and the difference cost Cccc on 2026-08-21.
+//
+// The record, second by second. A commute driver re-sent `travel` to a character that was
+// in the Underworld at 2 of 37 health. `travelJob` made the keeper inert. The keeper — the
+// Underworld escape is above the inert gate, which is the one exemption — walked it out to
+// the Limping Toad Inn, a sanctuary, at 11 of 37. The journey, already running, then walked
+// it straight back out of the inn and into West Merchant Way, where six things ate it over
+// twenty-two seconds. The keeper watched all of it. Its flee threshold was 70%; the
+// character was at 27% when it entered the room and never went above it.
+//
+// Nothing there was a bug in the survival ladder. The ladder was switched off, by design,
+// by a state that means "somebody else is driving" and was being used for a driver that
+// only steers.
+//
+// SO TRAVELLING IS A THIRD STATE. Not `running` — the keeper does not get to hunt, roam,
+// shop or pick a room while a journey owns the route. Not `inert` — the survival ladder
+// stays armed and reads real numbers every pass. What it may do is enumerated, per
+// character, and every entry can be switched off from the `autopilot` tool.
+//
+// TWO CLOCKS, AND THIS IS THE PART THAT MAKES IT SAFE. Only ONE thing may drive a body.
+//
+//   at a HOP BOUNDARY the mover is not stepping, so the journey's own `onHop` hook can
+//   sit the character down without contending for it. `rest` and `safe_spot` live here.
+//
+//   MID-HOP the mover is walking, and the keeper cannot act without taking the character
+//   back first. So the mid-hop entries do exactly what the watchdog rescue already does:
+//   cancel the movement, leave the travelling state, and let the ORDINARY ladder decide
+//   on the next breath with real numbers. They decide nothing themselves. `flee`,
+//   `fight_back`, `play_dead` and `arm` live here.
+//
+// That split is not a nicety. Two loops driving one character is the failure `goInert`
+// was introduced to prevent, and it is still prevented — the keeper never moves a
+// character a journey is moving; it ends the journey and then moves it.
+export const TRAVEL_GUARD_DEFAULTS = Object.freeze({
+  // ---- mid-hop: each one CANCELS the journey and hands back to the ordinary ladder
+  flee: true,        // below flee_below with something adjacent
+  fight_back: true,  // pinned and taking hits — standing still under attack is not a plan
+  play_dead: true,   // inside two hits of death
+  arm: true,         // the weapon is gone, and unarmed is why the fight is going badly
+  // ---- at a hop boundary: the journey pauses and nothing is contended
+  rest: true,        // sit in a sanctuary until health AND vigor are as high as sitting takes them
+  safe_spot: true,   // hold a defensible wall part-way through — see travelHold
+});
+export const TRAVEL_GUARD_KEYS = Object.freeze(Object.keys(TRAVEL_GUARD_DEFAULTS));
+// Which clock each one is on. Reported by `travel_guard` so an operator turning one off
+// knows whether they have disabled an interruption or a pause.
+export const TRAVEL_GUARD_CLOCK = Object.freeze({
+  flee: 'mid-hop', fight_back: 'mid-hop', play_dead: 'mid-hop', arm: 'mid-hop',
+  rest: 'hop boundary', safe_spot: 'hop boundary',
+});
+
+// HOW SOON THE DAMAGE WOULD KILL US BEFORE A JOURNEY IS WORTH INTERRUPTING OVER.
+//
+// The rescue this replaces required the character to be STATIONARY for four seconds, and
+// that requirement is what let Cccc die. His last pulses read 23,3 / 25,5 / 26,5 / 25,5 —
+// a two-square shuffle against a wall, which is not moving in any sense that matters and
+// resets a stillness timer on every sample. The wedge only aged past four seconds once the
+// shuffle stopped, 5.1 seconds before the end.
+//
+// So the trigger is DAMAGE, and it does not care whether the body is moving. A character
+// walking a road while something eats it is in exactly as much trouble as one standing in
+// the same place while something eats it, and the walking one is harder to see.
+const TRAVEL_RESCUE_TTL_MS = Number(process.env.M59_TRAVEL_RESCUE_TTL_MS || 10_000);
+
+// RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'on' | 'observe' | 'off'.
+//
+//   on       always hold when the conditions are met. THE DEFAULT, and the answer.
 //   observe  decide and write down what would have happened; change nothing.
 //   off      the behaviour that existed before any of this.
 //
-// It defaults to the experiment because the fleet is where the question is: 61% of the
-// damage it takes and eight of thirteen deaths in a day happen while travelling, and
-// nothing offline can say whether stopping at a wall helps. Settable live per character
-// over the `autopilot` tool (`travel_hold`), which is the kill switch — it needs no
-// restart, and a restart is the one thing that costs a fleet more deaths.
-const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'ab';
+// ============================ THE EXPERIMENT IS CLOSED ============================
+//
+// This defaulted to `ab` — half the journeys holding, half walking on, a coin per journey —
+// because nothing offline could say whether stopping at a wall helped. Retired 2026-08-21
+// by the operator, and the reason it did not need another week of denominators is that the
+// question stopped being about the wall.
+//
+// The A/B was built to compare TWO WAYS OF TRAVELLING WELL. What the fleet actually does is
+// neither: it gets stuck, lost or unresponsive, and then something eats it where it stands.
+// Cccc's death is the whole argument in one record — walked out of a sanctuary at 27%
+// health against a 70% flee threshold, into a room with six things in it, and killed over
+// twenty-two seconds during which nothing was driving at all. No arm of this experiment
+// addresses that, and half of every journey was being spent in a control arm that
+// deliberately walked hurt characters on past the only free healing on the road.
+//
+// So: holding is the behaviour, not a treatment. `ab`/`half` are still ACCEPTED, because
+// rosters and policy files on disk carry them and a value that throws would take a fleet
+// down on restart — but they are mapped to `on` and REPORTED every time, rather than
+// silently honoured. A setting that quietly does something other than what it says is the
+// exact failure this file spends the most words on.
+//
+// `m59-travel-ab.mjs` still reads the historical rows; it now prints the verdict rather
+// than a power calculation. Settable live per character over the `autopilot` tool
+// (`travel_hold`) — no restart, and a restart is the one thing that costs a fleet more
+// deaths.
+const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'on';
+// The one arm that is left. Written down rather than inlined, so the ledger rows, the
+// keeper's `travelArm` and anything joining the two cannot drift apart.
+const TRAVEL_HOLD_ARM = 'hold';
 
 // HOW LONG A KEEPER STAYS INERT WITHOUT ANYBODY SAYING SO AGAIN.
 //
@@ -4141,6 +4249,11 @@ export class Autopilot {
   //
   // So: avalanche the accumulator before taking a bit (fmix32, the MurmurHash3 finaliser),
   // which makes every input bit reach every output bit.
+  // RETIRED 2026-08-21 AND KEPT ON PURPOSE. Nothing in the live path calls this any more —
+  // see TRAVEL_HOLD_MODE for why the experiment is closed — but the historical
+  // `travel_journey` rows were assigned by it, so `m59-travel-ab.mjs` still needs it to
+  // read them back, and `m59-travel-ab-test.mjs` still pins the avalanche bug below.
+  // Deleting it would delete the only explanation of what those old rows mean.
   travelArmFor(seed) {
     let h = 2166136261;
     for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -4148,6 +4261,29 @@ export class Autopilot {
     h ^= h >>> 13; h = Math.imul(h, 3266489909);
     h ^= h >>> 16;
     return ((h >>> 0) & 1) ? 'hold' : 'walk';
+  }
+
+  // THE MODE, NORMALISED, AND THE RETIREMENT SAID OUT LOUD ONCE PER KEEPER.
+  //
+  // Two places read this — the arm choice at the top of a journey and the hook at every hop
+  // boundary — and they must not be able to disagree about what `ab` means. That is the
+  // same shape as the bug the block above `travel()` describes, where one of them honoured
+  // the enum and the other left the coin in charge.
+  travelHoldMode() {
+    const m = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
+    if (m !== 'ab' && m !== 'half') return m;
+    if (!this._saidAbRetired) {
+      this._saidAbRetired = true;
+      this.note('travel_hold: the A/B is retired — treating this as "on"', {
+        was: m,
+        why: 'holding at a wall to heal is the behaviour now, not a treatment. The control ' +
+             'arm walked hurt characters straight past the only free healing on the road, ' +
+             'and the deaths this fleet actually suffers are stuck-and-eaten rather than ' +
+             'travelled-badly — which no arm of the experiment addressed',
+        what_to_do: 'set travel_hold to on/observe/off; ab and half will keep meaning on',
+      });
+    }
+    return 'on';
   }
 
   // Is this a moment where a hold is even the question? Cheap, and asked at every hop
@@ -4175,10 +4311,37 @@ export class Autopilot {
     // transit across the Ileria->Tos wilderness inside one 35-minute window, every one of them
     // walking hurt past walls it was entitled to stop at. The exposure argument above is real,
     // but it is an argument about a CHOICE between holding and walking on; at 80 with no food
-    // there was no choice being made — the feature was simply off. So the default is the
-    // resting cap, the highest vigor an unfed character can actually present.
-    // Set travel_hold_vigor back to 100 to restore the old behaviour.
-    const minVigor = this.policy.travelHoldVigor ?? 80;
+    // there was no choice being made — the feature was simply off.
+    //
+    // AND 80 WAS STILL A CLIFF AT EXACTLY THE CAP, WHICH IS WHY THIS IS NOW 40.
+    //
+    // Dropping the floor from 100 to the resting cap fixed the wrong end of it. 80 IS the cap
+    // — the most an unfed character can rest to — so a character even slightly below it is
+    // refused, and vigor drains while walking. Measured on the arena fleet, 18 deaths in one
+    // window, with the health and vigor each character died holding:
+    //
+    //     Pppp  1/56   2%   vigor 76      Kkkk  2/45   4%   vigor 54
+    //     Nnnn  2/30   7%   vigor 74      Cccc  2/37   5%   vigor 74
+    //     Ffff  2/38   5%   vigor  1      Cccc  7/37  19%   vigor 76
+    //     Nnnn 18/30  60%   vigor 78      Eeee 12/49  24%   vigor  6
+    //
+    // EIGHT OF EIGHTEEN were hurt enough to want a wall and were refused for vigor, most of
+    // them two to six points under the line. It is a deadlock: resting is how vigor comes
+    // back, and the gate on resting was vigor.
+    //
+    // The mechanic does not support a cliff there either, because the rate is CONTINUOUS.
+    // `CalculateHealthTime` (player.kod:5613) is `((200 - vigor)^2)/6 + 1000` milliseconds
+    // per health point:
+    //
+    //     vigor 80  3,400ms      vigor 74  3,646ms  (+7%)
+    //     vigor 78  3,480ms      vigor 40  5,266ms  (+55%)
+    //
+    // A character at 78 heals two per cent slower than one at 80 and was turned away. Even at
+    // 40 it is eleven points a minute, which is worth having when the alternative is walking
+    // on at 2 health. So the floor goes to half the cap, where it is a real judgement about
+    // exposure rather than an accident of where resting stops.
+    // Set travel_hold_vigor to 80 or 100 to restore either older behaviour.
+    const minVigor = this.policy.travelHoldVigor ?? 40;
     if (vig != null && vig < minVigor)
       return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
     // Something already swinging at us is a fight or a flight, and the ordinary pass
@@ -4237,8 +4400,38 @@ export class Autopilot {
 
   // The hook body. Runs at every interior hop boundary of every journey.
   async travelHold(at, arm) {
-    const mode = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
+    // THE HOP BOUNDARY IS THE SAFE PLACE TO ACT, and both halves of it live here.
+    //
+    // The mover is not stepping between rooms, so nothing is contended: the keeper can sit
+    // the character down without fighting the journey for it. That is why `rest` and
+    // `safe_spot` are on this clock and `flee`/`fight_back`/`play_dead`/`arm` are not —
+    // see TRAVEL_GUARD_DEFAULTS.
+    //
+    // SANCTUARY FIRST, BECAUSE IT IS FREE. If this hop landed us in an inn, healing costs
+    // nothing at all: nothing spawns there and nothing can reach us. A wall in the open is
+    // the SECOND-best answer to the same question and every second of it is exposed.
+    //
+    // This is the gap Cccc fell through. `restBeforeSettingOut` runs once, at the top of a
+    // journey, and his journey started in the Underworld — "not somewhere safe to sit
+    // down". He then passed THROUGH the Limping Toad Inn nineteen seconds later at 11 of
+    // 37 and walked straight out the far door, because nothing asked the question a second
+    // time. It is asked at every boundary now.
+    await this.travelRestAtSanctuary(at, arm).catch(e =>
+      this.note('mid-journey sanctuary rest failed', { why: e.message }));
+
+    const mode = this.travelHoldMode();
     if (mode === 'off') return;
+    // The switch, and it is deliberately AFTER the sanctuary rest: they are two different
+    // faculties and turning the wall hold off is not a statement about inns.
+    if (!this.travelAllows('safe_spot')) {
+      this.ledgerEvent('travel_pause', {
+        journey: at.journey, arm, room: at.room?.num ?? null, room_name: at.room?.name ?? null,
+        hops_done: at.hops_done, remaining: at.remaining,
+        spot: null, did: 'did not consider a wall',
+        why: 'travel_guard.safe_spot is off for this character',
+      });
+      return;
+    }
     const look = this.travelHoldCandidate(at);
     if (!look.candidate) {
       // A REFUSAL THAT LEAVES NO TRACE CANNOT BE ARGUED WITH.
@@ -4297,17 +4490,19 @@ export class Autopilot {
                    spot: spot ? { col: spot.col, row: spot.row, steps: spot.steps_away,
                                   proven: !!spot.proven, back_cover: spot.back_cover ?? null } : null };
 
-    // THE CONTROL ARM STOPS HERE, having written down exactly what the other arm would
-    // have done. That record is the whole comparison.
+    // WALKING ON, AND THERE ARE ONLY TWO REASONS LEFT TO. `arm === 'walk'` now means
+    // `travel_hold: off` and nothing else — the coin that used to produce it is retired
+    // (see TRAVEL_HOLD_MODE) — so a `walked on` row is somebody's setting or an empty
+    // room, never an experiment spending half its journeys on the worse answer.
     if (arm === 'walk' || mode === 'observe' || !spot) {
       this.ledgerEvent('travel_pause', { ...base, did: spot ? 'walked on' : 'walked on — no spot here',
         why: !spot ? 'nothing in this room scored as a wall'
            : mode === 'observe' ? 'observing only'
-           : 'control arm — walked on to measure against holding' });
+           : 'travel_hold is off for this character' });
       return;
     }
 
-    // ---- the treatment arm
+    // ---- holding
     const budget = this.policy.travelHoldBudgetMs ?? 180_000;
     this.travelHeldMs ??= 0;
     if (this.travelHeldMs >= budget) {
@@ -4391,9 +4586,111 @@ export class Autopilot {
   // spawn index rather than the room name, so it is true of inns, banks, shops and quiet
   // stretches of road, and false of anywhere that generates monsters. Somewhere hostile,
   // the ordinary survival ladder decides — sitting down there is how characters die.
+  // SIT DOWN IF THIS HOP LANDED US SOMEWHERE HEALING IS FREE.
+  //
+  // Called at every hop boundary of every journey, and it is the answer to the question
+  // `restBeforeSettingOut` can only ask once. A journey crosses inns; a journey that
+  // STARTS somewhere it cannot rest (the Underworld, a corridor, a field) and then walks
+  // through one is the ordinary case after a death, and it is exactly the case that was
+  // getting characters killed a room later.
+  //
+  // BOTH BARS, TO THE HIGHEST SITTING CAN TAKE THEM. Health to full and vigor to the
+  // resting cap — 80 of 200, because everything above it has to be EATEN and `restUntil`
+  // would otherwise sit for its whole budget waiting for a number that cannot arrive.
+  //
+  // Full health rather than `travel_hold_to`, and the difference is the room. That setting
+  // stops at 0.9 for a good reason — at a wall in the open the last tenth costs as long as
+  // the first half and every second of it is a second something can find you. In a
+  // sanctuary that argument does not apply at all: the exposure is zero, so the only thing
+  // the last tenth costs is time, and arriving at 100 rather than 90 is worth it.
+  //
+  // VIGOR IS NOT A DETAIL HERE. It sets the rate health comes back at, so a character that
+  // leaves an inn at full health and 11 vigor is a character that will not heal again for
+  // the rest of the road. Cccc left the Limping Toad at 11 of 200 and never rose above it.
+  async travelRestAtSanctuary(at, arm) {
+    if (!this.travelAllows('rest')) return;
+    const room = this.s.world?.room;
+    if (!this.sanctuary(room)) return;
+    const v = this.s.client?.vitals?.();
+    const hp = v?.health;
+    if (!hp?.max) return;
+    const frac = hp.value / hp.max;
+    const wantHealth = this.policy.travelStartHealth ?? 1;
+    if (!(wantHealth > 0)) return;
+    const wantVigor = Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP);
+    const vig = vigorPct(v);
+    if (frac >= wantHealth && (vig == null || vig >= wantVigor)) return;
+    // An inn is player-safe, not fleetmate-free, and something swinging makes this a fight
+    // rather than a pause — the same gate the mid-journey hold and the pre-departure rest
+    // both use.
+    const near = this.inReachOfUs();
+    if (near?.length) {
+      this.ledgerEvent('travel_pause', {
+        journey: at.journey, arm, room: room?.num ?? null, room_name: room?.name ?? null,
+        hops_done: at.hops_done, remaining: at.remaining,
+        health: hp.value, max: hp.max, vigor: v?.vigor?.value ?? null,
+        spot: null, did: 'walked on — a sanctuary with something in reach',
+        why: `${near.length} in reach — not a moment to sit`,
+      });
+      return;
+    }
+    const t0 = Date.now();
+    const before = { health: hp.value, vigor: v?.vigor?.value ?? null };
+    // Restored in the `finally` below. Left as 'recovering' it would tell the position
+    // pulse that this character is not going anywhere for the rest of the journey — which
+    // is the excuse that stops the wedge instrument looking, on a character that is about
+    // to walk back out onto a road.
+    const wasDoing = this.doing;
+    this.doing = 'recovering';
+    try {
+      // PFLAG_MOVED_SINCE_ENTRY has to be set or a rest recovers nothing however long it
+      // sits — the commonest reason a rest in an inn does nothing at all.
+      await this.settle('resting part-way through a journey').catch(() => {});
+      const budget = this.policy.travelSanctuaryBudgetMs ?? 240_000;
+      const rest = await skills.restUntil(this.s, {
+        health: wantHealth, vigor: wantVigor,
+        maxSeconds: Math.round(budget / 1000),
+      }).catch(e => ({ error: e.message }));
+      const after = this.s.client?.vitals?.();
+      const heldMs = Date.now() - t0;
+      this.travelHeldMs = (this.travelHeldMs ?? 0) + heldMs;
+      this.travelSafeStops = (this.travelSafeStops ?? 0) + 1;
+      this.ledgerEvent('travel_hold', {
+        journey: at.journey, arm, room: room?.num ?? null, room_name: room?.name ?? null,
+        hops_done: at.hops_done, remaining: at.remaining,
+        health: before.health, max: hp.max, vigor: before.vigor,
+        spot: null, kind: 'sanctuary',
+        did: 'rested in a sanctuary part-way through a journey',
+        held_ms: heldMs,
+        health_after: after?.health?.value ?? null,
+        vigor_after: after?.vigor?.value ?? null,
+        gained: after?.health?.value != null ? after.health.value - before.health : null,
+        rested: rest?.reason ?? rest?.why ?? rest?.error ?? null,
+        hit_while_held: rest?.interrupted_by_damage ?? null,
+        why: 'this hop landed somewhere nothing spawns and nothing can reach us, so the ' +
+             'points that cost exposure at a wall cost nothing at all here',
+      });
+      this.note('rested in a sanctuary mid-journey', {
+        room: room?.name ?? null, held_s: Math.round(heldMs / 1000),
+        health: `${before.health} -> ${after?.health?.value ?? '?'}/${hp.max}`,
+        vigor: `${before.vigor} -> ${after?.vigor?.value ?? '?'} of ${skills.VIGOR_MAX} ` +
+               `(sitting caps at ${Math.round(REST_VIGOR_CAP * skills.VIGOR_MAX)})`,
+        remaining_hops: at.remaining,
+        note: 'vigor as well as health — it sets the rate health comes back at, so leaving ' +
+              'an inn full but exhausted is leaving with no recovery for the rest of the road',
+      });
+    } finally { this.doing = wasDoing; }
+  }
+
   async restBeforeSettingOut() {
     const target = this.policy.travelStartHealth ?? 1;
     if (!(target > 0)) return { rested: false, why: 'travel_start_health is off' };
+    // The same faculty as the mid-journey sanctuary rest, so the same switch. An operator
+    // turning `rest` off means "do not stop this character to heal", and a version of that
+    // which still stopped it at the start of every journey would be a setting that half
+    // works — which is the failure mode this repository keeps a whole document about.
+    if (!this.travelAllows('rest'))
+      return { rested: false, why: 'travel_guard.rest is off for this character' };
     const room = this.s.world?.room;
     if (!this.sanctuary(room)) return { rested: false, why: 'not somewhere safe to sit down' };
     const v = this.s.client?.vitals?.();
@@ -4507,12 +4804,17 @@ export class Autopilot {
     // running. `'on'` was not even in the tool's own enum; the broker stores the string it
     // is given, so a value the schema never allowed became a value the code half-honoured.
     //
-    // The enum is the contract: `on` always holds, `half`/`ab` is the experiment, `observe`
-    // writes down what it would have done, `off` is the behaviour from before it existed.
-    const holdMode = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
-    const arm = holdMode === 'on' ? 'hold'
-              : holdMode === 'off' ? 'walk'
-              : this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
+    // The enum is the contract: `on` always holds, `observe` writes down what it would have
+    // done, `off` is the behaviour from before it existed.
+    //
+    // AND THERE IS NO COIN LEFT TO LEAVE IN CHARGE. `ab`/`half` were the experiment and the
+    // experiment is closed (see TRAVEL_HOLD_MODE). They are accepted so that a roster on
+    // disk carrying one does not throw on restart, and they are SAID OUT LOUD rather than
+    // quietly honoured — the bug this whole comment block is about was a setting that
+    // reported one thing and did another, and mapping a value silently is how you get a
+    // second one.
+    const holdMode = this.travelHoldMode();
+    const arm = holdMode === 'off' ? 'walk' : TRAVEL_HOLD_ARM;
     this.travelHeldMs = 0;
     this.travelSafeStops = 0;
     const startedAt = Date.now();
@@ -6067,6 +6369,12 @@ export class Autopilot {
       // `inert` set is the normal shape of an errand in progress — the loop is watching
       // and recording, and it is not the thing moving the character.
       inert: this.inertStatus(),
+      // ALWAYS PRESENT, EVEN WHEN NOTHING IS TRAVELLING, because the question an operator
+      // asks is "what WILL this character do if a journey takes it", and an answer that
+      // only exists while one already has is an answer arriving too late to act on. The
+      // effective guard: the defaults, with this character's policy over the top.
+      travel_guard: Object.fromEntries(TRAVEL_GUARD_KEYS.map(k =>
+        [k, { allowed: this.travelGuard()[k], clock: TRAVEL_GUARD_CLOCK[k] }])),
       // WHO OWNS WHICH HALF OF THIS CHARACTER. Always present, never undefined: a reader
       // has to be able to tell "the keeper owns everything" from "this broker does not
       // answer that question", and undefined reads as the second. With nothing attached
@@ -6356,11 +6664,84 @@ export class Autopilot {
   revive(why = null) {
     if (!this.inert) return null;
     const held = Date.now() - this.inert.at;
+    const wasTravelling = !!this.inert.travelling;
     uptime.record(this.s.name, 'revive', { why, held_ms: held });
     this.inert = null;
-    this.note('no longer inert', { why, was_inert_for_s: Math.round(held / 1000) });
+    this.note(wasTravelling ? 'no longer travelling' : 'no longer inert',
+              { why, was_inert_for_s: Math.round(held / 1000) });
     return null;
   }
+
+  // ---------------------------------------------------------------- travelling
+  //
+  // The journey's stand-down. See TRAVEL_GUARD_DEFAULTS for the whole argument; the short
+  // version is that `goInert` means "stop looking at the survival question" and a journey
+  // has no business asking for that. This means "stop CHOOSING WHERE TO GO — I am steering
+  // — and keep every defensive faculty the roster still allows you".
+  //
+  // It reuses `this.inert` as its storage ON PURPOSE. Fourteen places in this file and the
+  // broker read `keeper.inert` to mean "something else holds this character", and every one
+  // of them is still right: the fleet board, the stall detector, the busy register, the
+  // faculty ledger and the deadline all want the same answer they wanted before. Only the
+  // two places that decide whether the keeper may ACT — the pass gate and the watchdog
+  // rescue — look at the `travelling` marker, and that is the whole diff in behaviour.
+  goTravelling(why = null, { maxMs = INERT_MAX_MS, guard = null } = {}) {
+    // Already travelling for this reason: refresh nothing, the deadline is the caller's.
+    if (this.inert?.travelling) return this.inertStatus();
+    // An ERRAND already holds this character. An errand outranks a journey — it asked for
+    // silence and got it — so the journey does not get to quietly upgrade itself.
+    if (this.inert) return this.inertStatus();
+    const allow = this.travelGuard(guard);
+    this.inert = { why, at: Date.now(), maxMs, travelling: true, guard: allow };
+    this.book.save();
+    uptime.record(this.s.name, 'travelling',
+                  { why, room: this.s.world?.room?.num ?? null, guard: allow });
+    this.note('travelling — standing down from choosing, not from surviving', {
+      why,
+      what_happens: 'the keeper keeps looking, keeps recording, and KEEPS ITS SURVIVAL ' +
+        'LADDER ARMED. It will not hunt, roam, shop or pick a room while the journey ' +
+        'owns the route',
+      may_still: TRAVEL_GUARD_KEYS.filter(k => allow[k]),
+      switched_off: TRAVEL_GUARD_KEYS.filter(k => !allow[k]),
+      mid_hop_entries_cancel_the_journey:
+        'flee, fight_back, play_dead and arm take the character back rather than fighting ' +
+        'the mover for it — only one thing may ever drive a body',
+      until: 'revive(), start(), or ' + Math.round(maxMs / 60_000) + ' minutes, whichever is first',
+    });
+    return this.inertStatus();
+  }
+
+  // THE GUARD IN FORCE, most explicit first: what this call asked for, then what the
+  // character's policy says, then the defaults.
+  //
+  // AN UNRECOGNISED KEY IS NEVER SILENTLY DROPPED — see docs/m59-policy.md. It is refused
+  // by the tool that sets it and ignored here rather than being merged into a shape the
+  // rest of the file would then read as a real faculty.
+  travelGuard(override = null) {
+    const from = source => {
+      if (!source || typeof source !== 'object') return {};
+      const out = {};
+      for (const k of TRAVEL_GUARD_KEYS)
+        if (source[k] !== undefined) out[k] = !!source[k];
+      return out;
+    };
+    return { ...TRAVEL_GUARD_DEFAULTS, ...from(this.policy?.travelGuard), ...from(override) };
+  }
+
+  // MAY THE KEEPER DO THIS RIGHT NOW.
+  //
+  // True when nothing is holding the character — the ordinary case, and the reason every
+  // call site can be a plain `&&` without a second branch for "not travelling". While a
+  // journey holds it, the answer is that entry's switch. While an ERRAND holds it, the
+  // answer is no: an errand asked for silence, which is the state it still gets.
+  travelAllows(faculty) {
+    if (!this.inert) return true;
+    if (!this.inert.travelling) return false;
+    return this.inert.guard?.[faculty] !== false;
+  }
+
+  // Is a journey — rather than an errand — what is holding this character.
+  get travelling() { return this.inert?.travelling ? this.inert : null; }
 
   // The name the world knows this character by, falling back to the agent name before
   // login has answered. Everything keyed per character — the feed, the gains, the hits
@@ -6578,9 +6959,20 @@ export class Autopilot {
 
   inertStatus() {
     if (!this.inert) return null;
+    // `inert: true` stays true for BOTH states, because everything reading this asks the
+    // same question — is somebody else holding this character — and for that the answer is
+    // yes either way. What the travelling state adds is what it is still allowed to do,
+    // which is the thing an operator wants when a character dies on a road.
     return { inert: true, why: this.inert.why,
              for_s: Math.round((Date.now() - this.inert.at) / 1000),
-             gives_up_after_s: Math.round(this.inert.maxMs / 1000) };
+             gives_up_after_s: Math.round(this.inert.maxMs / 1000),
+             ...(this.inert.travelling ? {
+               state: 'travelling',
+               guard: this.inert.guard,
+               may_still: TRAVEL_GUARD_KEYS.filter(k => this.inert.guard?.[k]),
+               note: 'the survival ladder is still armed — this is a journey steering, not ' +
+                     'an errand holding. See TRAVEL_GUARD_DEFAULTS',
+             } : { state: 'inert' }) };
   }
 
   // ------------------------------------------------------------------------- faculties
@@ -6975,8 +7367,13 @@ export class Autopilot {
    * different decisions and only one of them has been measured.
    */
   pennedIn(w) {
-    const ring = w.pulses;
-    if (ring.length < 3) return false;
+    // THE NEWEST THREE, EXPLICITLY, and not "the ring" — the ring got wider so that
+    // `damageRate` could see a rate, and this test gets STRICTER as it grows. Reading the
+    // whole ring here would quietly demand that a character have stayed inside one square
+    // for six seconds rather than three, which is a handbrake being loosened by an edit
+    // that was about something else entirely.
+    const ring = w.pulses.slice(-PULSE_MOVEMENT_SAMPLES);
+    if (ring.length < PULSE_MOVEMENT_SAMPLES) return false;
     const last = ring[ring.length - 1];
     return ring.every(p => p.room === last.room
       && Math.abs((p.col ?? 0) - (last.col ?? 0)) <= 1
@@ -7665,6 +8062,22 @@ export class Autopilot {
               // death is one it was never allowed to act on. Recorded rather than
               // inferred from `during_keeper_outage`, which means something else.
               stood_down_for: this.inert ? (this.inert.why ?? 'inert') : null,
+              // WHICH STAND-DOWN, AND WHAT IT STILL ALLOWED. `stood_down_for` alone reads
+              // the same for an errand that switched the survival ladder off and a journey
+              // that left it armed, and those are opposite readings of the same death. The
+              // post-mortems that motivated the travelling state all say
+              // `stood_down_for: "travelling to ..."` and could not say more than that.
+              stand_down_state: this.inert ? (this.inert.travelling ? 'travelling' : 'inert') : null,
+              travel_guard: this.inert?.travelling ? this.inert.guard : null,
+              // HOW FAST IT WAS LOSING, on the character's own clock. The trigger the
+              // travelling guard acts on, recorded whether or not it fired — "it was
+              // dying at half a point a second and nothing took it back" and "it died to
+              // one burst" are different failures and used to look identical.
+              losing_per_s: (() => {
+                const r = this.damageRate();
+                return r === null ? null : Math.round(r * 100) / 100;
+              })(),
+              take_backs: this.tally?.travel_takebacks ?? 0,
               // Was the BODY moving in the seconds before this death, sampled on its own
               // clock. `pass_blocked_ms` says the keeper stopped looking; this says
               // whether the character was going anywhere while it did.
@@ -7875,16 +8288,20 @@ export class Autopilot {
       return HANDLED;
     }
 
-    // ============================ INERT STOPS HERE ============================
+    // ====================== INERT STOPS HERE. TRAVELLING DOES NOT. ======================
     //
     // Everything above this line is looking: where we are, what we need, what our partner
     // should know, the observation, the frame, and — if it came to it — the death record
-    // and the walk out of the Underworld. Everything below is DOING, and while something
-    // else is driving this character we must not.
+    // and the walk out of the Underworld. Everything below is DOING, and while an ERRAND
+    // is driving this character we must not.
     //
     // Placed here rather than at the top of the pass because that is the whole point of
     // the state. A keeper stopped for an errand went blind, and the deaths that happened
     // in those windows are the ones nothing can explain afterwards.
+    //
+    // A JOURNEY IS NOT AN ERRAND. It steers; it does not take the body away from the
+    // keeper's opinion about staying alive. `passTravelling` is that distinction — see
+    // TRAVEL_GUARD_DEFAULTS for why the state exists and what killed Cccc without it.
     if (this.inert) {
       // The deadline. An errand that crashed between the hold and the restore would
       // otherwise leave a character watching itself until the next broker restart.
@@ -7900,6 +8317,14 @@ export class Autopilot {
                'symptom worth seeing' });
         // Fall through and act on this pass: the character has been standing still long
         // enough already.
+      } else if (this.inert.travelling) {
+        // A JOURNEY IS STEERING. Ask the restricted ladder whether anything about staying
+        // alive is worth interrupting it for. It returns CONTINUE when it has taken the
+        // character back — and then the ORDINARY stages below run on this same pass, with
+        // real numbers, because the twenty-two seconds this is here to prevent were spent
+        // waiting for exactly that.
+        const verdict = await this.passTravelling(ctx);
+        if (verdict !== CONTINUE) return HANDLED;
       } else {
         // NOT A STALL. The supervisor restarts keepers that report no progress, and an
         // inert keeper is doing exactly what it was asked to do.
@@ -8007,6 +8432,157 @@ export class Autopilot {
             'be declared busy or every stall detector in the fleet will restart it',
     });
     return this.wantsWeapon;
+  }
+
+  // ── passTravelling: the restricted ladder a journey leaves running ────────────
+  //
+  // Reached only from the gate in `passUnderworld`, and only while a JOURNEY holds the
+  // character. It answers one question — is anything about staying alive worth ending this
+  // journey for — and it answers it with the same numbers the ordinary ladder uses.
+  //
+  // IT NEVER MOVES ANYBODY. Every branch below cancels the movement, leaves the travelling
+  // state, and returns CONTINUE so the ordinary stages decide on this same pass. That is
+  // the watchdog rescue's contract and it is what keeps "only one thing drives a body"
+  // true: the keeper does not fight the mover for the character, it ends the mover.
+  //
+  // Returns CONTINUE when it has taken the character back, HANDLED to let the journey run.
+  async passTravelling(ctx) {
+    const { s, c, v, hp } = ctx;
+    const held = this.inert;
+    // Hand back, once, with a reason the post-mortem can read.
+    const takeBack = (what, why, detail = {}) => {
+      const stopped = (() => {
+        try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+      })();
+      const was = held.why ?? 'travelling';
+      this.tally.travel_takebacks = (this.tally.travel_takebacks || 0) + 1;
+      this.revive(`${what} while ${was}`);
+      this.recordFrame(`! took the character back — ${what}`);
+      this.note('TOOK THE CHARACTER BACK FROM A JOURNEY', {
+        trigger: what, why, was_travelling_to: was,
+        health: v?.health ? `${v.health.value}/${v.health.max}` : null,
+        at_fraction: hp !== null ? Math.round(hp * 100) + '%' : null,
+        flee_at: Math.round(this.safety().fleeAt * 100) + '%',
+        interrupted: stopped.interrupted ?? null,
+        ...detail,
+        note: 'the journey is cancelled and this keeper is driving again. NOTHING is ' +
+              'decided here — the ordinary ladder runs on this same pass, with real numbers',
+      });
+      recordEvent(this.who(), 'travel_takeback', {
+        trigger: what, was_travelling_to: was,
+        health: v?.health?.value ?? null, max: v?.health?.max ?? null,
+        room: s.world?.room?.num ?? null,
+      });
+      return CONTINUE;
+    };
+
+    // ---- 1. THE WEAPON IS GONE.
+    //
+    // Ahead of the damage tests for the same reason `passArm` is ahead of them in the
+    // ordinary ladder: being unarmed is WHY the fight is going badly. A character that
+    // shattered its weapon two rooms ago is walking the rest of the road unable to answer
+    // anything that finds it, and no amount of continuing helps that.
+    if (this.travelAllows('arm') && !this.armed())
+      return takeBack('unarmed', 'the weapon is gone, and walking on with an empty hand is ' +
+                                 'how the next room becomes the last one');
+
+    // What is close enough to be swinging at us. Same test as passFleeAndRest's `near`,
+    // and PLAYERS ARE DELIBERATELY EXCLUDED for the same reason: every character is
+    // ATTACKABLE, and the fleet walks the same roads, so a fleetmate on the same square
+    // would otherwise read as a monster. See the long note there.
+    const me = c?.self;
+    const near = me && c?.room ? [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
+
+    // ---- 2. INSIDE TWO HITS OF DEATH.
+    //
+    // The ordinary ladder's own test, borrowed rather than reinvented: below two of the
+    // biggest hits this game lands, with something adjacent. Out on a road there is no
+    // safe spot to make the sheltered case apply, so this is always the open-ground
+    // version — and the ladder will choose between running for a town and playing dead.
+    const worstHit = Math.min(30, Math.floor(((v?.health?.max ?? 0) + 2) / 3));
+    if (this.travelAllows('play_dead') && near.length && v?.health?.value != null
+        && v.health.value <= worstHit * 2)
+      return takeBack('two hits from death',
+                      `${v.health.value} health with ${near.length} adjacent, and the biggest ` +
+                      `single hit here is about ${worstHit}`,
+                      { adjacent: near.length, worst_single_hit: worstHit });
+
+    // ---- 3. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
+    //
+    // THIS IS THE ONE THAT WOULD HAVE SAVED CCCC, and it is worth being exact about why
+    // it is not the rescue that already existed. He entered West Merchant Way at 10 of 37
+    // — 27%, against a flee threshold of 70% — with six things in the room, and walked
+    // around at that fraction for twenty-two seconds. The old rescue could not fire
+    // because it also demanded that he be STATIONARY for four seconds, and a two-square
+    // shuffle against a wall resets that timer on every sample.
+    //
+    // Movement is not consulted here at all. Below the flee line with something adjacent
+    // is a fight the keeper has already decided it does not take, and a journey is not a
+    // reason to take it.
+    if (this.travelAllows('flee') && hp !== null && near.length
+        && hp < this.safety().fleeAt)
+      return takeBack('below the flee line with something adjacent',
+                      'the keeper flees at this fraction when it is driving, and a journey ' +
+                      'is not a reason to stand and take it',
+                      { adjacent: near.length });
+
+    // ---- 4. LOSING HEALTH FAST ENOUGH THAT THE ROAD WILL NOT END FIRST.
+    //
+    // The rate, not the position. A character being eaten while it walks is in exactly as
+    // much trouble as one being eaten while it stands, and it is harder to see — every
+    // stall instrument in this file reads it as healthy. `damageRate` reads the position
+    // pulse ring, which is on the CHARACTER's clock rather than the keeper's, so it keeps
+    // measuring through a travel await that nothing else can see into.
+    if (this.travelAllows('fight_back')) {
+      const ttl = this.timeToDeath();
+      if (ttl !== null && ttl <= TRAVEL_RESCUE_TTL_MS)
+        return takeBack('dying faster than this journey can finish',
+                        'health is falling at a rate that empties the bar inside ' +
+                        Math.round(TRAVEL_RESCUE_TTL_MS / 1000) + ' seconds. Whether the body ' +
+                        'is moving is not the question — the arithmetic is',
+                        { seconds_left: Math.round(ttl / 100) / 10,
+                          losing_per_s: Math.round(this.damageRate() * 100) / 100,
+                          adjacent: near.length });
+    }
+
+    // ---- 5. NOTHING WORTH STOPPING FOR. The journey keeps the character.
+    //
+    // NOT A STALL, for the same reason inert is not: the supervisor restarts keepers that
+    // report no progress, and this one is doing what it was asked to do.
+    this.progress('travelling — ' + (held.why ?? 'a journey is steering'));
+    return HANDLED;
+  }
+
+  // HOW FAST HEALTH IS LEAVING, IN POINTS PER SECOND, OVER THE POSITION PULSE RING.
+  //
+  // The ring is the only instrument that reads the CHARACTER rather than the keeper — it
+  // is written by a 500ms watchdog that keeps running through a travel await — so it is
+  // the only place a rate can come from while something else is driving. Six samples is
+  // about five seconds, which is wide enough that a single hit does not read as a cliff
+  // and narrow enough to still be about now.
+  //
+  // Returns 0 when health is steady or climbing, and null when there is not enough ring
+  // to say. Never negative: a rest that is working is not a rate anybody wants here.
+  damageRate() {
+    const ring = this.watch?.pulses;
+    if (!ring || ring.length < 3) return null;
+    const first = ring.find(p => Number.isFinite(p.health));
+    const last = [...ring].reverse().find(p => Number.isFinite(p.health));
+    if (!first || !last || first === last) return null;
+    const seconds = (last.at - first.at) / 1000;
+    if (!(seconds > 0)) return null;
+    return Math.max(0, (first.health - last.health) / seconds);
+  }
+
+  // HOW LONG THE CHARACTER HAS AT THE CURRENT RATE, in ms. null when it is not losing.
+  timeToDeath() {
+    const rate = this.damageRate();
+    if (rate === null || rate <= 0) return null;
+    const now = this.s?.client?.vitals?.()?.health?.value;
+    if (!Number.isFinite(now) || now <= 0) return null;
+    return (now / rate) * 1000;
   }
 
   // ── passArm: extracted from pass() ────────────────────────────────

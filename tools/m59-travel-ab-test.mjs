@@ -140,19 +140,32 @@ console.log('\nthe gate that decides a candidate moment');
   ok('healthy enough is not a candidate', ask(keeper(40, 44, 150)).candidate === false);
   ok('ARRIVING HURT IS FINE — the last room of a journey is somebody else\'s decision',
      ask(keeper(20, 44, 150), 0).candidate === false);
-  // TOO TIRED FOR THE POINTS TO COME. Health returns at a rate set by vigor, so below the
-  // floor a top-up costs longer than the journey and buys nothing.
+  // TOO TIRED FOR THE POINTS TO COME. Health returns at a rate set by vigor, so far enough
+  // below the floor a top-up costs longer than the journey and buys little.
   //
-  // THE FLOOR IS 80, NOT 100, AND THIS ASSERTION SPENT A WHILE RED ABOUT IT. Resting caps
-  // at REST_VIGOR_CAP (80 of 200) and everything above has to be EATEN, so a fleet that
-  // cannot cook sits at exactly 80 for ever — and a floor of 100 meant the hold NEVER FIRED
-  // for any of them. The default moved and the test did not, which is a test asserting a
-  // behaviour nothing has shipped.
-  ok('TOO TIRED FOR THE POINTS TO COME — below the floor a top-up costs more than it buys',
-     ask(keeper(20, 44, 40)).candidate === false &&
-     /too tired/.test(ask(keeper(20, 44, 40)).why));
+  // THE FLOOR HAS BEEN WRONG TWICE AND BOTH TIMES IT WAS A CLIFF IN THE WRONG PLACE. At 100
+  // it was above anything an unfed fleet could present and the hold never fired at all. At
+  // 80 it sat on REST_VIGOR_CAP itself — the most resting can give you — so a character even
+  // slightly under was refused, while vigor drains as you walk. Measured: 8 of 18 deaths were
+  // characters down to 1 or 2 health refused for vigor at 74, 76, 78. A deadlock, since
+  // resting is how vigor comes back.
+  //
+  // And the mechanic is CONTINUOUS, not a cliff: CalculateHealthTime (player.kod:5613) is
+  // ((200-vigor)^2)/6 + 1000 ms per point, so 78 is 2% slower than 80 and 40 is 55% slower —
+  // still eleven points a minute, which is worth having at 2 health.
+  ok('TOO TIRED FOR THE POINTS TO COME — far below the floor a top-up buys little',
+     ask(keeper(20, 44, 20)).candidate === false &&
+     /too tired/.test(ask(keeper(20, 44, 20)).why));
   ok('AND 80 IS NOT TOO TIRED, because 80 is where an unfed fleet lives',
      ask(keeper(20, 44, 80)).candidate === true);
+  // THE ONE THAT WAS KILLING CHARACTERS. Two points under the resting cap is not a different
+  // situation from being on it, and a body at 20 of 44 health must not be turned away for it.
+  ok('and 78 is not too tired either — two points under the cap was refusing the dying',
+     ask(keeper(20, 44, 78)).candidate === true);
+  ok('nor 74, nor 54', ask(keeper(20, 44, 74)).candidate === true &&
+                       ask(keeper(20, 44, 54)).candidate === true);
+  ok('the floor is half the cap, so 40 still qualifies and 39 does not',
+     ask(keeper(20, 44, 40)).candidate === true && ask(keeper(20, 44, 39)).candidate === false);
   ok('something already swinging is a fight, not a pause — the ordinary pass is better ' +
      'at both halves of that than a hold is',
      ask(keeper(20, 44, 150, 2)).candidate === false);
@@ -160,7 +173,7 @@ console.log('\nthe gate that decides a candidate moment');
      ask({ ...keeper(20, 44, 150), s: { client: { vitals: () => ({}) } } }).candidate === false);
   ok('and every refusal says why, because a gate that silently never fires is an ' +
      'experiment that measures nothing',
-     [keeper(40, 44, 150), keeper(20, 44, 40), keeper(20, 44, 150, 2)]
+     [keeper(40, 44, 150), keeper(20, 44, 20), keeper(20, 44, 150, 2)]
        .every(k => typeof ask(k).why === 'string' && ask(k).why.length > 0));
 }
 
@@ -212,9 +225,14 @@ console.log('\n"on" means on, which it did not');
   ok('"off" never does', armFor('off') === 'walk');
   ok('and the experiment still flips for "ab"',
      new Set(['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'].map(x => armOf('ab-' + x))).size === 2);
-  // The source is the contract: if the forcing line ever comes out of travel(), this goes red.
-  ok('travel() derives the arm from the mode rather than always rolling',
-     /holdMode === 'on' \? 'hold'/.test(AUTOPILOT_SRC));
+  // THE SOURCE IS THE CONTRACT, and the contract changed: the A/B is retired (2026-08-21)
+  // and there is no coin left for a mode to fail to override. What has to stay true is that
+  // the arm is derived from the MODE and from nothing else, so the failure this originally
+  // caught — a setting that reads `on` while something else decides — cannot come back.
+  ok('travel() derives the arm from the mode, with no roll left to leave in charge',
+     /const arm = holdMode === 'off' \? 'walk' : TRAVEL_HOLD_ARM;/.test(AUTOPILOT_SRC));
+  ok('and the retired coin is not consulted on the live path',
+     !/travelArmFor\(`/.test(AUTOPILOT_SRC));
 }
 
 console.log('\ndo not set out hurt from a place that is free to heal in');
@@ -236,6 +254,12 @@ console.log('\ndo not set out hurt from a place that is free to heal in');
       inReachOfUs: () => Array.from({ length: inReach }, (_, i) => ({ id: i })),
       note: (what, detail) => notes.push({ what, detail }),
       async settle() { this.settled++; },
+      // The travelling guard's switch for this faculty. The real method reads `this.inert`
+      // and the fixture holds no journey, so the honest stub is the real answer for a
+      // character nothing is driving: yes. Given explicitly rather than left to fall off
+      // the prototype, so that a fixture missing it fails loudly instead of throwing
+      // inside the method under test and reading as a refusal.
+      travelAllows: Autopilot.prototype.travelAllows,
       restBeforeSettingOut: Autopilot.prototype.restBeforeSettingOut,
     };
   };
@@ -301,6 +325,15 @@ console.log('a refusal leaves a trace');
     s: { client: null, world: null },
     book: null,
     note: () => {},
+    // travelHold now does two things at a hop boundary — the sanctuary rest first, then
+    // the wall hold — and both consult the travelling guard. The real methods are used so
+    // this fixture exercises the real ordering; `s.world` is null, so `sanctuary()` reads
+    // false and the rest arm returns without touching the ledger, which is what leaves
+    // these assertions measuring the wall gate exactly as they did before.
+    travelAllows: Autopilot.prototype.travelAllows,
+    travelHoldMode: Autopilot.prototype.travelHoldMode,
+    travelRestAtSanctuary: Autopilot.prototype.travelRestAtSanctuary,
+    sanctuary: Autopilot.prototype.sanctuary,
   };
   const mid = { journey: 'j1', room: { num: 578, name: 'The Cragged Mountains' },
                 hops_done: 3, remaining: 4 };

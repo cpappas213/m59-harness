@@ -79,6 +79,7 @@ import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mj
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup,
+         TRAVEL_GUARD_KEYS,
          applyFightAboveVigor } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
@@ -2409,11 +2410,38 @@ class Session {
   // It THROWS when the body is taken, exactly as `startJob` does, and that is the useful
   // answer: an errand that cannot have the character should say so rather than fight for
   // it. Callers that already turn a throw into a failed leg need no change at all.
+  // A JOURNEY STEERS. IT DOES NOT TAKE THE CHARACTER AWAY FROM ITS OWN SURVIVAL.
+  //
+  // This used to call `keeper.goInert()` and then `Session.travel` directly, and both
+  // halves of that were wrong in the same way — they treated a journey like an errand:
+  //
+  //   goInert switched the survival ladder OFF for the whole walk. Cccc was walked out of
+  //   a sanctuary at 27% health with a 70% flee threshold and eaten over twenty-two
+  //   seconds by four giant rats while the keeper watched every frame of it. It is
+  //   `goTravelling` now — see TRAVEL_GUARD_DEFAULTS in m59-autopilot.mjs for what that
+  //   keeps armed and how each part of it is switched off.
+  //
+  //   `Session.travel` is the hop loop and nothing else. Going straight to it skipped
+  //   `restBeforeSettingOut` (so a character asked to cross the world at 30% health set
+  //   off at 30% health), skipped the `onHop` hook (so the mid-journey wall hold and the
+  //   sanctuary rest could never fire — `travel_arm` reads null on every one of those
+  //   post-mortems), and wrote no `travel_journey` row, so the travel-safety experiment
+  //   could not see externally-driven journeys at all. Every one of those is a faculty
+  //   that exists in this repository and was simply not reachable from the tool the fleet
+  //   is actually driven by.
+  //
+  // So it goes through the KEEPER's travel when there is a keeper, and falls back to the
+  // raw hop loop only when there is not — a session with no autopilot has nothing to ask.
+  //
+  // ONE BEHAVIOUR CHANGE WORTH STATING: `Autopilot.travel` enforces `confine_rooms`, so a
+  // confined character now refuses an external travel out of its confinement instead of
+  // quietly taking it. That is the documented intent of the setting — "the rooms this
+  // character may be in AT ALL" — and the refusal is returned, not thrown.
   travelJob(dest, { where = `room ${dest}`, ...opts } = {}) {
     const keeper = autopilotIfAny(this.name);
     return this.startJob('travel', `walk to ${where}`, async movementGeneration => {
-      let ours = false;
-      // RE-ASSERTED ON A TIMER, because an inert keeper WAKES ON A DEADLINE
+      let ours = null;
+      // RE-ASSERTED ON A TIMER, because a stood-down keeper WAKES ON A DEADLINE
       // (`INERT_MAX_MS`, so a crashed errand cannot silence one for ever) and that
       // deadline does not know a journey is in progress. Watched live before this
       // existed: a stale hold lapsed mid-walk and the character was being driven by the
@@ -2421,19 +2449,38 @@ class Session {
       //
       // And only ever revive a hold that is OURS — reviving somebody else's is how a
       // character ends up driven by two things again, which is the whole point of this.
+      //
+      // IT ALSO RE-ASSERTS AFTER A TAKE-BACK, and that is deliberate. When the travelling
+      // guard cancels the journey the mover sees `movementWasCancelled` and unwinds within
+      // a step or two; until it does, this timer must not put the character straight back
+      // into the state the guard just left. So it re-asserts only while the movement
+      // generation it was given is still the live one — once the guard has cancelled, this
+      // journey is over and its hold is not reinstated.
+      // `ours` is the hold OBJECT, not a boolean, and that is the whole of the release
+      // check below. A take-back can end this journey and a second one can start before
+      // this `finally` runs, at which point "is the keeper travelling" is true and is
+      // about somebody else's walk — and reviving that is the two-drivers bug wearing a
+      // different hat. Identity is the only question that survives the race.
       const assert_ = () => {
         if (!keeper || keeper.inert) return;
-        keeper.goInert(`travelling to ${where}`);
-        ours = true;
+        if (this.movementWasCancelled(movementGeneration)) return;
+        keeper.goTravelling(`travelling to ${where}`);
+        ours = keeper.inert;
       };
       assert_();
       const timer = setInterval(assert_, 2000);
       timer.unref?.();
       try {
+        // Through the keeper, so the journey gets the pre-departure rest, the hop hook and
+        // the ledger row. `Autopilot.travel` calls `Session.travel` underneath, so this is
+        // one extra frame and no recursion.
+        if (keeper && typeof keeper.travel === 'function')
+          return await keeper.travel(dest, { ...opts, movementGeneration });
         return await this.travel(dest, { ...opts, movementGeneration });
       } finally {
         clearInterval(timer);
-        if (ours) keeper.revive('travel finished');
+        // Only if it is still the very hold we took.
+        if (ours && keeper?.inert === ours) keeper.revive('travel finished');
       }
     });
   }
@@ -4220,9 +4267,44 @@ class Session {
     if (!geo.standable(me0.row, me0.col)) {
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const spot = geo.nearestWalkable(me0.row, me0.col);
-      if (!spot) return { arrived: false, reason: 'start_has_no_floor',
-                          note: 'standing off the floor with no walkable square anywhere near',
-                          position: { col: me0.col, row: me0.row } };
+      if (!spot) {
+        // TWO VERY DIFFERENT FAILURES USED TO SHARE ONE NAME, and the common one is not
+        // the one the name describes.
+        //
+        // `nearestWalkable` searches out to twelve squares. Cibilo Creek Inn is TEN ROWS
+        // BY THIRTEEN COLUMNS — that radius covers the whole room twice over, and every
+        // square in it and around it resolves to floor — and yet `start_has_no_floor` was
+        // the single commonest travel failure on the shadow fleet: 1,535 of 2,361 hop
+        // failures in fourteen hours, 404 of them on one character, ALL of them leaving
+        // room 153. A character genuinely parked in solid rock cannot produce that.
+        //
+        // What produces it is the position and the geometry belonging to DIFFERENT ROOMS.
+        // 153's only real exit declares `arriveRow: 11, arriveCol: 59` in room 150; read
+        // those coordinates against 153's thirteen columns and the character is forty-six
+        // squares outside the map, so every ring of the search is empty and the answer is
+        // null. The character is not off the floor. The floor is the wrong floor.
+        //
+        // So the two are named apart. This changes no behaviour — both still refuse, and
+        // `TERMINAL_MOVEMENT_REASONS` covers both — but a refusal that names the right
+        // condition is the difference between a fixable bug and 1,535 rows of noise. The
+        // bounds are reported with it so the next reader does not have to re-derive them.
+        const rows = Number(geo.rows), cols = Number(geo.cols);
+        const outside = Number.isFinite(rows) && Number.isFinite(cols) &&
+          (me0.row < 0 || me0.col < 0 || me0.row > rows + 1 || me0.col > cols + 1);
+        if (outside)
+          return { arrived: false, reason: 'position_outside_room_geometry',
+                   note: 'the character is standing outside the bounds of the room geometry ' +
+                         'loaded for it — the two are almost certainly different rooms, which ' +
+                         'is a room-change race and not a hole in the map',
+                   position: { col: me0.col, row: me0.row },
+                   geometry: { rows, cols, room: this.world?.room?.num ?? null,
+                               name: this.world?.room?.name ?? null } };
+        return { arrived: false, reason: 'start_has_no_floor',
+                 note: 'standing off the floor with no walkable square anywhere near',
+                 position: { col: me0.col, row: me0.row },
+                 geometry: { rows: Number.isFinite(rows) ? rows : null,
+                             cols: Number.isFinite(cols) ? cols : null } };
+      }
       // CONFIRMED, because this is the one place the ANSWER is the question. Everywhere
       // else `step` is asked "where am I now" and prediction answers it; here it is asked
       // "did that work", and a predicted yes would report solid ground under a character
@@ -10995,12 +11077,15 @@ const TOOLS = [
           'grace period means the swarm has to notice you one at a time instead of all at once' },
       travel_hold: { type: 'string', enum: ['on', 'half', 'ab', 'observe', 'off'],
         description: 'resting at a safe wall part-way through a journey, to arrive at full health ' +
-          'rather than at whatever the road left. "on" ALWAYS holds when the conditions below are ' +
-          'met; "half" (= "ab") runs the experiment, half of journeys holding and half walking on, ' +
-          'decided per journey; "observe" writes down what it would have done and changes nothing; ' +
-          '"off" is the behaviour from before it existed. Takes effect on the next hop — no restart. ' +
-          'NOTE: "on" was accepted and stored before it was implemented, and the A/B coin stayed in ' +
-          'charge — a fleet set to "on" walked half its journeys hurt while the setting read on.' },
+          'rather than at whatever the road left. "on" is the DEFAULT and always holds when the ' +
+          'conditions below are met; "observe" writes down what it would have done and changes ' +
+          'nothing; "off" is the behaviour from before it existed. Takes effect on the next hop — ' +
+          'no restart. THE A/B IS RETIRED (2026-08-21): "half"/"ab" used to run half of journeys ' +
+          'in a control arm that walked hurt characters straight past the only free healing on the ' +
+          'road, and they now mean "on" — accepted so a roster on disk carrying one does not throw ' +
+          'on restart, and reported in the journal every time rather than silently remapped. The ' +
+          'experiment was closed because the question changed: the deaths this fleet suffers are ' +
+          'stuck-and-eaten, not travelled-badly, and no arm of it addressed that.' },
       travel_hold_below: { type: 'number',
         description: 'the health FRACTION under which a journey will stop at a wall to heal. ' +
           'Default 0.75. Only the rooms in the MIDDLE of a journey are eligible — arriving hurt is ' +
@@ -11046,10 +11131,42 @@ const TOOLS = [
           'reach itself belongs to the SERVER and is not a setting.' },
       travel_hold_vigor: { type: 'number',
         description: 'the vigor a character must have before it will stop mid-journey to heal at a ' +
-          'safe wall. Health comes back at a rate set by vigor, so below this a top-up costs more in ' +
-          'exposure than it returns. Default 80 — the resting cap, and the highest an unfed character ' +
-          'can reach; it was 100, which no fleet with an empty larder could ever present, so the hold ' +
-          'never fired. Raise it to 100 for a fed fleet that would rather press on.' },
+          'safe wall. Default 40. It was 100 — which no fleet with an empty larder can ever present, ' +
+          'so the hold never fired — and then 80, which is the RESTING CAP and therefore a cliff at ' +
+          'exactly the highest an unfed character reaches: measured, 8 of 18 deaths were characters ' +
+          'down to 1 or 2 health refused for vigor, most of them two to six points under the line, ' +
+          'which is a deadlock because resting is how vigor comes back. The mechanic is continuous ' +
+          'rather than a cliff — CalculateHealthTime (player.kod:5613) is ((200-vigor)^2)/6+1000 ms ' +
+          'per point, so 78 heals 2% slower than 80 and 40 heals 55% slower, still eleven points a ' +
+          'minute. Raise it to 80 or 100 to restore either older behaviour.' },
+      travel_guard: {
+        description: 'WHAT THE KEEPER IS STILL ALLOWED TO DO WHILE A JOURNEY IS STEERING. An ' +
+          'object of booleans, or the string "on"/"off" for all of them at once. A journey used ' +
+          'to make the keeper INERT, which switched the whole survival ladder off for the length ' +
+          'of the walk: Cccc was walked out of a sanctuary at 27% health against a 70% flee ' +
+          'threshold and eaten over twenty-two seconds while the keeper watched every frame. ' +
+          'These are the faculties that state keeps, and each can be switched off per character, ' +
+          'live, with no restart. THEY ARE ON TWO DIFFERENT CLOCKS. ' +
+          'MID-HOP — the mover is walking, so each of these CANCELS the journey and hands the ' +
+          'character back to the ordinary ladder rather than fighting the mover for it: ' +
+          '"flee" (below flee_below with something adjacent), ' +
+          '"fight_back" (losing health fast enough that the bar empties before the road ends — ' +
+          'keyed on the damage RATE, never on whether the body is moving, because the shuffle ' +
+          'against a wall that killed Cccc reset every stillness timer it met), ' +
+          '"play_dead" (inside two hits of death), ' +
+          '"arm" (the weapon is gone). ' +
+          'HOP BOUNDARY — the mover is between rooms and nothing is contended, so these pause ' +
+          'the journey rather than ending it: ' +
+          '"rest" (sit in a sanctuary until health AND vigor are as high as sitting takes them — ' +
+          'full health and 80 of 200 vigor, because everything above that has to be eaten), ' +
+          '"safe_spot" (hold a defensible wall part-way through; see travel_hold). ' +
+          'All six default ON. An unrecognised key is REFUSED, not ignored.',
+        oneOf: [
+          { type: 'string', enum: ['on', 'off'] },
+          { type: 'object',
+            properties: Object.fromEntries(TRAVEL_GUARD_KEYS.map(k => [k, { type: 'boolean' }])),
+            additionalProperties: false },
+        ] },
       full_journal: { type: 'boolean', description: 'return the whole journal, not just the tail' },
     }, required: ['agent', 'action'] },
     run: (a) => {
@@ -11103,6 +11220,10 @@ const TOOLS = [
       // a vanished partner already, exactly as it does for one that logs out.
       if (a.action === 'release')
         return p.releaseCommitment(a.why ?? 'an operator took this character back');
+      // Set when a value was accepted but stored as something else, and returned with the
+      // status so the caller SEES the remap. A silent normalisation is a setting that does
+      // not do what it says, which is the failure this file has paid for twice.
+      let retired = null;
       if (a.mode) {
         if (!MODES.includes(a.mode)) throw new Error(`mode must be one of ${MODES.join(', ')}`);
         p.mode = a.mode;
@@ -11243,16 +11364,22 @@ const TOOLS = [
       if (a.weapon_priority !== undefined)
         p.policy.weaponPriority = Array.isArray(a.weapon_priority) && a.weapon_priority.length
           ? a.weapon_priority.map(String) : null;
-      // NORMALISED, because `half` and `ab` are the same arm-flipping experiment under two
-      // names and the keeper should only ever have to know one of them. An unrecognised
-      // value is REPORTED rather than applied — a setting that silently does nothing is how
-      // `on` spent an evening looking enabled while the coin decided every journey.
+      // NORMALISED AT THE DOOR. `half` and `ab` were two names for the same retired
+      // experiment and they are stored as `on`, because storing them as themselves means
+      // every reader downstream has to remember the retirement — which is how `on` spent an
+      // evening looking enabled while the coin decided every journey. An unrecognised value
+      // is REPORTED rather than applied.
       if (a.travel_hold !== undefined) {
         const want = String(a.travel_hold);
-        const mode = want === 'half' ? 'ab' : want;
-        if (!['on', 'ab', 'observe', 'off'].includes(mode))
-          throw new Error(`travel_hold must be one of on/half/ab/observe/off, not "${want}"`);
+        if (!['on', 'half', 'ab', 'observe', 'off'].includes(want))
+          throw new Error(`travel_hold must be one of on/observe/off, not "${want}" ` +
+                          '(half and ab are the retired A/B and are accepted as "on")');
+        const mode = (want === 'half' || want === 'ab') ? 'on' : want;
         p.policy.travelHold = mode;
+        if (mode !== want)
+          retired = { travel_hold: want, stored_as: mode,
+                      why: 'the safe-wall A/B is retired — holding is the behaviour now, not ' +
+                           'a treatment. See TRAVEL_HOLD_MODE in m59-autopilot.mjs' };
       }
       // A FRACTION, AND CHECKED, because "75" would read as 7500% and never fire — which is
       // the same silence `on` had. Zero is refused too: a hold that never triggers is `off`
@@ -11289,6 +11416,31 @@ const TOOLS = [
       if (a.confine_rooms !== undefined)
         p.policy.confineRooms = Array.isArray(a.confine_rooms) && a.confine_rooms.length
           ? a.confine_rooms.map(Number).filter(Number.isFinite) : null;
+      // AN UNRECOGNISED KEY IS REFUSED, NEVER DROPPED. `purpose` sat outside a schema for a
+      // year with every keeper's audit switched off because a setting that silently does
+      // nothing reads exactly like one that works — so a typo here is an error with the
+      // valid names in it, not a quiet no-op. See docs/m59-policy.md.
+      //
+      // `null` clears the override and restores the defaults; the whole point of the state
+      // is that a character with no opinion about it still defends itself.
+      if (a.travel_guard !== undefined) {
+        const want = a.travel_guard;
+        if (want == null) p.policy.travelGuard = null;
+        else if (want === 'on' || want === 'off') {
+          const on = want === 'on';
+          p.policy.travelGuard = Object.fromEntries(TRAVEL_GUARD_KEYS.map(k => [k, on]));
+        } else if (typeof want === 'object' && !Array.isArray(want)) {
+          const bad = Object.keys(want).filter(k => !TRAVEL_GUARD_KEYS.includes(k));
+          if (bad.length)
+            throw new Error(`travel_guard: no such faculty ${bad.map(b => `"${b}"`).join(', ')} — ` +
+                            `it is one of ${TRAVEL_GUARD_KEYS.join(', ')}`);
+          // MERGED OVER WHAT IS ALREADY THERE, so `{flee:false}` turns one thing off rather
+          // than turning the other five off by omission. Pass "off" to mean all of them.
+          p.policy.travelGuard = { ...(p.policy.travelGuard ?? {}),
+                                   ...Object.fromEntries(Object.entries(want)
+                                     .map(([k, val]) => [k, !!val])) };
+        } else throw new Error('travel_guard must be an object of booleans, or "on"/"off"');
+      }
       if (a.travel_hold_vigor !== undefined) {
         if (a.travel_hold_vigor == null) p.policy.travelHoldVigor = null;
         else {
@@ -11381,7 +11533,8 @@ const TOOLS = [
       // Persist the instruction, not the running object: on the far side of a
       // restart the keeper is rebuilt from these fields alone.
       rememberAutopilot(a.agent, { mode: p.mode, policy: { ...p.policy } });
-      return p.start();
+      const started = p.start();
+      return retired ? { ...started, retired } : started;
     },
   },
   {
