@@ -32,6 +32,7 @@ import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
+import { heardOrder, dropCrumb, nextStep, behindBy } from './m59-follow.mjs';
 import { inboxIfAny, unwrapSpeech } from './m59-inbox.mjs';
 import { arenaCall } from './m59-chatter.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
@@ -602,6 +603,10 @@ export const PASS_STAGES = [
   'passArm',
   'passPlaybook',
   'passFleeAndRest',
+  // FOLLOWING A PERSON SITS HERE ON PURPOSE. Below survival, because being led somewhere is
+  // never worth dying on the way to; above everything directional, because the entire point
+  // is that a person walking in front knows something the router does not.
+  'passFollow',
   'passOutside',
   'passErrand',
   'passFarm',
@@ -9889,6 +9894,77 @@ export class Autopilot {
   }
 
   // ── passOutside: extracted from pass() ────────────────────────────────
+  // ── passFollow: walk where a person walked ───────────────────────────────────────────
+  //
+  // Say "follow me" while piloting one of your own and every fleet member in the room walks
+  // your trail until you say stop. It is for leading a group through doors the router keeps
+  // getting wrong -- the Cragged Mountains pocket whose only exit has failed 21 crossings,
+  // the Ukgoth wedge where a body can step four ways and none is the one it wants. A person
+  // threading that solves it by knowing where to put their feet; this copies the feet.
+  //
+  // ONLY OUR OWN PEOPLE MAY GIVE THE ORDER. `prod` is a shared server and this moves twenty
+  // bodies at once, so `heardOrder` checks the speaker against the ROSTER, not against the
+  // text. See m59-follow.mjs and the assertions in m59-follow-test.mjs.
+  async passFollow(ctx) {
+    const { s, c } = ctx;
+    // A separate cursor from the social responder's: both read `said` and consuming the
+    // stream out from under the other would make each one intermittently deaf.
+    const evs = c.eventsSince(this.followCursor || 0).filter(e => e.kind === 'said');
+    this.followCursor = c.evSeq;
+    const order = heardOrder(evs, {
+      isOurs: name => party.isFleetmate(name),
+      self: c.selfId,
+    });
+    if (order?.order === 'stop' && this.follow) {
+      this.note('told to hold', { by: order.leaderName, walked_behind_for_s:
+        Math.round((Date.now() - this.follow.since) / 1000) });
+      this.follow = null;
+    } else if (order?.order === 'follow') {
+      this.follow = { leaderId: order.leaderId, leaderName: order.leaderName,
+                      trail: [], since: Date.now(), missing: 0 };
+      this.note('following', { leader: order.leaderName,
+        how: 'walking the squares they stood on, oldest first, rather than walking at them' });
+    }
+    if (!this.follow) return CONTINUE;
+
+    const me = c.self;
+    if (!me) return CONTINUE;
+    // Where is the leader? Absent is not the same as gone: a leader who has stepped through a
+    // door leaves a trail whose last crumbs ARE the approach to it, so walking them takes us
+    // through. That is why this keeps going for a while rather than giving up at once.
+    const leader = c.room?.objects?.get?.(this.follow.leaderId) ?? null;
+    if (leader) {
+      this.follow.missing = 0;
+      dropCrumb(this.follow.trail, { row: leader.row, col: leader.col, at: Date.now() });
+    } else {
+      this.follow.missing++;
+    }
+
+    const aim = nextStep(this.follow.trail, me);
+    if (!aim) {
+      // Caught up. Standing still next to the leader is the correct behaviour for a follower,
+      // and it is also how a group stays together while the leader picks a door.
+      if (!leader && this.follow.missing > 20) {
+        this.note('lost the lead', { leader: this.follow.leaderName,
+          why: 'out of the room and out of trail — nothing left to retrace' });
+        this.follow = null;
+        return CONTINUE;
+      }
+      this.progress('following ' + this.follow.leaderName + ' — caught up');
+      return HANDLED;
+    }
+
+    const w = await s.walkTo(aim.col, aim.row, { maxSteps: 8 })
+      .catch(e => ({ arrived: false, reason: e.message }));
+    this.movedAt = Date.now();
+    this.progress(`following ${this.follow.leaderName} — ${behindBy(this.follow.trail)} crumb(s) behind`);
+    if (!w.arrived && w.left_room) {
+      // Through the door after them, which is the whole trick and needs no special case.
+      this.note('followed them through', { leader: this.follow.leaderName });
+    }
+    return HANDLED;
+  }
+
   async passOutside(ctx) {
     // AN OUTSIDE OPERATION OWNS EVERYTHING DIRECTIONAL FROM HERE DOWN.
     //

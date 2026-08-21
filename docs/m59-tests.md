@@ -20,6 +20,17 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   destructive verbs are chosen by an argument is refused when the argument is omitted. It
   caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
   token separator) and
+  `node tools/m59-follow-test.mjs` (26 — **leading the fleet by walking in front of it, and
+  the one line that must not move**: say "follow me" while piloting one of your own and every
+  fleet member in the room walks the squares you stood on. ONLY OUR OWN PEOPLE MAY GIVE THAT
+  ORDER — `prod` is a shared server and this moves twenty bodies at once, so the speaker is
+  checked against the ROSTER rather than against the text, a stranger who knows one of our
+  names is still ignored, and a character will not take the order from itself. The rest is
+  trail discipline: the queue is consumed from the OLDEST end, because walking AT a leader is
+  a beeline and a beeline is exactly what fails in the rooms this exists for; passing near a
+  crumb counts as reaching it, since insisting on the exact square is how a follower stalls on
+  geometry the leader crossed at a different angle; and the last order in a batch wins, so
+  "follow me" then "stop" means stop) and
   `node tools/m59-commute-test.mjs` (31 — **one rule, and every bug this driver had was a
   violation of it**: do not send a command to a character that is busy. `travel` supersedes
   whatever movement is in flight and the ledger calls that `movement cancelled by a newer
