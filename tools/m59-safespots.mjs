@@ -316,6 +316,78 @@ export const SPOT_RULES = ['wall', 'disc'];
 // a walk when it is wrong, which is the cheap direction — see discredited().
 const CORNER = 5;
 const CORNER_BONUS = 24;
+/**
+ * THE SHELTERS ALONG A ROUTE, WORKED OUT BEFORE THE ROUTE IS WALKED.
+ *
+ * You do not add a fuel stop to a journey by braking in the middle of the road, unfolding a
+ * map and re-planning from a standstill. You work out where the stops are while you are
+ * still driving, and when you need one you change the road ahead. That is the whole idea
+ * here, and the thing it replaces is exactly the braking version: the mid-hop wall rung used
+ * to cancel the journey, hand the character back, search the room from where it happened to
+ * be standing, and walk to whatever it found. Measured, that is the wrong shape — health
+ * leaves at a median of 4.7 a second once something starts, and the average maximum on this
+ * fleet is 45, so a full bar is nine and a half seconds. Stopping to think is most of it.
+ *
+ * So this is asked ONCE, when the crossing is planned, and the answer travels with the plan.
+ * Each entry says which step of the route it hangs off and how far off the road it is, which
+ * is what lets a caller take the next one AHEAD of it rather than the nearest one in any
+ * direction — behind is where it has already been bitten.
+ *
+ * Costs nothing at runtime: a route that never needs a stop never looks at the list.
+ */
+export function sheltersAlong(geo, steps, {
+  within = 6, book = null, room = null, minBackCover = 1, limit = 24,
+} = {}) {
+  if (!geo || !Array.isArray(steps) || !steps.length) return [];
+  const out = [];
+  const seen = new Set();
+  for (let i = 0; i < steps.length; i++) {
+    const st = steps[i];
+    if (!Number.isFinite(st?.row) || !Number.isFinite(st?.col)) continue;
+    let spot = null;
+    try {
+      spot = nearestSafeSpot(geo, { row: st.row, col: st.col },
+                             { within, book, room, minBackCover });
+    } catch { spot = null; }
+    if (!spot) continue;
+    const k = `${spot.col},${spot.row}`;
+    if (seen.has(k)) continue;          // one entry per square, at the first step that reaches it
+    seen.add(k);
+    out.push({
+      col: spot.col, row: spot.row,
+      // WHICH STEP IT HANGS OFF. A caller walking the plan knows how far along it is, so this
+      // is what makes "ahead" answerable at all.
+      atStep: i,
+      detour: spot.steps_away ?? Math.max(Math.abs(spot.row - st.row), Math.abs(spot.col - st.col)),
+      proven: !!spot.proven,
+      backCover: spot.back_cover ?? null,
+    });
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+/**
+ * The next shelter AHEAD on a route, or null.
+ *
+ * `atStep` is where the walker has got to. Behind is not offered: a character that is being
+ * hurt got that way somewhere, and sending it back through the place it was bitten to reach
+ * a wall it has already passed is worse than carrying on. `maxDetour` is the real gate — a
+ * wall twelve squares off the road is not shelter when there are nine seconds of health
+ * left, it is a longer way to die.
+ */
+export function shelterAhead(shelters, atStep, { maxDetour = 4, preferProven = true } = {}) {
+  if (!Array.isArray(shelters) || !shelters.length) return null;
+  const ahead = shelters.filter(s => s.atStep >= atStep && s.detour <= maxDetour);
+  if (!ahead.length) return null;
+  // Nearest along the route first, so the stop is the next one rather than the best one —
+  // the best one may be forty squares further on, which is the same mistake as searching.
+  ahead.sort((a, b) => (a.atStep - b.atStep)
+    || (preferProven ? (Number(b.proven) - Number(a.proven)) : 0)
+    || (a.detour - b.detour));
+  return ahead[0];
+}
+
 export function nearestSafeSpot(geo, from, {
   within = 12, minAvoided = 20, reach = null, book = null, room = null, toward = null,
   quarryReach = null, strictQuarryReach = false, stats = null, los = 0,

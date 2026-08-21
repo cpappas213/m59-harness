@@ -1058,6 +1058,13 @@ const walkTo = compileSessionMethod(brokerSource,
     // default; it is duplicated rather than imported because importing the broker takes
     // the fleet lock, which is the reason this whole file lifts methods by text.
     PIVOT_ARRIVE_WITHIN: 64, protocolToClient,
+    // THE FUEL STOP'S PLANNER. `walkTo` works out where the shelters on this crossing are
+    // while it is planning the crossing, so that wanting one later is a change to the route
+    // ahead rather than a stop, a search and a replan from a standstill. Stubbed to nothing
+    // here: no fixture sets `shelterPolicy`, so the branch is never entered, and the point
+    // of declaring it is that the branch would otherwise throw ReferenceError the first time
+    // a real journey did — which is exactly what this check exists to catch.
+    sheltersAlong: () => [],
     // THE FINE DETOUR'S FOUR, AND THE LEDGER. Half of what the square lattice calls a wall
     // is a slide that landed next door; these are what thread it. Real functions, because
     // all five are ordinary exports of modules that import without taking the fleet lock.

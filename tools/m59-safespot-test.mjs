@@ -16,7 +16,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import { unlinkSync } from 'node:fs';
 import { Autopilot, farmRoomDenials,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
-import { SafeSpotBook } from './m59-safespots.mjs';
+import { SafeSpotBook , shelterAhead } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
@@ -990,5 +990,39 @@ console.log('\nprovenance of a verdict');
 }
 
 try { unlinkSync(BOOK); } catch { /* never written */ }
+console.log('');
+console.log('shelters planned with the route, not searched for from a standstill');
+{
+  // You do not add a fuel stop by braking in the road, unfolding a map and re-planning from
+  // a standstill. You work out where the stops are while driving and change the road ahead.
+  // The version this replaces did the braking: cancel the journey, hand the character back,
+  // search the room from wherever it happened to be, walk to whatever it found. Health leaves
+  // at a median of 4.7 a second and the average maximum here is 45 — nine and a half seconds
+  // from full to dead — so stopping to think was most of it.
+  const shelters = [
+    { col: 5,  row: 5,  atStep: 2,  detour: 2, proven: false },
+    { col: 9,  row: 9,  atStep: 2,  detour: 1, proven: true  },
+    { col: 20, row: 20, atStep: 10, detour: 1, proven: true  },
+    { col: 30, row: 30, atStep: 18, detour: 9, proven: true  },
+  ];
+  const at = (i, o) => shelterAhead(shelters, i, o);
+
+  ok('the next stop ahead is offered', at(0)?.atStep === 2);
+  // AHEAD, NEVER BEHIND. A character got hurt somewhere; sending it back through the place
+  // it was bitten to reach a wall it has already passed is a longer way to die.
+  ok('one already passed is not offered', at(5)?.atStep === 10);
+  ok('and when everything is behind, nothing is offered', at(19) === null);
+  // NEAREST ALONG THE ROUTE, not best in the room — the best may be forty squares on, which
+  // is the same mistake as searching.
+  ok('the nearest along the route wins, not the best',
+     at(0)?.detour === 1 && at(0)?.row === 9);
+  // THE REAL GATE IS THE DETOUR. A wall nine squares off the road is not shelter when there
+  // are nine seconds of health left.
+  ok('a stop too far off the road is not shelter', at(11) === null);
+  ok('unless the caller says it will pay that far', at(11, { maxDetour: 12 })?.atStep === 18);
+  ok('an empty list is null rather than a throw', shelterAhead([], 0) === null);
+  ok('and so is nothing at all', shelterAhead(null, 0) === null);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

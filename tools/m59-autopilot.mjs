@@ -8604,9 +8604,13 @@ export class Autopilot {
     // Handing back rather than steering from here is deliberate and is the same rule the
     // rungs around it obey: mid-hop the mover is walking, and only one thing may ever drive
     // a body. The ordinary ladder takes the wall on this same pass, with real numbers.
-    // ITS OWN THRESHOLD, AND HIGHER THAN THE DYING. The deaths this rung exists for happened
-    // at 1, 2 and 5 health — by which point no detour is walkable. Sixty per cent is where a
-    // character can still reach a wall a few steps away and has something left to protect.
+    // ITS OWN THRESHOLD, AND HIGH, BECAUSE THE ARITHMETIC IS TIGHT. The deaths this rung
+    // exists for happened at 1, 2 and 5 health, by which point no detour is walkable. And a
+    // full bar does not last: measured over 237 deaths, health leaves at a MEDIAN OF 4.7 A
+    // SECOND once something starts on a character, and the average maximum on this fleet is
+    // 45 — nine and a half seconds from full to dead. Sixty per cent bought 5.7 seconds to
+    // notice, stop, replan and walk; eighty buys nine, which is the difference between a
+    // detour and an epitaph.
     //
     // It is separate from `travel_hold_below` (0.75) rather than sharing it because the two
     // stops cost different things. At a hop boundary the journey is already paused and a rest
@@ -8631,7 +8635,7 @@ export class Autopilot {
     const wouldPlayDead = near.length && hp !== null
       && hp < (this.policy.doomedInOpenBelow ?? 0.4);
     if (this.travelAllows('safe_spot') && hp !== null && near.length
-        && (hp < (this.policy.travelWallBelow ?? 0.6) || wouldPlayDead)) {
+        && (hp < (this.policy.travelWallBelow ?? 0.8) || wouldPlayDead)) {
       const geo = this.s.world?.geometry;
       let spot = null;
       if (geo && me) {

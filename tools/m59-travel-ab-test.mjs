@@ -407,8 +407,8 @@ console.log('a wall is nearer than the next room -- the mid-hop rung');
   ok('it hands back rather than steering, like the rungs around it', /takeBack\(/.test(body));
   ok('and it fires at its own threshold, well above the health people die at',
      /travelWallBelow/.test(body));
-  ok('which defaults to 60% — the deaths were at 1, 2 and 5 health, where no detour is walkable',
-     /travelWallBelow \?\? 0\.6/.test(body));
+  ok('which defaults to 80%, because health leaves at 4.7/s and a 45 bar is 9.5 seconds',
+     /travelWallBelow \?\? 0\.8/.test(body));
   ok('the clock says safe_spot is on both', /safe_spot: 'both'/.test(SRC));
 }
 

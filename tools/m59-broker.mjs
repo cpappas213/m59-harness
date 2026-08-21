@@ -49,7 +49,7 @@ import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
-import { nearestSafeSpot } from './m59-safespots.mjs';
+import { nearestSafeSpot, sheltersAlong, shelterAhead } from './m59-safespots.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -3564,11 +3564,23 @@ class Session {
   //
   // Everything else — every wall, every ledge, every slope this fleet has ever slid on — is
   // static and was already computed. This just uses it.
+  // `shelter` is the fuel-stop contract, and it is the whole of the change: { spots, need,
+  // maxDetour, onDivert }. `spots` came from `sheltersAlong` when this crossing was PLANNED,
+  // `need()` says whether the character wants one now, and when both are true the next
+  // shelter ahead is spliced into the route rather than searched for.
+  //
+  // Nothing stops. No replan, no handing the character back, no asking the room where the
+  // walls are from a standstill — the walker aims at one more waypoint than it did before
+  // and carries on. That matters because health leaves at a median of 4.7 a second once
+  // something starts, and the average maximum on this fleet is 45: nine and a half seconds
+  // from full to dead, and the braking version spent most of it thinking.
   async walkPivots(planSteps, geo, { movementGeneration = this.movementGeneration,
-                                    controlToken = null, maxMoves = null } = {}) {
+                                    controlToken = null, maxMoves = null,
+                                    shelter = null } = {}) {
     const c = this.need();
     const roomId = c.room.id;
     let legs = 0, singles = 0;
+    let divertedTo = null, diverted = 0;
     const budget = maxMoves ?? (planSteps.length + 20);
     const half = KOD_FINENESS >> 1;
     const ptOf = st => geo.standPoint?.(st.row, st.col)
@@ -3579,6 +3591,28 @@ class Session {
     while (remaining.length && legs + singles < budget) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return { done: false, legs, singles, cancelled: true };
+
+      // THE FUEL STOP. Checked before each leg, which is where a route can still be changed
+      // cheaply — the walker is between aims rather than mid-slide.
+      if (shelter?.spots?.length && !divertedTo && typeof shelter.need === 'function') {
+        let wants = false;
+        try { wants = !!shelter.need(); } catch { wants = false; }
+        if (wants) {
+          // How far along we are: the plan minus what is left. `shelterAhead` refuses
+          // anything behind that, because a character got hurt somewhere and walking back
+          // through it to a wall it has already passed is a longer way to die.
+          const at = planSteps.length - remaining.length;
+          const stop = shelterAhead(shelter.spots, at, { maxDetour: shelter.maxDetour ?? 4 });
+          if (stop) {
+            divertedTo = stop; diverted++;
+            // ONE MORE WAYPOINT, NOT A NEW PLAN. The rest of the route is untouched and is
+            // walked afterwards exactly as it would have been.
+            remaining.unshift({ row: stop.row, col: stop.col, shelter: true });
+            try { shelter.onDivert?.(stop, { atStep: at, remaining: remaining.length }); }
+            catch { /* a note that cannot be written does not stop the walk */ }
+          }
+        }
+      }
       if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
       const me = c.self;
       if (!me || !Number.isFinite(me.x))
@@ -4465,7 +4499,19 @@ class Session {
         ?? { x: protocolToClient(st.col * KOD_FINENESS + half2),
              y: protocolToClient(st.row * KOD_FINENESS + half2) };
       if (startPt) {
-        const ran = await this.walkPivots(plan.steps, geo, { movementGeneration, controlToken });
+        // THE STOPS ARE WORKED OUT NOW, WHILE THE ROUTE IS BEING PLANNED, AND NOT LATER FROM
+        // A STANDSTILL. `this.shelterPolicy` is set by whoever asked for the walk — the
+        // keeper, during a journey — and is absent for every other caller, so an ordinary
+        // walk pays nothing for this beyond one pass over the plan.
+        const sp = this.shelterPolicy;
+        const shelter = sp?.need
+          ? { spots: sheltersAlong(geo, plan.steps,
+                                   { book: sp.book ?? null, room: c.room?.num ?? null,
+                                     within: sp.within ?? 6 }),
+              need: sp.need, maxDetour: sp.maxDetour ?? 4, onDivert: sp.onDivert ?? null }
+          : null;
+        const ran = await this.walkPivots(plan.steps, geo,
+                                          { movementGeneration, controlToken, shelter });
         pivotLegs = (ran.legs ?? 0) + (ran.singles ?? 0);
         if (ran.cancelled) return this.cancelledMovement({ steps: pivotLegs });
         if (ran.left_room)
