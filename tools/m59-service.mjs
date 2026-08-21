@@ -175,7 +175,12 @@ async function findBroker() {
     if (held) {
       for (const port of candidatePorts()) {
         if (port === HTTP_PORT) continue;
-        const other = await health(port);
+        // PATIENT ON PURPOSE. The default probe is 2.5s, and a broker mid-rejoin with
+        // twenty-one characters in game genuinely takes longer than that to answer. One did,
+        // and this path then reported the fleet held by a pid it could not reach and refused
+        // a restart that was perfectly safe. Refusing is the right direction to fail in, but
+        // failing there for a slow answer is a bug rather than caution.
+        const other = await health(port, 15000);
         if (other && Number(other.pid) === held)
           return { running: true, pid: held, port, health: other, elsewhere: true };
       }
@@ -455,7 +460,12 @@ async function cmdStatus() {
     if (held) {
       for (const port of candidatePorts()) {
         if (port === HTTP_PORT) continue;
-        const other = await health(port);
+        // PATIENT ON PURPOSE. The default probe is 2.5s, and a broker mid-rejoin with
+        // twenty-one characters in game genuinely takes longer than that to answer. One did,
+        // and this path then reported the fleet held by a pid it could not reach and refused
+        // a restart that was perfectly safe. Refusing is the right direction to fail in, but
+        // failing there for a slow answer is a bug rather than caution.
+        const other = await health(port, 15000);
         if (other && Number(other.pid) === held) {
           console.log(c.ok(`broker "${LABEL}"  UP`) +
                       c.dim(`  pid ${held} on ${port} — not ${HTTP_PORT}, which is why this said DOWN`));
