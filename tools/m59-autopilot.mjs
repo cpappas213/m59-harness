@@ -8671,7 +8671,7 @@ export class Autopilot {
     // `doomedAt` there. At 0.4 it now sits BELOW this rung's 0.6, so the wall is reached
     // first on the way down and this clause is a backstop rather than the usual trigger.
     const wouldPlayDead = near.length && hp !== null
-      && hp < (this.policy.doomedInOpenBelow ?? 0.4);
+      && hp < (this.policy.doomedInOpenBelow ?? 0.3);
     if (this.travelAllows('safe_spot') && hp !== null && near.length
         && (hp < (this.policy.travelWallBelow ?? 0.8) || wouldPlayDead)) {
       const geo = this.s.world?.geometry;
@@ -8706,7 +8706,7 @@ export class Autopilot {
                       `${v.health.value} health with ${near.length} adjacent, and no wall ` +
                       `within reach to put at our back`,
                       { adjacent: near.length,
-                        doomed_below: this.policy.doomedInOpenBelow ?? 0.4 });
+                        doomed_below: this.policy.doomedInOpenBelow ?? 0.3 });
 
     // ---- 4. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
     //
@@ -9226,8 +9226,8 @@ export class Autopilot {
     // useful. Measured over 26 minutes of commuting: fifteen journeys taken back, every one
     // of them "two hits from death", six refuges, fourteen deaths.
     const doomedAt = Math.round((v.health?.max ?? 0) * (this.hold
-      ? (this.policy.doomedInSpotBelow ?? 0.35)
-      : (this.policy.doomedInOpenBelow ?? 0.4)));
+      ? (this.policy.doomedInSpotBelow ?? 0.3)
+      : (this.policy.doomedInOpenBelow ?? 0.3)));
     const doomed = hp !== null && near.length && v.health?.value != null &&
                    v.health.value <= doomedAt;
     // PLAY DEAD ONLY WHERE STANDING STILL IS ALREADY SAFE. FLEE EVERYWHERE ELSE.
@@ -9259,8 +9259,23 @@ export class Autopilot {
                'of everything that put us here. Only distance changes this fight' });
         this.doing = 'travelling';
         if (await this.townTripIfCornered().catch(() => false)) return HANDLED;
-        // Could not reach one. Fall through to the withdraw/rest branches below rather
-        // than freezing, which is the thing we just decided does not work here.
+
+        // AND WHEN THERE IS NO TOWN TO RUN TO, FREEZE ANYWAY. This used to fall straight
+        // through, and the consequence was measurable: across an entire prod session
+        // playDead fired ZERO times, while five of seven deaths happened in the open and
+        // two on UNPROVEN walls -- never once on a proven one. `sheltered` is
+        // `holdWorks()`, which wants a wall the book has confirmed, so the gate above was
+        // false at the moment of every single death and the verb could not run.
+        //
+        // Kermit sat at 5 of 36 -- 14% -- for three consecutive pulses and died there.
+        // The reasoning for falling through is sound and stays written down above: a
+        // freeze recovers no health and leaves you where you were. But it is an argument
+        // about which of two GOOD options to take, and by this line both have already
+        // failed -- the town trip could not find a way out. Against dying, a freeze that
+        // sometimes works is better than a fall-through that demonstrably did not.
+        if (await this.playDead('at ' + v.health.value + ' health with ' + near.length +
+                                ' adjacent, no wall that holds and no town within reach')
+              .catch(() => false)) return HANDLED;
       }
     }
 

@@ -432,5 +432,33 @@ console.log('the fuel-stop policy is actually handed to the mover');
   ok('revive clears it', /this\.s\.shelterPolicy = null/.test(SRC.slice(rev, rev + 700)));
 }
 
+console.log('');
+console.log('playing dead can actually fire');
+{
+  // ZERO TIMES IN AN ENTIRE PROD SESSION. playDead was reachable only through the
+  // `sheltered` branch -- holdWorks(), a wall the book has CONFIRMED -- and the deaths say
+  // five of seven happened in the open and two on UNPROVEN walls, never once on a proven
+  // one. The gate was false at the moment of every death, so the verb could not run.
+  // Kermit sat at 5 of 36, fourteen per cent, for three consecutive pulses and died there.
+  const PD = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  const at = PD.indexOf('if (doomed && this.policy.panicLogoff !== false)');
+  const body = PD.slice(at, at + 2400);
+  ok('the doomed branch exists', at > 0);
+  ok('a sheltered character still plays dead', /if \(sheltered\)[\s\S]{0,200}playDead/.test(body));
+  ok('an unsheltered one still tries a town FIRST, which is the better option',
+     /townTripIfCornered/.test(body));
+  // AND FALLS BACK TO FREEZING RATHER THAN FALLING THROUGH. The old comment argued that a
+  // freeze recovers no health and leaves you where you were. True -- and an argument about
+  // which of two GOOD options to take. By this line both have already failed.
+  ok('and freezes when there is no town to reach, instead of falling through',
+     body.indexOf('townTripIfCornered') < body.lastIndexOf('playDead'));
+  ok('the fallback says why it is there', /no town within reach/.test(body));
+  // The operator's number, and it has to mean the same thing everywhere.
+  ok('doomed is 30% behind a wall', /doomedInSpotBelow \?\? 0\.3\b/.test(PD));
+  ok('and 30% in the open', /doomedInOpenBelow \?\? 0\.3\b/.test(PD));
+  ok('with no older number left anywhere to disagree with it',
+     !/doomedInOpenBelow \?\? 0\.4/.test(PD) && !/doomedInSpotBelow \?\? 0\.35/.test(PD));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
