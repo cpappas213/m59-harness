@@ -9303,7 +9303,12 @@ export class Autopilot {
       return HANDLED;
     }
     if (hp !== null && hp < this.policy.fleeBelow && near.length && sheltered) {
-      this.tally.mulligans = (this.tally.mulligans || 0) + 1;
+      // NOT a mulligan. This counter used to be shared with the play-dead reconnect, which
+      // made it useless for the only question anybody asks it: DID PLAYING DEAD FIRE. A
+      // character showing mulligans=3 logoffs=0 had never played dead once — it had broken
+      // off in place three times, which is a different move with a different cost and does
+      // not drop the connection at all. Two events, two counters.
+      this.tally.breakoffs = (this.tally.breakoffs || 0) + 1;
       this.note('breaking off without moving', {
         health: Math.round(hp * 100) + '%', crowd: near.length,
         where: { col: this.hold.col, row: this.hold.row },

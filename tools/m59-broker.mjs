@@ -15395,6 +15395,7 @@ const TOOLS = [
           deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
           deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
           mulligans: st?.did?.mulligans ?? 0,
+          breakoffs: st?.did?.breakoffs ?? 0,
           logoffs: st?.did?.logoffs ?? 0,
           carrying: c.inventory?.length ?? null,
           // HOW FULL THAT PACK IS, which the count above cannot answer: twenty stacks of
@@ -16503,6 +16504,7 @@ function heroSnapshot(name) {
       deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
       deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
       mulligans: st?.did?.mulligans ?? 0,
+      breakoffs: st?.did?.breakoffs ?? 0,
       logoffs: st?.did?.logoffs ?? 0,
       credentials: fleetState.get(agent)?.credentials ?? null,
       client_path: process.env.M59_CLIENT_EXE || null,
