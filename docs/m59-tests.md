@@ -20,6 +20,18 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   destructive verbs are chosen by an argument is refused when the argument is omitted. It
   caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
   token separator) and
+  `node tools/m59-tracks-test.mjs` (28 — **the monorail, which nothing tested until it was
+  already wrong**: that RIDABILITY OUTRANKS TIME, in both arrival orders, because a crossing
+  whose legs the mover refuses is not a quick one — it is `walkFine` groping between
+  waypoints, which is the behaviour a track exists to replace — and that among equally
+  ridable crossings the quicker still wins; that an unridable track is still KEPT when there
+  is nothing better, and records how many of its legs cannot be sent, because a book with a
+  hole beats no book; that a caller with no map gets a track marked unstraightened rather
+  than one marked broken, since an unmeasurable leg is not a refused one; and that a
+  struck-out track is refused while one strike short is still ridden. Ranking on time alone
+  is defensible, was the rule for as long as the file existed, and left 578 The Cragged
+  Mountains 31% ridable — nothing noticed, because a track that cannot be sent still looks
+  exactly like a track) and
   `node tools/m59-travel-test.mjs` (24 — **one call is the whole journey**: that a refused
   doorway and an off-grid instant are re-settled and retried rather than returned, that a
   stumble is not a hop so re-settling cannot eat the room budget, that patience is bounded
