@@ -20,6 +20,14 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   destructive verbs are chosen by an argument is refused when the argument is omitted. It
   caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
   token separator) and
+  `node tools/m59-blink-test.mjs` (18 — **a portal every room has, and the one way it must
+  not be used**: that a kod file naming two rooms is REFUSED rather than guessed at, because a
+  blink point on the wrong room would claim exits a character cannot reach; and that blink
+  reachability never answers the walking question. `anchorReach` is what `transitOk` refuses
+  a hop over and it still says no where walking says no; `anchorReachVia` returns the WORD
+  'blink' instead, because casting costs mana, may need a rest to afford, and can fail — a
+  caller handed a boolean would plan a route needing a spell and report it as a walk. Also
+  that a room with no blink point recorded loses nothing, since most of the map has none) and
   `node tools/m59-tracks-test.mjs` (28 — **the monorail, which nothing tested until it was
   already wrong**: that RIDABILITY OUTRANKS TIME, in both arrival orders, because a crossing
   whose legs the mover refuses is not a quick one — it is `walkFine` groping between

@@ -66,6 +66,24 @@ import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
 import { sharedRoomGeometry, CLIENT_FINENESS, STEP_MASK_VERSION } from './m59-roo.mjs';
 
+// WHAT THIS BAKE COMPUTES, VERSIONED — because --resume could not tell that it had changed.
+//
+// The resume check compared the map, the view and the step-mask version, and a table that
+// matched on all three was reused wholesale. None of them moves when the BAKE'S OWN LOGIC
+// does. So fixing how the main region is chosen and re-running produced:
+//
+//     resuming: 264 room(s) already baked from the same map
+//     baking 0 room(s) (264 already done)
+//
+// A clean exit, a written file, and not one number changed. That is the same undetectable
+// wrong as a half-table stitched from two predicates, which the check three lines below
+// already refuses — only for the algorithm rather than the geometry. Bump this whenever what
+// a room's entry MEANS changes, and every stale table re-bakes itself instead of being
+// silently kept.
+//
+//   2 — main region chosen by forward reach rather than largest SCC; blink points recorded
+export const BAKE_VERSION = 2;
+
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
 export const ROUTES_FILE = () => process.env.M59_ROUTES_FILE ||
@@ -338,6 +356,19 @@ function pathString(came, key, fromRow, fromCol, toRow, toCol) {
   return steps.reverse().join('');
 }
 
+// THE BLINK POINT, IF THE KOD DECLARED ONE. Read lazily and tolerated when absent: a clone
+// without a Meridian 59 source tree has no substrate/m59-blink.json and must still bake.
+let BLINK_BOOK = undefined;
+function blinkPointFor(roomNum) {
+  if (BLINK_BOOK === undefined) {
+    try {
+      const f = new URL('../substrate/m59-blink.json', import.meta.url);
+      BLINK_BOOK = JSON.parse(readFileSync(f, 'utf8')).rooms ?? {};
+    } catch { BLINK_BOOK = {}; }
+  }
+  return BLINK_BOOK[roomNum] ?? BLINK_BOOK[String(roomNum)] ?? null;
+}
+
 /** Bake one room. */
 export function bakeRoom(room, { collision = true } = {}) {
   const geometry = sharedRoomGeometry(room);
@@ -358,26 +389,72 @@ export function bakeRoom(room, { collision = true } = {}) {
   //
   // Computed BEFORE the anchors, because choosing which staging square on a boundary is
   // "the exit" is exactly the decision that needs this answer.
-  let mainRegion = -1, mainSize = 0;
-  for (let id = 0; id < comp.sizes.length; id++)
-    if (comp.sizes[id] > mainSize) { mainSize = comp.sizes[id]; mainRegion = id; }
-  let mainSeed = null;
-  for (let r = 1; r <= geometry.rows && !mainSeed; r++)
-    for (let c = 1; c <= geometry.cols && !mainSeed; c++)
-      if (geometry.standable(r, c) && comp.label[comp.at(r, c)] === mainRegion) mainSeed = { r, c };
-  const reachedFromBody = new Set();
-  if (mainSeed) {
-    const stack = [mainSeed];
-    reachedFromBody.add(`${mainSeed.r},${mainSeed.c}`);
+  // THE BIGGEST STRONGLY CONNECTED SET IS NOT THE ROOM, AND IN WEST JASPER IT IS A TRAP.
+  //
+  // `components` is Tarjan, so a region here is a set of MUTUALLY reachable squares, which is
+  // the right definition. Picking the largest one as "the room" is the part that is wrong,
+  // because a one-way ledge inside the body splits it into several SCCs while a dead-end
+  // pocket above the ledge stays whole. West Jasper measured, 2,669 walkable squares:
+  //
+  //     largest SCC                          795 squares, and 34 of 35 exits "stranded"
+  //     forward reach from the inn doorway  1,464 squares, and 6 of 6 other doors
+  //     forward reach from the north edge     795 squares, and 0 of 6 other doors
+  //
+  // The 795 IS the north-edge pocket -- a body that walks in from Sweet Grass Prairies can
+  // reach no exit at all -- and the bake crowned it the room and called every real door
+  // unreachable. What `reachedFromBody` is asked for is one-directional ("can the body of the
+  // room reach this square"), so the honest seed is simply whichever square reaches the most,
+  // not whichever mutual clique is biggest.
+  //
+  // Cheap despite looking quadratic: candidates are one square per SCC, largest first, and
+  // any candidate already inside an earlier flood is SKIPPED -- if A is reachable from B then
+  // everything A reaches is reachable from B, so A's set cannot be the larger one and cannot
+  // be lost by skipping it.
+  const floodFrom = (r, c) => {
+    const seen = new Set([`${r},${c}`]);
+    const stack = [{ r, c }];
     while (stack.length) {
       const at = stack.pop();
       for (const n of geometry.neighbors(at.r, at.c, { collision })) {
         const k = `${n.row},${n.col}`;
-        if (reachedFromBody.has(k)) continue;
-        reachedFromBody.add(k);
+        if (seen.has(k)) continue;
+        seen.add(k);
         stack.push({ r: n.row, c: n.col });
       }
     }
+    return seen;
+  };
+  const reps = [];
+  {
+    const seenLabel = new Set();
+    for (let r = 1; r <= geometry.rows; r++)
+      for (let c = 1; c <= geometry.cols; c++) {
+        if (!geometry.standable(r, c)) continue;
+        const id = comp.label[comp.at(r, c)];
+        if (id < 0 || seenLabel.has(id)) continue;
+        seenLabel.add(id);
+        reps.push({ r, c, id, size: comp.sizes[id] ?? 0 });
+      }
+    reps.sort((x, y) => y.size - x.size);
+  }
+  let mainSeed = null, mainRegion = -1, mainSize = 0;
+  let reachedFromBody = new Set();
+  {
+    const covered = new Set();
+    for (const rep of reps) {
+      if (covered.has(`${rep.r},${rep.c}`)) continue;
+      const set = floodFrom(rep.r, rep.c);
+      for (const k of set) covered.add(k);
+      if (set.size > reachedFromBody.size) {
+        reachedFromBody = set;
+        mainSeed = { r: rep.r, c: rep.c };
+        mainRegion = rep.id;
+      }
+    }
+    // `main_region_squares` now means what every consumer already read it as: how much of the
+    // room the body can actually walk to. It used to mean the size of a mutual clique, which
+    // is a different and much less useful number.
+    mainSize = reachedFromBody.size;
   }
 
   // The coarse grid's own main component — see `playerReachable` in exitAnchors. Computed
@@ -425,6 +502,28 @@ export function bakeRoom(room, { collision = true } = {}) {
   // ONE BFS PER DISTINCT SQUARE, not per exit — see anchorSquares. Two exits on one
   // square asked the same question twice.
   const squares = anchorSquares(tagged.filter(a => a.region >= 0));
+
+  // BLINK IS A ONE-WAY PORTAL AND EVERY ROOM HAS ONE — see tools/m59-blink.mjs.
+  //
+  // `blink.kod` teleports the caster to viTeleport_row/col, a fixed square declared per room,
+  // from ANYWHERE in the room. So every exit that square can walk to is reachable from
+  // anywhere a character can cast, whatever ledge it walked itself into. In West Jasper that
+  // is the difference between one door and all seven; measured across the whole map it makes
+  // a difference in 8 rooms and none at all in the rest, which is the expected shape.
+  //
+  // KEPT APART FROM WALKING, DELIBERATELY. It costs mana, a character may have to rest to
+  // afford it, and a cast can fail and need repeating — so this is never merged into `reach`,
+  // which is what the router plans on. A caller that has run out of walking answers can ask
+  // for this one; nothing gets it by accident.
+  const blinkAt = blinkPointFor(room.num);
+  const blink = (() => {
+    if (!blinkAt || !geometry.walkable(blinkAt.row, blinkAt.col)) return null;
+    const from = floodFrom(blinkAt.row, blinkAt.col);
+    return { row: blinkAt.row, col: blinkAt.col, squares: from.size,
+             reaches: squares.filter(q => from.has(`${q.row},${q.col}`))
+                        .map(q => `${q.row},${q.col}`).sort() };
+  })();
+
   const routes = {};
   const pivots = {};
   // WHETHER A PAIR IS JOINED AT ALL, RECORDED SEPARATELY FROM THE ROUTE BETWEEN THEM.
@@ -499,6 +598,7 @@ export function bakeRoom(room, { collision = true } = {}) {
     regions: comp.count,
     main_region: mainRegion,
     main_region_squares: mainSize,
+    ...(blink ? { blink } : {}),
     walkable: comp.sizes.reduce((n, s) => n + s, 0),
     // Every region that is not the room proper, smallest first. These are the corners the
     // BSP hems in — the safe-spot candidates — and a one-square one is the strongest.
@@ -659,13 +759,17 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       // A half-table stitched from two PREDICATES is the same kind of undetectable wrong
       // as one stitched from two maps, so --resume refuses it for the same reason.
       const samePredicate = (prior?.stepMaskVersion ?? 1) === STEP_MASK_VERSION;
-      if (sameMap && sameView && samePredicate) {
+      const sameBake = (prior?.bakeVersion ?? 1) === BAKE_VERSION;
+      if (sameMap && sameView && samePredicate && sameBake) {
         for (const [num, baked] of Object.entries(prior.rooms ?? {}))
           if (baked && !baked.skipped) out[num] = baked;
         console.error(`resuming: ${Object.keys(out).length} room(s) already baked from the same map`);
       } else {
         console.error(`ignoring the table on disk — ` +
-          (!sameMap ? 'it was baked from different geometry' : `it is the ${prior?.view} view`));
+          (!sameMap ? 'it was baked from different geometry'
+           : !sameView ? `it is the ${prior?.view} view`
+           : !samePredicate ? `it was baked with step-mask v${prior?.stepMaskVersion ?? 1}, this build is v${STEP_MASK_VERSION}`
+           : `it was baked by bake v${prior?.bakeVersion ?? 1}, this build is v${BAKE_VERSION}`));
       }
     } catch { console.error('nothing usable on disk to resume from'); }
   }
@@ -692,6 +796,7 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       // cannot notice the PREDICATE changing, so a table baked by older code against the
       // same map verifies perfectly and encodes the wrong doors. See STEP_MASK_VERSION.
       stepMaskVersion: STEP_MASK_VERSION,
+      bakeVersion: BAKE_VERSION,
       // Says outright that the table is short of the map it was built from, so a partial
       // flush cannot be mistaken for a finished bake by anything reading it.
       complete: Object.keys(out).length + skipped >= rooms.length && !only,

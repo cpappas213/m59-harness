@@ -232,6 +232,38 @@ export function anchorReach(table, roomNum, from, to) {
 }
 
 /**
+ * WALKING, BLINKING, OR NEITHER — and the caller is told which, because they are not the
+ * same offer.
+ *
+ * `anchorReach` answers about WALKING and its meaning must not drift: it is what the router
+ * plans on and what `transitOk` refuses a hop over. This is the wider question, for a caller
+ * that has already run out of walking answers.
+ *
+ * Blink teleports the caster to one fixed square per room (`viTeleport_row`/`col` in the kod)
+ * from anywhere in the room, so every anchor that square can walk to is reachable from
+ * anywhere a character can cast. It is NOT free — mana, possibly a rest to afford it, and a
+ * cast that can fail and need repeating — which is exactly why this returns the word 'blink'
+ * rather than folding it into a boolean. A caller that treats the two as interchangeable will
+ * plan a route that needs a spell and report it as a walk.
+ *
+ * Measured over the whole map, this changes the answer in 8 rooms and in none of the rest.
+ * West Jasper is the one that matters: a body entering from the north edge can walk to ONE of
+ * seven doors and blink to all seven.
+ *
+ * Returns 'walk', 'blink', false, or null when the table cannot say.
+ */
+export function anchorReachVia(table, roomNum, from, to) {
+  const walk = anchorReach(table, roomNum, from, to);
+  if (walk) return 'walk';
+  const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  if (!r) return null;
+  if (!r.blink?.reaches) return walk === null ? null : false;
+  // The destination must be somewhere the blink point can walk to. Where we are standing does
+  // not matter at all, which is the whole point of a portal you can cast from anywhere.
+  return r.blink.reaches.includes(`${to.row},${to.col}`) ? 'blink' : (walk === null ? null : false);
+}
+
+/**
  * A baked route as PIVOTS — the corners a walker actually has to aim at — or null.
  *
  * Same contract as `bakedPath`: null means "the table does not cover this", never "there
