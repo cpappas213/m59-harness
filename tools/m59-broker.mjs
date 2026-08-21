@@ -11200,6 +11200,30 @@ const TOOLS = [
           'and every one of them read "two hits from death". Behind a wall the trigger is ' +
           'doomed_in_spot_below (0.35), lower again because a spot already keeps most of it ' +
           'off.' },
+      panic_logoff: { type: 'boolean',
+        description: 'whether this character may PLAY DEAD at all — disconnect rather than die. ' +
+          'Default true. It is the master switch above both doomed_in_*_below thresholds, and ' +
+          'like doomed_in_spot_below it was read by every keeper and declared by nothing, so ' +
+          'the only reachable value was the default. Set false for a character you would rather ' +
+          'lose than have drop connection — a mule mid-delivery, or anything a person is ' +
+          'watching.' },
+      freeze_ms: { type: 'number',
+        description: 'how long a character stays frozen after playing dead, in milliseconds. ' +
+          'Default 90000. The freeze recovers vigor and NEVER health, so this is a wait, not a ' +
+          'recovery — the only thing that heals is the health timer, and the timer needs ' +
+          'PFLAG_MOVED_SINCE_ENTRY, which needs an action. ON A SAFE SPOT THE FREEZE IS SKIPPED ' +
+          'ENTIRELY and the character turns instead: the walls do the work, so the grace period ' +
+          'is ours to spend and turning buys the timer without giving up the square. This ' +
+          'therefore only applies to freezing in the open, where there is nothing better.' },
+      doomed_in_spot_below: { type: 'number',
+        description: 'the health FRACTION at which a character ON A SAFE SPOT plays dead. ' +
+          'Default 0.35 — lower than doomed_in_open_below because a spot already keeps most ' +
+          'of the damage off, so the same health means less trouble. THIS IS THE ONE THAT ' +
+          'FIRES for a fleet that is farming from walls, and it spent the whole of prod ' +
+          'unsettable: it was described in the text above and never added here, so a call ' +
+          'passing it returned ok and changed nothing. That is the failure this repository ' +
+          'keeps writing down — a setting that silently does nothing is indistinguishable ' +
+          'from a setting that is working.' },
       travel_wall_below: { type: 'number',
         description: 'the health FRACTION at which a character MID-HOP detours to a safe wall ' +
           'it is passing. Default 0.6. Separate from travel_hold_below (0.75, the hop-boundary ' +
@@ -11510,6 +11534,23 @@ const TOOLS = [
         if (!(n > 0 && n <= 1))
           throw new Error(`doomed_in_open_below is a fraction between 0 and 1 — got ${a.doomed_in_open_below}`);
         p.policy.doomedInOpenBelow = n;
+      }
+      if (a.panic_logoff !== undefined) {
+        if (typeof a.panic_logoff !== 'boolean')
+          throw new Error(`panic_logoff is true or false — got ${a.panic_logoff}`);
+        p.policy.panicLogoff = a.panic_logoff;
+      }
+      if (a.freeze_ms !== undefined) {
+        const n = Number(a.freeze_ms);
+        if (!(n >= 0 && n <= 600000))
+          throw new Error(`freeze_ms is milliseconds between 0 and 600000 — got ${a.freeze_ms}`);
+        p.policy.freezeMs = n;
+      }
+      if (a.doomed_in_spot_below !== undefined) {
+        const n = Number(a.doomed_in_spot_below);
+        if (!(n > 0 && n <= 1))
+          throw new Error(`doomed_in_spot_below is a fraction between 0 and 1 — got ${a.doomed_in_spot_below}`);
+        p.policy.doomedInSpotBelow = n;
       }
       if (a.travel_wall_below !== undefined) {
         const n = Number(a.travel_wall_below);
@@ -15778,9 +15819,45 @@ async function callTool(name, args, caller) {
   // event stream alone is guesswork; the call order is the other half.
   const rec = args?.agent ? sessions.get(args.agent)?.recorder : null;
   const recordedArgs = redactControlArgs(args);
+
+  // A SETTING THAT SILENTLY DOES NOTHING IS INDISTINGUISHABLE FROM ONE THAT WORKS.
+  //
+  // The tool schemas do not set additionalProperties, so a key that is not declared is
+  // accepted, dropped, and answered with a cheerful ok. That is not hypothetical: the
+  // whole of prod ran with `doomed_in_spot_below` describable in the text of a NEIGHBOURING
+  // setting and absent from the schema, so every call that set the threshold a fleet
+  // farming from walls actually fires on returned ok and changed nothing. It is the same
+  // shape as `purpose` missing from a schema for a year with every keeper's audit switched
+  // off — the repository's own standing example of this failure.
+  //
+  // REPORTED, NOT REFUSED. The rule this follows says an unrecognised key is reported,
+  // never applied and never dropped; refusing it outright is the stricter reading and it is
+  // the wrong one to take live, because a tool whose run() reads an argument it never
+  // declared would start throwing at a fleet that is mid-fight. Reporting makes the mistake
+  // visible on the very call that made it, which is all that was ever missing.
+  // `schema`, not `inputSchema` — the tool objects here carry it under `schema` and it is
+  // renamed only on the way out in tools/list. Reading the wrong one made this whole check
+  // a silent no-op, which is precisely the failure it was written to catch.
+  const declared = (t.schema ?? t.inputSchema)?.properties;
+  let unrecognised = null;
+  if (declared && args && typeof args === 'object' && !Array.isArray(args)) {
+    const known = new Set(Object.keys(declared));
+    const extra = Object.keys(args).filter(k => !known.has(k));
+    if (extra.length) {
+      unrecognised = extra;
+      console.warn(`[${name}] unrecognised setting(s) ignored: ${extra.join(', ')} — ` +
+                   'not declared by this tool, so nothing was applied for them');
+      rec?.line('call', { tool: name, unrecognised: extra });
+    }
+  }
+
   const t0 = Date.now();
   try {
     const out = await t.run(args || {}, caller);
+    // Say it in the ANSWER, not only in a log nobody is tailing. The caller that got this
+    // wrong is the one reading this reply.
+    if (unrecognised && out && typeof out === 'object' && !Array.isArray(out))
+      out.unrecognised_settings = unrecognised;
     rec?.line('call', { tool: name, args: recordedArgs, ms: Date.now() - t0 });
     return out;
   } catch (e) {
