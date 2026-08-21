@@ -139,6 +139,23 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   console.log('A fleet that never travels never dies, so deaths-per-hour flatters standing still.\n');
   console.log(HEAD);
   for (const [label, m] of rows) console.log(fmt(m, label));
+  // TWO WAYS TO READ THIS TABLE WRONG, AND BOTH COST ME A NUMBER TODAY.
+  //
+  // The span is measured from the RECORDS, not from when an archive was taken. The broker
+  // keeps each character's transits in memory and rewrites the whole array, so moving the
+  // files aside does not start a clean window — the next write restores everything it still
+  // remembers. Only a broker restart does, and even then a window that begins with a fleet
+  // resting in inns is not the same workload as one spent crossing the Cragged Mountains.
+  //
+  // And a FRESH LEDGER SHRINKS THE ROSTER. Scoping is by the characters the ledger mentions,
+  // which right after an archive is whoever happened to act in the last minute: that
+  // reported 57 crossings for a fleet which had made 467. Pass --only with the roster
+  // whenever the ledger is young.
+  console.log('');
+  console.log('Span comes from the records, not from when an archive was taken - the broker');
+  console.log('rewrites its whole in-memory history, so moving files aside does not by itself');
+  console.log('start a clean window. Restart the broker for that, and pass --only with the');
+  console.log('roster when the ledger is young, or crossings are silently dropped.');
   console.log('\n`failed` is hops that did not cross. A policy that survives by never arriving');
   console.log('would look excellent in the maps/death column alone, so it is printed beside it.');
 }
