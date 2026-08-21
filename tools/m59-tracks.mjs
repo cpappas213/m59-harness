@@ -457,7 +457,33 @@ if (direct) {
     catch { /* nothing recorded yet */ }
   }
   if (!files.length) { console.log('no trails recorded yet'); process.exit(0); }
-  const samples = files.flatMap(readSamples);
+
+  // A TRACK IS A CLAIM ABOUT THE WALKER THAT MADE IT, AND THE WALKER KEEPS CHANGING.
+  // Baking over everything on disk averages the current code with every version of itself,
+  // and this fleet has 1.4 million samples going back to walkers that have since been fixed
+  // -- so the whole-history bake both takes twenty minutes and enshrines crossings nobody
+  // could repeat. `--since` is the same argument, and the same spelling, as m59-transits.mjs:
+  // an ISO timestamp, a millisecond epoch, or a plain age (`--since 45m`, `--since 3h`).
+  //
+  // It costs nothing to leave off, and leaving it off is still the right thing when the
+  // question is "what is the best crossing anybody has EVER made".
+  const sinceArg = arg('--since');
+  const since = (() => {
+    if (!sinceArg) return 0;
+    const age = /^(\d+(?:\.\d+)?)([smhd])$/.exec(String(sinceArg));
+    if (age) return Date.now() - Number(age[1]) * { s: 1e3, m: 6e4, h: 36e5, d: 864e5 }[age[2]];
+    const n = Number(sinceArg);
+    if (Number.isFinite(n) && n > 1e11) return n;
+    const t = Date.parse(String(sinceArg));
+    return Number.isFinite(t) ? t : 0;
+  })();
+  const all = files.flatMap(readSamples);
+  const samples = since ? all.filter(s2 => (s2.at ?? 0) >= since) : all;
+  if (since)
+    console.log(`${samples.length} of ${all.length} samples are newer than ` +
+                `${new Date(since).toISOString()}
+`);
+  if (!samples.length) { console.log('nothing recorded in that window'); process.exit(0); }
 
   const { loadMap } = await import('./m59-map.mjs');
   const { movementMapFile } = await import('./m59-map-path.mjs');
@@ -529,6 +555,32 @@ if (direct) {
   if (process.argv.includes('--save')) {
     const tracks = {};
     for (const [k, t] of best) tracks[k] = t;
+
+    // A STRIKE CONDEMNS A ROUTE, AND THE KEY IS NOT THE ROUTE. Strikes are filed under
+    // `room:from>to` -- the pair of doors -- so they outlive the waypoints they were earned
+    // against. Re-bake and every new track inherits the old one's failures: 57 of the 209
+    // tracks on disk were already at or past STRIKES_BEFORE_REJECT, which means a better
+    // crossing learned this afternoon would have arrived pre-condemned and been refused on
+    // its first ride, and the whole point of re-baking is lost silently.
+    //
+    // So a key whose waypoints CHANGED starts clean. A key whose waypoints did not change is
+    // the same route that failed, and keeps its record.
+    const before = loadTracks();
+    const same = (x, y) => JSON.stringify(x?.waypoints ?? null) === JSON.stringify(y?.waypoints ?? null);
+    const strikes = loadStrikes();
+    let cleared = 0;
+    for (const k of Object.keys(strikes))
+      if (tracks[k] && !same(tracks[k], before[k])) { delete strikes[k]; cleared++; }
+    if (cleared) {
+      fs.writeFileSync(STRIKES_FILE, JSON.stringify({
+        note: 'Consecutive failures of a track replay in which nothing living was in the way. ' +
+              'Cleared for any crossing whose waypoints changed in the last bake, because a ' +
+              'strike condemns a route and the key is only a pair of doors.',
+        written: new Date().toISOString(), strikes,
+      }, null, 1) + String.fromCharCode(10));
+      console.log(`
+cleared the strike record of ${cleared} crossing(s) whose route changed`);
+    }
     fs.writeFileSync(TRACKS_FILE, JSON.stringify({
       note: 'The quickest crossing anybody has actually walked, per room and pair of doors, ' +
             'straightened against the baked BSP. Made of accepted moves, so it cannot contain ' +
