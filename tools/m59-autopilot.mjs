@@ -2237,6 +2237,46 @@ export class Autopilot {
       if (stillness && company > 0 && settled) {
         this.hold.mostAttackers = Math.max(this.hold.mostAttackers, company);
         if (lost > 0) {
+          // POISON IS NOT THE WALL FAILING, AND IT USED TO BE RECORDED AS ONE.
+          //
+          // The caveat below this used to end "poison and archers look the same from here,
+          // so this reading can be wrong — but it is still permanent, and deliberately so".
+          // Both halves of that have moved. Archers — Avars, mostly — do not shoot into a
+          // working spot either, so a stray one is not the explanation it was standing in
+          // for; and poison is no longer invisible: BP_ADD_ENCHANTMENT (147) was declared and
+          // never handled, so a sickness reached the client and was dropped on the floor.
+          //
+          // THAT DOES NOT MAKE POISON THE ONLY ANSWER, and this guard does not claim it is.
+          // A PLAYER can reach a square a monster cannot, and area spells (heat, earthquake)
+          // may not care about walls at all — though whether monsters cast either is not
+          // established here. What the guard actually says is narrower and survives all of
+          // them: nothing is adjacent AND something is draining us AND we are carrying a
+          // sickness that explains it. A player hitting us at a wall is not the wall failing
+          // either, so declining to discredit on that reading is right for that case too.
+          //
+          // Poison takes health with nobody adjacent and CANNOT KILL, which is exactly what a
+          // leaking wall is supposed to look like and exactly what a working one produces
+          // while a character is poisoned. So a poisoned character was quietly discrediting a
+          // good square on every rest it took, permanently, with no way back into the
+          // recommendations — and the book is shared, so it did it for everybody.
+          //
+          // The one-failure rule is untouched and still right: being wrong about a bad spot
+          // costs a character and being wrong about a good one costs a walk to the next
+          // corner. This does not soften it. It removes a reading that was never evidence.
+          const ailing = this.s.client?.ailments?.() ?? [];
+          if (ailing.length && !company) {
+            this.hold.quietMs = 0;
+            this.note('losing health at a wall, and it is poison rather than the wall', {
+              where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+              lost_health: lost, attackers: company,
+              ailments: ailing.map(e => e.name).filter(Boolean),
+              why: 'nothing is adjacent and something is draining us — poison cannot kill and ' +
+                   'does not care what square we are on, so this says nothing about the wall',
+              what_happens: 'the spot keeps its record and is NOT discredited; the rest ends ' +
+                            'because it is not winning, not because the square failed',
+            });
+            return;
+          }
           // It does not work. Say so loudly, forget the proof, and write it down so
           // that the geometry cannot talk us back onto this square in ten minutes.
           this.idleDamage = lost;
@@ -2255,10 +2295,11 @@ export class Autopilot {
             settled_ms: Math.max(0, settledMs),
             why: 'we were hit while standing still and not swinging, which is the one thing ' +
                  'that cannot happen in a working spot',
-            caveat: 'poison and archers look the same from here, so this reading can be wrong — ' +
-                    'but it is still permanent, and deliberately so. See discredited() in ' +
-                    'm59-safespots.mjs: the two-failure rule this used to describe is what left ' +
-                    'a square recommended after it killed somebody' });
+            caveat: 'poison is checked for above and is not this — an ailing character with ' +
+                    'nothing adjacent returns before here. This is permanent and deliberately ' +
+                    'so: see discredited() in m59-safespots.mjs, where the two-failure rule ' +
+                    'this used to describe is what left a square recommended after it killed ' +
+                    'somebody' });
           // Settle the reading BEFORE letting the hold go, or the record loses the
           // very state it is a record of.
           settle(`HIT for ${lost} while standing still with ${company} adjacent — this square does not work`, true);

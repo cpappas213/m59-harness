@@ -14,6 +14,7 @@
 // regress: it aborts on damage, it does NOT abort on ordinary slow recovery, and the
 // blind behaviour is still reachable on purpose.
 
+import { readFileSync } from 'node:fs';
 import { restUntil } from './m59-skills.mjs';
 
 // A session whose stats reads walk down a scripted list of health values.
@@ -333,6 +334,45 @@ const ok = (name, cond, extra = '') => {
   const r = await restUntil(s, { health: 0.95, vigor: 0.95, maxSeconds: 60 });
   ok('an empty mana bar does not hold a rest that never asked for mana',
      r.rested === false && /already recovered/.test(r.note || ''), JSON.stringify(r));
+}
+
+console.log('');
+console.log('poison is not something hitting us');
+{
+  // `restUntil` aborts when health falls, on the inference that health only falls while
+  // resting if something is hitting us. That is false for exactly as long as a character is
+  // poisoned: poison drains with nobody adjacent and CANNOT KILL. The cost was not one lost
+  // rest — upstream, a hold that "fails" that way discredits the square PERMANENTLY, and the
+  // book is shared, so a poisoned character quietly burned good walls out of it for everyone.
+  //
+  // BP_ADD_ENCHANTMENT (147) and BP_REMOVE_ENCHANTMENT (148) were declared in the BP table
+  // and never handled, which is why this could not be told apart before: a sickness reached
+  // the client and was dropped on the floor.
+  const SRC = readFileSync(new URL('./m59-skills.mjs', import.meta.url), 'utf8');
+  // lastIndexOf: the phrase appears in the comment that explains the guard as well as in
+  // the message it guards, and the first hit is the comment.
+  const at = SRC.lastIndexOf('something is hitting us');
+  const guard = SRC.slice(Math.max(0, at - 1200), at);
+  ok('a falling-health abort checks for an ailment first', /ailments\?\.\(\)/.test(guard));
+  ok('and does not break out of the rest when there is one', /continue;/.test(guard));
+  ok('the peak is re-based so the next fall is measured from here',
+     /peak = hp;/.test(guard));
+  ok('and the drain is reported rather than silently swallowed',
+     /poison_drain/.test(SRC));
+
+  const AP = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  const fail = AP.indexOf('THIS IS NOT A SAFE SPOT');
+  const before = AP.slice(Math.max(0, fail - 2600), fail);
+  ok('a wall is not discredited while the character is ailing', /ailments\?\.\(\)/.test(before));
+  // ONLY when nothing is adjacent. Something standing on us while we are also poisoned is
+  // still a wall that failed, and the one-failure rule must keep applying to it.
+  ok('but only when nothing is adjacent — poison plus a body is still a failed wall',
+     /ailing\.length && !company/.test(before));
+  // The phrase survives in the comment that explains what it USED to say, which is history
+  // and should stay. What must not survive is the live caveat asserting it to a reader of the
+  // note, so the assertion is about that field rather than the file.
+  ok('and the live caveat no longer claims the reading might be poison',
+     !/caveat: 'poison and archers look the same/.test(AP));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

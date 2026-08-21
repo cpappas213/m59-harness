@@ -1592,6 +1592,9 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
   // that climbs 12 -> 16 and is then hit back to 14 is being interrupted, and
   // comparing against the starting 12 would call that progress and sit through it.
   let peak = v?.health?.value ?? null;
+  // How much poison has taken during this rest. Reported rather than acted on: a rest that
+  // is not winning still ends on its own leash, and the caller deserves to know which.
+  let poisonDrain = 0;
   try {
     while (Date.now() - t0 < maxSeconds * 1000 &&
            !(typeof shouldCancel === 'function' && shouldCancel())) {
@@ -1604,6 +1607,17 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
           // Health only falls while resting if something is hitting us. Whatever the
           // caller believed about this square, it is wrong NOW — hand that back rather
           // than sitting out the remaining leash.
+          // POISON IS NOT SOMETHING HITTING US. It drains with nobody adjacent and cannot
+          // kill, so the inference this line rests on — "health only falls while resting if
+          // something is hitting us" — is false for exactly as long as a character is
+          // poisoned. Aborting there ends a rest that was never in danger, and upstream the
+          // same reading discredits the square for good.
+          const ailing = c.ailments?.() ?? [];
+          if (ailing.length) {
+            poisonDrain += peak - hp;
+            peak = hp;                 // measure the next fall from here, not from before it
+            continue;
+          }
           interrupted = `took ${peak - hp} damage while resting — something is hitting us`;
           break;
         }
@@ -1650,6 +1664,10 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
     // Set when the rest was cut short by incoming damage. Callers should treat this
     // as "the square you trusted is not working", not as an ordinary short rest.
     interrupted,
+    ...(poisonDrain ? { poison_drain: poisonDrain,
+                        note: 'poison took health during this rest and was not treated as an ' +
+                              'attack — it drains with nobody adjacent and cannot kill, so it ' +
+                              'says nothing about the square' } : {}),
     note: interrupted ? interrupted
       : done() ? undefined
       : (stalled >= 3 ? 'nothing recovered for several checks — something may be preventing rest, or you are already at your ceiling'

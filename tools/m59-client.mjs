@@ -32,6 +32,7 @@ import {
   parseGuildInfo, parseGuildAsk, parseGuildList, parseGuildHalls,
   parseOffer, parseOfferItems, parseInventoryAdd, encodeIdList, describeObject,
   parseUseList, parseObjectId, affordances, STAT_GROUP,
+  parseAddEnchantment, parseRemoveEnchantment,
 } from './m59-parse.mjs';
 
 export { OF, KOD_FINENESS };
@@ -262,6 +263,9 @@ export class M59Client {
     // something to poll, and it is the only clock on the wire.
     this.sky = new Map();                           // object id -> {angle, height, ...}
     this.statsById = new Map();                     // stat number -> value/text
+    // WHAT IS CURRENTLY ON US — poison, disease, a blessing. Keyed by the enchantment
+    // object's id, which is what BP_REMOVE_ENCHANTMENT names. See parseAddEnchantment.
+    this.enchantmentsById = new Map();
     this.events = [];                               // recent world events, newest last
     this.maxEvents = 500;
     this.evSeq = 0;
@@ -565,6 +569,26 @@ export class M59Client {
   // HOW GOOD ARE WE AT <name>. This is the lookup the harness has always wanted and
   // never had: group 3 and 4 stats have no `name` — STAT_NAMES only covers groups 1
   // and 2 — so they were never indexed by name, and every by-name search of
+  /** Everything currently on this character — poison, disease, a blessing. */
+  enchantments() { return [...this.enchantmentsById.values()]; }
+
+  /**
+   * IS SOMETHING DRAINING US THAT IS NOT AN ATTACK?
+   *
+   * Poison takes health with nobody adjacent and CANNOT KILL — it stops short — so it looks
+   * exactly like a safe spot leaking, and that is the reading it was producing: a wall
+   * discredited for good on the strength of damage no wall could have stopped.
+   *
+   * Matched on the resource name because that is what the server sends and the sickness
+   * classes are named for what they are. Returns the list rather than a boolean so a caller
+   * can say WHICH in a note; empty means nothing found, never "we cannot tell".
+   */
+  ailments() {
+    return this.enchantments().filter(e => /poison|disease|sick|plague|venom/i.test(e.name ?? ''));
+  }
+
+  poisoned() { return this.ailments().length > 0; }
+
   // `statsById` for a proficiency returned nothing at all. Ask the ability map.
   abilityOf(name) {
     if (!name) return null;
@@ -1797,6 +1821,31 @@ export class M59Client {
       // Stats. The important ones for staying alive are health (1), mana (2) and
       // vigor — vigor gates running and some skill costs, and the server snaps a
       // character back if it tries to run without it.
+      // WHY HEALTH FALLS WHEN NOTHING IS HITTING US. Both of these were declared in the BP
+      // table and never handled, so a sickness was invisible and every reader downstream had
+      // to guess. `restUntil` aborts on falling health and a spot that fails a rest is
+      // discredited for good, so a poisoned character was quietly burning good walls out of
+      // the book on every rest it took.
+      case BP.ADD_ENCHANTMENT: {
+        const res = parseAddEnchantment(body);
+        if (!this.check('ADD_ENCHANTMENT', res)) break;
+        const o = res.object;
+        this.enchantmentsById.set(o.id, {
+          id: o.id, type: res.type, nameRsc: o.nameRsc,
+          name: this.rsc.get(o.nameRsc) ?? null, at: Date.now(),
+        });
+        this.emit('enchantment', { added: this.enchantmentsById.get(o.id) });
+        break;
+      }
+      case BP.REMOVE_ENCHANTMENT: {
+        const res = parseRemoveEnchantment(body);
+        if (!this.check('REMOVE_ENCHANTMENT', res)) break;
+        const gone = this.enchantmentsById.get(res.id) ?? { id: res.id, type: res.type };
+        this.enchantmentsById.delete(res.id);
+        this.emit('enchantment', { removed: gone });
+        break;
+      }
+
       case BP.STAT: {
         const res = parseStat(body, this.lookup);
         if (!this.check('STAT', res)) break;
