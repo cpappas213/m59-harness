@@ -8,7 +8,7 @@
 // stranger who worked out the phrase could walk the fleet into open ground, into a PK trap,
 // or just away from what it was doing. The speaker has to be on our own roster.
 
-import { heardOrder, dropCrumb, nextStep, behindBy,
+import { heardOrder, dropCrumb, nextStep, behindBy, exitTakenFrom,
          REACHED_WITHIN, CRUMB_EVERY, MAX_TRAIL } from './m59-follow.mjs';
 
 let pass = 0, fail = 0;
@@ -99,6 +99,33 @@ console.log('the follower walks the path, not the person');
   ok('and so does one entirely behind us',
      nextStep([{ row: 1, col: 1 }], { row: 1, col: 1 }) === null);
   ok('how far behind is the queue length', behindBy([1, 2, 3]) === 3 && behindBy(null) === 0);
+}
+
+console.log('');
+console.log('the leader walked out of the zone — which door?');
+{
+  // A trail ends where the leader stopped being visible, so walking it to the end leaves a
+  // follower standing in an empty room having done exactly as told and achieved nothing.
+  // The leader is STILL ONLINE — they did not log out, they left the map — and the last
+  // place we saw them was next to a door. People do not evaporate.
+  const exits = [{ row: 1, col: 20, to: 576 }, { row: 40, col: 3, to: 568 }, { row: 60, col: 60, to: 826 }];
+  ok('the door nearest the last sighting is the one they took',
+     exitTakenFrom(exits, { row: 2, col: 21 })?.to === 576);
+  ok('and it is nearest that decides, not the order they are listed in',
+     exitTakenFrom(exits, { row: 41, col: 4 })?.to === 568);
+  ok('the distance is reported so a reader can judge the guess',
+     exitTakenFrom(exits, { row: 2, col: 21 })?.squares_from_last_sighting === 1);
+  // REFUSING TO GUESS IS THE IMPORTANT HALF. A leader who vanished in open ground far from
+  // any door did not use one — they died, or logged out — and marching the fleet to the
+  // nearest exit anyway is how a group ends up a zone away from where it should be.
+  ok('vanishing in open ground is NOT a door and returns null',
+     exitTakenFrom(exits, { row: 30, col: 30 }) === null);
+  ok('unless the caller widens the radius on purpose',
+     exitTakenFrom(exits, { row: 30, col: 30 }, { within: 40 }) !== null);
+  ok('no exits means no inference', exitTakenFrom([], { row: 1, col: 1 }) === null);
+  ok('no sighting means no inference', exitTakenFrom(exits, null) === null);
+  ok('a malformed sighting is refused rather than guessed at',
+     exitTakenFrom(exits, { row: NaN, col: 2 }) === null);
 }
 
 console.log('');

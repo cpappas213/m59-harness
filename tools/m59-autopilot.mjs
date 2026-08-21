@@ -32,7 +32,7 @@ import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
-import { heardOrder, dropCrumb, nextStep, behindBy } from './m59-follow.mjs';
+import { heardOrder, dropCrumb, nextStep, behindBy, exitTakenFrom } from './m59-follow.mjs';
 import { inboxIfAny, unwrapSpeech } from './m59-inbox.mjs';
 import { arenaCall } from './m59-chatter.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
@@ -9935,6 +9935,10 @@ export class Autopilot {
     const leader = c.room?.objects?.get?.(this.follow.leaderId) ?? null;
     if (leader) {
       this.follow.missing = 0;
+      // WHERE THEY WERE LAST SEEN, kept separately from the trail. The trail is consumed as
+      // it is walked, so by the time a follower needs to ask "which door did they take" the
+      // crumb that would have answered is gone.
+      this.follow.lastSeen = { row: leader.row, col: leader.col };
       dropCrumb(this.follow.trail, { row: leader.row, col: leader.col, at: Date.now() });
     } else {
       this.follow.missing++;
@@ -9944,13 +9948,47 @@ export class Autopilot {
     if (!aim) {
       // Caught up. Standing still next to the leader is the correct behaviour for a follower,
       // and it is also how a group stays together while the leader picks a door.
-      if (!leader && this.follow.missing > 20) {
+      if (leader) { this.progress('following ' + this.follow.leaderName + ' — caught up'); return HANDLED; }
+
+      // THE TRAIL IS WALKED OUT AND THE LEADER IS NOT HERE, so they left the map. Take the
+      // door nearest to where they were last seen: they are still online, they did not
+      // evaporate, and people leave a room through the exit they were standing next to.
+      //
+      // `exitTakenFrom` refuses when the last sighting was nowhere near a door, which is the
+      // half that matters — that is not somebody who walked out, it is somebody who died or
+      // logged out, and marching after them puts the group a zone away from where it belongs.
+      const room = this.s.world?.room;
+      const exits = [...(room?.edgeExits ?? []), ...(room?.goExits ?? [])]
+        .filter(e => e && !e.locked && e.to != null && Number(e.to) !== Number(room?.num));
+      const door = exitTakenFrom(exits, this.follow.lastSeen);
+      if (door && !this.follow.tookDoor) {
+        this.follow.tookDoor = true;      // one attempt per vanishing, not a loop at a wall
+        this.note('they left the map — taking the door they were standing next to', {
+          leader: this.follow.leaderName, to: door.to,
+          door: { row: door.row, col: door.col },
+          last_seen: this.follow.lastSeen,
+          squares_from_last_sighting: door.squares_from_last_sighting,
+        });
+        const went = await this.s.travel(door.to, { maxHops: 1 })
+          .catch(e => ({ arrived: false, why: e.message }));
+        if (went?.arrived || this.s.client?.room?.id !== undefined) {
+          // Through, or at least moved. Start a fresh trail on the far side: the leader is
+          // over there and the crumbs from the last room are no longer about this one.
+          this.follow.trail = [];
+          this.follow.tookDoor = false;
+          this.follow.missing = 0;
+          return HANDLED;
+        }
+        this.note('could not take the door they used', { to: door.to, why: went?.why ?? 'unknown' });
+      }
+      if (this.follow.missing > 20) {
         this.note('lost the lead', { leader: this.follow.leaderName,
-          why: 'out of the room and out of trail — nothing left to retrace' });
+          why: door ? 'could not follow them through the door they used'
+                    : 'out of the room, out of trail, and no door near where they vanished' });
         this.follow = null;
         return CONTINUE;
       }
-      this.progress('following ' + this.follow.leaderName + ' — caught up');
+      this.progress('following ' + this.follow.leaderName + ' — looking for the door they used');
       return HANDLED;
     }
 

@@ -105,5 +105,40 @@ export function nextStep(trail, me, { within = REACHED_WITHIN } = {}) {
   return null;
 }
 
+/**
+ * THE LEADER VANISHED. WHICH DOOR DID THEY TAKE?
+ *
+ * A trail ends where the leader stopped being visible, and walking it to the end leaves a
+ * follower standing in an empty room having done exactly what it was told and achieved
+ * nothing. That is the gap: the crumbs get you to the doorway and then say nothing about
+ * going through it.
+ *
+ * The inference is small and it is sound. The leader is STILL ONLINE — they did not log out,
+ * they left the map — and the last place we saw them was next to a door. People do not
+ * evaporate; they walk through the nearest exit. So once the trail is walked out, take the
+ * exit closest to where they were last seen.
+ *
+ * IT IS DELIBERATELY NOT CLEVER. No pathfinding, no "which room would they plausibly want",
+ * no guessing from the direction of travel — those are all ways to be confidently wrong and
+ * end up a zone away from the group. Nearest door to the last sighting, and a `within` that
+ * refuses the inference entirely when the leader vanished in open ground far from any exit,
+ * because that is not a door, that is a leader who died or logged out.
+ *
+ * `exits` are the room's own, each { row, col, to } — locked ones filtered by the caller,
+ * since a locked door is not somewhere anybody walked.
+ */
+export function exitTakenFrom(exits, lastSeen, { within = 8 } = {}) {
+  if (!Array.isArray(exits) || !exits.length || !lastSeen) return null;
+  if (!Number.isFinite(lastSeen.row) || !Number.isFinite(lastSeen.col)) return null;
+  let best = null, bestD = Infinity;
+  for (const e of exits) {
+    if (!e || !Number.isFinite(e.row) || !Number.isFinite(e.col)) continue;
+    const d = Math.max(Math.abs(e.row - lastSeen.row), Math.abs(e.col - lastSeen.col));
+    if (d < bestD) { bestD = d; best = e; }
+  }
+  if (!best || bestD > within) return null;
+  return { ...best, squares_from_last_sighting: bestD };
+}
+
 /** How far behind the leader this follower is, in crumbs still to walk. */
 export const behindBy = trail => (Array.isArray(trail) ? trail.length : 0);
