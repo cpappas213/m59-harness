@@ -129,5 +129,45 @@ console.log('the leader walked out of the zone — which door?');
 }
 
 console.log('');
+console.log('an edge exit is a whole wall, not a doorway');
+{
+  // THE BUG THIS FIXES. The Cragged Mountains has FIVE exits and every one is an edge: it
+  // carries a direction and an arriveRow/arriveCol in the DESTINATION room, and nothing at
+  // all about where you stand in this one. Requiring a row/col filtered all five out, so
+  // followers walked to the wall their leader had just crossed and then reported, correctly
+  // and uselessly, that there was no door near where they vanished.
+  const edges = [
+    { leaveName: 'north', to: 576 }, { leaveName: 'south', to: 579 },
+    { leaveName: 'west',  to: 568 }, { leaveName: 'east',  to: 826 },
+  ];
+  const room = { rows: 60, cols: 50 };
+  const near = exitTakenFrom(edges, { row: 2, col: 40 }, room);
+  ok('a leader who vanished by the north wall took the north exit', near?.to === 576);
+  // You leave a room by walking off the edge WHEREVER YOU ARE STANDING, so the crossing
+  // point is the sighting projected onto that wall -- not a staging square the router likes
+  // on the far side of the room.
+  ok('and the crossing point is their own column on that wall',
+     near?.at?.row === 1 && near.at.col === 40, JSON.stringify(near?.at));
+  ok('one square from the wall is one square away', near?.squares_from_last_sighting === 1);
+
+  ok('the south wall is measured from the far side',
+     exitTakenFrom(edges, { row: 59, col: 10 }, room)?.to === 579);
+  ok('west', exitTakenFrom(edges, { row: 30, col: 2 }, room)?.to === 568);
+  ok('east', exitTakenFrom(edges, { row: 30, col: 49 }, room)?.to === 826);
+
+  // The refusal still has to work, or a leader who died mid-room marches the group at a wall.
+  ok('vanishing in the middle is still not a door',
+     exitTakenFrom(edges, { row: 30, col: 25 }, room) === null);
+  // Without room bounds an edge cannot be measured at all, and guessing is worse than null.
+  ok('no room bounds means no edge inference',
+     exitTakenFrom(edges, { row: 2, col: 40 }) === null);
+  // Both kinds in one room: whichever is genuinely nearer wins.
+  const mixed = [{ leaveName: 'north', to: 576 }, { row: 30, col: 25, to: 999 }];
+  ok('a go exit still wins when it is the nearer one',
+     exitTakenFrom(mixed, { row: 30, col: 26 }, room)?.to === 999);
+  ok('and the edge wins when it is', exitTakenFrom(mixed, { row: 2, col: 40 }, room)?.to === 576);
+}
+
+console.log('');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

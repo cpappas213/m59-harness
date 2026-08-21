@@ -9960,7 +9960,13 @@ export class Autopilot {
       const room = this.s.world?.room;
       const exits = [...(room?.edgeExits ?? []), ...(room?.goExits ?? [])]
         .filter(e => e && !e.locked && e.to != null && Number(e.to) !== Number(room?.num));
-      const door = exitTakenFrom(exits, this.follow.lastSeen);
+      // ROOM BOUNDS, because most exits out here are EDGES rather than doorways -- the
+      // Cragged Mountains has five and every one is a wall you walk off. Without the bounds
+      // an edge cannot be measured against a sighting at all, and `exitTakenFrom` correctly
+      // refuses rather than guessing, which is exactly the "walked to the wall and stopped"
+      // this fixes.
+      const door = exitTakenFrom(exits, this.follow.lastSeen,
+                                 { rows: Number(room?.rows), cols: Number(room?.cols) });
       if (door && !this.follow.tookDoor) {
         this.follow.tookDoor = true;      // one attempt per vanishing, not a loop at a wall
         this.note('they left the map — taking the door they were standing next to', {
@@ -9969,6 +9975,12 @@ export class Autopilot {
           last_seen: this.follow.lastSeen,
           squares_from_last_sighting: door.squares_from_last_sighting,
         });
+        // Walk onto the crossing point first when we know it. For an edge that is our own
+        // column on that wall, and stepping onto it is what actually leaves the room --
+        // walking off an edge and using a door are different actions and the wrong one
+        // produces silence.
+        if (door.at && Number.isFinite(door.at.row) && Number.isFinite(door.at.col))
+          await this.s.walkTo(door.at.col, door.at.row, { maxSteps: 12 }).catch(() => null);
         const went = await this.s.travel(door.to, { maxHops: 1 })
           .catch(e => ({ arrived: false, why: e.message }));
         if (went?.arrived || this.s.client?.room?.id !== undefined) {

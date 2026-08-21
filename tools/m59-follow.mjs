@@ -127,17 +127,40 @@ export function nextStep(trail, me, { within = REACHED_WITHIN } = {}) {
  * `exits` are the room's own, each { row, col, to } — locked ones filtered by the caller,
  * since a locked door is not somewhere anybody walked.
  */
-export function exitTakenFrom(exits, lastSeen, { within = 8 } = {}) {
+export function exitTakenFrom(exits, lastSeen, { within = 8, rows = null, cols = null } = {}) {
   if (!Array.isArray(exits) || !exits.length || !lastSeen) return null;
   if (!Number.isFinite(lastSeen.row) || !Number.isFinite(lastSeen.col)) return null;
-  let best = null, bestD = Infinity;
+  let best = null, bestD = Infinity, bestAt = null;
   for (const e of exits) {
-    if (!e || !Number.isFinite(e.row) || !Number.isFinite(e.col)) continue;
-    const d = Math.max(Math.abs(e.row - lastSeen.row), Math.abs(e.col - lastSeen.col));
-    if (d < bestD) { bestD = d; best = e; }
+    if (!e) continue;
+    let d = Infinity, at = null;
+    if (Number.isFinite(e.row) && Number.isFinite(e.col)) {
+      // A `go` exit: a door on a specific square.
+      d = Math.max(Math.abs(e.row - lastSeen.row), Math.abs(e.col - lastSeen.col));
+      at = { row: e.row, col: e.col };
+    } else if (e.leaveName && Number.isFinite(rows) && Number.isFinite(cols)) {
+      // AN EDGE EXIT IS A WHOLE WALL, NOT A DOORWAY, and reading it as one was the bug.
+      //
+      // The Cragged Mountains has FIVE exits and every one of them is an edge: they carry a
+      // direction and an arriveRow/arriveCol in the DESTINATION room, and nothing at all
+      // about where you stand in this one. Requiring a row/col filtered all five out, so a
+      // follower walked to the wall its leader had just crossed and then reported, correctly
+      // and uselessly, that there was no door near where they vanished.
+      //
+      // The crossing point is the last sighting PROJECTED ONTO THAT WALL — you leave a room
+      // by walking off the edge wherever you happen to be standing, so the nearest point of
+      // the north wall to somebody at row 2 col 40 is row 1 col 40, not some staging square
+      // the router likes on the far side of the room.
+      if (e.leaveName === 'north')      { d = lastSeen.row - 1;    at = { row: 1, col: lastSeen.col }; }
+      else if (e.leaveName === 'south') { d = rows - lastSeen.row; at = { row: rows, col: lastSeen.col }; }
+      else if (e.leaveName === 'west')  { d = lastSeen.col - 1;    at = { row: lastSeen.row, col: 1 }; }
+      else if (e.leaveName === 'east')  { d = cols - lastSeen.col; at = { row: lastSeen.row, col: cols }; }
+      if (d < 0) d = 0;
+    }
+    if (d < bestD) { bestD = d; best = e; bestAt = at; }
   }
-  if (!best || bestD > within) return null;
-  return { ...best, squares_from_last_sighting: bestD };
+  if (!best || !Number.isFinite(bestD) || bestD > within) return null;
+  return { ...best, at: bestAt, squares_from_last_sighting: bestD };
 }
 
 /** How far behind the leader this follower is, in crumbs still to walk. */
