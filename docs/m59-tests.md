@@ -20,6 +20,15 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   destructive verbs are chosen by an argument is refused when the argument is omitted. It
   caught a real intermittent auth bug: ids were base64url, whose alphabet contains the
   token separator) and
+  `node tools/m59-commute-test.mjs` (31 — **one rule, and every bug this driver had was a
+  violation of it**: do not send a command to a character that is busy. `travel` supersedes
+  whatever movement is in flight and the ledger calls that `movement cancelled by a newer
+  command`; measured across three windows the commute driver was the LARGEST single cause of
+  travel failure in the fleet — 54 of 183, then 18 of 34, then 33 of 56 — and what it
+  cancelled were a character resting at a safe wall, one resting to full before setting out,
+  and one still finishing the journey that had just delivered it. None of those three reads
+  as "travelling", which is why `committed` is the authority and the activity string only a
+  second opinion. Moving the busy check back after the arrival branch fails three of these) and
   `node tools/m59-blink-test.mjs` (18 — **a portal every room has, and the one way it must
   not be used**: that a kod file naming two rooms is REFUSED rather than guessed at, because a
   blink point on the wrong room would claim exits a character cannot reach; and that blink
@@ -47,7 +56,7 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   permitted hop reports arrival rather than "gave up", and that a cancelled movement still
   wins. It lifts the real method out of `m59-broker.mjs` by brace-matching rather than
   reimplementing it, because that file cannot be imported without taking the fleet lock) and
-  `node tools/m59-travelguard-test.mjs` (29 — **one character has one body**: that a second
+  `node tools/m59-travelguard-test.mjs` (32 — **one character has one body**: that a second
   travel call is REFUSED while the first is in flight, and that both arms of the tool claim
   the same slot. `background: true` took a job slot and the foreground arm did not, so two
   travel calls on one character both ran — measured on arena as two journey ids walking one
@@ -57,6 +66,23 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   suite is STRUCTURAL — that the walk is spelled exactly once — because the mechanism was
   never broken and `startJob`'s own assertions pass on the buggy code; set
   `M59_BROKER_SRC` at a copy with the old path and exactly those two go red) and
+  `node tools/m59-travelling-test.mjs` (64 — **a journey steers a character; it does not
+  switch off its will to live**. Every assertion is one line of Cccc's death record of
+  2026-08-21: a commute driver saw him "stuck in room 1" — which is the UNDERWORLD — and
+  re-sent a `travel`; `travelJob` called `goInert`, which switches the survival ladder off
+  for the length of the walk; the keeper walked him out of the Underworld into an inn at 11
+  of 37 and the journey walked him straight back out; six things ate him over twenty-two
+  seconds at 27% health against a 70% flee threshold. The old rescue could not fire because
+  it ALSO demanded four seconds of stillness, and his last pulses read 23,3 / 25,5 / 26,5 /
+  25,5 — a two-square shuffle that reset that timer on every sample. So this pins two
+  things: that a journey takes `goTravelling` and an errand still takes `goInert`, and that
+  none of the four mid-hop triggers asks whether the body is moving. The `flee` pair needs a
+  character below the flee line and NOT inside two hits of death — 41 of 60, in the
+  one-point gap between 40 and 42 — because Cccc at 10 of 37 was below both and is taken
+  back whichever switch you throw, which is right for him and proves nothing about the
+  switch. Half of it is STRUCTURAL for the same reason `m59-travelguard-test` is: the gate
+  in `passUnderworld` is what routes a travelling keeper into the restricted ladder, and if
+  it comes out every behavioural assertion above it still passes) and
   `node tools/m59-escape-test.mjs` (70) and
   `node tools/m59-combat-test.mjs` (383) and
   `node tools/m59-playbook-test.mjs` (37 — the three moments, the closed verb set, and
@@ -201,7 +227,7 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   they were reached — and both are recovery paths, so they could only fail once something
   else had already gone wrong. Every other assertion here about losing our own position
   drives the FIXTURE's stub of that method, and passed perfectly throughout) and
-  `node tools/m59-pulse-test.mjs` (43 — **is the character moving, asked of the character**.
+  `node tools/m59-pulse-test.mjs` (47 — **is the character moving, asked of the character**.
   Every other stall number measures the KEEPER. Most of the file is the exclusions, because
   a detector that shouts when somebody sits down gets switched off before the day it was
   needed: resting, fighting, trading, waiting and holding a safe wall are all silent, and a
@@ -214,7 +240,14 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   section exist because the first implementation was useless and only the counters said so:
   a wedge must survive a painless second, since damage and the pulse both land about once a
   second and the excused branch clears the episode; and the body test must see a character
-  ALTERNATING between two squares, which the exact-square comparison reads as movement) and
+  ALTERNATING between two squares, which the exact-square comparison reads as movement. Its
+  two newest assertions guard a ring that now serves TWO questions on two widths: the ring
+  was widened to six samples so `damageRate` could read half a point a second off five
+  seconds of it, and `pennedIn` kept the newest three — because that test gets STRICTER as
+  the ring grows, so widening it too would have switched off the handbrake it feeds while
+  every assertion here stayed green. Both constants are read out of the source rather than
+  copied, and the pattern that reads them uses `[0-9]` rather than an escape because it
+  lives in a template literal, which eats the backslash before RegExp sees it) and
   `node tools/m59-roo-test.mjs` (74, with raw-room checks skipping without a copy of the game's
   `resource/rooms`). The rest need a live server —
   `m59-autopilot-test`, `m59-skills-test` and `m59-coop-test` all want a broker on

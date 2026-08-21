@@ -1,0 +1,7 @@
+{
+ "note": "THE SHAPE, not any machine's orders. Copy to substrate/commute.json and name your own characters. `inn` is where a character rests between trips, `dest` is where it walks to, and both are room numbers. m59-commute.mjs reads the copy and never this file — orders belong to the machine that gives them, which is why the copy is gitignored and this is what git carries.",
+ "agents": {
+  "shadow01": { "inn": 52, "dest": 39 },
+  "shadow02": { "inn": 106, "dest": 38 }
+ }
+}

@@ -352,3 +352,7 @@ __pycache__/
 # and equipment to disk. Not to be shared in the repository.
 /tools/m59-shadow.mjs
 /substrate/shadow-snapshot.json
+
+# WHERE THIS FLEET COMMUTES. Orders to characters rather than a description of them, so it
+# lives on the machine that owns the roster. substrate/commute.example.json carries the shape.
+/substrate/commute.json
