@@ -255,6 +255,17 @@ const CROWD_RADIUS = 4;
 // out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
+// A TRAVELLER IS NOT MADE TO SIT FOR VIGOR IT CANNOT AFFORD TO EARN.
+//
+// Resting recovers vigor towards REST_VIGOR_CAP (80 of 200) and everything above that has to
+// be EATEN — but the climb is slow from the bottom, and a mid-journey rest that waits for it
+// is a journey that stops for minutes to buy a number that only matters for RUNNING. Health
+// is what the stop is for.
+//
+// So below this, a rest asks for health only and takes whatever vigor arrives with it. Above
+// it, the top-up is close enough to the cap to be worth finishing. It gates the TARGET, never
+// whether the rest happens: refuge is never refused for vigor — see travelHoldCandidate.
+const REST_VIGOR_WORTH_WAITING = Number(process.env.M59_VIGOR_WORTH_WAITING ?? 50) / 200;
 
 // HOW LONG A POST-DEATH RECOVERY IS ALLOWED TO TAKE before the character goes back out
 // anyway. recovered() waits on health, mana AND vigor, and each of the three is a way to
@@ -4523,7 +4534,9 @@ export class Autopilot {
       // to. A traveller that has gone to the trouble of reaching a wall should leave it
       // healed, and `restUntil` aborts on damage if the wall was wrong.
       health: this.policy.travelHoldTo ?? 1,
-      vigor: REST_VIGOR_CAP,
+      // Vigor comes along if it is close; it does not hold the journey up from the bottom.
+      vigor: (vigorPct(this.s.client?.vitals?.()) ?? 0) >= REST_VIGOR_WORTH_WAITING
+             ? REST_VIGOR_CAP : 0,
       maxSeconds: Math.round(Math.min(90_000, budget - this.travelHeldMs) / 1000),
     }).catch(e => ({ error: e.message }));
     const heldMs = Date.now() - t0;
@@ -4609,8 +4622,11 @@ export class Autopilot {
     const frac = hp.value / hp.max;
     const wantHealth = this.policy.travelStartHealth ?? 1;
     if (!(wantHealth > 0)) return;
-    const wantVigor = Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP);
     const vig = vigorPct(v);
+    // Same rule as the wall: a traveller too tired for the climb to be worth it rests for
+    // health and moves on, rather than sitting out a slow number it can only eat its way past.
+    const wantVigor = (vig ?? 0) >= REST_VIGOR_WORTH_WAITING
+      ? Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP) : 0;
     if (frac >= wantHealth && (vig == null || vig >= wantVigor)) return;
     // An inn is player-safe, not fleetmate-free, and something swinging makes this a fight
     // rather than a pause — the same gate the mid-journey hold and the pre-departure rest
