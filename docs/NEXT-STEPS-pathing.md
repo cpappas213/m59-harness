@@ -939,3 +939,136 @@ Victoria door reaches the Sentinel door and not the reverse, while the Cragged M
 door and the Castle Victoria door join in both directions. So "Ukgoth is one-way" would be
 wrong too; the honest unit is the door PAIR, which is what `anchorReach` records and what
 `transitOk` asks.
+
+---
+
+## The last mile into a safe spot: the fine grid is stricter, not better
+
+The reasoning that led here is sound and the conclusion it produces is wrong, which is
+worth writing down because it will be re-derived by the next person.
+
+A safe wall **is** the coarse grid and the BSP disagreeing. That is not incidental — it is
+the whole mechanism, and the reason the fleet seeks these squares out: the coarse grid
+calls the square open, the BSP hems it in, and a monster's pathing cannot follow. From
+which it follows, apparently, that the square router is the wrong tool for the approach and
+the fine grid should own the last mile. `returnToSpot` half-knew it already: *"the square
+router cannot express the last bit"* — but its fine step only ran AFTER `walkTo` had landed
+on the square, so when the walk failed the fine tools never ran at all.
+
+Measured over 107 approaches to nominated safe spots, in the eleven rooms this fleet uses,
+starting from ordinary floor within ten squares:
+
+| tool | reaches the wall | |
+|---|---|---|
+| `walkTo` | **91/107 (85%)** | the square lattice |
+| `walkFine` | 74/107 (69%) | greedy fan of nine headings, slides on purpose |
+| `finePath` | 25/107 (23%) | A* on the quarter-square lattice |
+
+The square walker is the **best** of the three, and the tool that looks most like "plan the
+last mile properly" is by far the worst. One line of `m59-finepath.mjs` explains it:
+
+```js
+if (Math.hypot(t.x - x1, t.y - y1) > ARRIVE_WITHIN) return null;
+```
+
+`moveLands` refuses any move whose slide ends more than 128 units off its aim, because an
+edge that goes somewhere else is not the edge being put in the graph. That is correct for a
+route across open floor and fatal here, because **a pocket the BSP hems in is a place where
+every move slides**. The fine lattice has no edges at all in exactly the squares that make
+a safe spot safe.
+
+Two hypotheses were tested and disproved on the way:
+
+- *Quantisation.* `finePath` steps in 256-unit increments and arrives within 128, so the
+  nearest lattice point to an arbitrary goal can be 181 units away — outside the radius.
+  Measured: goal-to-lattice distance median 0, max 89, **never** over `ARRIVE_WITHIN`.
+  Snapping the goal to the lattice changed the result from 20/89 to 21/89.
+- *Reach.* Maybe the hold picks walls too far away. A nearer wall IS reached more reliably
+  (88% at four squares against 83% at ten) but is found so much less often that the share
+  of characters ending up on any wall at all falls from 68% to 51%. `travel_hold_within`
+  stays at ten.
+
+Shipped: `Session.approachFine` is the sliding fan, and it is a **fallback** — worse on
+average, +2 walls in the Cragged Mountains, free when the square walk works.
+
+## walksim was dividing by the wrong number
+
+`planLen` is the length of the FIRST plan, made before a single edge had been tried. So
+"2.40x the theoretical minimum" measured how wrong that plan was, not how the walk went —
+and a walker that never moved at all would score 1.00x. `simulateWalk` now also replans
+from the start with everything the walk learned, which is the shortest crossing anybody
+could have planned knowing what we now know, and `--why` prints both.
+
+Measured, the two are nearly always equal. **The tax is the walker leaving a sound plan,
+not recovering from a bad one** — which matters, because it points the fix at the route
+book rather than at the planner.
+
+Related, and smaller than it looks: asking the mover's own question of every planned leg
+finds 6 impossible legs out of 707 in 578, and **zero** in 598 and 599. All six are the
+same thing — the goal-exempt last step into an exit anchor:
+
+```
+(49,12)->(26,50)  leg 51/51  <-- LAST STEP (goal-exempt)
+(1,13)->(35,1)    leg 36/36  <-- LAST STEP (goal-exempt)
+```
+
+The plan is sound to the doorstep and then asks for one square the mover refuses. `aimInto`
+mitigates it at runtime. It is the same last-mile defect as the safe spots, at the other
+end of the journey.
+
+## The monorail was already the answer, and nobody had re-laid it
+
+`m59-tracks.mjs` learns *"the quickest crossing anybody has actually walked, per room and
+pair of doors, straightened against the baked BSP"*, and `rideTrack` consults it on every
+hop. It is exactly the precomputed route the planner keeps failing to be. Four things were
+wrong with it and none of them were the idea.
+
+**Stale.** `substrate/m59-tracks.json` was baked on the 19th, and re-baking meant chewing
+1.4 million samples for twenty minutes, so nobody did. `--since` fixes that, with the
+spelling `m59-transits.mjs` already uses: `--since 6h` reads 88k samples in seconds and
+learns 138 tracks from one afternoon.
+
+**Thin.** 72 usable tracks across the two routes — 3 for 578 Cragged against 20 ordered
+door pairs, 1 for 599 Ukgoth against 6. A full re-bake takes that to 115.
+
+**Condemned.** A strike is filed under `room:from>to` — the pair of DOORS — so it outlives
+the waypoints it was earned against, and every freshly learned track inherits the failures
+of the one it replaces. 57 of 209 tracks were at or past `STRIKES_BEFORE_REJECT`, so a
+better crossing learned this afternoon would have arrived pre-condemned and been refused on
+its first ride, silently, while the book looked re-laid. `--save` now clears the record of
+any crossing whose waypoints moved and leaves it where they did not.
+
+**Unridable, which is the big one.** The book's own note says a track "cannot contain a
+step the mover refuses". Checked with `straighten`'s exact predicate — the same `lands`
+test, `protocolToClient` both ends, tolerance 40 — **105 of 321 tracks carry a leg that
+fails it, 19.5% of all legs**, and in 578 The Cragged Mountains it is 14 legs of 18:
+
+```
+ 14/ 18 legs refused  578:579>576    The Cragged Mountains
+ 14/ 19 legs refused  578:?>579      The Cragged Mountains
+ 14/ 22 legs refused  578:568>579    The Cragged Mountains
+  8/ 20 legs refused  599:598>2      Ukgoth, Holy Land of Trolls
+```
+
+The cause is in `straighten` itself. When no long leg raycasts from the current anchor it
+falls back to `best = anchor + 1` and pushes the next raw sample **without proving that leg
+lands** — and consecutive trail samples can be seconds and several squares apart, around a
+corner a straight line does not survive. `rideTrack` then sends each leg as a single
+`stepFine`, fails, and falls back to `walkFine` groping between waypoints, which is the
+exact behaviour the track existed to replace. So the monorail in the worst room on the road
+is mostly not a monorail.
+
+`comb` ranked on TIME ALONE, which is right about deaths — monsters wander, so dying says
+nothing about a route — and silent about whether the route can be SENT. It now prefers the
+crossing with fewer refused legs and lets time decide between equals, and a stitch that
+would make ridability worse is discarded rather than taken for being shorter.
+
+### Still open
+
+- `straighten`'s fallback should not emit an unproved leg at all. Ranking around it is a
+  mitigation; the fix is for it to either keep the intermediate samples that would make the
+  leg raycast, or mark the leg so the ride goes straight to `walkFine` instead of spending
+  a refused `stepFine` on it first.
+- 578 may simply not have a ridable crossing in the samples we hold, in which case the
+  answer is to walk one deliberately and bake it, rather than to keep re-combing trails
+  recorded while characters were fighting.
