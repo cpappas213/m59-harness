@@ -961,7 +961,14 @@ export class World {
   // A route to another room, expressed as things to do rather than rooms to be in.
   // Each leg says which square to stand on and which mechanism to use, because the
   // two mechanisms are not interchangeable and getting it wrong produces silence.
-  route(toRoomNum, { avoid = null } = {}) {
+  /**
+   * @param blockedHops  Hops this CALLER has learned are unusable, as `"from>to"` room
+   *   numbers. Merged with the ones derived from `exits()` below rather than replacing
+   *   them. A hop is the right unit for a learned failure and a room is not: the room a
+   *   character cannot cross from THIS door it can usually cross from another, and the
+   *   destination is frequently somewhere it must still be able to arrive at.
+   */
+  route(toRoomNum, { avoid = null, blockedHops: learned = null } = {}) {
     const room = this.room;
     if (!room) return { found: false, reason: 'current room is not in the graph' };
     // A CALLER MAY ADD TO THE AVOID SET, NEVER REPLACE IT. `AVOID_IN_TRANSIT` is this
@@ -1021,6 +1028,12 @@ export class World {
       }
       for (const [to, ok] of byDest) if (!ok) blockedHops.add(`${room.num}>${Number(to)}`);
     } catch { /* exits() needs a live room; without one this simply blocks nothing */ }
+    // AND WHAT THE CALLER HAS ACTUALLY WATCHED FAIL. `exits()` is a model, and a model that
+    // says a hop is fine is not evidence that it is: the Western border of the Twisted Wood
+    // publishes a perfectly reachable crossing to The Twisted Wood, and taking it lands the
+    // character in the Main gate to the city of Tos instead, because both exits share one
+    // boundary. Nothing in the model can see that. A journey that has watched it happen can.
+    if (learned) for (const h of learned) blockedHops.add(h);
     const r = findPath(this.map, room.num, toRoomNum,
                        { avoid: merged, transitOk: this.transitOk(),
                          blockedHops: blockedHops.size ? blockedHops : null });

@@ -49,7 +49,7 @@ import { join } from 'node:path';
 import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINENESS,
          sharedRoomGeometry, STEP_MASK_VERSION, elideLoops } from './m59-roo.mjs';
 import { components, exitAnchors } from './m59-routebake.mjs';
-import { loadMap, selectedEdgeAt } from './m59-map.mjs';
+import { loadMap, selectedEdgeAt, findPath } from './m59-map.mjs';
 import { crossingBook, WALKS_DIR } from './m59-crossings.mjs';
 import { stepMaskCurrent, attachStepMasks } from './m59-routes.mjs';
 
@@ -939,6 +939,45 @@ console.log('\none-way transits, and the jumps the square walk cannot express');
        `${uphill} uphill`);
     ok('and not one of them is ground the walk could already cover', alreadyWalkable === 0,
        `${alreadyWalkable} already walkable`);
+  }
+}
+
+
+console.log('');
+console.log('A HOP THAT LANDS SOMEWHERE ELSE IS ROUTED AROUND, AS A HOP');
+{
+  // A room is the wrong unit for a learned travel failure. The room a character cannot cross
+  // from THIS door it can usually cross from another, and the destination is frequently
+  // somewhere it must still be able to arrive at. A HOP either works or it does not.
+  //
+  // The measured case: the Western border of the Twisted Wood (587) publishes a perfectly
+  // reachable crossing to The Twisted Wood (597), and taking it lands the character in the
+  // Main gate to the city of Tos (586) instead — both exits share one boundary, and nothing
+  // in the room model can see that. `findPath` has honoured a `blockedHops` set all along;
+  // what was missing was anything putting EXPERIENCE into it.
+  const map = loadMap();
+  const roomsPresent = [586, 587, 596, 597, 598].every(n => map?.rooms?.[n] || map?.rooms?.[String(n)]);
+  if (!roomsPresent) {
+    // NOTHING TO CHECK is not a pass. Say so rather than reporting a green line about a
+    // map this checkout does not have.
+    console.log('  --   skipped: this map does not carry rooms 586/587/596/597/598');
+  } else {
+    const plain = findPath(map, 586, 598, {});
+    const viaPlain = plain.found ? plain.hops.map(h => h.to) : null;
+    ok('a route from the Tos gate to 598 exists at all', plain.found, JSON.stringify(viaPlain));
+
+    const rerouted = findPath(map, 586, 598, { blockedHops: new Set(['587>597']) });
+    const viaRe = rerouted.found ? rerouted.hops.map(h => h.to) : null;
+    ok('and it still exists with the 587 -> 597 crossing blocked',
+       rerouted.found, JSON.stringify(viaRe));
+    ok('but it no longer goes through that crossing',
+       !!viaRe && !viaRe.some((to, n) => to === 597 && (n === 0 ? 586 : viaRe[n - 1]) === 587),
+       JSON.stringify(viaRe));
+    // THE POINT: there is another way of the same length — 596 — so blocking the bad hop
+    // costs nothing. A journey that has watched the crossing fail takes it immediately.
+    ok('it goes by the Outskirts of Tos instead, which is the same number of hops',
+       !!viaRe && viaRe.includes(596) && viaRe.length <= (viaPlain?.length ?? 0) + 1,
+       JSON.stringify({ plain: viaPlain, rerouted: viaRe }));
   }
 }
 

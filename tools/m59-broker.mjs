@@ -7165,6 +7165,22 @@ class Session {
     // See the note on UNREACHABLE_EXIT below for why this is per-journey and the barred
     // set is per-session.
     const avoidThisJourney = new Set();
+    // WHAT THIS JOURNEY HAS WATCHED FAIL, AS HOPS RATHER THAN AS ROOMS.
+    //
+    // A room is the wrong unit for a learned travel failure and always was. The room a
+    // character cannot cross from THIS door it can usually cross from another, and the
+    // destination is frequently somewhere it still has to be able to arrive at. A HOP —
+    // one from-room to one to-room — is the thing that either works or does not.
+    //
+    // `findPath` has honoured a `blockedHops` set all along; what was missing is anything
+    // putting EXPERIENCE into it. The model's own answer went in and nothing else did, and
+    // the model cannot see the failure that matters here: the Western border of the Twisted
+    // Wood publishes a perfectly reachable crossing to The Twisted Wood, and taking it lands
+    // the character in the Main gate to the city of Tos, because both exits share one
+    // boundary. There is a route to the same destination that does not use it — 586 -> 596
+    // -> 597, the same number of hops — and the router will take it the moment it is told
+    // this one does not work.
+    const badHops = new Set();
 
     // Let the position settle and the room re-publish itself, then try again from
     // wherever we actually are. Returns false when the patience is spent.
@@ -7298,6 +7314,7 @@ class Session {
         return { arrived: true, room: { num: here.num, name: here.name }, hops, stumbles: totalStumbles, log };
 
       const route = this.world.route(toRoomNum, {
+        blockedHops: badHops.size ? badHops : null,
         avoid: avoidThisJourney.size || this.barredRooms?.size
           ? new Set([...(this.barredRooms ?? []), ...avoidThisJourney])
           : null,
@@ -7518,6 +7535,16 @@ class Session {
           ms: Date.now() - enteredAt, walkMs: Date.now() - walkBegan, ok: false, tried: 1,
           reason: wrong, journey: journeyId, hop: hops, destination: toRoomNum,
         });
+        // LEARNED AS A HOP, so the replan below routes around it instead of trying it again.
+        //
+        // Not the room: 587 is perfectly crossable in other directions and 597 is somewhere
+        // the journey still has to reach. It is this one crossing that does not work, and
+        // there is another way to the same place — 586 -> 596 -> 597 — of the same length.
+        // Journey-scoped, like the unreachable-door bar below and for the same reason: this
+        // is a fact about where the body happens to be standing, not about the map.
+        badHops.add(`${here.num}>${Number(nextHop.to)}`);
+        log.push({ blocked_hop: `${here.num}>${nextHop.to}`, reason: wrong,
+                   note: 'that crossing lands somewhere else — replanning a way round it' });
         // A stumble rather than a hop: the body moved, so the patience for THIS room is spent,
         // but the plan it was following is void and the next pass builds a new one from here.
         if (await stumble(wrong)) continue;
