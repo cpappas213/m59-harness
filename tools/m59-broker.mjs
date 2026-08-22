@@ -7552,8 +7552,22 @@ class Session {
       // counted as the hop that was asked for.
       const landedIn = Number(this.world?.room?.num ?? NaN);
       if (Number.isFinite(landedIn) && nextHop.to != null && landedIn !== Number(nextHop.to)) {
-        const wrong = `crossed into ${landedIn} instead of ${nextHop.to} — that boundary carries ` +
-                      `more than one exit`;
+        // THE UNDERWORLD IS A DEATH, NOT A DOORWAY.
+        //
+        // Every other way of ending up somewhere unplanned is a boundary that carries more
+        // than one exit. This one is the character having died on the way, and it read
+        // `crossed into 1 instead of 599 — that boundary carries more than one exit`, which
+        // is a sentence that would send the next person looking at Ukgoth's geometry for a
+        // shared edge that does not exist. Room 1 is where the game puts the dead.
+        //
+        // Not learned as a bad hop either: the crossing is not what was wrong with it, and
+        // barring the last door a character walked through before dying would take a good
+        // route off the map for the rest of the journey.
+        const died = landedIn === 1;
+        const wrong = died
+          ? `died on the way to ${nextHop.to} — this is the Underworld, not a wrong doorway`
+          : `crossed into ${landedIn} instead of ${nextHop.to} — that boundary carries ` +
+            `more than one exit`;
         log.push({ from: here.name, to: nextHop.to_name, via: exit.kind, ok: false, reason: wrong });
         this.noteTransit({
           room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
@@ -7567,9 +7581,14 @@ class Session {
         // there is another way to the same place — 586 -> 596 -> 597 — of the same length.
         // Journey-scoped, like the unreachable-door bar below and for the same reason: this
         // is a fact about where the body happens to be standing, not about the map.
-        badHops.add(`${here.num}>${Number(nextHop.to)}`);
-        log.push({ blocked_hop: `${here.num}>${nextHop.to}`, reason: wrong,
-                   note: 'that crossing lands somewhere else — replanning a way round it' });
+        if (!died) {
+          badHops.add(`${here.num}>${Number(nextHop.to)}`);
+          log.push({ blocked_hop: `${here.num}>${nextHop.to}`, reason: wrong,
+                     note: 'that crossing lands somewhere else — replanning a way round it' });
+        } else {
+          log.push({ died_in_transit: `${here.num}>${nextHop.to}`, reason: wrong,
+                     note: 'the Underworld is where the dead go, not somewhere this hop led' });
+        }
         // A stumble rather than a hop: the body moved, so the patience for THIS room is spent,
         // but the plan it was following is void and the next pass builds a new one from here.
         if (await stumble(wrong)) continue;

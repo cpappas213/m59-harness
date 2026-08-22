@@ -90,6 +90,10 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
       // without asking. `overshoot` lands on the LAST room in the fixture — so the hop did
       // not go where it aimed, and where it went happens to be the destination.
       if (outcome === 'overshoot') { s.at = rooms.length - 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
+      // DIED ON THE WAY. The server puts the dead in room 1, and from the journey's point of
+      // view that is a room change to somewhere it did not ask for — indistinguishable, on
+      // the wire, from a boundary that carries two exits.
+      if (outcome === 'died') { s.at = rooms.indexOf(1); return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
       if (outcome) { s.at += 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
       return { left: false, reason: 'no floor anywhere on the north boundary' };
     },
@@ -332,6 +336,17 @@ console.log('THE ARRIVAL GUARD: ask whether we are there before reporting that w
      g.arrived === true, JSON.stringify(g));
   ok('and it says so, rather than silently rewriting a failure',
      /noticed while giving up/.test(g.note ?? ''), JSON.stringify(g.note));
+
+  // AND THE UNDERWORLD IS A DEATH, NOT A DOORWAY. Every other unplanned landing is a
+  // boundary carrying more than one exit; this one is the character having died on the way,
+  // and it read "crossed into 1 instead of 599 — that boundary carries more than one exit",
+  // which would send the next person hunting a shared edge in Ukgoth that does not exist.
+  const dead = fakeSession({ rooms: [1, 2, 3, 4], startAt: 1, script: ['died'] });
+  const d = await travel.call(dead, 4, { maxStumbles: 0 });
+  ok('dying in transit is reported as a death rather than a wrong doorway',
+     /Underworld/.test(d.reason ?? ''), JSON.stringify(d.reason));
+  ok('and the hop it died on is NOT learned as a bad crossing',
+     !(d.log ?? []).some(e => e.blocked_hop), JSON.stringify(d.log?.slice(-2)));
 
   // The cheap case too: already standing there when asked.
   const already = fakeSession({ rooms: [7] });
