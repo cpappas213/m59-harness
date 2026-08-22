@@ -981,5 +981,55 @@ console.log('A HOP THAT LANDS SOMEWHERE ELSE IS ROUTED AROUND, AS A HOP');
   }
 }
 
+
+console.log('');
+console.log('A BOUNDARY CAN CARRY TWO EXITS, AND THE ROW DECIDES WHICH ONE FIRES');
+{
+  // This is the shape that cost every journey a wasted excursion, and it is ordinary map
+  // data rather than anything exotic. The Western border of the Twisted Wood publishes two
+  // exits on ONE edge, separated by a condition the server evaluates on the crossing row:
+  //
+  //     east -> 586  Main gate to the city of Tos   when row < 19
+  //     east -> 597  The Twisted Wood               when row > 20
+  //
+  // Both anchors are therefore ON the boundary and only nineteen rows apart, and standing on
+  // the wrong one and slipping a single square east does not waste a step — it goes to the
+  // wrong room. "crossed into 586 instead of 597", every journey, on a crossing that is
+  // perfectly good.
+  const map = loadMap();
+  const room = map?.rooms?.[587] ?? map?.rooms?.['587'];
+  if (!room) {
+    console.log('  --   skipped: this map does not carry room 587');
+  } else {
+    const east = (room.edgeExits ?? []).filter(e => (e.leaveName ?? '') === 'east');
+    ok('room 587 really does publish two exits on its east edge', east.length === 2,
+       JSON.stringify(east.map(e => ({ to: e.to, cond: e.condition }))));
+    const toTos = east.find(e => Number(e.to) === 586);
+    const toWood = east.find(e => Number(e.to) === 597);
+    ok('one of them is the Tos gate, gated on a LOW row',
+       toTos?.condition?.name === 'row<' && toTos.condition.threshold === 19,
+       JSON.stringify(toTos?.condition));
+    ok('and the other is the Twisted Wood, gated on a HIGH row',
+       toWood?.condition?.name === 'row>' && toWood.condition.threshold === 20,
+       JSON.stringify(toWood?.condition));
+
+    // AND THE SERVER'S OWN ORDERED SCAN AGREES ABOUT EACH ANCHOR. `selectedEdgeAt` simulates
+    // StandardLeaveDir, so this is the same question the server answers on the crossing step.
+    const atTos  = selectedEdgeAt(room, 'east', { row: 9,  col: 67 });
+    const atWood = selectedEdgeAt(room, 'east', { row: 46, col: 67 });
+    ok('crossing east at row 9 fires the exit to Tos', Number(atTos?.to) === 586, JSON.stringify(atTos?.to));
+    ok('crossing east at row 46 fires the exit to the Twisted Wood',
+       Number(atWood?.to) === 597, JSON.stringify(atWood?.to));
+
+    // THE BUG THIS PINS. The baked line to 597 starts AT the Tos anchor, because railAcross
+    // picks the nearest other anchor — so getting on used to mean standing in the doorway to
+    // the room we did not want. There is no false route here and nothing to blacklist; the
+    // fix is to board one square inland.
+    const baked = JSON.parse(readFileSync(new URL('../substrate/m59-routes.json', import.meta.url), 'utf8'));
+    ok('the line to the Twisted Wood is baked from the Tos anchor, which is why boarding matters',
+       !!baked?.rooms?.['587']?.routes?.['9,67>46,67']);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);

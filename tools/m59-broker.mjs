@@ -5515,7 +5515,41 @@ class Session {
       let squares = null;
       try { squares = bakedPath(table, room, { row: a.row, col: a.col }, toSquare); }
       catch { squares = null; }
-      if (Array.isArray(squares) && squares.length) return { from: a, squares };
+      if (Array.isArray(squares) && squares.length) {
+        // DO NOT GET ON AT A LIVE DOORWAY TO SOMEWHERE ELSE.
+        //
+        // `railAcross` picks the nearest OTHER anchor as the line's start, and an anchor is
+        // by definition a crossing square — standing on it and slipping one square outward
+        // leaves the room. Where the boundary carries more than one exit, that is not merely
+        // a wasted step, it goes to the WRONG ROOM.
+        //
+        // The Western border of the Twisted Wood is exactly that shape. Its east edge is
+        // split by a row condition, from the map's own data:
+        //
+        //     east -> 586 (Main gate to the city of Tos)  when row < 19
+        //     east -> 597 (The Twisted Wood)              when row > 20
+        //
+        // The line to 597 is baked from the 586 anchor at 9,67 — on the boundary, row 9,
+        // inside the `row < 19` zone. So the walk to GET ON the rail ends with the character
+        // standing in the doorway back to Tos, and the transit book fills with "crossed into
+        // 586 instead of 597". Measured: every journey paid ~46s reaching 587 and ~11s
+        // failing there before rerouting, on a crossing that is perfectly good.
+        //
+        // The anchor is still the right place to CROSS FROM at the far end; it is the wrong
+        // place to STAND at the near end. The line's first square is one step inland, so get
+        // on there instead and let the walk approach the boundary only where the line does.
+        const geo = this.world?.geometry;
+        const onBoundary = (sq) => geo && sq
+          && (sq.row === 1 || sq.col === 1
+              || sq.row === Number(geo.rows) || sq.col === Number(geo.cols));
+        if (onBoundary(a)) {
+          let n = 0;
+          while (n < squares.length - 1 && onBoundary(squares[n])) n++;
+          if (n < squares.length - 1)
+            return { from: squares[n], squares: squares.slice(n + 1), steppedOffBoundary: true };
+        }
+        return { from: a, squares };
+      }
     }
     return null;
   }
