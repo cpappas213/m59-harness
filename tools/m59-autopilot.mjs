@@ -4234,6 +4234,8 @@ export class Autopilot {
       // the same monster.
       within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
       book: this.book, room: room.num, quarryReach, strictQuarryReach, los,
+      // Only offer walls the router agrees we can walk to — see reachTest.
+      reach: this.reachTest(),
       // The same exclusion the other three selectors apply — a wall we have just failed
       // to walk to is not a candidate, whichever rung is asking for one.
       unreachable: this.unreachableIn(room.num),
@@ -4614,6 +4616,7 @@ export class Autopilot {
         // rejections can be fished back out. See docs/m59-safe-travel-plan.md.
         spot = nearestSafeSpot(geo, me, { book: this.book, room: at.room?.num ?? null,
                                           unreachable: this.unreachableIn(at.room?.num ?? null),
+                                          reach: this.reachTest(),
                                           within: this.policy.travelHoldWithin ?? 10 });
       } catch { spot = null; }
     }
@@ -5627,6 +5630,33 @@ export class Autopilot {
   // The shelter threshold in force RIGHT HERE, which is not a constant. See roomOutranksUs.
   travelShelterBelow() {
     return this.roomOutranksUs() ? 1 : (this.policy.travelWallBelow ?? 0.8);
+  }
+
+  // A WALL WE CANNOT PATH TO IS NOT A CANDIDATE, AND THE SELECTOR CAN BE TOLD SO.
+  //
+  // `nearestSafeSpot` takes a `reach` predicate and NOBODY PASSED ONE, so every wall it
+  // scored read as reachable and the first anyone discovered otherwise was when the walk
+  // failed — one square per attempt, at a wall, in whatever room this is.
+  //
+  // Ukgoth has no shortage of walls: 1,136 of its 4,686 standable squares are places the two
+  // grids disagree, and the selector finds one within 7 to 11 steps of every door. The book
+  // is not hiding them either — sixteen squares recorded there, and the same spot comes back
+  // with the book and without it. What was failing was the WALK, every time, and nothing
+  // asked beforehand.
+  //
+  // NO OPINION MEANS CARRY ON. A room with no geometry, or a pathfinder that throws, answers
+  // reachable — the same rule the step mask follows, because a bake must never be the thing
+  // that makes a wall disappear.
+  reachTest() {
+    const geo = this.s?.world?.geometry;
+    const me = this.s?.client?.self;
+    if (!geo || !me || typeof geo.path !== 'function') return null;
+    return (col, row) => {
+      try {
+        const p = geo.path(me.row, me.col, row, col);
+        return { reachable: !!p?.found, steps: p?.steps?.length ?? null };
+      } catch { return { reachable: true, steps: null }; }
+    };
   }
 
   // A WALL WE COULD NOT WALK TO IS NOT SHELTER, AND OFFERING IT AGAIN IS A LOOP.
@@ -7912,6 +7942,30 @@ export class Autopilot {
           try { return s.cancelMovement(null, 'the watchdog rescuing a stalled driver'); } catch (e) { return { cancelled: false, why: e.message }; }
         })();
         const was = this.inert?.why ?? 'inert';
+        // A RESCUED JOURNEY IS PAUSED, NOT CANCELLED.
+        //
+        // `revive` drops the objective and hands the body to the ordinary ladder. For an
+        // ERRAND that is right — somebody else was driving and the errand is off. For a
+        // JOURNEY it is how a character ends up standing in a troll den with nothing
+        // permitted: measured in Ukgoth, the rail was "cancelled at 12 of 112 by the
+        // watchdog rescuing a stalled driver" and the character then walked ZERO squares in
+        // fifteen seconds while the ladder ran through "could not reach the safe spot", "will
+        // not rest in the open here", "leaving the room to recover safely", "could not leave"
+        // — and died.
+        //
+        // The rescue is still right: something was hitting it and the mover was not
+        // answering. What is wrong is throwing the destination away with the driver. Kept
+        // here the same way a travel-guard take-back keeps it, so `resumeSuspendedJourney`
+        // puts the character back on the same line once it is well enough to walk it.
+        const journey = this.travelling;
+        if (journey?.to != null) {
+          this.suspendedJourney = {
+            to: journey.to, why: journey.why ?? 'travelling', at: Date.now(),
+            trigger: 'the watchdog rescued a stalled driver',
+            attempts: (journey.attempts ?? 0) + 1,
+            deaths_at: this.tally?.deaths ?? 0,
+          };
+        }
         this.revive('the character stopped moving and started dying while ' + was);
         this.note('WATCHDOG — took the character back from a driver that had stopped', {
           health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
@@ -9081,6 +9135,7 @@ export class Autopilot {
         try {
           spot = nearestSafeSpot(geo, me, { book: this.book,
                                             unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
+                                            reach: this.reachTest(),
                                             room: this.s.world?.room?.num ?? null,
                                             within: this.policy.travelHoldWithin ?? 10 });
         } catch { spot = null; }

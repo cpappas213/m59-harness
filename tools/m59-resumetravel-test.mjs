@@ -46,6 +46,9 @@
 
 import { Autopilot, HANDLED, CONTINUE } from './m59-autopilot.mjs';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+const HERE = dirname(fileURLToPath(import.meta.url));
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -260,6 +263,34 @@ console.log('\nthe wiring the keeper cannot check for itself');
      /await this\.resumeSuspendedJourney\(ctx\)/.test(readFileSync('tools/m59-autopilot.mjs', 'utf8')));
 }
 
+
+console.log('');
+console.log('A WATCHDOG RESCUE PAUSES A JOURNEY — IT DOES NOT THROW THE DESTINATION AWAY');
+{
+  // `revive` drops the objective and hands the body to the ordinary ladder. For an ERRAND
+  // that is right — somebody else was driving and the errand is off. For a JOURNEY it is how
+  // a character ends up standing in a troll den with nothing permitted.
+  //
+  // Measured in Ukgoth: the rail was "cancelled at 12 of 112 by the watchdog rescuing a
+  // stalled driver", and the character then walked ZERO squares in fifteen seconds while the
+  // ladder worked through "could not reach the safe spot" / "will not rest in the open here"
+  // / "leaving the room to recover safely" / "could not leave" — and died with eleven
+  // threats on it.
+  //
+  // The rescue itself is right: something was hitting it and the mover was not answering.
+  // Throwing the destination away with the driver is what is not.
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const rescue = src.slice(src.indexOf('WATCHDOG — took the character back from a driver') - 2400,
+                           src.indexOf('WATCHDOG — took the character back from a driver'));
+  ok('the rescue records a suspended journey before reviving',
+     /suspendedJourney = \{/.test(rescue), rescue.slice(-200));
+  ok('and only when a journey is what was holding the character',
+     /const journey = this\.travelling/.test(rescue));
+  ok('and names itself as the trigger, so a post-mortem can tell it from a guard rung',
+     /the watchdog rescued a stalled driver/.test(rescue));
+  ok('and it still revives — the rescue is not being cancelled, only the forgetting is',
+     /this\.revive\(/.test(rescue) || /this\.revive\(/.test(src));
+}
 
 console.log('');
 console.log('A REST STOP ENDS WHEN THERE IS NOTHING LEFT TO GAIN BY STANDING THERE');
