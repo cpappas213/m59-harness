@@ -481,6 +481,24 @@ const RAIL_SKIP_WITHIN_SQUARES = Number(process.env.M59_RAIL_SKIP_WITHIN || 8);
 // spent standing in whatever room this is, and the Cragged Mountains is not a room to spend
 // seconds in. The jump is short for the same reason a skip is: the line ahead is still the
 // line, and `walkFine` covers a gap of a few squares perfectly well.
+// HOW MUCH CLEAR GROUND TO PUT BETWEEN THE BODY AND A BOUNDARY AFTER ARRIVING.
+//
+// ONE IS NOT ENOUGH, and the map says why. Entering the Western border of the Twisted Wood
+// from the Main gate to the city of Tos lands the character at row 8, column 66 — and that
+// room is 55 rows by 67 columns, so the east boundary is one square away. That boundary
+// carries TWO exits, split on the crossing row:
+//
+//     east -> 586  Main gate to the city of Tos   when row < 19
+//     east -> 597  The Twisted Wood               when row > 20
+//
+// Row 8 is inside the first band. So the body arrives one slide from the door it just came
+// through, and the tracer shows exactly that: `586->587` followed immediately by `587->586`.
+// Stepping merely OFF the boundary does not help when the arrival square is already off it.
+//
+// Two squares costs one extra step and removes the whole class: a slide has to go wrong
+// twice in the same direction before it crosses anything.
+const INLAND_MARGIN_SQUARES = Number(process.env.M59_INLAND_MARGIN || 2);
+
 const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
 const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
 
@@ -5607,28 +5625,34 @@ class Session {
    * One square inland, onto ground the mover already agrees is standable, and only when the
    * body is actually on a boundary. If it fails, nothing is worse than it was.
    */
-  async stepInland() {
+  async stepInland(margin = INLAND_MARGIN_SQUARES) {
     const geo = this.world?.geometry;
-    const me = this.client?.self;
-    if (!geo || !me) return false;
+    if (!geo) return false;
     const rows = Number(geo.rows), cols = Number(geo.cols);
     if (!Number.isFinite(rows) || !Number.isFinite(cols)) return false;
-    const dr = me.row === 1 ? 1 : me.row === rows ? -1 : 0;
-    const dc = me.col === 1 ? 1 : me.col === cols ? -1 : 0;
-    if (!dr && !dc) return false;                       // not on a boundary; nothing to do
-    // Straight in first, then the two axis-aligned fallbacks — a corner has two ways off it
-    // and only one of them may be floor.
-    const tries = [{ dr, dc }, { dr, dc: 0 }, { dr: 0, dc }].filter(t => t.dr || t.dc);
-    for (const t of tries) {
-      const r = me.row + t.dr, c = me.col + t.dc;
-      if (typeof geo.standable === 'function' && !geo.standable(r, c)) continue;
-      if (typeof geo.moverStepLands === 'function' && !geo.moverStepLands(me.row, me.col, r, c)) continue;
-      const out = await this.step(c, r).catch(() => null);
-      const now = this.client?.self;
-      if (now && now.row === r && now.col === c) return true;
-      if (out?.left_room) return false;                 // it went out anyway; nothing to add
+    let moved = false;
+    // At most one step per axis per call: this is a nudge off a doorway, not a walk.
+    for (let n = 0; n < 2; n++) {
+      const me = this.client?.self;
+      if (!me) break;
+      // How far from each boundary, and which way is inland from the nearest one.
+      const dr = me.row <= margin ? 1 : me.row > rows - margin ? -1 : 0;
+      const dc = me.col <= margin ? 1 : me.col > cols - margin ? -1 : 0;
+      if (!dr && !dc) break;                          // clear of every edge; nothing to do
+      const tries = [{ dr, dc }, { dr, dc: 0 }, { dr: 0, dc }].filter(t => t.dr || t.dc);
+      let stepped = false;
+      for (const t of tries) {
+        const r = me.row + t.dr, c = me.col + t.dc;
+        if (typeof geo.standable === 'function' && !geo.standable(r, c)) continue;
+        if (typeof geo.moverStepLands === 'function' && !geo.moverStepLands(me.row, me.col, r, c)) continue;
+        const out = await this.step(c, r).catch(() => null);
+        if (out?.left_room) return moved;             // it went out anyway; nothing to add
+        const now = this.client?.self;
+        if (now && now.row === r && now.col === c) { stepped = true; moved = true; break; }
+      }
+      if (!stepped) break;                            // nowhere inland from here; leave it
     }
-    return false;
+    return moved;
   }
 
   /**

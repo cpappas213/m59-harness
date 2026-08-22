@@ -1031,5 +1031,55 @@ console.log('A BOUNDARY CAN CARRY TWO EXITS, AND THE ROW DECIDES WHICH ONE FIRES
   }
 }
 
+
+console.log('');
+console.log('ARRIVING NEXT TO A DOOR IS ARRIVING IN IT — THE MARGIN HAS TO BE MORE THAN ZERO');
+{
+  // The whole failure in one line of map data: entering the Western border of the Twisted
+  // Wood from the Main gate to the city of Tos puts the character at row 8, column 66, in a
+  // room 55 rows by 67 columns. The east boundary is ONE square away, and it carries two
+  // exits split on the crossing row — row < 19 goes back to Tos, row > 20 goes on to the
+  // Twisted Wood. Row 8 is in the first band.
+  //
+  // So the body arrives one slide from the door it just came through, and the tracer shows
+  // it: 586->587 followed immediately by 587->586. Stepping merely OFF the boundary does
+  // nothing here, because the arrival square is already off it. That bounce cost a 44s
+  // excursion plus a 195s reroute through the Outskirts, every single journey.
+  const map = loadMap();
+  const from = map?.rooms?.[586] ?? map?.rooms?.['586'];
+  const into = map?.rooms?.[587] ?? map?.rooms?.['587'];
+  if (!from || !into) {
+    console.log('  --   skipped: this map does not carry rooms 586/587');
+  } else {
+    const west = (from.edgeExits ?? []).find(e => (e.leaveName ?? '') === 'west' && Number(e.to) === 587);
+    ok('the Tos gate really does drop us into 587', !!west, JSON.stringify(west));
+    ok('and it lands at row 8, column 66',
+       west?.arriveRow === 8 && west?.arriveCol === 66,
+       JSON.stringify({ row: west?.arriveRow, col: west?.arriveCol }));
+
+    const cols = Number(into.cols ?? into.roo?.cols ?? 0);
+    ok('which is ONE square from that east boundary',
+       cols - Number(west?.arriveCol ?? 0) === 1, JSON.stringify({ cols, at: west?.arriveCol }));
+
+    // And crossing east from the arrival ROW fires the exit we just came through.
+    const fires = selectedEdgeAt(into, 'east', { row: west.arriveRow, col: cols });
+    ok('so a slide east from the arrival row goes straight back to the Tos gate',
+       Number(fires?.to) === 586, JSON.stringify(fires?.to));
+
+    // ...whereas the door we actually want is nineteen rows further south.
+    const wanted = selectedEdgeAt(into, 'east', { row: 46, col: cols });
+    ok('while the door we want needs row 46', Number(wanted?.to) === 597, JSON.stringify(wanted?.to));
+
+    // THE MARGIN. One square of clearance still leaves the body on col 66 — the arrival
+    // square itself — so it has to be at least two before a single slide stops mattering.
+    ok('a margin of one would not have moved it at all',
+       cols - Number(west.arriveCol) <= 1);
+    const src = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+    ok('so the broker asks for more than one square of clearance',
+       /INLAND_MARGIN[\s\S]{0,80}\|\| 2\)/.test(src) || /INLAND_MARGIN_SQUARES = Number\([^)]*\|\| 2\)/.test(src),
+       'INLAND_MARGIN_SQUARES');
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);
