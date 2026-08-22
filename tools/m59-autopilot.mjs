@@ -5549,6 +5549,28 @@ export class Autopilot {
     return this.roomOutranksUs() ? 1 : (this.policy.travelWallBelow ?? 0.8);
   }
 
+  // WHO IN THIS ROOM IS A PERSON AND NOT ONE OF OURS.
+  //
+  // The same filter was written out by hand in three places before this — the travel guard,
+  // the PvP detector and the hold rung — and they must not be allowed to drift, because the
+  // whole survival ladder now turns on the difference between a creature and a person.
+  //
+  // BOTH FLAGS. The room filter asks for PLAYER and ATTACKABLE together: `PF_*` is an ENUM
+  // rather than a bitmask, and a Dungeon Master carries flags that make a naive test true.
+  // `party.isFleetmate` tells one of ours from a stranger, and a keeper that has not had a
+  // pass yet is ABSENT from that roster — so this can call a fleetmate a stranger for a few
+  // seconds after a restart. Being wrong that way costs a walk, never a fight, which is the
+  // cheap direction and the reason the answers built on it are withdrawals.
+  strangersInReach(reach = REACH) {
+    const c = this.s?.client;
+    const me = c?.self;
+    if (!me || !c?.room?.objects) return [];
+    return [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+      !party.isFleetmate(c.rsc?.get(o.nameRsc)) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= reach);
+  }
+
   refuseEngagement(name) {
     const key = String(name || '').toLowerCase();
     if (!key) return null;
@@ -9558,20 +9580,48 @@ export class Autopilot {
     // camped monster its attacks back, and spends several seconds being hit to reach
     // a square that is no safer than the one it left. Staying put and not swinging
     // stops the damage immediately and for free.
-    if (hp !== null && hp < this.policy.fleeBelow && near.length && !sheltered) {
+    // THE FLEE LINE IS GONE. ONLY A PERSON MAKES A CHARACTER RUN.
+    //
+    // This rung used to read `hp < fleeBelow && near.length`, and `near` is built with
+    // `!(o.flags & OF.PLAYER)` — so it fired for CREATURES ONLY, which is exactly backwards
+    // from what running is good for.
+    //
+    // Running does not work on a monster. Vision is 4 + difficulty/2 squares
+    // (monster.kod:1676) and they follow; a withdrawal spends several seconds being hit to
+    // reach a square no safer than the one it left, and arrives with less health than it
+    // started with. Being bitten on the road is the ordinary condition of travel here, and
+    // the answer to it is the one already in this ladder: a wall the creature cannot path
+    // to, and rest. That is what the rest of this stage does, and it is what happens now
+    // when this rung declines.
+    //
+    // A PERSON IS THE OPPOSITE CASE, and it is not a matter of degree. A safe spot works
+    // because a creature cannot path to it — that says nothing whatever about somebody who
+    // can walk to the same square, swing first and take the pack. Dying to the troll costs
+    // the walk back; dying to the player costs everything carried. Distance is the only
+    // answer to a person, and it is the only case where it is the right one.
+    //
+    // The threshold survives for the things that are NOT flight: when to stop swinging
+    // (`disengageAt`), when a wall outranks a journey, and when the watchdog interrupts a
+    // blind walk so the ladder can think. What it no longer does is make a character run
+    // away from a monster.
+    const strangers = this.strangersInReach();
+    if (hp !== null && hp < this.policy.fleeBelow && strangers.length && !sheltered) {
       this.tally.withdrawals++;
       // ALL THE WAY, NOT FOUR SQUARES. This called withdraw(), a move to a wall a few
       // squares off, and the town trip above only engages after THREE flees in a row
       // (townTripIfCornered) — so the first two flees from a losing fight in the open
       // were a shuffle that nothing was fooled by. Monster vision is 4 + difficulty/2
       // (monster.kod:1676): four squares is inside every creature in the game.
-      this.note('running for safety', {
-        health: Math.round(hp * 100) + '%', from: near.map(o => c.rsc.get(o.nameRsc)),
-        why: 'below the flee threshold in the open — distance is the only thing that ' +
-             'stops this, and a wall four squares away is not distance' });
+      this.note('running for safety — a PERSON is on us', {
+        health: Math.round(hp * 100) + '%',
+        players: strangers.map(o => c.rsc?.get(o.nameRsc) ?? '?'),
+        monsters_near: near.length,
+        why: 'hurt in the open with somebody who is not ours in reach. A wall stops ' +
+             'monsters and says nothing about a person, so distance is the only answer — ' +
+             'and a wall four squares away is not distance' });
       await this.retreatToSafety({
-        because: 'below the flee threshold in the open',
-        from: near.map(o => c.rsc.get(o.nameRsc)),
+        because: 'below the flee threshold with a player in reach',
+        from: strangers.map(o => c.rsc?.get(o.nameRsc) ?? '?'),
       });
       return HANDLED;
     }
