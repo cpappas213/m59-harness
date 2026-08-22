@@ -1851,6 +1851,45 @@ export class Autopilot {
                  ?? (floor ? 0 : (p.eatToAtLeast ?? EAT_TO_AT_LEAST));
     if (!floor && !ceiling) return false;              // only if someone set it to zero on purpose
 
+    // RECOVERING IN THE OPEN IS NOT AN OPTION, AND EATING IS RECOVERING.
+    //
+    // Raising vigor means standing still and not looking, exactly as resting does — the
+    // ladder has always refused a REST in a room that can reach us, and this path walked
+    // straight past that rule because it is filed under provisioning rather than survival.
+    // It is the same act with the same cost.
+    //
+    // AT THE TOP OF THE METHOD, because the first version of this guard sat lower down, just
+    // before the climb, and `provision` can return 'ate' before it ever gets there: an empty
+    // larder falls into `cookSomething()`, and cooking is standing still too. Bbbb's last two
+    // decisions, one second before a troll killed it in a room holding SIXTEEN monsters, were
+    // "ate while stocking up" and "ate rather than reporting myself trapped". The guard was
+    // live; it was simply downstream of the branch that fired.
+    //
+    // Deferred rather than abandoned: nothing here is unset, so the moment the character is
+    // somewhere it can afford to stand still — behind a wall, in a sanctuary, or one room on
+    // — it eats.
+    if (!this.hold && !this.sanctuary?.()) {
+      const cc = this.s?.client;
+      const hostiles = cc?.room?.objects
+        ? [...cc.room.objects.values()].filter(o =>
+            o.id !== cc.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER))
+        : [];
+      if (hostiles.length) {
+        if (!this.notedNoEatingHere) {
+          this.notedNoEatingHere = true;
+          this.note('not eating here — something in this room can reach us', {
+            vigor, floor, ceiling, monsters_in_room: hostiles.length,
+            why: 'raising vigor is standing still and not looking, which is the same act as ' +
+                 'resting and costs the same. The ladder refuses a rest in a room that can ' +
+                 'reach us; this is that rule, applied to the larder — and to the cooking pot.',
+            next: 'still hungry — it will eat behind a wall, in a sanctuary, or one room on',
+          });
+        }
+        return false;
+      }
+    }
+    this.notedNoEatingHere = false;
+
     const s = this.s;
     const vigor = v.vigor?.value ?? 0;
     const larder = this.larder(s.client);
@@ -1896,45 +1935,6 @@ export class Autopilot {
     // ceiling — otherwise the implicit target above would be computed and never used.
     if (vigor < floor || (!floor && vigor < ceiling)) this.climbing = true;
 
-    // RECOVERING IN THE OPEN IS NOT AN OPTION, AND EATING IS RECOVERING.
-    //
-    // Raising vigor means standing still and not looking, exactly as resting does — the
-    // ladder has always refused a REST in a room that can reach us and this path walked
-    // straight past that rule, because it is filed under provisioning rather than under
-    // survival. It is the same act with the same cost.
-    //
-    // Bbbb, from its own frames: `doing: recovering` at 29,26 in the Cragged Mountains with
-    // EIGHT threats in the room, then a detour eight squares west, an oscillation, and a
-    // death at 38,25 twenty squares off its route. Its last vigor reading was 89, above the
-    // 80 that resting alone can reach — so it had eaten, there, with trolls on it. The other
-    // post-mortem says it in the character's own words: "ate rather than reporting myself
-    // trapped".
-    //
-    // A room with something hostile in it is not somewhere to open the larder. The vigor is
-    // worth having and it is worth having SOMEWHERE ELSE — behind a wall, in a sanctuary, or
-    // in the next room. Deferred rather than abandoned: `climbing` stays set, so the moment
-    // the character is somewhere it can afford to stand still, it eats.
-    if (this.climbing && !this.hold && !this.sanctuary?.()) {
-      const c = this.s?.client;
-      const hostiles = c?.room?.objects
-        ? [...c.room.objects.values()].filter(o =>
-            o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER))
-        : [];
-      if (hostiles.length) {
-        if (!this.notedNoEatingHere) {
-          this.notedNoEatingHere = true;
-          this.note('not eating here — something in this room can reach us', {
-            vigor, floor, ceiling, monsters_in_room: hostiles.length,
-            why: 'raising vigor is standing still and not looking, which is the same act as ' +
-                 'resting and costs the same. The ladder refuses a rest in a room that can ' +
-                 'reach us; this is that rule, applied to the larder.',
-            next: 'still climbing — it will eat behind a wall, in a sanctuary, or one room on',
-          });
-        }
-        return false;
-      }
-    }
-    this.notedNoEatingHere = false;
 
     if (this.climbing) {
       this.doing = 'recovering';
@@ -9793,51 +9793,27 @@ export class Autopilot {
     // camped monster its attacks back, and spends several seconds being hit to reach
     // a square that is no safer than the one it left. Staying put and not swinging
     // stops the damage immediately and for free.
-    // THE FLEE LINE IS GONE. ONLY A PERSON MAKES A CHARACTER RUN.
+    // THERE IS NO FLEE RUNG AT ALL ANY MORE.
     //
-    // This rung used to read `hp < fleeBelow && near.length`, and `near` is built with
-    // `!(o.flags & OF.PLAYER)` — so it fired for CREATURES ONLY, which is exactly backwards
-    // from what running is good for.
+    // It went in two steps and the second is the operator's call rather than a measurement.
+    // First for monsters, because running does not work on one: vision is 4 + difficulty/2
+    // squares (monster.kod:1676) and they follow, so a withdrawal spends several seconds
+    // being hit to reach a square no safer than the one it left. Then for people too.
     //
-    // Running does not work on a monster. Vision is 4 + difficulty/2 squares
-    // (monster.kod:1676) and they follow; a withdrawal spends several seconds being hit to
-    // reach a square no safer than the one it left, and arrives with less health than it
-    // started with. Being bitten on the road is the ordinary condition of travel here, and
-    // the answer to it is the one already in this ladder: a wall the creature cannot path
-    // to, and rest. That is what the rest of this stage does, and it is what happens now
-    // when this rung declines.
+    // What is left is the set of answers that actually change a situation: a wall a creature
+    // cannot path to, resting behind it, breaking off without moving when already sheltered,
+    // and carrying on to where we were going. Walking away was never one of them — it buys
+    // seconds and spends them going nowhere, and in a room that is the danger it spends them
+    // going AWAY FROM THE DOOR.
     //
-    // A PERSON IS THE OPPOSITE CASE, and it is not a matter of degree. A safe spot works
-    // because a creature cannot path to it — that says nothing whatever about somebody who
-    // can walk to the same square, swing first and take the pack. Dying to the troll costs
-    // the walk back; dying to the player costs everything carried. Distance is the only
-    // answer to a person, and it is the only case where it is the right one.
+    // The threshold itself is untouched and still does the things that are not flight: when
+    // to stop swinging (`disengageAt`), when a wall outranks a journey, and when the watchdog
+    // interrupts a blind walk so the ladder can think with fresh numbers.
     //
-    // The threshold survives for the things that are NOT flight: when to stop swinging
-    // (`disengageAt`), when a wall outranks a journey, and when the watchdog interrupts a
-    // blind walk so the ladder can think. What it no longer does is make a character run
-    // away from a monster.
-    const strangers = this.strangersInReach();
-    if (hp !== null && hp < this.policy.fleeBelow && strangers.length && !sheltered) {
-      this.tally.withdrawals++;
-      // ALL THE WAY, NOT FOUR SQUARES. This called withdraw(), a move to a wall a few
-      // squares off, and the town trip above only engages after THREE flees in a row
-      // (townTripIfCornered) — so the first two flees from a losing fight in the open
-      // were a shuffle that nothing was fooled by. Monster vision is 4 + difficulty/2
-      // (monster.kod:1676): four squares is inside every creature in the game.
-      this.note('running for safety — a PERSON is on us', {
-        health: Math.round(hp * 100) + '%',
-        players: strangers.map(o => c.rsc?.get(o.nameRsc) ?? '?'),
-        monsters_near: near.length,
-        why: 'hurt in the open with somebody who is not ours in reach. A wall stops ' +
-             'monsters and says nothing about a person, so distance is the only answer — ' +
-             'and a wall four squares away is not distance' });
-      await this.retreatToSafety({
-        because: 'below the flee threshold with a player in reach',
-        from: strangers.map(o => c.rsc?.get(o.nameRsc) ?? '?'),
-      });
-      return HANDLED;
-    }
+    // A JOURNEY IS SEPARATE, and deliberately so. `passTravelling` still ends one when a
+    // PLAYER is emptying the bar, because dying to a troll costs the walk back and dying to a
+    // person costs everything carried — see rung 5 there. That is about abandoning an
+    // objective, not about running away from a room.
     if (hp !== null && hp < this.policy.fleeBelow && near.length && sheltered) {
       // NOT a mulligan. This counter used to be shared with the play-dead reconnect, which
       // made it useless for the only question anybody asks it: DID PLAYING DEAD FIRE. A
@@ -15384,50 +15360,28 @@ export class Autopilot {
       }
     }
 
-    if (!this.strangersInReach().length) {
-      this.note('not walking away — a wall would help and distance will not', {
-        threats: threats.length,
-        why: 'monsters follow (vision is 4 + difficulty/2 squares), so walking away spends ' +
-             'seconds being hit and arrives somewhere no safer. There is no wall here, so ' +
-             'the way out is ON — the exit is the only square that ends this.',
-        instead: 'carrying on to the objective',
-      });
-      return { withdrawn: false, declined: 'monsters only, and nowhere better to stand' };
-    }
-
-    // Fall back to distance, and say plainly that this is the weak version.
-    this.note('no wall to withdraw to', {
-      why: spot.why, threats: threats.length,
-      consequence: 'falling back to walking away, which buys seconds rather than safety',
-      hint: 'this room cannot be fought in safely at this level; somewhere with a corner is' });
-    // Only now is leaving the hold right — we have nowhere better, so the siege has to
-    // be broken before the walk.
-    // FORCED: this is the survival case, not a discretionary one. A hurt character is
-    // exactly who is withdrawing, so the hurt refusal would block the one departure
-    // that must always be allowed.
-    await this.leaveHold('withdrawing from a fight we are losing', { force: true });
-    const me = c.self, geo = s.world?.geometry;
-    if (!me || !geo) { this.note('cannot withdraw', { why: 'no geometry' }); return; }
-    const away = (r, col) => Math.min(...threats.map(t => Math.hypot(col - t.col, r - t.row)));
-
-    let best = null;
-    for (let r = 1; r <= geo.rows; r++) {
-      for (let col = 1; col <= geo.cols; col++) {
-        if (!geo.walkable(r, col)) continue;
-        const d = away(r, col);
-        if (d < 6) continue;                       // not far enough to be worth it
-        const p = geo.path(me.row, me.col, r, col);
-        if (!p.found) continue;
-        // Prefer close-to-reach among the far-enough, so we spend the fewest seconds
-        // being hit on the way out.
-        if (!best || p.steps.length < best.steps) best = { row: r, col, steps: p.steps.length, dist: d };
-      }
-    }
-    if (!best) { this.note('nowhere to withdraw to', { why: 'no reachable square far enough away' }); return; }
-    const walk = await s.walkTo(best.col, best.row, { maxSteps: Math.max(30, best.steps + 10) });
-    const terminal = this.terminalMovement(walk, 'withdrawal movement');
-    if (terminal) return { withdrawn: false, ...terminal };
-    this.note('withdrew', { to: { col: best.col, row: best.row }, steps: walk.steps, arrived: walk.arrived });
+    // AND THERE IS NO WALKING AWAY LEFT. A WITHDRAWAL IS A WALL, OR IT IS FORWARD.
+    //
+    // This branch used to pick any square six from the nearest threat and walk to it. Its own
+    // comment always said it "precedes most of the deaths", and the record says why: Bbbb,
+    // crossing the Cragged Mountains at 2 health with no reachable wall, was sent EAST to
+    // 38,25 — twenty squares off a rail running down column 18 — and died there.
+    //
+    // Distance does not work on a monster, which follows; and against a person a wall says
+    // nothing anyway, which is why the answer to somebody hostile is to end the JOURNEY (see
+    // passTravelling) rather than to shuffle across the room. Either way this branch was
+    // spending the seconds that kill, in the direction that helps least.
+    //
+    // So: a wall if there is one, the next wall on the route if we are travelling, and
+    // otherwise carry on. The room is what is dangerous; the exit is the only square that
+    // ends it.
+    this.note('not walking away — nowhere here is safer than here', {
+      threats: threats.length,
+      why: 'a monster follows, so distance buys seconds and spends them going nowhere. There ' +
+           'is no wall to be had here, so the way out is ON.',
+      instead: 'carrying on to the objective',
+    });
+    return { withdrawn: false, declined: 'no wall here, and walking away is not an answer' };
   }
 }
 

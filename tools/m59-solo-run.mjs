@@ -202,6 +202,8 @@ for (const r of rows) {
   const sent = await call('travel', { agent: r.agent, to: TO, max_hops: 30, background: true }, 60000);
   let ended = null, low = null, died = false, restedMs = 0;
   const rooms = new Set([FROM]);
+  const perRoom = {};                 // room number -> seconds spent in it
+  let roomNow = FROM;
   if (sent?._error || sent?.refused) {
     ended = 'refused';
   } else {
@@ -227,6 +229,14 @@ for (const r of rows) {
       // conflating them is what this whole column exists to prevent.
       if (isResting(ap)) restedMs = Math.min(restedMs + 5000, REST_CREDIT_MS);
       const room = st?.where?.num ?? null;
+      // SECONDS PER ROOM, because a journey that fails is usually a journey that was slow
+      // somewhere specific, and a room total hides it. The operator crosses Ukgoth in under a
+      // minute; a leg that spends six hundred seconds getting through has spent them
+      // somewhere, and "which room" is the whole question.
+      if (room != null) {
+        if (roomNow !== room) roomNow = room;
+        perRoom[room] = (perRoom[room] ?? 0) + 5;
+      }
       const hp = st?.vitals?.health?.value ?? null;
       if (room != null) rooms.add(room);
       if (hp != null && (low === null || hp < low)) low = hp;
@@ -244,10 +254,29 @@ for (const r of rows) {
   const restSecs = Math.round(restedMs / 1000);
   const at = await call('status', { agent: r.agent }, 30000);
   results.push({ character: r.character, ended, secs, restSecs, died, low,
-                 endedIn: at?.where?.num ?? null, rooms: [...rooms] });
+                 endedIn: at?.where?.num ?? null, rooms: [...rooms], perRoom });
   console.log(`  ${String(r.character).padEnd(12)} ${String(ended).padEnd(10)} ${String(secs).padStart(3)}   ` +
               `${String(FROM).padStart(4)} -> ${String(at?.where?.num ?? '?').padStart(5)}   ` +
               `${String(low ?? '?').padStart(3)}  ${String(restSecs).padStart(4)}r  ${[...rooms].join(',')}`);
+  // WHERE THE TIME WENT, worst room first. Sampled at the poll interval, so it is coarse —
+  // but a room holding a character for minutes shows up unmistakably, and that is the
+  // question this answers.
+  const spent = Object.entries(perRoom).sort((x, y) => y[1] - x[1]).filter(([, sec]) => sec >= 10);
+  if (spent.length)
+    console.log('               time by room: ' +
+                spent.map(([num, sec]) => num + '=' + sec + 's').join('  '));
+}
+
+// AND THE SAME QUESTION ACROSS THE WHOLE RUN. One slow room costs every character, so the
+// total per room is the thing to attack; a single leg's figure is one sample of it.
+const totals = {};
+for (const r of results) for (const [num, sec] of Object.entries(r.perRoom ?? {}))
+  totals[num] = (totals[num] ?? 0) + sec;
+const worst = Object.entries(totals).sort((x, y) => y[1] - x[1]).slice(0, 8);
+if (worst.length) {
+  console.log('');
+  console.log('seconds spent per room, worst first (all legs):');
+  for (const [num, sec] of worst) console.log('  ' + String(sec).padStart(5) + 's  room ' + num);
 }
 
 const arrived = results.filter(r => r.ended === 'arrived').length;

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// ONLY A PERSON MAKES A CHARACTER RUN. THERE IS NO LONGER A FLEE LINE FOR MONSTERS.
+// NOTHING MAKES A CHARACTER RUN ANY MORE. THERE IS NO FLEE RUNG AT ALL.
 //
 //   node tools/m59-fleeline-test.mjs
 //
@@ -102,27 +102,29 @@ console.log('a stranger is a PERSON who is not one of ours');
 }
 
 console.log('');
-console.log('THE FLEE LINE NO LONGER FIRES FOR MONSTERS');
+console.log('THERE IS NO FLEE RUNG AT ALL — NOT FOR A MONSTER, NOT FOR A PERSON');
 {
   const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
   const stage = src.slice(src.indexOf('async passFleeAndRest'),
                           src.indexOf('async passFollow'));
-
-  // The rung is identified by the withdrawal it performs, and what it is GATED on is the
-  // whole assertion: `near` is monsters-only by construction, so a rung testing `near.length`
-  // is a rung that runs from creatures.
-  const rung = stage.slice(stage.indexOf('this.tally.withdrawals++') - 900,
-                           stage.indexOf('this.tally.withdrawals++') + 200);
-  ok('the withdrawal is gated on strangers being in reach',
-     /strangers\.length/.test(rung), rung.slice(-260));
-  ok('and NOT on `near`, which is built with !(o.flags & OF.PLAYER)',
-     !/&&\s*near\.length\s*&&\s*!sheltered/.test(rung));
-  ok('`near` is still monsters-only, so the gate above means what it says',
-     /!\(o\.flags & OF\.PLAYER\)/.test(stage.slice(0, stage.indexOf('const hostiles'))));
-  // The reason has to survive into the journal, or a post-mortem cannot tell a flee from a
-  // creature apart from a flee from a person.
-  ok('and the journal says a person caused it',
-     /running for safety — a PERSON is on us/.test(stage));
+  // It went in two steps. First for monsters, because running does not work on one — vision
+  // is 4 + difficulty/2 squares and they follow, so a withdrawal spends seconds being hit to
+  // reach a square no safer than the one it left. Then for people too, which is the
+  // operator's call rather than a measurement.
+  //
+  // What is left is the set of answers that change a situation: a wall a creature cannot
+  // path to, resting behind it, breaking off without moving when already sheltered, and
+  // carrying on. Walking away was never one of them.
+  ok('the stage no longer withdraws on a health threshold at all',
+     !/this\.tally\.withdrawals\+\+/.test(stage));
+  ok('and nothing in it runs for safety any more',
+     !/running for safety/.test(stage));
+  ok('and it says why, where the rung used to be',
+     /THERE IS NO FLEE RUNG AT ALL ANY MORE/.test(stage));
+  // The one thing that still stops in place, because it is not flight: already behind a wall,
+  // stop swinging and let the fight end itself.
+  ok('breaking off without moving survives — it is the opposite of running',
+     /breaking off without moving/.test(stage));
 }
 
 console.log('');
@@ -160,25 +162,22 @@ console.log('the ladder still has an answer for a monster');
 }
 
 console.log('');
-console.log('AND THE SAME RULE AT THE BOTTOM OF THE LADDER: NO WALL, NO PERSON, NO WALKING AWAY');
+console.log('A WITHDRAWAL IS A WALL, OR IT IS FORWARD — NEVER AWAY');
 {
   const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
   const w = src.slice(src.indexOf('async withdraw(threats)'),
-                      src.indexOf('async withdraw(threats)') + 6000);
-  // `withdraw`'s last resort picks any square six squares from the nearest threat, with no
-  // regard for where the journey is going. Its own comment always said it "precedes most of
-  // the deaths"; the record says why. Bbbb, crossing the Cragged Mountains at 2 health with
-  // no reachable wall, was sent EAST to 38,25 — twenty squares off a rail running down
-  // column 18 — and died there. Fifty seconds in that room, nine squares of net progress,
-  // against a human who crosses it in about ten.
-  ok('the walk-away fallback asks whether a person is in reach',
-     /strangersInReach\(\)\.length/.test(w), w.slice(0, 200));
-  ok('and declines for monsters rather than walking away from the door',
-     /declined: 'monsters only/.test(w));
-  ok('and says what it is doing instead, so a post-mortem can see the choice',
-     /carrying on to the objective/.test(w));
-  // The exception survives, for the same reason it does in the flee rung.
-  ok('while a person still gets the distance answer', /no wall to withdraw to/.test(w));
+                      src.indexOf('async withdraw(threats)') + 7000);
+  // The old last resort picked any square six from the nearest threat with no regard for
+  // where the journey was going. Bbbb, at 2 health in the Cragged Mountains with no reachable
+  // wall, was sent EAST to 38,25 — twenty squares off a rail running down column 18 — and
+  // died there.
+  ok('there is no square-hunting fallback left', !/const away = \(r, col\)/.test(w), 'the distance search');
+  ok('and nothing reports having withdrawn to open floor', !/this\.note\('withdrew',/.test(w));
+  ok('a wall is still taken when there is one', /withdrew to a defensible square/.test(w));
+  ok('and during a journey it goes to the next wall on the ROUTE',
+     /withdrawing FORWARD — the next wall on the route/.test(w));
+  ok('otherwise it declines and says the way out is on',
+     /nowhere here is safer than here/.test(w) && /carrying on to the objective/.test(w));
 }
 
 console.log('');
