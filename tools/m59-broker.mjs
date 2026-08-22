@@ -7669,8 +7669,35 @@ class Session {
       // the book back, "OK then FAIL at the same timestamp" is one event wearing two hats,
       // and it inflated every count taken from it since the check was added.
       const landedNow = Number(this.world?.room?.num ?? NaN);
-      const wrongRoom = r.left && Number.isFinite(landedNow) && nextHop.to != null
+      // A ROOM NUMBER READ ONCE IS NOT A ROOM YOU ARE IN.
+      //
+      // This check used to believe a single reading, and the reading blinks. From the
+      // collision trace, the same shape every time and for both characters:
+      //
+      //     room 587 x 6      six steps of the baked line
+      //     room 586 x 1      ONE move reads the Main gate
+      //     room 587 x 6      back again, and the line starts over
+      //
+      // The body was at 14,62 walking to 15,61 — south-west, FIVE columns from the boundary
+      // and heading away from it. Nothing there can enter the Main gate to the city of Tos,
+      // and a character that had would be there for many moves and would have to walk back
+      // across an edge to return. It never left the Western border of the Twisted Wood.
+      //
+      // So the wrong-room check was firing on a phantom, tearing down a crossing that was
+      // working, and the rail restarted from the anchor each time. Every conclusion built on
+      // "crossed into 586 instead of 597" — the hop bans, the reroute through the Outskirts,
+      // the three fixes aimed at a drift — was chasing an instrument, not a bug.
+      //
+      // Confirmed before it is believed: read the room back and require it to still disagree.
+      // A real crossing survives that; a blink does not.
+      let wrongRoom = r.left && Number.isFinite(landedNow) && nextHop.to != null
         && landedNow !== Number(nextHop.to);
+      if (wrongRoom) {
+        await this.pacer.submit('read', () => this.client.roomContents()).catch(() => null);
+        await this.client.waitFor({ kinds: ['room-contents'], timeoutMs: 1500 }).catch(() => null);
+        const confirmed = Number(this.world?.room?.num ?? NaN);
+        if (!Number.isFinite(confirmed) || confirmed === Number(nextHop.to)) wrongRoom = false;
+      }
       this.noteTransit({
         room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
         ms: inRoomMs, walkMs: Date.now() - walkBegan, ok: r.left && !wrongRoom,
@@ -7794,8 +7821,7 @@ class Session {
         const died = landedIn === 1;
         const wrong = died
           ? `died on the way to ${nextHop.to} — this is the Underworld, not a wrong doorway`
-          : `crossed into ${landedIn} instead of ${nextHop.to} — that boundary carries ` +
-            `more than one exit`;
+          : `crossed into ${landedIn} instead of ${nextHop.to} — confirmed by a second read`;
         // NOT RECORDED AGAIN — the single transit row above already carries this, with the
         // room we actually landed in beside it.
         log.push({ from: here.name, to: nextHop.to_name, via: exit.kind, ok: false, reason: wrong });
