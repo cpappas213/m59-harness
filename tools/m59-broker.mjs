@@ -4476,6 +4476,9 @@ class Session {
     // Only when the COLLISION view is what refused. A coarse-grid "no route" is the room
     // telling us something, and re-asking it the same question would just be slower.
     const blockedEdges = new Set();
+    // One re-centre per square per walk. Standing in the middle either helps or it does not;
+    // trying it twice from the same square is the dither this is meant to remove.
+    const recentredAt = new Set();
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     // AN EDGE THE MOVER CANNOT WALK IS A FACT ABOUT THE MAP, NOT ABOUT THIS WALK.
     //
@@ -5037,6 +5040,29 @@ class Session {
       const hitSomething = r.reason === 'object_blocked';
       if (hitSomething && refunded < maxSteps) { taken -= hop; refunded++; }
 
+      // THE WALL-HUG RECOVERY BELONGS HERE TOO, NOT ONLY ON A RAIL.
+      //
+      // `recentreInSquare` was added to `followRail` and cut room 586's geometry refusals
+      // from 144 to 21 in a measured pair of runs. The ordinary walker never got it, and it
+      // is the same failure: the bake traces centre to centre, the mover traces from where
+      // the body actually is, and a body slid against a wall inside its own square is refused
+      // a step the geometry plainly allows.
+      //
+      // 586's row-47 corridor is where this still shows: `47,14 -> 47,13` refused eight
+      // times, `48,15 -> 47,13` twelve, with the body sending from 47,11, 47,12 and 48,12
+      // over and over. Every one of those squares is walkable and every step between them
+      // answers `moverStepLands` true.
+      //
+      // Once per square, and only for a geometry refusal that did not move the body: a
+      // refusal that survives standing in the middle is a real one, and the blame below is
+      // then the right answer. Guarded because `walkTo` is lifted out of this file by text.
+      if (!hitSomething && didNotMove && r.reason === 'geometry_blocked'
+          && was && !recentredAt.has(`${was.row},${was.col}`)
+          && typeof this.recentreInSquare === 'function') {
+        recentredAt.add(`${was.row},${was.col}`);
+        if (await this.recentreInSquare().catch(() => false)) continue;
+      }
+
       // THE EDGE THAT REFUSED IS THE ONE WE ASKED FOR, AND IT IS NAMED FROM WHERE WE
       // ASKED IT — not from where we ended up. That distinction is the whole of this fix.
       // A slid step leaves the character at neither end of the step it requested, so
@@ -5552,6 +5578,47 @@ class Session {
       }
     }
     return null;
+  }
+
+  /**
+   * STEP OFF THE DOORWAY YOU JUST CAME THROUGH.
+   *
+   * A crossing lands the body ON the far room's boundary — that is what a boundary is — and
+   * the very next movement is then one square from leaving again. Where the edge carries
+   * more than one exit that is not a wasted step, it is the WRONG ROOM; and where it carries
+   * one, it is straight back where we came from.
+   *
+   * Measured: `587 -> 597 OK` immediately followed by `587 -> 597 FAIL crossed into 586`.
+   * The first crossing genuinely succeeded — the check verifies the room number — and then
+   * the character drifted west out of 597's arrival anchor at 5,1, which sits on 597's own
+   * west boundary, and was back in 587. The same shape as boarding a rail at a live doorway,
+   * one room later.
+   *
+   * One square inland, onto ground the mover already agrees is standable, and only when the
+   * body is actually on a boundary. If it fails, nothing is worse than it was.
+   */
+  async stepInland() {
+    const geo = this.world?.geometry;
+    const me = this.client?.self;
+    if (!geo || !me) return false;
+    const rows = Number(geo.rows), cols = Number(geo.cols);
+    if (!Number.isFinite(rows) || !Number.isFinite(cols)) return false;
+    const dr = me.row === 1 ? 1 : me.row === rows ? -1 : 0;
+    const dc = me.col === 1 ? 1 : me.col === cols ? -1 : 0;
+    if (!dr && !dc) return false;                       // not on a boundary; nothing to do
+    // Straight in first, then the two axis-aligned fallbacks — a corner has two ways off it
+    // and only one of them may be floor.
+    const tries = [{ dr, dc }, { dr, dc: 0 }, { dr: 0, dc }].filter(t => t.dr || t.dc);
+    for (const t of tries) {
+      const r = me.row + t.dr, c = me.col + t.dc;
+      if (typeof geo.standable === 'function' && !geo.standable(r, c)) continue;
+      if (typeof geo.moverStepLands === 'function' && !geo.moverStepLands(me.row, me.col, r, c)) continue;
+      const out = await this.step(c, r).catch(() => null);
+      const now = this.client?.self;
+      if (now && now.row === r && now.col === c) return true;
+      if (out?.left_room) return false;                 // it went out anyway; nothing to add
+    }
+    return false;
   }
 
   /**
@@ -7692,6 +7759,12 @@ class Session {
       }
       hops++;
       stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
+      // AND GET OFF THE DOORWAY BEFORE DOING ANYTHING ELSE. See stepInland: a crossing lands
+      // on the far room's boundary, and the next movement from there is one square from
+      // leaving again — sometimes into a different room than the one we came from.
+      // Guarded: `travel` is lifted out of this file by text and evaluated against a fake
+      // session elsewhere, and a bare call there is a TypeError rather than a no-op.
+      if (typeof this.stepInland === 'function') await this.stepInland().catch(() => false);
       cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
       await healAtAWall().catch(() => false);
 
