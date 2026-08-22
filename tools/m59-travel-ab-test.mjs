@@ -18,6 +18,8 @@
 // built on damage would reject the intervention precisely when it is working.
 
 import { readFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { twoProportion, eventsNeeded, isTravelTrip } from './m59-travel-ab.mjs';
 import { Autopilot } from './m59-autopilot.mjs';
 import { OF } from './m59-parse.mjs';
@@ -29,6 +31,28 @@ const AUTOPILOT_SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.ur
 // rather than asserting against whatever happens to be in memory.
 const FLEETMATE = 'AbsolutelyOurs';
 party.setRosterSource(() => new Set([FLEETMATE]));
+
+// AN OFFLINE TEST MUST NOT READ THIS MACHINE'S ORDERS, AND THIS ONE DID.
+//
+// `travelHoldCandidate` refuses a hold while the FLEET-WIDE grudge book has a live entry —
+// somebody who attacked one of ours within the hour. That book is a real, gitignored file
+// belonging to whichever fleet is playing, and this suite was reading it.
+//
+// So seven assertions here passed or failed on whether a stranger had hit one of our
+// characters in the preceding sixty minutes. It read 85/0 for weeks because the book was
+// empty, then 78/7 the afternoon a player called Chris Farley hit five of ours ten times —
+// and the failures pointed at vigor, which had nothing to do with it. A day was nearly
+// spent bisecting a code change that had never been wrong.
+//
+// The rule this belongs to is already written down for loadouts and tuning: an instruction
+// that arrives from somebody else's afternoon is obeyed silently. A TEST that reads one is
+// the same bug wearing a lab coat — it reports on the machine instead of on the repository.
+//
+// `GRUDGE_FILE()` is evaluated per call, so pointing it at a path that does not exist is
+// enough, and it has to happen before the first `travelHoldCandidate`. Same pattern
+// m59-collision-trace-test.mjs uses for the trace file.
+process.env.M59_GRUDGE_FILE =
+  join(tmpdir(), `m59-travel-ab-test-no-grudges-${process.pid}.json`);
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
