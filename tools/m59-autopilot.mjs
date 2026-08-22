@@ -8924,7 +8924,27 @@ export class Autopilot {
     // one crossing rather than one journey.
     const shelterRoom = this.s.world?.room?.num ?? null;
     if (this.shelterStops?.room !== shelterRoom) this.shelterStops = { room: shelterRoom, taken: 0 };
-    const inRealTrouble = wouldPlayDead || (hp !== null && hp < this.safety().fleeAt);
+    // WHAT "REAL TROUBLE" MEANS, NOW THAT THE FLEE LINE NO LONGER MEANS RUN.
+    //
+    // This bypass — shelter without limit, budget or no budget — used to key on the flee
+    // line. That was coherent while the flee line was the point at which a character
+    // abandoned what it was doing; it is not coherent now that only a person makes a
+    // character run. A threshold that no longer triggers flight was still granting unlimited
+    // interruptions, and in a zone that outranks the character `travelShelterBelow` returns
+    // 1 — ANY damage — so the two together made a crossing impossible to even begin:
+    //
+    //   586  cancelled at 0 of 40 by a travel guard rung taking the character back
+    //
+    // Step zero, before the first square. The Twisted Wood cannot be crossed without being
+    // bitten, so the bypass was permanently open and the budget never applied to anything.
+    //
+    // The doomed line is the one that still means an emergency: inside two of the biggest
+    // hits this game lands, which is where a wall is worth any number of interruptions. Above
+    // it the budget applies and the character crosses the room it was sent to cross.
+    // `travel_shelter_unlimited_below` restores the old behaviour for anyone who wants it.
+    const emergencyBelow = this.policy.travelShelterUnlimitedBelow
+      ?? (this.policy.doomedInOpenBelow ?? 0.3);
+    const inRealTrouble = wouldPlayDead || (hp !== null && hp < emergencyBelow);
     const shelterBudget = this.policy.travelShelterPerRoom ?? 2;
     const shelterSpent = !inRealTrouble && this.shelterStops.taken >= shelterBudget;
     if (shelterSpent && this.travelAllows('safe_spot') && hp !== null && near.length

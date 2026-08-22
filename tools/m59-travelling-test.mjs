@@ -491,6 +491,25 @@ console.log('A WALL MUST NOT BE ABLE TO STOP A JOURNEY FOR EVER');
   ok('below the flee line the wall still outranks everything, budget or no budget',
      await sheltered(desperate));
 
+  // AND THE LINE BETWEEN "BUDGETED" AND "UNLIMITED" IS THE DOOMED ONE, NOT THE FLEE ONE.
+  //
+  // While the flee line meant "abandon what you are doing", keying the bypass on it was
+  // coherent. It is not coherent now that only a person makes a character run: a threshold
+  // that no longer triggers flight was still granting unlimited interruptions, and in a zone
+  // that outranks the character `travelShelterBelow` returns 1 — any damage at all — so a
+  // crossing could not begin. Measured: "cancelled at 0 of 40", before the first square.
+  //
+  // 30 of 60 is below a 0.7 flee line and above the 0.3 doomed line: the old rule sheltered
+  // without limit here, the new one spends the budget and then crosses the room.
+  const midway = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
+  midway.shelterStops = { room: 535, taken: 2 };
+  ok('hurt but not doomed, the budget applies — this is what lets a crossing finish',
+     !(await sheltered(midway)));
+  // ...and one point under the doomed line it does not.
+  const doomedNow = withPlan({ health: 17, max: 60, fleeAt: 0.7 });
+  doomedNow.shelterStops = { room: 535, taken: 9 };
+  ok('and under the doomed line the wall is unlimited again', await sheltered(doomedNow));
+
   // A NEW ROOM IS A NEW CROSSING. The argument is about one room, not one journey.
   const nextRoom = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
   nextRoom.shelterStops = { room: 999, taken: 9 };
