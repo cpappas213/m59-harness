@@ -858,7 +858,8 @@ export function roomsWithin(map, fromNum, radius = 2, { avoid = AVOID_IN_TRANSIT
 // The search itself. Unchanged except that it can be told to pretend some rooms are not
 // there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
 // where we are going.
-function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = null) {
+function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = null,
+                 crossCost = null) {
   // WITH A TRANSIT PREDICATE THE STATE IS (ROOM, DOOR YOU CAME IN BY), NOT THE ROOM.
   //
   // Whether you can cross a room depends on which side you entered it from, so keying
@@ -868,8 +869,33 @@ function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = nul
   const key = transitOk ? (from, at) => `${from}>${at}` : (_from, at) => String(at);
   const seen = new Set([key(null, fromNum)]);
   const q = [[fromNum, [], null]];
+  // WHAT A ROUTE COSTS ON THE GROUND, summed over the rooms it crosses. `null` from the
+  // callback means "the table cannot say", which must not read as free — an unbaked room
+  // would otherwise win every tie by being unmeasured. Half the room's longer side is the
+  // honest stand-in: it is what a crossing of an ordinary room costs.
+  const routeCost = (hops) => {
+    if (!crossCost) return 0;
+    let total = 0;
+    for (let i = 0; i < hops.length; i++) {
+      const at = hops[i].from, cameFrom = i === 0 ? null : hops[i - 1].from;
+      if (cameFrom == null) continue;              // the first room is entered from nowhere
+      const c = crossCost(at, cameFrom, hops[i].to);
+      if (Number.isFinite(c)) { total += c; continue; }
+      const r = map.rooms[at];
+      total += Math.round(Math.max(Number(r?.rows) || 0, Number(r?.cols) || 0) / 2) || 30;
+    }
+    return total;
+  };
+  let best = null, bestDepth = Infinity;
+  const pick = (a, b) => {
+    if (!a) return b;
+    if (b.length !== a.length) return b.length < a.length ? b : a;
+    return routeCost(b) < routeCost(a) ? b : a;
+  };
   while (q.length) {
     const [at, sofar, cameFrom] = q.shift();
+    // Everything at this depth has been considered, and nothing deeper can be shorter.
+    if (best && sofar.length >= bestDepth) break;
     const room = map.rooms[at];
     if (!room) continue;
     for (const ex of passableExits(map, at)) {
@@ -883,12 +909,37 @@ function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = nul
       const hop = { from: at, fromName: room.name, to: ex.to,
                     toName: map.rooms[ex.to]?.name || `room ${ex.to}`, ...ex };
       const next = [...sofar, hop];
-      if (ex.to === toNum) return { found: true, hops: next };
+      if (ex.to === toNum) {
+        // SAME NUMBER OF ROOMS IS NOT THE SAME JOURNEY.
+        //
+        // `findPath` counts ROOMS, so two routes of equal length are indistinguishable to it
+        // and it returns whichever exit order happened to reach the destination first. On the
+        // ground they are not equal at all: crossing a room is tens of squares of walking, and
+        // the baked table already knows how many for every exit pair.
+        //
+        // Tos to Castle Victoria is the worked example. Both ways are seven rooms:
+        //
+        //   via the Main gate     587 Western border  65 steps    total 310
+        //   via East Ende         596 Outskirts       55 steps    total 298
+        //
+        // The second is shorter on every leg where they differ — a smaller room AND a shorter
+        // walk — and it also avoids the one room on this road whose east edge carries two
+        // exits. The router had no way to prefer it and picked the other by accident.
+        //
+        // So the first arrival no longer wins outright: the rest of ITS OWN DEPTH is drained
+        // and the cheapest route of that depth is returned. Depth still dominates — this can
+        // never return a longer route — and with no cost function it behaves exactly as it
+        // did, because every candidate then scores zero.
+        best = pick(best, next);
+        bestDepth = next.length;
+        continue;
+      }
       seen.add(k);
       if (avoid?.has(ex.to)) continue;         // reachable, just not walked THROUGH
       q.push([ex.to, next, at]);
     }
   }
+  if (best) return { found: true, hops: best, walk_cost: routeCost(best) };
   return { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
 }
 
@@ -955,6 +1006,25 @@ const dangerOf = (danger, room) => (danger.get(Number(room)) ?? 0)
 // so a route that crosses nine mild rooms instead of three has traded one known hazard for
 // six new chances at an unknown one. Doubling plus two hops is generous enough to walk
 // around a bad room or a bad pair, and tight enough that nothing crosses the world twice.
+/**
+ * WHAT A ROUTE COSTS ON THE GROUND, summed over the rooms it crosses.
+ *
+ * `null` from the callback means the table cannot say, which must not read as free — an
+ * unbaked room would otherwise win every tie by being unmeasured. Half the room's longer
+ * side stands in: it is roughly what crossing an ordinary room costs.
+ */
+function walkOf(map, hops, crossCost) {
+  let total = 0;
+  for (let i = 1; i < hops.length; i++) {
+    const at = hops[i].from, cameFrom = hops[i - 1].from;
+    const c = crossCost(at, cameFrom, hops[i].to);
+    if (Number.isFinite(c)) { total += c; continue; }
+    const r = map.rooms[at];
+    total += Math.round(Math.max(Number(r?.rows) || 0, Number(r?.cols) || 0) / 2) || 30;
+  }
+  return total;
+}
+
 const DETOUR_FACTOR = 2;
 const DETOUR_SLACK = 2;
 
@@ -970,7 +1040,8 @@ const DETOUR_SLACK = 2;
  * rooms that the spawn table cannot express: 534 is deadly in transit because of how many
  * things gang up in it, not because its worst single generator is remarkable.
  */
-function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null, blockedHops = null) {
+function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null, blockedHops = null,
+                    crossCost = null) {
   // Dijkstra on (worst room so far, hops). The frontier is small enough — the whole world
   // is a few hundred rooms — that a sorted insert beats a heap in both speed and reading.
   // Same keying argument as bfsPath: with a transit predicate the state carries the door
@@ -1006,8 +1077,25 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null
         // The destination's own danger is not counted: a character sent to a hunting room
         // is meant to be in it, and counting it would make every route to a good farm look
         // like a bad route.
+        // AND WHEN THE DANGER AND THE ROOM COUNT BOTH TIE, THE SHORTER WALK WINS.
+        //
+        // Ranking was (worst room, hops) and stopped there, so two equally safe routes of
+        // equal length were settled by whichever exit order arrived first. On the ground they
+        // are not equal: crossing a room is tens of squares, and the baked table knows how
+        // many. Tos to Castle Victoria is seven rooms either way — 310 baked steps by the
+        // Western border of the Twisted Wood, 298 by the Outskirts of Tos — and the planner
+        // took the longer one by accident.
+        //
+        // Third in the order, never first: a shorter walk may not buy a more dangerous room
+        // or a longer route, which is what keeps this from quietly undoing the bottleneck
+        // search above.
+        const cheaper = () => {
+          if (!crossCost || !answer) return false;
+          return walkOf(map, path, crossCost) < walkOf(map, answer.path, crossCost);
+        };
         if (!answer || cur.worst < answer.worst ||
-            (cur.worst === answer.worst && path.length < answer.hops))
+            (cur.worst === answer.worst && path.length < answer.hops) ||
+            (cur.worst === answer.worst && path.length === answer.hops && cheaper()))
           answer = { worst: cur.worst, hops: path.length, path };
         continue;
       }
@@ -1057,6 +1145,12 @@ export function findPath(map, fromNum, toNum,
                            // whose door to the TARGET cannot be walked to had no way to ask
                            // for the long way round. Strings of the form `from>to`.
                            blockedHops = null,
+                           // HOW MANY SQUARES IT IS ACROSS A ROOM, from the door you came in
+                           // by to the one you want: `(room, cameFrom, goingTo) => steps|null`.
+                           // Used only to break ties between routes of the SAME room count,
+                           // so it can never lengthen a journey. `null` means the table cannot
+                           // say and is charged a plain crossing rather than nothing.
+                           crossCost = null,
                            // internal: the strict half of the two-pass below
                            strictTransit = false } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
@@ -1071,7 +1165,7 @@ export function findPath(map, fromNum, toNum,
   // refusing costs the errand, silently.
   if ((transitOk || blockedHops?.size) && !strictTransit) {
     const strict = findPath(map, fromNum, toNum,
-      { avoid, danger, allowHazardDestination, transitOk, blockedHops, strictTransit: true });
+      { avoid, danger, allowHazardDestination, transitOk, blockedHops, crossCost, strictTransit: true });
     if (strict.found) return { ...strict, transit_checked: true };
     const loose = findPath(map, fromNum, toNum,
       { avoid, danger, allowHazardDestination, transitOk: null, blockedHops: null });
@@ -1107,10 +1201,10 @@ export function findPath(map, fromNum, toNum,
   if (danger !== false) {
     const table = danger instanceof Map ? danger : roomDanger();
     if (table.size) {
-      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null, crossing, blocked);
+      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null, crossing, blocked, crossCost);
       if (shortest.found) {
         const budget = shortest.hops.length * DETOUR_FACTOR + DETOUR_SLACK;
-        const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing, blocked);
+        const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing, blocked, crossCost);
         // A DETOUR HAS TO BE WORTH WHAT IT COSTS, AND THE BOTTLENECK SEARCH CANNOT SEE THE
         // COST AT ALL.
         //
@@ -1151,12 +1245,14 @@ export function findPath(map, fromNum, toNum,
           // genuinely worse is never refused on arithmetic.
           const allowed = Math.max(1, Math.ceil(shortest.hops.length * bought));
           if (extra > allowed) return { ...shortest,
+            walk_cost: crossCost ? walkOf(map, shortest.hops, crossCost) : undefined,
             shortest_hops: shortest.hops.length, detoured: false,
             detour_declined: { extra_hops: extra, allowed, worst_taken: worstShort,
                                worst_avoided: worstSafe,
                                why: `a ${extra}-hop detour to reduce the worst room by ` +
                                     `${Math.round(bought * 100)}% is not proportionate` } };
           return { ...safest,
+            walk_cost: crossCost ? walkOf(map, safest.hops, crossCost) : undefined,
             shortest_hops: shortest.hops.length,
             detoured: safest.hops.length > shortest.hops.length };
         }
@@ -1166,14 +1262,14 @@ export function findPath(map, fromNum, toNum,
   }
 
   if (skip?.size) {
-    const safer = bfsPath(map, fromNum, toNum, skip, crossing, blocked);
+    const safer = bfsPath(map, fromNum, toNum, skip, crossing, blocked, crossCost);
     if (safer.found) return safer;
   }
   // THE LAST RESORT STILL HONOURS THE HARD BLOCK. This line used to pass `null`, which is
   // what made every avoid a preference — and it is the line Statler's route came down.
   // A soft hazard is dropped here; a NEVER_ENTER room is not, so a journey that needs one
   // comes back `found: false` and names the room rather than walking a character into it.
-  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null, crossing, blocked);
+  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null, crossing, blocked, crossCost);
   if (!last.found && forbidden.size)
     return { ...last, blocked_by_hazard: [...forbidden],
              reason: `${last.reason} without crossing ${[...forbidden]

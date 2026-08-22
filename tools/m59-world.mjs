@@ -958,6 +958,32 @@ export class World {
     };
   }
 
+  /**
+   * HOW MANY SQUARES IT IS ACROSS A ROOM, door to door. Same shape as `transitOk`, and from
+   * the same baked table: that one answers whether a crossing is possible, this one what it
+   * costs. Used only to choose between routes of equal ROOM COUNT, so it can never make a
+   * journey longer — and `null` whenever the table cannot say, which the planner charges as
+   * an ordinary crossing rather than as free.
+   *
+   * The measured case is Tos to Castle Victoria. Both ways are seven rooms; via the Western
+   * border of the Twisted Wood is 310 baked steps and via the Outskirts of Tos is 298, and
+   * the second is shorter on every leg where they differ. The planner counted rooms, could
+   * not see any of that, and picked the longer one by accident.
+   */
+  crossCost() {
+    const table = activeRoutes();
+    if (!table) return null;
+    return (room, cameFrom, goingTo) => {
+      const inA = anchorFor(table, room, cameFrom);
+      const outA = anchorFor(table, room, goingTo);
+      if (!inA || !outA) return null;
+      if (inA.row === outA.row && inA.col === outA.col) return 0;
+      const r = table.rooms?.[room] ?? table.rooms?.[String(room)];
+      const path = r?.routes?.[`${inA.row},${inA.col}>${outA.row},${outA.col}`];
+      return typeof path === 'string' ? path.length : null;
+    };
+  }
+
   // A route to another room, expressed as things to do rather than rooms to be in.
   // Each leg says which square to stand on and which mechanism to use, because the
   // two mechanisms are not interchangeable and getting it wrong produces silence.
@@ -1036,7 +1062,8 @@ export class World {
     if (learned) for (const h of learned) blockedHops.add(h);
     const r = findPath(this.map, room.num, toRoomNum,
                        { avoid: merged, transitOk: this.transitOk(),
-                         blockedHops: blockedHops.size ? blockedHops : null });
+                         blockedHops: blockedHops.size ? blockedHops : null,
+                         crossCost: this.crossCost() });
     if (!r.found) return r;
     return {
       found: true,

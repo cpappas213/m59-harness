@@ -1081,5 +1081,64 @@ console.log('ARRIVING NEXT TO A DOOR IS ARRIVING IN IT — THE MARGIN HAS TO BE 
   }
 }
 
+
+console.log('');
+console.log('SAME NUMBER OF ROOMS IS NOT THE SAME JOURNEY');
+{
+  // `findPath` counts ROOMS, so two routes of equal length were indistinguishable and it
+  // returned whichever exit order reached the destination first. On the ground they are not
+  // equal at all: crossing a room is tens of squares of walking, and the baked table already
+  // knows how many for every exit pair.
+  //
+  // Tos to Castle Victoria, both ways seven rooms:
+  //   via the Main gate   587 Western border of the Twisted Wood  65 steps   total 310
+  //   via East Ende       596 Outskirts of Tos                    55 steps   total 298
+  const map = loadMap();
+  const have = [50, 61, 586, 587, 596, 597].every(n => map?.rooms?.[n] || map?.rooms?.[String(n)]);
+  if (!have) {
+    console.log('  --   skipped: this map does not carry the Tos rooms');
+  } else {
+    const baked = JSON.parse(readFileSync(new URL('../substrate/m59-routes.json', import.meta.url), 'utf8'));
+    const anchorTo = (room, to) => {
+      const a = (baked.rooms[String(room)]?.anchors ?? []).filter(x => Number(x.to) === Number(to));
+      return a.find(x => x.from_body) ?? a[0] ?? null;
+    };
+    const cost = (room, cameFrom, goingTo) => {
+      const inA = anchorTo(room, cameFrom), outA = anchorTo(room, goingTo);
+      if (!inA || !outA) return null;
+      const p = baked.rooms[String(room)]?.routes?.[`${inA.row},${inA.col}>${outA.row},${outA.col}`];
+      return typeof p === 'string' ? p.length : null;
+    };
+    // Both routes exist and are the same length, which is what makes this a TIE rather than
+    // a preference — the planner is not being asked to accept a longer road.
+    const viaBorder = findPath(map, 586, 598, { blockedHops: new Set(['586>596']) });
+    const viaOutskirts = findPath(map, 586, 598, { blockedHops: new Set(['586>587']) });
+    ok('both ways out of the Tos gate reach the Cragged Mountains',
+       viaBorder.found && viaOutskirts.found);
+    ok('and they are the same number of rooms',
+       viaBorder.hops.length === viaOutskirts.hops.length,
+       JSON.stringify({ border: viaBorder.hops.map(h => h.to), outskirts: viaOutskirts.hops.map(h => h.to) }));
+
+    // WITH NO COST FUNCTION THE PLANNER IS UNCHANGED — that is the safety property. It can
+    // only ever choose between equals, never accept a longer road.
+    const blind = findPath(map, 586, 598, {});
+    ok('a planner with no cost function still returns a route of that length',
+       blind.found && blind.hops.length === viaBorder.hops.length);
+
+    // AND WITH ONE, IT TAKES THE SHORTER WALK.
+    // A TRANSIT PREDICATE IS WHAT MAKES THE STATE (ROOM, DOOR YOU CAME IN BY). Without one
+    // the search keys on the room alone, so the first approach to the Twisted Wood closes it
+    // off for the second and the alternative is never even considered — which is a property
+    // of the search, not of the map. The broker always supplies one; a fixture that omits it
+    // is testing a configuration the fleet never runs.
+    const noOpinion = () => null;
+    const costed = findPath(map, 586, 598, { crossCost: cost, transitOk: noOpinion });
+    const through = costed.hops.map(h => h.to);
+    ok('given the baked crossing lengths it goes by the Outskirts of Tos',
+       through.includes(596) && !through.includes(587), JSON.stringify(through));
+    ok('and it reports what the walk cost', Number.isFinite(costed.walk_cost), String(costed.walk_cost));
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);
