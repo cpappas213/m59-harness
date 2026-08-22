@@ -7663,13 +7663,24 @@ class Session {
       // RECORDED WHETHER OR NOT IT WORKED, and the failures are the ones worth having:
       // a hop that spent two minutes being refused by ten exit squares in turn is the
       // shape this is looking for, and it is invisible in a journey-level timing.
+      // ONE HOP, ONE ROW. The wrong-room check below used to write a SECOND transit record
+      // for the same crossing, so every one of these appeared twice — once as a success,
+      // because the room really did change, and once as the failure it actually was. Reading
+      // the book back, "OK then FAIL at the same timestamp" is one event wearing two hats,
+      // and it inflated every count taken from it since the check was added.
+      const landedNow = Number(this.world?.room?.num ?? NaN);
+      const wrongRoom = r.left && Number.isFinite(landedNow) && nextHop.to != null
+        && landedNow !== Number(nextHop.to);
       this.noteTransit({
         room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
-        ms: inRoomMs, walkMs: Date.now() - walkBegan, ok: r.left,
+        ms: inRoomMs, walkMs: Date.now() - walkBegan, ok: r.left && !wrongRoom,
+        ...(wrongRoom ? { landed_in: landedNow } : {}),
         // The one that worked plus the ones that did not. Above 1 means squares are being
         // refused, which is the suspicion this exists to confirm or kill.
         tried: (r.tried?.length ?? 0) + 1,
-        reason: r.left ? null : why,
+        reason: wrongRoom
+          ? `crossed into ${landedNow} instead of ${nextHop.to} — that boundary carries more than one exit`
+          : (r.left ? null : why),
         journey: journeyId, hop: hops, destination: toRoomNum,
       });
       // A REFUSED DOORWAY IS THE ORDINARY CASE, NOT THE END OF THE JOURNEY. leaveViaAny has
@@ -7785,12 +7796,9 @@ class Session {
           ? `died on the way to ${nextHop.to} — this is the Underworld, not a wrong doorway`
           : `crossed into ${landedIn} instead of ${nextHop.to} — that boundary carries ` +
             `more than one exit`;
+        // NOT RECORDED AGAIN — the single transit row above already carries this, with the
+        // room we actually landed in beside it.
         log.push({ from: here.name, to: nextHop.to_name, via: exit.kind, ok: false, reason: wrong });
-        this.noteTransit({
-          room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
-          ms: Date.now() - enteredAt, walkMs: Date.now() - walkBegan, ok: false, tried: 1,
-          reason: wrong, journey: journeyId, hop: hops, destination: toRoomNum,
-        });
         // LEARNED AS A HOP, so the replan below routes around it instead of trying it again.
         //
         // Not the room: 587 is perfectly crossable in other directions and 597 is somewhere
