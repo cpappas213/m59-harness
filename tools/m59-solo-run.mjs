@@ -77,6 +77,14 @@ function call(name, args, ms = 90000) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
+// IS THIS CHARACTER DELIBERATELY STOPPED? Resting at a wall or in a sanctuary is the
+// survival ladder doing its job, and it is NOT the road being slow. Counted against the
+// leg's clock it produced the wrong verdict twice over: thirteen of fourteen legs ended in
+// a timeout rather than a death, and a character that spent two minutes healing on a proven
+// safe spot was recorded as having failed to cross — when what it actually did was survive.
+const RESTING = /rest|holding a (proven|untested) safe spot|healing|recovering/i;
+const isResting = ap => RESTING.test(String(ap?.activity ?? ''));
+
 // ---------------------------------------------------------------- which fleet
 const rosterFile = FLEET === '-' ? join(REPO, 'substrate', 'fleet-state.json')
                                  : join(REPO, 'substrate', 'fleets', `${FLEET}.json`);
@@ -106,7 +114,7 @@ const dm = await import('./m59-dm.mjs');
 const snap = JSON.parse(readFileSync(join(REPO, 'substrate', 'shadow-snapshot.json'), 'utf8'));
 const maxOf = name => snap.characters.find(c => c.shadow_name === name)?.max_health ?? null;
 
-console.log('  character    outcome     s   from -> ended   low   rooms');
+console.log('  character    outcome     s   from -> ended   low  rest  rooms');
 const results = [];
 for (const r of rows) {
   // Same starting conditions for every one of them, or the run measures who went first.
@@ -121,14 +129,21 @@ for (const r of rows) {
 
   const started = Date.now();
   const sent = await call('travel', { agent: r.agent, to: TO, max_hops: 30, background: true }, 60000);
-  let ended = null, low = null, died = false;
+  let ended = null, low = null, died = false, restedMs = 0;
   const rooms = new Set([FROM]);
   if (sent?._error || sent?.refused) {
     ended = 'refused';
   } else {
     for (;;) {
       await sleep(5000);
-      const st = await call('status', { agent: r.agent }, 30000);
+      const [st, ap] = await Promise.all([
+        call('status', { agent: r.agent }, 30000),
+        call('autopilot', { agent: r.agent, action: 'status' }, 30000),
+      ]);
+      // THE CLOCK PAUSES WHILE IT RESTS, and the time is kept rather than discarded — a leg
+      // that spent most of its budget healing is a different animal from one that spent it
+      // walking, and only reporting both tells them apart.
+      if (isResting(ap)) restedMs += 5000;
       const room = st?.where?.num ?? null;
       const hp = st?.vitals?.health?.value ?? null;
       if (room != null) rooms.add(room);
@@ -137,16 +152,17 @@ for (const r of rows) {
       // almost never lands on the frame where health reads zero.
       if (room === UNDERWORLD) { died = true; ended = 'DIED'; break; }
       if (room === TO) { ended = 'arrived'; break; }
-      if (Date.now() - started > TIMEOUT) { ended = 'timed out'; break; }
+      if (Date.now() - started - restedMs > TIMEOUT) { ended = 'timed out'; break; }
     }
   }
   const secs = Math.round((Date.now() - started) / 1000);
+  const restSecs = Math.round(restedMs / 1000);
   const at = await call('status', { agent: r.agent }, 30000);
-  results.push({ character: r.character, ended, secs, died, low,
+  results.push({ character: r.character, ended, secs, restSecs, died, low,
                  endedIn: at?.where?.num ?? null, rooms: [...rooms] });
   console.log(`  ${String(r.character).padEnd(12)} ${String(ended).padEnd(10)} ${String(secs).padStart(3)}   ` +
               `${String(FROM).padStart(4)} -> ${String(at?.where?.num ?? '?').padStart(5)}   ` +
-              `${String(low ?? '?').padStart(3)}   ${[...rooms].join(',')}`);
+              `${String(low ?? '?').padStart(3)}  ${String(restSecs).padStart(4)}r  ${[...rooms].join(',')}`);
 }
 
 const arrived = results.filter(r => r.ended === 'arrived').length;

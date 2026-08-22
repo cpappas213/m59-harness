@@ -10410,7 +10410,44 @@ export class Autopilot {
   //
   // It returns CONTINUE on every refusal, so refusing to resume never costs the tick — the
   // character farms, which is what it would have done before any of this existed.
+  // A REST STOP ENDS WHEN THERE IS NOTHING LEFT TO GAIN BY STANDING THERE.
+  //
+  // `leaveHold` only ever REFUSES a departure, and only while hurt. Nothing ever asked a
+  // healed character to go — so a traveller that reached a proven wall, healed to full, and
+  // topped its vigor out simply stayed. Measured: a character at 54 of 54 health and 80 of
+  // 200 vigor, which the server itself reports as `rested: true`, still reading "holding a
+  // proven safe spot" with `hold_resume_above` of 0.9 long since satisfied. Sixteen of
+  // eighteen legs across the Twisted Wood ended in a timeout rather than a death, and this
+  // is why: they were not stuck, they were parked.
+  //
+  // FULL IS FULL, AND VIGOR'S FULL IS 80 OF 200. Resting stops awarding vigor at the resting
+  // cap and everything above it has to be EATEN, so waiting for more is waiting for the
+  // timeout. Both ceilings met means the wall has given all it has.
+  //
+  // Forced, because the ordinary refusal is about being hurt and this character is not.
+  releaseRestedHold() {
+    if (!this.hold) return false;
+    const v = this.s.client?.vitals?.();
+    const hp = v?.health?.max ? v.health.value / v.health.max : null;
+    const vig = vigorPct(v);
+    if (hp === null || hp < (this.policy.holdResumeAbove ?? 0.9)) return false;
+    if (vig !== null && vig < REST_VIGOR_CAP) return false;
+    this.note('leaving the wall — full health and all the vigor resting can give', {
+      health: `${v?.health?.value}/${v?.health?.max}`,
+      vigor: `${v?.vigor?.value}/${v?.vigor?.scale_max ?? 200}`,
+      why: 'a rest stop is for getting well, and this character is as well as sitting down ' +
+           'can make it. Staying is how a journey times out without ever being in danger.',
+    });
+    this.leaveHold('rested to the ceiling — back on the road', { force: true })
+      .catch(e => this.note('could not leave the rested hold', { why: e.message }));
+    return true;
+  }
+
   async resumeSuspendedJourney(ctx) {
+    // Asked FIRST, and unconditionally: a held character that is whole should be moving
+    // whether or not it has an objective to resume. Releasing costs nothing when there is
+    // no hold, and the stage below decides where to go.
+    this.releaseRestedHold();
     const j = this.suspendedJourney;
     if (!j) return CONTINUE;
     if (this.policy.resumeTravel === false) return CONTINUE;

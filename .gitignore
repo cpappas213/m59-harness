@@ -358,3 +358,4 @@ __pycache__/
 /substrate/commute.json
 /substrate/shuttle-runs.json
 /substrate/collision-trace.jsonl
+/substrate/cragged-stalls.jsonl
