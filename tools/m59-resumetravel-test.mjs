@@ -58,7 +58,8 @@ const BROKER_SRC = readFileSync('tools/m59-broker.mjs', 'utf8');
 // Same shape as m59-travelling-test's fixture, and for the same reason: a real constructor
 // wants a session, which wants a socket, which wants a server. `who()` resolves to null so
 // `recordEvent` is a no-op and no assertion here appends to the real ledger.
-const keeper = ({ health = 37, max = 37, policy = {}, room = 535, travelled = [] } = {}) => {
+const keeper = ({ health = 37, max = 37, vigor = 80, hold = null,
+                 policy = {}, room = 535, travelled = [] } = {}) => {
   const notes = [];
   const k = Object.assign(Object.create(Autopilot.prototype), {
     journal: notes, notes, policy, claims: new Map(), passes: 1,
@@ -77,10 +78,17 @@ const keeper = ({ health = 37, max = 37, policy = {}, room = 535, travelled = []
       cancelMovement: () => ({ cancelled: true }),
       world: { room: { num: room, name: 'somewhere' } },
       client: { selfId: 1, self: { id: 1, col: 25, row: 5 }, room: { objects: new Map() },
-                vitals: () => ({ health: { value: health, max }, vigor: { value: 80 } }) },
+                vitals: () => ({ health: { value: health, max },
+                                 vigor: { value: vigor, scale_max: 200 } }) },
     },
   });
   k.travelled = travelled;
+  // A HOLD, AND A LEAVE THAT RECORDS RATHER THAN DECIDES. The real `leaveHold` has its own
+  // refusal rule for a HURT character; stubbing it keeps this section about the release
+  // decision instead of re-testing that one.
+  if (hold) k.hold = hold;
+  k.left = [];
+  k.leaveHold = async (why, opts) => { k.left.push({ why, opts }); k.hold = null; return { left: true }; };
   return k;
 };
 const ctxFor = k => {
@@ -250,6 +258,48 @@ console.log('\nthe wiring the keeper cannot check for itself');
        BROKER_SRC.includes(`${key}:`) && BROKER_SRC.includes(`a.${key} !== undefined`));
   ok('resume happens in the LAST pass stage, so nothing more urgent is skipped for it',
      /await this\.resumeSuspendedJourney\(ctx\)/.test(readFileSync('tools/m59-autopilot.mjs', 'utf8')));
+}
+
+
+console.log('');
+console.log('A REST STOP ENDS WHEN THERE IS NOTHING LEFT TO GAIN BY STANDING THERE');
+{
+  // `leaveHold` only ever REFUSES a departure, and only while hurt, so nothing in the file
+  // ever asked a HEALED character to go. Measured on a live fleet: 54 of 54 health and 80 of
+  // 200 vigor — which the server itself calls `rested: true` — still reading "holding a
+  // proven safe spot", with hold_resume_above of 0.9 satisfied long since. Sixteen of
+  // eighteen legs ended in a timeout rather than a death. They were not stuck; they were
+  // parked, and the cap expired around them.
+  const held = () => ({ proven: true, at: Date.now() });
+
+  const full = keeper({ health: 54, max: 54, vigor: 80, hold: held() });
+  ok('full health and vigor at the resting cap releases the hold',
+     full.releaseRestedHold() === true && full.left.length === 1);
+  ok('and it is FORCED, because the ordinary refusal is an argument about being hurt',
+     full.left[0]?.opts?.force === true, JSON.stringify(full.left[0]?.opts));
+  ok('and it says so, so a post-mortem can see why it moved',
+     said(full, /full health and all the vigor resting can give/i));
+
+  // VIGOR'S FULL IS 80 OF 200, and that is the whole subtlety. Resting stops awarding vigor
+  // at the resting cap and everything above it has to be EATEN, so a release that waited for
+  // vigor to be "full" in the ordinary sense would wait for the timeout instead.
+  ok('one point under the resting cap is not full, and it stays',
+     keeper({ health: 54, max: 54, vigor: 79, hold: held() }).releaseRestedHold() === false);
+  ok('but ABOVE the cap is still full — vigor over 80 came from food, not from resting',
+     keeper({ health: 54, max: 54, vigor: 150, hold: held() }).releaseRestedHold() === true);
+
+  // Still hurt is still a rest stop: the Camilla case, who gave up a proven wall at 69%
+  // and died 17.8 seconds later.
+  ok('hurt at the wall is not released, however rested',
+     keeper({ health: 30, max: 54, vigor: 200, hold: held() }).releaseRestedHold() === false);
+  ok('and hold_resume_above decides that, not a literal',
+     keeper({ health: 40, max: 54, vigor: 80, hold: held(),
+              policy: { holdResumeAbove: 0.7 } }).releaseRestedHold() === true);
+
+  // Cheap and silent when there is nothing to release — it is asked on every pass.
+  const noHold = keeper({ health: 54, max: 54, vigor: 80 });
+  ok('a character with no hold is a no-op rather than a throw',
+     noHold.releaseRestedHold() === false && noHold.left.length === 0 && noHold.notes.length === 0);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
