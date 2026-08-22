@@ -5456,10 +5456,10 @@ class Session {
    */
   async followRail(squares, { movementGeneration = this.movementGeneration,
                               controlToken = null, maxSlips = 4, maxSkips = 8 } = {}) {
-    let walked = 0, skipped = 0;
+    let walked = 0, skipped = 0, skippedInARow = 0, missed = 0;
     for (let i = 0; i < squares.length; i++) {
       const target = squares[i];
-      let slips = 0;
+      let slips = 0, gaveUpOnThisSquare = false;
       for (;;) {
         if (this.movementWasCancelled(movementGeneration, controlToken))
           // NAMED, BECAUSE AN UNNAMED CANCELLATION READS AS A REFUSAL. This is the only
@@ -5504,14 +5504,31 @@ class Session {
         // at the next one; the line ahead is still the line. Consecutive skips are bounded,
         // because a rail nothing can be hit on is a rail worth leaving.
         if (++slips > maxSlips) {
-          if (++skipped > maxSkips)
-            return { railed: false, reason: 'slipped_off_rail', at: i, walked, skipped };
+          skipped++; missed++;
+          // CONSECUTIVE, WHICH IS WHAT THE PARAGRAPH ABOVE ALWAYS CLAIMED IT WAS.
+          //
+          // `skipped` was declared once outside this loop and never reset, so it counted
+          // every miss on the whole line. On a 65-square rail through the Twisted Wood that
+          // is the difference between "this line cannot be walked" and "nine monsters stood
+          // on it at some point during a two-minute crossing" — and the second is the
+          // ordinary case, not a failure. Measured: room 586's rail died at index 35 of 40
+          // seven times running, having walked the first 34 perfectly; every one of those 40
+          // squares answers `moverStepLands` TRUE, so the line was never the problem.
+          //
+          // A rail is worth leaving when it cannot hit ANY of its next several waypoints —
+          // that means the body is somewhere the line does not describe. Scattered misses
+          // mean something was standing there, and the answer to that is the next square.
+          if (++skippedInARow > maxSkips)
+            return { railed: false, reason: 'slipped_off_rail', at: i, walked, skipped,
+                     note: `${skippedInARow} waypoints missed in a row` };
+          gaveUpOnThisSquare = true;
           break;
         }
       }
+      if (!gaveUpOnThisSquare) skippedInARow = 0;
       walked++;
     }
-    return { railed: true, walked, skipped };
+    return { railed: true, walked, skipped, missed };
   }
 
   async leaveVia(exit, { movementGeneration = this.movementGeneration, controlToken } = {}) {
