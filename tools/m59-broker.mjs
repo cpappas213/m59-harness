@@ -471,6 +471,12 @@ const UNREACHABLE_EXIT =
 // Left as a named constant rather than deleted because the mechanism is real — a wall-hug
 // IS where a slide starts — and somebody may yet find the right weight. The number to beat
 // is 218/252, and `m59-walksim.mjs` is how to beat it.
+// HOW CLOSE TO A DOOR MAKES A RAIL POINTLESS. A rail crosses a ROOM; inside this radius the
+// ordinary walk is a short approach over ground the coarse grid expresses, and getting onto a
+// line that starts somewhere else is strictly worse — sometimes catastrophically, when the
+// line's start is itself a doorway to somewhere we do not want to go.
+const RAIL_SKIP_WITHIN_SQUARES = Number(process.env.M59_RAIL_SKIP_WITHIN || 8);
+
 const LEAVE_VIA_CLEARANCE = Number(process.env.M59_LEAVE_VIA_CLEARANCE ?? 0);
 const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
 const EDGE_NUDGE_MAX_STEPS = Number(process.env.M59_EDGE_NUDGE_MAX_STEPS || 6);
@@ -5686,8 +5692,41 @@ class Session {
       const railTable = activeRoutes();
       const railRoom = Number(this.world?.room?.num ?? NaN);
       const target = anchorFor(railTable, railRoom, Number(exit.to));
-      const rail = target ? this.railAcross({ row: target.row, col: target.col }) : null;
+      let rail = target ? this.railAcross({ row: target.row, col: target.col }) : null;
       const me0 = this.client?.self;
+      // DO NOT RAIL ACROSS A ROOM TO REACH A DOOR THAT IS FOUR SQUARES AWAY.
+      //
+      // `railAcross` excludes the target anchor from its candidate starts — a line has to
+      // begin somewhere else — and then picks the start NEAREST the body. When the body has
+      // just arrived beside the door it wants, the nearest remaining anchor is somewhere
+      // else entirely, and the rail becomes a tour of the room to reach a square it could
+      // have stepped onto.
+      //
+      // The Western border of the Twisted Wood is the measured case, and it is worse than a
+      // detour. A character crossing in from 586 arrives at 41,63 or 44,66 — within a few
+      // squares of the 597 door at 46,67. The nearest other anchor is 9,67, which is
+      // thirty-five squares north AND IS THE DOORWAY BACK INTO 586. So the walk to get on
+      // the rail ends with the character standing on a live exit to the room it just left,
+      // and the transit book fills up with
+      //
+      //   587 -> 597  FAIL  crossed into 586 instead of 597
+      //
+      // Six of those in one two-character run, against a door it began four squares from.
+      //
+      // So when the door is already close, there is nothing for a rail to add: the ordinary
+      // crossing walk below is a short approach over ground the coarse grid expresses, which
+      // is exactly the case it has always been good at. The rail is for crossing a ROOM.
+      if (rail && me0 && target) {
+        const away = Math.hypot(target.col - me0.col, target.row - me0.row);
+        if (away <= RAIL_SKIP_WITHIN_SQUARES) {
+          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                         tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
+                         note: `no rail needed — the door at ${target.row},${target.col} is ` +
+                               `${Math.round(away)} square(s) away and the line starts at ` +
+                               `${rail.from.row},${rail.from.col}` });
+          rail = null;
+        }
+      }
       // LOGGED EVEN WHEN NOTHING HAPPENS. The first two attempts at this wrote a ledger row
       // only after the character had got onto the rail, so a run that found no rail at all
       // and a run where `leaveVia` was never reached produced the same evidence — nothing —

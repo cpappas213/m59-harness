@@ -1101,6 +1101,12 @@ const leaveVia = compileSessionMethod(brokerSource,
     // fixture `activeRoutes()` returns null and `anchorFor` answers null, so the rail branch
     // falls through to the ordinary walk: the state these tests are about.
     activeRoutes, anchorFor,
+    // THE REAL VALUE, because the branch it guards is a behaviour rather than a stub point:
+    // a rail whose line starts somewhere else is refused when the door is already close, and
+    // eight squares is the number the broker ships. The measured case is the Western border
+    // of the Twisted Wood, where the nearest OTHER anchor to a character that has just
+    // arrived beside the 597 door is the doorway back into 586.
+    RAIL_SKIP_WITHIN_SQUARES: 8,
     // THE REAL FUNCTIONS, NOT STUBS. Both are ordinary exports of m59-world.mjs — which,
     // unlike the broker, imports without taking the fleet lock — so lifting `leaveVia`
     // and handing it hand-written imitations of the two helpers it drives would be
