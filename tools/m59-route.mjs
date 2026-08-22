@@ -224,13 +224,39 @@ export class Router {
   // step-by-step, so an approach point found with this oracle is one the Mover can
   // actually stand on. Returns true/false, or null if the geometry can't answer.
   _fineStep(geo, c1, r1, c2, r2) {
-    if (!geo?.traceFineMoveClient) return null;
+    if (!geo) return null;
     if (c2 < 0 || r2 < 0) return false;
-    // Square centres in CLIENT units, using the TRUE centre of each square: col c centre
-    // is c * CLIENT_FINENESS + CLIENT_FINENESS/2. This is the absolute position the
-    // geometry's wall coordinates are in, so the trace checks the real squares (not the
-    // Mover's offset protocol convention, which places square c at the client position of
-    // square c-1). traceFineMoveClient takes client units directly.
+    // THE SAME PREDICATE THE A* AND THE MOVER USE (Option A: one shared
+    // predicate). `moverStepLands` is the function the mover's step search and the
+    // A* edge test both consult, so a sub-leg chain built on it is guaranteed to use
+    // steps the mover will actually take. The old `_fineStep` used a radius-248/no-slide
+    // `traceFineMoveClient` directly, which disagreed with both the A* and the mover:
+    // it saw the direct approach (44,11) as blocked and routed a long detour to (42,8),
+    // while the A* (moverStepLands) said (44,11) was reachable. Now the sub-leg BFS,
+    // the A*, and the mover all ask the same question.
+    //
+    // ORIGIN-TRAP ESCAPE: the BFS starts from `me`, which may be a non-standable
+    // square (a respawn point, a ledge edge). `moverStepLands` refuses every first
+    // edge out of such a square (no stand point to start the trace from), which would
+    // strand the BFS at the start. For the FIRST step out of a non-standable origin,
+    // fall back to the lenient radius-248 trace so the BFS can leave the trap square;
+    // every subsequent step uses the strict `moverStepLands`.
+    if (geo.moverStepLands) {
+      const originStandable = geo.standable ? geo.standable(r1, c1) : true;
+      if (originStandable === false && (c1 === this._bfsOriginC && r1 === this._bfsOriginR)) {
+        // lenient fallback for the first edge out of the origin
+        const CF = 1024, H = 512;
+        try {
+          const a = geo.standPoint(r1, c1) ?? { x: c1 * CF + H, y: r1 * CF + H };
+          const b = geo.standPoint(r2, c2) ?? { x: c2 * CF + H, y: r2 * CF + H };
+          const t = geo.traceFineMoveClient(a.x, a.y, b.x, b.y, { slide: false, playerRadius: 248 });
+          return t?.arrived === true;
+        } catch { return false; }
+      }
+      return geo.moverStepLands(r1, c1, r2, c2);
+    }
+    // No moverStepLands on this geometry (test fixture): fall back to the old trace.
+    if (!geo.traceFineMoveClient) return null;
     const CF = 1024, H = 512;
     const x1 = c1 * CF + H, y1 = r1 * CF + H;
     const x2 = c2 * CF + H, y2 = r2 * CF + H;
@@ -257,6 +283,8 @@ export class Router {
     if (!this._reachCache) this._reachCache = new Map();
     const hit = this._reachCache.get(cacheKey);
     if (hit) return hit.set;
+    this._bfsOriginC = fromCol;
+    this._bfsOriginR = fromRow;
     const seen = new Set();
     const queue = [[fromCol, fromRow]];
     seen.add(`${fromCol},${fromRow}`);
@@ -337,6 +365,10 @@ export class Router {
   _planSubLegs(me, target) {
     const geo = this._geo();
     if (!geo) return { chain: [{ col: target.col, row: target.row }], complete: true };
+    // Record the BFS origin so _fineStep can give the FIRST step out of a
+    // non-standable origin the lenient escape (see _fineStep). Reset each plan.
+    this._bfsOriginC = me.col;
+    this._bfsOriginR = me.row;
     // BFS from `me` with parent tracking, using _fineStep as the edge test.
     const startKey = `${me.col},${me.row}`;
     const parent = new Map([[startKey, null]]);  // key -> parent key

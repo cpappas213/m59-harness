@@ -1465,51 +1465,60 @@ export class RoomGeometry {
     // finePathProtocol each re-trace ~1600 edges × up to 5 offsets = 8000 traces/s,
     // blocking the event loop for ~1-2s per call and making swings 3s apart.
     const edgeOk = (this._edgeOk ??= new Map());
+    // ORIGIN-TRAP ESCAPE. The character may start the A* on a square that is not
+    // `standable` (a respawn point, a ledge edge, a fine-unwalkable square) — `standPoint`
+    // returns null there, so `moverStepLands` refuses EVERY first edge out of it and the
+    // A* expands 1 node and gives up (the (45,11) Raza case). The character is ALREADY on
+    // that square; we only need to get OFF it. For the first edge out of a non-standable
+    // origin, fall back to a lenient radius-248 trace (the old edge test) so the search
+    // can leave the trap square. Every OTHER edge uses the strict `moverStepLands`, so
+    // the found path is still guaranteed walkable by the mover from that point on.
+    const originR = fromR, originC = fromC;
+    const originStandable = this.standable ? this.standable(fromR, fromC) : true;
+    const lenientEdge = (r1, c1, r2, c2) => {
+      let a = this.standPoint(r1, c1);
+      let b = this.standPoint(r2, c2);
+      // CLIENT coordinates (1024/square), matching standPoint's scale. The
+      // stand points live on the fine geometry in client units; a KOD-scale
+      // fallback (64/square) lands 16x too close to the origin and in a spot
+      // with no floor, so the trace reports start_has_no_floor and the escape
+      // never happens. This is the committed A*'s fallback, kept identical.
+      if (!a) a = { x: (c1 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2, y: (r1 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2 };
+      if (!b) b = { x: (c2 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2, y: (r2 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2 };
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const len = Math.hypot(dx, dy) || 1;
+      const px = -dy / len, py = dx / len;
+      const t = (ox, oy) => this.traceFineMoveClient(a.x + ox, a.y + oy, b.x + ox, b.y + oy,
+        { slide: false, playerRadius: PLAYER_RADIUS }).arrived === true;
+      return t(0,0) || t(px*128,py*128) || t(-px*128,-py*128) || t(px*256,py*256) || t(-px*256,-py*256);
+    };
     const edgeWalkable = (r1, c1, r2, c2) => {
       const ek = r1 < r2 || (r1 === r2 && c1 < c2)
         ? `${r1},${c1},${r2},${c2}` : `${r2},${c2},${r1},${c1}`;
       const hit = edgeOk.get(ek);
       if (hit !== undefined) return hit;
-      let a = this.standPoint(r1, c1);
-      let b = this.standPoint(r2, c2);
-      if (!a) a = { x: (c1 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2,
-                    y: (r1 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2 };
-      if (!b) b = { x: (c2 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2,
-                    y: (r2 - 1) * CLIENT_FINENESS + CLIENT_FINENESS / 2 };
-      const dx = b.x - a.x, dy = b.y - a.y;
-      const len = Math.hypot(dx, dy) || 1;
-      const px = -dy / len, py = dx / len; // perpendicular unit vector
-      let ok = false;
-      // PERMISSIVE edge test for the A*: radius 1, no slide. This is the
-      // original config that successfully navigated Raza -> the Mausoleum.
-      // The planner's job is to find a plausible route; the MOVER's per-step
-      // validation (m59-mover.mjs: slide + PLAYER_RADIUS) is the authority
-      // that refuses real walls and ledge edges, and re-plans when it can't
-      // make a step.
+      // THE SAME PREDICATE THE MOVER USES. `moverStepLands` is the function the
+      // mover's step search consults to decide whether it will accept a step
+      // (standable destination + a slide:true trace that ARRIVES in the
+      // destination square at a consistent height, memoized in the step mask).
+      // Using it here means an A* "found" path only uses edges the mover will
+      // actually take, so the character follows it to completion instead of
+      // reaching a square the planner promised but the mover refuses (the
+      // (37,10)<->(37,11) oscillation).
       //
-      // TUNING HISTORY (all measured on Raza, the fence/ledge room):
-      //   - radius 1, no slide (ORIGINAL): reaches the exit. The mover's
-      //     step (also radius 1 at the time) let the char walk off ledges --
-      //     fixed by making the MOVER step radius 248, NOT the A* edge.
-      //   - radius 248, no slide: A* too strict -- reachable region
-      //     fragmented into islands, exit unreachable, mover oscillated.
-      //   - radius 248, slide: still too strict for this geometry.
-      //   - radius 1, slide: changed the path shape enough to break the
-      //     door-push integration test.
-      // Keep the planner permissive; let the mover enforce safety.
-      // Real player radius so canCrossWallAt's HEIGHT check runs (rejects tall
-      // ledge drops and low walls) while the lateral offsets below let the body
-      // find the walkable part of a ledge square. Lateral offsets matter: a
-      // standPoint can sit on a wall line, and the perpendicular offsets move the
-      // body off the wall so a valid corridor edge still passes.
-      const tryTrace = (ox, oy) => {
-        const t = this.traceFineMoveClient(a.x + ox, a.y + oy, b.x + ox, b.y + oy,
-          { slide: false, playerRadius: PLAYER_RADIUS });
-        return t.arrived === true;
-      };
-      if (tryTrace(0, 0)) ok = true;
-      else if (tryTrace(px * 128, py * 128) || tryTrace(-px * 128, -py * 128)) ok = true;
-      else if (tryTrace(px * 256, py * 256) || tryTrace(-px * 256, -py * 256)) ok = true;
+      // EXCEPT the first edge out of a non-standable origin square: there,
+      // `moverStepLands` refuses everything (no stand point to start from), so we
+      // use the lenient trace to let the search escape the trap square. This is
+      // Option A with the one necessary carve-out: the planner and the mover use
+      // the same predicate, except the planner must be able to start from a square
+      // the mover would never step INTO.
+      let ok;
+      if (originStandable === false &&
+          ((r1 === originR && c1 === originC) || (r2 === originR && c2 === originC))) {
+        ok = lenientEdge(r1, c1, r2, c2);
+      } else {
+        ok = this.moverStepLands(r1, c1, r2, c2);
+      }
       edgeOk.set(ek, ok);
       return ok;
     };

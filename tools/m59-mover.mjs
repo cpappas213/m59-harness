@@ -394,9 +394,20 @@ export class Mover {
           this._lastRawLogAt = Date.now();
           console.error(`[raw-door-push] my=(${Math.round(myProtoX)},${Math.round(myProtoY)}) dest=(${destCol},${destRow}) dist=${distToDest0.toFixed(0)} raw->(${rawX},${rawY}) wp=${wp?'yes':'no'}`);
         }
-        if (this._movementGateOk(rawX, rawY, myProtoX, myProtoY)) {
+        // The raw-door-push is a DELIBERATE escape into a fine-blocked gap (a
+        // door alcove), not regular movement pacing. It only fires when the
+        // character is within 4 squares of a fine-unreachable destination — a
+        // rare, intentional action. The lazy-report gate (1000ms interval +
+        // moved-past-last-report) would throttle it and, worse, deadlock when
+        // the character is standing ON the last-reported square (the approach
+        // point): myProto == _lastReport, movedEnough=false, gate closed, the
+        // push never goes out and the character sits at the approach point. The
+        // server is client-authoritative here — a position packet into the
+        // alcove is accepted — so send it directly. A short cooldown prevents
+        // a flood while the character is mid-gap.
+        if (Date.now() - (this._lastRawPushAt ?? 0) >= 500) {
+          this._lastRawPushAt = Date.now();
           Promise.resolve(s.pacer.submit('move', () => s.client.moveTo(rawX, rawY, 18, s.client.room?.id ?? 0), 100)).catch(() => {});
-          this._recordReport(rawX, rawY);
         }
         if (Date.now() - (this._lastRawLogAt ?? 0) > 5000) {
           this._lastRawLogAt = Date.now();
@@ -617,19 +628,43 @@ export class Mover {
   // sending (29,9) we recorded _lastReport=(29,9), the next tick computed the same step
   // (29,9), the distance was 0, the gate stayed closed forever, and the character never
   // moved. Comparing against the server position fixes that.
-  _movementGateOk(protoX, protoY, serverX, serverY) {
+  // The gate compares the CURRENT POSITION against the last reported position
+  // (the reference client's MoveUpdatePosition model, move.c:766): report when
+  // the player's current x/y is far enough from server_x/server_y (the last
+  // position WE sent), AND >= MOVE_INTERVAL since the last packet. The step
+  // target is NOT the gate's concern — comparing the step against the last
+  // report deadlocks when the step equals the last report (JayB at (29,8) with
+  // _lastReport=(28,8) stepping to (28,8): dx=0, gate closed forever).
+  //
+  // protoX/protoY is kept in the signature for the caller's record step, but the
+  // distance check uses myProtoX/myProtoY (the character's ACTUAL position).
+  // A stale _lastReport (a gap > 1 square from the current position — a refused
+  // move, a teleport, a respawn) is snapped to the current position so the check
+  // is always against reality, and the interval is re-armed so it doesn't burst.
+  _movementGateOk(protoX, protoY, myProtoX, myProtoY) {
     const now = Date.now();
-    // movedEnough: the step is far enough from the LAST REPORTED position.
-    // The reference client (move.c:770) compares against server_x/server_y
-    // which is the last position WE sent, updated locally when we send.
-    // Comparing against the SERVER's current position (client.self) is wrong:
-    // if the server hasn't confirmed our last position yet, client.self is
-    // stale, and the gate sees a large distance and re-sends, causing
-    // position jumps. Compare against _lastReportX/Y instead.
+    // STALE-REFERENCE RESET. If _lastReport is more than 1 square from where the
+    // character actually is, it's out of sync. Snap it to the current position.
+    if (myProtoX != null && myProtoY != null && this._lastReportX != null) {
+      const ddx = this._lastReportX - myProtoX;
+      const ddy = this._lastReportY - myProtoY;
+      if (ddx * ddx + ddy * ddy > KOD_FINENESS * KOD_FINENESS) {
+        this._lastReportX = myProtoX;
+        this._lastReportY = myProtoY;
+        this._lastReportAt = now;
+      }
+    }
+    // movedEnough: the CURRENT POSITION is far enough from the last report. This
+    // matches MoveUpdatePosition exactly: the player moved a meaningful distance
+    // past where the server last saw us. Using the current position (not the step
+    // target) means the gate opens whenever the character has actually moved, and
+    // re-closes for one interval so we pace at ~1 packet/s.
     const refX = this._lastReportX;
     const refY = this._lastReportY;
-    const dx = refX == null ? Infinity : (refX - protoX);
-    const dy = refY == null ? Infinity : (refY - protoY);
+    const curX = myProtoX;
+    const curY = myProtoY;
+    const dx = refX == null ? Infinity : (refX - curX);
+    const dy = refY == null ? Infinity : (refY - curY);
     const moved2 = refX == null ? Infinity : (dx * dx + dy * dy);
     const movedEnough = moved2 > MOVE_THRESHOLD_PROTO2;
     const intervalOk = (now - this._lastReportAt) >= MOVE_INTERVAL_MS;

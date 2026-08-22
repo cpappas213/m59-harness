@@ -391,6 +391,30 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
         // target appears (less than 50% of the current distance), OR we just took damage
         // and a mob is in melee range (the attacker — fight the one hitting us).
         let target = _lastTargetId != null ? objects.get(_lastTargetId) : null;
+        // UNREACHABLE STICKY TARGET. The combat controller reports _moverNoRoute
+        // when the fine A* finds no path to the current target (it moved behind a
+        // wall/ledge, or was never reachable to begin with). The _moverNoRoute
+        // blacklist at the bottom of the if(!target) block only runs when there is
+        // NO current target, so a STICKY unreachable target is never blacklisted and
+        // the character fights it forever, oscillating in place (JayB, Mausoleum:
+        // targeting an mummy 12 squares away with no fine path, stuck detector
+        // suppressed by the _fight goal). Drop the sticky target here, after it has
+        // been reported no-route for >=1.5s, so the if(!target) block re-runs and
+        // picks the next-closest REACHABLE mob. 1.5s matches the selector's own
+        // persistence threshold so a momentary geometry blip doesn't churn the target.
+        if (target) {
+          const nr = session?._moverNoRoute;
+          if (nr?.targetId != null && nr.targetId === target.id && now() - nr.at < 15000 && now() - nr.at >= 1500) {
+            const oId = target.id ?? target.obj_id;
+            if (oId != null) {
+              _blacklist.add(oId);
+              _blacklistAt = now();
+              _lastTargetId = null;
+              session._moverNoRoute = null;
+              target = null;  // drop it; if(!target) below picks a reachable one
+            }
+          }
+        }
         // Re-target if a MUCH closer candidate exists. Only run this check occasionally
         // (throttled) so it doesn't add cost to every tick.
         if (target && now() - retargetCheckAt > 2000) {
