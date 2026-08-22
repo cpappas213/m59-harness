@@ -446,5 +446,56 @@ console.log('\nthe safe-wall A/B is retired');
   ok('and the fleet default is to hold', /M59_TRAVEL_HOLD \|\| 'on'/.test(AUTOPILOT_SRC));
 }
 
+
+console.log('');
+console.log('A WALL MUST NOT BE ABLE TO STOP A JOURNEY FOR EVER');
+{
+  // Room 587, measured: the body walked the first six squares of a 65-square baked rail,
+  // was taken back for a wall, was returned to the entry anchor, and started again —
+  // THIRTY times in one leg, with six refusals in two hundred and thirty move attempts.
+  // Nothing was blocked. `travelShelterBelow` returns 1 (ANY damage) when the zone
+  // outranks the character, so a scratch cancelled the crossing and the next scratch
+  // cancelled it again. A room that cannot be crossed without being bitten could not be
+  // crossed at all, and this fleet's road runs through two of them.
+  const withPlan = extra => {
+    const k = keeper({ adjacent: 2, guard: {}, ...extra });
+    // A planned stop, so the rung has somewhere to go — otherwise it never fires and the
+    // test would pass for the wrong reason.
+    k.s.activeShelter = { atStep: 0, maxDetour: 4,
+                          spots: [{ atStep: 1, detour: 2, col: 20, row: 5,
+                                    refused_approaches: 3, proven: true }] };
+    return k;
+  };
+  // `run` above is block-scoped; the stage is called directly here.
+  const sheltered = async k => { await k.passTravelling(ctxFor(k)); return k.notes.some(n =>
+    n.detail?.trigger === 'a wall is nearer than the next room'); };
+
+  // Hurt in a zone that outranks us: the first two crossings buy a wall.
+  const a = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
+  ok('a hurt traveller with a wall ahead takes it', await sheltered(a));
+  ok('and again, because two is the budget',
+     a.notes.length && await sheltered(withPlan({ health: 30, max: 60, fleeAt: 0.2 })));
+
+  // THE THIRD ONE IN THE SAME ROOM IS A LOOP, NOT SURVIVAL.
+  const spent = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
+  spent.shelterStops = { room: 535, taken: 2 };
+  ok('a third stop in the same room is refused — that is the thirty-lap loop',
+     !(await sheltered(spent)));
+  ok('and it says so, once, rather than silently walking past a wall',
+     spent.notes.some(n => /already been paid for in wall stops/.test(n.what ?? '')));
+
+  // ...UNLESS THE CHARACTER IS ACTUALLY IN TROUBLE. This is the half that must never
+  // regress: the budget is about progress, and it never outranks dying.
+  const desperate = withPlan({ health: 10, max: 60, fleeAt: 0.7 });
+  desperate.shelterStops = { room: 535, taken: 9 };
+  ok('below the flee line the wall still outranks everything, budget or no budget',
+     await sheltered(desperate));
+
+  // A NEW ROOM IS A NEW CROSSING. The argument is about one room, not one journey.
+  const nextRoom = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
+  nextRoom.shelterStops = { room: 999, taken: 9 };
+  ok('and entering a new room starts the budget again', await sheltered(nextRoom));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

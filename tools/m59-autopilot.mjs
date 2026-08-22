@@ -8834,7 +8834,43 @@ export class Autopilot {
     // first on the way down and this clause is a backstop rather than the usual trigger.
     const wouldPlayDead = near.length && hp !== null
       && hp < (this.policy.doomedInOpenBelow ?? 0.3);
-    if (this.travelAllows('safe_spot') && hp !== null && near.length
+    // A WALL MUST NOT BE ABLE TO STOP A JOURNEY FOR EVER, AND IT WAS.
+    //
+    // Measured in room 587: the body walked the first six squares of a 65-square baked
+    // rail, was taken back for a wall, was returned to the entry anchor, and started the
+    // line again. THIRTY times in one leg — the trace shows moves sent from exactly seven
+    // squares, thirty each, with six refusals in two hundred and thirty attempts. Nothing
+    // was blocked. It was being interrupted.
+    //
+    // The cause is this rung agreeing with itself. `travelShelterBelow` returns 1 — ANY
+    // damage — when the zone outranks the character, which the Twisted Wood does for every
+    // character this fleet has. So a scratch cancels the crossing, the character rests, and
+    // the next scratch cancels it again. A room that cannot be crossed without being bitten
+    // cannot be crossed at all, and this fleet's road runs through two of them.
+    //
+    // So the wall keeps absolute priority while the character is in REAL trouble — below
+    // the flee line, or inside two hits of death — and is bounded otherwise. Above the flee
+    // line, a character that has already taken shelter twice in this room has had the
+    // benefit; a third detour is not survival, it is a loop. `travel_shelter_per_room` is
+    // the knob and the counter resets on entering a new room, because the argument is about
+    // one crossing rather than one journey.
+    const shelterRoom = this.s.world?.room?.num ?? null;
+    if (this.shelterStops?.room !== shelterRoom) this.shelterStops = { room: shelterRoom, taken: 0 };
+    const inRealTrouble = wouldPlayDead || (hp !== null && hp < this.safety().fleeAt);
+    const shelterBudget = this.policy.travelShelterPerRoom ?? 2;
+    const shelterSpent = !inRealTrouble && this.shelterStops.taken >= shelterBudget;
+    if (shelterSpent && this.travelAllows('safe_spot') && hp !== null && near.length
+        && hp < this.travelShelterBelow() && !this.shelterStops.noted) {
+      this.shelterStops.noted = true;
+      this.note('walking on — this room has already been paid for in wall stops', {
+        room: shelterRoom, taken: this.shelterStops.taken, budget: shelterBudget,
+        health: Math.round(hp * 100) + '%',
+        flee_at: Math.round(this.safety().fleeAt * 100) + '%',
+        why: 'a wall that can be taken on every scratch stops a crossing for ever. Below ' +
+             'the flee line, or two hits from death, it still outranks everything.',
+      });
+    }
+    if (!shelterSpent && this.travelAllows('safe_spot') && hp !== null && near.length
         && (hp < this.travelShelterBelow() || wouldPlayDead)) {
       const geo = this.s.world?.geometry;
       let spot = null;
@@ -8869,6 +8905,7 @@ export class Autopilot {
                                             within: this.policy.travelHoldWithin ?? 10 });
         } catch { spot = null; }
       }
+      if (spot) this.shelterStops.taken = (this.shelterStops.taken ?? 0) + 1;
       if (spot)
         return takeBack('a wall is nearer than the next room',
                         `${Math.round(hp * 100)}% health with ${near.length} on us, and a ` +
