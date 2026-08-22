@@ -263,7 +263,14 @@ export function weighPack(items, file = ITEMS_FILE) {
   let weight = 0, bulk = 0;
   const unknown = [];
   for (const it of items || []) {
-    const n = it.amount ?? 1;
+    // A COUNT OF ZERO IS ONE ITEM, NOT NOTHING. Non-stack objects come off the wire with
+    // `amount: 0` — the tag nibble carries a quantity only for stackables — and `?? 1`
+    // falls back on null and undefined but NOT on 0, so every sword, shield and suit of
+    // armour in a pack weighed exactly nothing. Floyd read 623 of 2700 while genuinely
+    // carrying 2633, and `exact` said so with confidence because the names were all in
+    // the table. Three characters were refused a reagent handover by the server's own
+    // CanHoldWeightAndBulk (user.kod:5470) while this reported their packs 23% full.
+    const n = it.amount > 0 ? it.amount : 1;
     const w = weighItem(it.name, file);
     if (!w) { unknown.push(it.name); continue; }
     weight += w.weight * n;

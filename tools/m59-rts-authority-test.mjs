@@ -128,7 +128,11 @@ assert.match(queuedMove, /validateFineTarget.*beforeMutation.*c[.]moveTo/s,
 
 const walk = section('async walkTo(col, row,', '\n  // Leave the room');
 assert.match(walk, /beforeMutation = null/);
-assert.match(walk, /this[.]step[(]next[.]col, next[.]row, \{ beforeMutation \}/,
+// `[,}]` rather than a closing brace, because what is being asserted is that the hook is
+// THREADED, not that it is the only option threaded. Written as `\{ beforeMutation \}` this
+// went red the day `step` grew a `fall` flag — an assertion about authority failing over an
+// unrelated argument, which teaches the next reader to loosen it rather than to look.
+assert.match(walk, /this[.]step[(]next[.]col, next[.]row, \{ beforeMutation[,}]/,
   'walkTo threads its final-packet mutation hook through the shared validated step');
 
 const loot = section('async lootFloor({', '\n  // Offer one item to a merchant');

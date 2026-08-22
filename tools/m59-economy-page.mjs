@@ -218,6 +218,19 @@ export function renderEconomy({ hours = 168, live = null, characters = null } = 
           <div class="dim" style="font-size:.75rem">${l?.carrying != null
              ? esc(String(l.carrying)) + ' stack(s) in the pack'
              : 'no live reading — this character is not being held by the broker right now'}</div>
+          <!-- WHAT IS IN IT, not just how much of it there is. A pack meter at 94% is a
+               question and this is the answer to it: the reader deciding what to sell,
+               bank or drop needs the names, and asking for them per character was an
+               inventory call on the wire for a list the row already carries. Grouped by
+               name by the broker, biggest first.
+               The three empty cases are DIFFERENT and must not render alike — an empty
+               pack is a fact, an unheld character is the absence of one, and a row with
+               no such field at all is a broker older than this page. Same rule the
+               hatched meter follows. -->
+          ${itemList(l?.pack_items, !l
+             ? 'no item list — this character is not being held by the broker right now, and a stored sample carries totals rather than names'
+             : Array.isArray(l.pack_items) ? 'nothing in the pack'
+             : 'the broker holding this character is running code that does not report the item list — restart it and this fills in')}
         </div>
         <div class="box">
           <h4>vault ${vault ? `· ${vault.fullness.percent}%` : ''}</h4>

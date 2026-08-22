@@ -84,11 +84,24 @@ four protected faculties are refused unless the **roster** consents
 (`PROTECTED_FACULTIES`, `may_yield`), because an unattended character — one whose bot
 crashed, was `Ctrl-C`'d, or was never started — must still run from a fight it is losing.
 
-`node tools/m59-unattended-test.mjs` (44) is the guard, and it is the cheapest insurance
+`node tools/m59-unattended-test.mjs` (55) is the guard, and it is the cheapest insurance
 here: with nothing attached, every faculty answers `keeper`, a bot asking for all eight
 gets only the directional four, an expired lease is the keeper's again, and the override
 takes a character back from a bot rather than letting its next heartbeat reclaim it.
 **It should fail the day somebody moves a survival decision out of this repository.**
+
+**AND A JOURNEY IS NOT AN ERRAND.** An errand takes a character away — `goInert`, the
+survival ladder off, which is right when `m59-outfit.mjs` is walking it across town. A
+journey only *steers*, and giving it the errand's silence is what killed Cccc on
+2026-08-21: re-sent a `travel` while dead, walked out of a sanctuary at 27% health against
+a 70% flee threshold, eaten over twenty-two seconds with the keeper watching every frame.
+`travelJob` takes **`goTravelling`** instead — the ladder stays armed, six faculties on two
+clocks, every one of them switchable live per character with `travel_guard`. Mid-hop
+triggers CANCEL the journey rather than fighting the mover for the body; hop-boundary ones
+pause it. **None of them asks whether the character is moving** — his last pulses were a
+two-square shuffle against a wall, which resets every stillness timer it meets.
+`node tools/m59-travelling-test.mjs` (64) is that guard;
+[`docs/m59-boundary.md`](docs/m59-boundary.md) has the table and the argument.
 
 The rest of the split — the three moments a keeper asks a **playbook** about
 (`attacked_by_player`, `died`, `improved`), the closed verb set, and the difference
@@ -122,6 +135,21 @@ Read-only, and it **exits non-zero on a mismatch** — when the broker is holdin
 and your next command would act on another. Every `/m59*` command runs it first for that
 reason. If it reports a mismatch, stop: that is the failure that once took down a live
 46-session broker while every step reported success.
+
+**A broker is ours only when its `/health` state path IS our roster file** — never when its
+fleet label merely matches, because two checkouts can each hold a fleet called `prod` and
+they are not the same characters. It corroborates that against the roster lock, the pid
+file, and the **process start time** of the pid answering, which is the checksum that tells
+a genuine claim from a recycled pid wearing the same number.
+
+**And it now has a third answer besides yes and no: `INDETERMINATE`, which also exits
+non-zero.** A port that does not answer is a question, not a fleet. It used to fall back to
+"some other broker that did answer" and report that as the verdict — so one slow reply from
+the prod broker printed `MISMATCH: the broker is holding "shadow"`, naming 21 entirely
+different characters, roughly one run in four. Prod's `/health` was measured at 1046ms idle
+and 2573ms under load against 4ms for an idle broker, so **the busiest broker is the one
+most likely to be missed, and it is always the one that matters**. `m59-which-test.mjs` (16)
+pins all of it; run against the old code, another checkout's `prod` returned exit 0.
 
 `m59-which.mjs` answers for **one** fleet — the one the next command would touch. When
 the question is *which fleets does this machine have at all*, ask the other one:
@@ -362,8 +390,10 @@ Movement — [`docs/m59-routing.md`](docs/m59-routing.md):
 
 - Melee reach is a disc of radius 2–3 SQUARES, and fine coordinates do not exist to it.
 - A safe wall is the two grids disagreeing — measurable, dose-responsive, and the same fact that fragments the routing view.
-- A planned trip accepts the risk of death; the way out of an attack during travel is always THROUGH.
+- A planned trip accepts the risk of a FIGHT — but no longer of a death. **Corrected 2026-08-21:** this line used to read "the way out of an attack during travel is always THROUGH", and a journey held the keeper inert to enforce it. That is how Cccc was walked out of a sanctuary at 27% health and eaten in twenty-two seconds. Walking through is still the answer to being *hit*; it is not the answer to being below the flee line, or to losing health faster than the road ends. See `travel_guard`.
 - `ms_since_moved` is about the KEEPER, not the character, and reads as a stall during every errand.
+- A stall detector that requires STILLNESS misses the commonest way to stand still: a two-square shuffle against a wall resets it on every sample. Ask the damage rate instead.
+- `start_has_no_floor` usually means the position and the geometry are from DIFFERENT ROOMS, not that the map has a hole — 1,535 of 2,361 hop failures in one window, mostly leaving a 10x13 room with every square walkable. It is `position_outside_room_geometry` when the coordinates are off the map.
 
 Boards, the compendium and the planner — [`docs/m59-boards.md`](docs/m59-boards.md):
 
@@ -429,6 +459,12 @@ node tools/m59-profiles.mjs --room 70       # where the fleet is ALLOWED to be, 
 node tools/m59-tuning.mjs --explain         # tactics, changed live, no restart
 ```
 
+A fourth surface obeys the same rules and is not a number: **`travel_guard`**, what a
+journey may interrupt itself for. All six faculties default ON, an unrecognised one is
+refused, and `autopilot action=status` reports the effective guard whether or not anything
+is travelling — because "what will this character do if something sends it across the
+world" is a question that has to be answerable BEFORE the post-mortem.
+
 All three obey the same four rules, and [`docs/m59-policy.md`](docs/m59-policy.md) argues
 each of them: **silence means the behaviour that was already there, never an empty policy**;
 a file that will not parse **is not an empty file** and says so; an unusable value keeps the
@@ -488,7 +524,8 @@ is the only arrangement in which two people can both use this repository.
 - `M59_ROOT` points at the Meridian 59 source tree. The compendium's citations
   and the Python analysis scripts both read it.
 - **The offline tests are safe to run any time** — they open no socket and touch no
-  roster. `node tools/m59-safespot-test.mjs`, `m59-chat-test`, `m59-collision-test`,
+  roster. `node tools/m59-safespot-test.mjs`, `m59-which-test` (the gate that decides
+  which fleet everything else acts on), `m59-chat-test`, `m59-collision-test`,
   `m59-routing-test`, `m59-impossible-test`, `m59-guild-test`, `m59-loadout-test` and two
   dozen more; [`docs/m59-tests.md`](docs/m59-tests.md) lists every one with its assertion
   count and **what it pins**, which is the part worth reading before you change the code it

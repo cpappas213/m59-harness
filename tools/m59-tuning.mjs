@@ -238,8 +238,20 @@ function main() {
     const pair = argOf('set', '');
     const eq = pair.indexOf('=');
     if (eq < 0) { console.error('--set expects key=value'); process.exitCode = 1; return; }
-    const r = setTuning({ key: pair.slice(0, eq), value: parseValue(pair.slice(eq + 1)),
-                          character, profile, file });
+    // A LIST-TYPED TUNABLE COULD NEVER BE SET FROM HERE, and it failed closed rather than
+    // loudly: `parseValue` only builds a list when it sees a comma, and the parts it splits
+    // out stay STRINGS, which `numList` rejects. So `--set confine_rooms=39` was refused as
+    // an unusable value and `--set confine_rooms=39,40` was refused as well — the one
+    // tunable that decides the rooms a character may be in AT ALL, unsettable by the tool
+    // written so an agent would not have to hand-edit this file. Coerce here, where the key
+    // is known and the intent is unambiguous; `parseValue` cannot know either.
+    const key = pair.slice(0, eq);
+    let value = parseValue(pair.slice(eq + 1));
+    if (TUNABLES[key]?.check === numList) {
+      const nums = (Array.isArray(value) ? value : [value]).map(Number);
+      if (nums.length && nums.every(Number.isFinite)) value = nums;
+    }
+    const r = setTuning({ key, value, character, profile, file });
     console.log(r.ok ? `set ${r.where}.${r.key} = ${JSON.stringify(r.to)}` +
                        (r.from !== undefined ? ` (was ${JSON.stringify(r.from)})` : '')
                      : `REFUSED: ${r.why}`);

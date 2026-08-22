@@ -20,10 +20,21 @@
 // HTTP client timeout, so a caller that gives up and retries issues the second call
 // believing the first is gone. It is not.
 //
-// And the cost is not a wasted walk. The travel tool holds the keeper INERT for the whole
-// journey, deliberately — so while two loops fight over the character it neither fights
-// back nor flees. Of 17 travelling deaths in one 30-minute window on prod, NOT ONE had a
-// swing recorded against it.
+// And the cost is not a wasted walk. The travel tool stands the keeper DOWN for the whole
+// journey — so while two loops fight over the character, whichever faculties it gave up
+// are gone. Of 17 travelling deaths in one 30-minute window on prod, NOT ONE had a swing
+// recorded against it.
+//
+// WHICH STAND-DOWN IT USES IS NOW PART OF THE CONTRACT, and this suite pins it. It used
+// to be `goInert`, which switches the survival ladder off entirely, and that is the state
+// Cccc died in on 2026-08-21: walked out of a sanctuary at 27% health against a 70% flee
+// threshold and eaten over twenty-two seconds while the keeper watched every frame. It is
+// `goTravelling` now — the character keeps its defensive faculties and each one is
+// switchable per character. See TRAVEL_GUARD_DEFAULTS in m59-autopilot.mjs.
+//
+// The assertion below goes both ways on purpose: the wrapper must use the travelling state
+// AND must not use the inert one. Only checking for the new call would let a future edit
+// add `goInert` beside it and pass.
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 
@@ -180,17 +191,25 @@ console.log('both arms of the travel tool go through that slot');
 // hand-rolled a `startJob` and thereby got the slot but NOT the hold, and dropped the
 // movement generation so `cancel_movement` could not reach it.
 //
-// So the invariant is file-wide, not tool-local: the hop loop is entered from exactly one
-// place. This is the assertion that makes the next such caller fail here rather than on
+// So the invariant is file-wide, not tool-local: the hop loop is entered only from inside
+// the one wrapper. This is the assertion that makes the next such caller fail here rather than on
 // prod, and it is cheap to satisfy — `travelJob` / `travelExclusive` are right there.
 // ---------------------------------------------------------------------------
-console.log('the hop loop is entered from exactly one place in the whole file');
+console.log('the hop loop is entered only from inside the one wrapper');
 {
   // Every `.travel(` that is not itself the wrapper's name.
+  //
+  // TWO OF THEM NOW, AND BOTH INSIDE THE WRAPPER. `travelJob` prefers the KEEPER's travel
+  // — which is what carries the pre-departure rest, the hop hook and the ledger row — and
+  // falls back to the session's raw hop loop when the session has no autopilot to ask.
+  // The invariant was never "one call site"; it was "no caller outside this wrapper
+  // reaches the hop loop", and counting was only ever a cheap way to say that. Counting
+  // is what broke when the wrapper legitimately grew a second branch, so the test now
+  // says the thing it means.
   const sites = [...src.matchAll(/(\w+)\.travel\(/g)].map(m => m.index);
-  ok('there is exactly one direct entry into the hop loop', sites.length === 1);
+  ok('the hop loop is reached at all', sites.length >= 1);
 
-  if (sites.length === 1) {
+  {
     // ...and it is inside `travelJob`, not beside it. Brace-match from the BODY brace,
     // not from the destructured options in the signature — that one balances on its own
     // and would close the match before the body starts. Same trap m59-travel-test names.
@@ -203,17 +222,46 @@ console.log('the hop loop is entered from exactly one place in the whole file');
       if (src[i] === '{') depth++;
       else if (src[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
     }
-    ok('the one direct call sits inside travelJob', sites[0] > jobAt && sites[0] < end);
+    ok('EVERY direct call sits inside travelJob',
+       end > 0 && sites.every(at => at > jobAt && at < end));
   }
 
   // The wrapper has to do BOTH jobs, or a caller reaching for it gets half a guarantee.
+  //
+  // BRACE-MATCHED, NOT A FIXED SLICE. This read `jobAt + 2600` and every assertion below it
+  // was really asking "is this in the first 2,600 characters of travelJob" — so growing the
+  // method by a paragraph of comment silently moved the release line out of the window and
+  // turned a passing assertion into a failing one about nothing. A window that depends on
+  // how much you wrote is not a window.
   const jobAt = src.indexOf('  travelJob(dest, {');
-  const wrapper = src.slice(jobAt, jobAt + 2600);
+  const wrapper = (() => {
+    const SIG = '} = {}) {';
+    const sigAt = src.indexOf(SIG, jobAt);
+    let depth = 0;
+    for (let i = sigAt + SIG.length - 1; i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(jobAt, i + 1); }
+    }
+    return src.slice(jobAt);
+  })();
+  ok('the wrapper is a whole method', wrapper.trim().endsWith('}') && wrapper.length > 500);
   ok('the wrapper claims the job slot', /startJob\('travel'/.test(wrapper));
-  ok('the wrapper holds the keeper inert', /goInert\(/.test(wrapper));
-  ok('the wrapper releases only a hold it took', /if \(ours\) keeper\.revive/.test(wrapper));
+  ok('the wrapper stands the keeper down as TRAVELLING', /goTravelling\(/.test(wrapper));
+  // The other half, and the one that catches a regression rather than a rename: a journey
+  // must never take the state that switches the survival ladder off.
+  ok('and never as inert — that state is for errands', !/goInert\(/.test(wrapper));
+  // BY IDENTITY, not by "is it travelling". A take-back can end this journey and a second
+  // one can start before the release runs, and the boolean version would then revive
+  // somebody else's hold — which is the contention this whole file is about.
+  ok('the wrapper releases only the very hold it took',
+     /if \(ours && keeper\?\.inert === ours\) keeper\.revive/.test(wrapper));
+  // The travelling guard can END the journey from under this wrapper — that is what a
+  // take-back is — and the re-assert timer must not then put the character straight back
+  // into the state the guard just left.
+  ok('the re-assert stands down once the movement has been cancelled',
+     /movementWasCancelled\(movementGeneration\)/.test(wrapper));
   ok('the wrapper passes the movement generation', /movementGeneration/.test(wrapper));
-  // An inert keeper wakes on INERT_MAX_MS, so a hold that is asserted once and never
+  // A stood-down keeper wakes on INERT_MAX_MS, so a hold that is asserted once and never
   // again lapses mid-journey and the keeper starts steering under the walk.
   ok('the keeper hold is re-asserted rather than set once', /setInterval\(assert_/.test(wrapper));
 }

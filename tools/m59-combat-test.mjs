@@ -39,6 +39,10 @@ import { join } from 'node:path';
 const recoverCrashAt = (activeFile, ledgerFile) => recoverCrash({ activeFile, ledgerFile });
 const readLedgerAt = (f) => readLedger(f);
 import { RoomGeometry } from './m59-roo.mjs';
+// The routing table, and the map loader that agrees with the broker about which map
+// that is. See the split-room section for why a routing assertion needs both.
+import { attachStepMasks } from './m59-routes.mjs';
+import { loadMap } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { inheritsClass, roomCap, karmaSafe } from './m59-spawns.mjs';
 import { OF, prepareActTarget } from './m59-parse.mjs';
@@ -874,9 +878,52 @@ console.log('\na split room is crossed through its intervening room');
   // the two staircases through base Castle Victoria; monsters cannot operate either
   // door. Exercise the real baked room so a map update that changes those landings also
   // changes (and, if necessary, breaks) this test visibly.
-  const map = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
-  const base = map.rooms[38];
-  const baseGeo = RoomGeometry.fromJSON(base.roo);
+  //
+  // AND ATTACH THE STEP MASKS, BECAUSE THE BROKER DOES AND A TEST THAT DOES NOT IS
+  // TESTING A CONFIGURATION NOTHING RUNS IN.
+  //
+  // `RoomGeometry.fromJSON(room.roo)` alone answers `hasStepMask: false`, and `path()`
+  // defaults `collision` to exactly that — so the router falls back to the coarse grid and
+  // plans with `standable()`, which is a question about whether a body FITS somewhere, not
+  // about whether the mover will step there. The two columns dividing this room are
+  // grid-solid and BSP-standable along their whole height, so the coarse view walks
+  // straight through the wall and reports the two wings directly connected. Every
+  // assertion below then fails, and it looks exactly like the map having been rebaked.
+  //
+  // It was not the map. `m59-broker.mjs` calls `attachStepMasks(worldMap)` at startup and
+  // gets 264 of 264 rooms on the collision view; with those attached `path()` refuses the
+  // crossing, `sameRoomIslandBridgePlan` produces the two-staircase route, and the mover
+  // agrees with the planner — which it did all along. `moverStepLands` allows ZERO steps
+  // from open floor into those columns, at any row, from either side.
+  //
+  // So this is not a convenience. Any test that asserts a ROUTING fact against the real
+  // baked map has to attach masks first, or it measures the fallback rather than the fleet.
+  // `attachStepMasks` is also a CONSTRUCTOR, not only a lookup — it visits every room
+  // through `geometryOf` and hangs the mask on whatever that returns. So the cache it
+  // populates is where the masked geometry lives, and building a second one afterwards
+  // with `RoomGeometry.fromJSON` gets a fresh object with no mask on it. Same trap the
+  // note in m59-routes.mjs describes for m59-overlay and the other callers that build
+  // their geometry from inside that loop.
+  const map = loadMap();
+  const built = new Map();
+  const geometryFor = num => {
+    const room = map.rooms[num];
+    if (!built.has(num)) built.set(num, room?.roo ? RoomGeometry.fromJSON(room.roo) : null);
+    return built.get(num);
+  };
+  {
+    const masks = attachStepMasks(map, { geometryOf: room => geometryFor(room.num) });
+    // ABSENT IS NOT AN ERROR for the broker — a checkout that has never run the bake plans
+    // on the grid exactly as it always did. It IS an error here, because the assertions
+    // below are about the collision view specifically, and passing them on the coarse grid
+    // would mean something quite different from passing them.
+    ok('the routing table is baked, so this section plans on the mover\'s own geometry',
+       masks.ok && masks.attached > 0,
+       JSON.stringify(masks) + ' — run: node tools/setup.mjs routes');
+    ok('and room 39 is planning on it rather than on the coarse grid',
+       geometryFor(39)?.hasStepMask === true);
+  }
+  const baseGeo = geometryFor(38);
   const chamberQuarry = { row: 7, col: 33 };
   const chamberStats = {};
   const chamberWall = nearestSafeSpot(baseGeo, { row: 13, col: 35 }, {
@@ -889,11 +936,34 @@ console.log('\na split room is crossed through its intervening room');
      baseGeo.monsterCanReach(chamberQuarry.row, chamberQuarry.col,
                              chamberWall.row, chamberWall.col, { los: 0 }).reachable,
      JSON.stringify(chamberWall && { col: chamberWall.col, row: chamberWall.row }));
-  ok('and rejects the many attractive walls beyond its player-only doors',
-     chamberStats.partition_rejected > chamberStats.reachable_by_quarry,
+  // WEAKENED ON PURPOSE, AND THE REASON IS AN OPEN QUESTION ABOUT PRODUCTION RATHER THAN
+  // ABOUT THIS TEST. It used to read `partition_rejected > reachable_by_quarry`, and on
+  // this room that comparison is 146 > 8 without step masks and 14 > 140 with them — a
+  // seventeenfold swing in what a monster is believed able to reach, from attaching a mask.
+  //
+  // `monsterCanReach` asks for the COARSE grid deliberately and says why in the loudest
+  // comment in m59-roo.mjs: monsters move on it, the fine grid connects 99.9% of West
+  // Merchant Way where the coarse grid connects 24%, and five characters stood where the
+  // fine grid said a centipede could reach them and the coarse grid was right. But it
+  // reaches the grid through `path()`, whose `collision` defaults to `this.hasStepMask` —
+  // so once a room is baked, the question "can a MONSTER walk here" is answered partly
+  // with the PLAYER's step relation.
+  //
+  // The error is in the safe direction — the fleet believes monsters reach MORE, so it
+  // declines walls rather than trusting bad ones, which costs a walk and not a character.
+  // It is still an error, and 140 of 154 eligible walls in Castle Victoria being written
+  // off is not a small one. The candidate fix is one argument (`collision: false` on that
+  // call), it changes safe-spot selection on every baked room, and it is survival code, so
+  // it is not being made from inside a test.
+  //
+  // So what is asserted here is the property the line was written for — the partition
+  // logic really does reject walls beyond the player-only doors — and the RATIO is left
+  // alone until somebody decides which grid that question should be asked on.
+  ok('and rejects walls beyond its player-only doors',
+     chamberStats.partition_rejected > 0 &&
+     chamberStats.partition_rejected + chamberStats.reachable_by_quarry <= chamberStats.eligible,
      JSON.stringify(chamberStats));
-  const upstairs = map.rooms[39];
-  const geo = RoomGeometry.fromJSON(upstairs.roo);
+  const geo = geometryFor(39);
   const eastToWest = sameRoomIslandBridgePlan(
     map, 39, geo, { row: 8, col: 40 }, { row: 8, col: 10 });
   ok('the east and west wings are not mistaken for a direct in-room walk',

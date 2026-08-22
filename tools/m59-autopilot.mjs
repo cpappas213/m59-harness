@@ -7603,7 +7603,12 @@ export class Autopilot {
     // stillness bug that killed Cccc, arriving by a different door.
     //
     // `world.room.num` is the map's own number for the room. It does not move.
-    const at = me ? { at: now, room: this.s?.world?.room?.num ?? null, col: me.col ?? null,
+    // Falls back to the live handle rather than to NULL. The number is the right answer and
+    // the reason for this change, but `world.room` resolves through the map and can be
+    // absent — and a null here does not degrade gracefully: `prev.room === last.room` would
+    // be true for every pair, so every character would read as never having changed room.
+    // A stale-able id beats a field that silently makes the stall detector say yes always.
+    const at = me ? { at: now, room: this.s?.world?.room?.num ?? c.room?.id ?? null, col: me.col ?? null,
                       row: me.row ?? null, x: me.x ?? null, y: me.y ?? null,
                       health: hp?.value ?? null, doing } : null;
     if (at) {

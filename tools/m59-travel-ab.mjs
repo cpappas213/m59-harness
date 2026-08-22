@@ -1,5 +1,25 @@
 #!/usr/bin/env node
-// DOES RESTING AT A SAFE WALL MID-JOURNEY MAKE A CHARACTER DIE LESS?
+// DID RESTING AT A SAFE WALL MID-JOURNEY MAKE A CHARACTER DIE LESS?
+//
+// ===================== CLOSED 2026-08-21. THE ARMS NO LONGER SPLIT. =====================
+//
+// This tool still reads the historical rows and still prints the tally, because the rows
+// exist and somebody will want to know what they said. What it no longer does is ask for
+// more data: `travel_hold` defaults to `on` and `ab`/`half` are accepted as `on`, so from
+// the retirement forward every journey is in the holding arm and the control arm is frozen
+// at whatever it had.
+//
+// WHY IT WAS CLOSED WITHOUT REACHING SIGNIFICANCE, which is worth writing down because it
+// is not the usual reason. The experiment compared two ways of TRAVELLING WELL. The deaths
+// this fleet actually suffers are not that: characters get stuck, lost or unresponsive and
+// are eaten where they stand. Cccc, 2026-08-21 — walked out of a sanctuary at 27% health
+// against a 70% flee threshold, into a room with six things in it, killed over twenty-two
+// seconds with nothing driving at all. Neither arm addresses that, and the control arm was
+// paying for the privilege of asking: half of every journey deliberately walked a hurt
+// character straight past the only free healing on the road.
+//
+// So the intervention that mattered was never the wall. It was the keeper still being
+// awake — see TRAVEL_GUARD_DEFAULTS in m59-autopilot.mjs.
 //
 //   node tools/m59-travel-ab.mjs              # the result so far, and whether to believe it
 //   node tools/m59-travel-ab.mjs --hours 48
@@ -141,30 +161,30 @@ console.log('  so the holding arm losing more health is the fix working, not fai
 console.log(`  health lost per journey      ${fmt(tally.walk.journeys ? tally.walk.hp_lost / tally.walk.journeys : null, 2).padStart(6)}  ${fmt(tally.hold.journeys ? tally.hold.hp_lost / tally.hold.journeys : null, 2).padStart(16)}`);
 console.log(`  seconds per journey          ${fmt(tally.walk.journeys ? tally.walk.ms / tally.walk.journeys / 1000 : null).padStart(6)}  ${fmt(tally.hold.journeys ? tally.hold.ms / tally.hold.journeys / 1000 : null).padStart(16)}`);
 
-console.log('\nVERDICT');
+console.log('\nVERDICT — THE EXPERIMENT IS CLOSED (2026-08-21)');
+console.log('  Holding is the BEHAVIOUR now, not a treatment: travel_hold defaults to "on" and');
+console.log('  ab/half are accepted as "on". The control arm is frozen at whatever it had, so');
+console.log('  the numbers above stop moving from here and no amount of waiting changes them.');
+console.log('  It was not closed by reaching significance. It was closed because the QUESTION was');
+console.log('  wrong: it compared two ways of travelling WELL, and what kills this fleet is being');
+console.log('  stuck, lost or unresponsive and eaten where it stands — which neither arm touched,');
+console.log('  while the control arm paid for the asking by walking hurt characters past the only');
+console.log('  free healing on the road. See TRAVEL_GUARD_DEFAULTS in m59-autopilot.mjs.');
 const nW = tally.walk.journeys, nH = tally.hold.journeys;
 const dW = tally.walk.deaths, dH = tally.hold.deaths;
 if (!nW || !nH) {
-  console.log('  no journeys recorded in either arm yet — the fleet has not travelled, or the');
-  console.log('  broker predates this experiment. Nothing to say.');
+  console.log('\n  Not enough of a split was ever recorded to compare. That is now permanent.');
 } else {
   const t = twoProportion(dW, nW, dH, nH);
-  const need = eventsNeeded(0.5);
+  console.log('\n  WHAT THE ROWS SAID BEFORE IT CLOSED, for the record and not as a decision:');
   if (t && t.p < 0.05) {
     const better = rate(tally.hold) < rate(tally.walk) ? 'holding' : 'walking on';
-    console.log(`  ${better} is better, p = ${t.p.toFixed(4)}.`);
+    console.log(`  ${better} was better, p = ${t.p.toFixed(4)}.`);
   } else {
-    console.log(`  NOT YET. ${t ? `p = ${t.p.toFixed(3)}` : 'too few deaths to test'}.`);
-    console.log(`  ${dW} death(s) in the control arm; about ${need} are needed to see a halving`);
-    console.log('  with 80% power. Deaths are the only honest outcome here and they are rare —');
-    if (dW > 0) {
-      const perHour = dW / HOURS;
-      const hours = perHour > 0 ? Math.ceil((need - dW) / perHour) : null;
-      if (hours != null && hours > 0)
-        console.log(`  at the current rate that is roughly another ${Math.ceil(hours / 24)} day(s).`);
-    } else {
-      console.log('  no control-arm deaths yet, so there is not even a rate to extrapolate from.');
-    }
+    console.log(`  never separated. ${t ? `p = ${t.p.toFixed(3)}` : 'too few deaths to test'}, ` +
+                `${dW} control-arm death(s) against ${dH} in the holding arm.`);
+    console.log(`  About ${eventsNeeded(0.5)} control-arm deaths would have been needed to see a`);
+    console.log('  halving with 80% power — which is why this was never going to answer in time.');
   }
   if (tally.hold.holds === 0 && tally.hold.candidates > 0)
     console.log('\n  WARNING: the treatment arm found candidate moments and held at none of them.\n' +
@@ -172,8 +192,9 @@ if (!nW || !nH) {
                 '  events — an experiment whose treatment never fires measures nothing.');
   if (tally.hold.candidates === 0)
     console.log('\n  WARNING: no candidate moments at all. Either nothing is travelling hurt, or the\n' +
-                '  gate is too tight (travelHoldBelow / travelHoldVigor). Until this is non-zero\n' +
-                '  the two arms are running identical code and the comparison is empty.');
+                '  gate is too tight (travelHoldBelow / travelHoldVigor). This still matters\n' +
+                '  after the retirement — it now means the HOLD ITSELF never fires, rather\n' +
+                '  than that a comparison is empty.');
 }
 console.log(`\n  ${out.deaths_off_journey} death(s) in the window happened off a journey and are not this ` +
             'experiment\'s business.');

@@ -113,6 +113,26 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   and an unknown condition never holds) and
   `node tools/m59-commitment-test.mjs` (71 — what counts as being spoken for, and the
   distinction between a bot OWNING a character and being mid-operation on it) and
+  `node tools/m59-which-test.mjs` (16 — **the gate every `/m59*` command runs first, and the
+  one tool that may never name the wrong fleet**. It builds a throwaway checkout in TEMP and
+  runs the real `m59-which.mjs` against fake brokers, so it opens sockets only to itself and
+  cannot see this machine's rosters. Two defects lived in one line — `live.find(x =>
+  x.health.fleet === label) ?? live[0]` — and each fails in a different direction. The
+  fallback meant that when OUR broker was slow to answer, an UNRELATED one was picked up and
+  reported as the answer: measured here, prod's `/health` takes 1046ms idle and 2573ms under
+  load, because it is the busy one and that is exactly what makes it the one that matters,
+  while an idle broker on another port answers in 4ms — so a missed probe printed `MISMATCH:
+  the broker is holding "shadow"`, naming 21 entirely different characters, about one run in
+  four. The `find` matched on the fleet LABEL, which CLAUDE.md says outright is not an
+  identity, and THAT one fails to an all-clear: run against the old code, a second checkout's
+  broker calling its fleet "prod" while serving a different roster returns **exit 0**. So this
+  pins that a broker is ours only when its `/health` state path resolves to our roster file,
+  that an unreachable port is INDETERMINATE and never a statement about a fleet, that a
+  disagreement between the socket and the records on disk is refused as the shape of a second
+  broker on one fleet, that a lock whose live pid started long after the lock was written is a
+  recycled pid rather than a holder — the process start time is 1ms from the pid file's own
+  timestamp, because `m59-service.mjs` writes it as it spawns — and that nothing listening
+  anywhere is still exit 0, or `./m59.sh up` could never start a fleet) and
   `node tools/m59-unattended-test.mjs` (44 — **the contract test for the carve-out**: with
   no bot attached every faculty answers `keeper`, a bot asking for all eight gets only the
   directional four, an expired lease is the keeper's again, and the override takes a
@@ -184,8 +204,10 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   that the rent sign survives two overlapping negative sentences, and that the Bookmaker's
   own rent override is not the non-PK doubling in disguise. Founding costs 5,000 and cannot be
   undone and a hall is 25,000, so none of it can be learned live) and
-  `node tools/m59-economy-test.mjs` (61 — the Economy and Skills boards, and the one
-  tab bar all six boards share) and
+  `node tools/m59-economy-test.mjs` (73 — the Economy and Skills boards, the one
+  tab bar all six boards share, and the pack drill-in: that it names what is in the pack
+  rather than only how full it is, and that an EMPTY pack, a character the broker is not
+  holding, and a broker too old to report the list are three different sentences) and
   `node tools/m59-stats-test.mjs` (60 — the Stats board and the pane it shares with the
   planner: that grouping is the six numbers and not the level, that a sheet with no
   attributes is never folded in as a zero roll, that a roster character with no sheet at all

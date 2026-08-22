@@ -179,3 +179,41 @@ the engagement ceiling refusing the prey, or a kill that pays nothing because th
 level is not *strictly* above max health, are notes on a plan that is still ready — being
 unable to earn is not a reason to leave somebody outside the walls.
 
+## WHAT A JOURNEY MAY INTERRUPT ITSELF FOR — `travel_guard`
+
+The fourth overridable surface, and the only one whose default is not a number but a
+**refusal to go quiet**. Full argument and the table in
+[`docs/m59-boundary.md`](m59-boundary.md); what belongs here is why it obeys the same four
+rules as the other three.
+
+```bash
+autopilot action=set agent=<a> travel_guard='{"safe_spot": false}'
+autopilot action=set agent=<a> travel_guard=off      # every faculty off — the old inert journey
+autopilot action=status agent=<a>                    # the EFFECTIVE guard, travelling or not
+```
+
+- **Silence means the behaviour that was already there, never an empty policy.** All six
+  faculties default **on**. A character whose roster says nothing about travelling still
+  flees, still rests, still re-arms — because the population that has no opinion configured
+  is exactly the population nobody is watching.
+- **An unusable value keeps the committed one.** `travel_guard` merges over whatever is
+  already set, so `{"flee": false}` turns off one faculty rather than turning off the other
+  five by omission. Pass the string `off` to mean all of them; `null` clears the override.
+- **An unrecognised key is REPORTED, never applied and never dropped.** A misspelled faculty
+  is an error naming the six valid ones. This is the same rule that `purpose` broke by
+  sitting outside a schema for a year with every keeper's audit switched off, and the cost
+  of breaking it here is higher: a `travel_guard` typo would read as configured and behave
+  as unconfigured on the one axis where unconfigured used to mean *dead*.
+- **And the setting is visible before it matters.** `autopilot status` reports the effective
+  guard whether or not a journey is running, because the question an operator asks is *what
+  will this character do if something sends it across the world*, and an answer that only
+  exists once one already has is an answer arriving after the post-mortem.
+
+**`travel_hold` is a different setting and is no longer an experiment.** It chooses whether
+a journey stops at a WALL in the open; `travel_guard.safe_spot` chooses whether it is
+allowed to at all. The safe-wall A/B was retired on 2026-08-21 — `on` is the default,
+`ab`/`half` are accepted as `on` and say so in the journal rather than being silently
+remapped. It was not closed by reaching significance: it compared two ways of travelling
+*well*, and what kills this fleet is getting stuck, lost or unresponsive and being eaten
+where it stands, which neither arm addressed while the control arm paid for the asking by
+walking hurt characters straight past the only free healing on the road.

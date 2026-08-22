@@ -31,6 +31,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import http from 'node:http';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOOK = HERE + '/../substrate/circuit-runs.json';
@@ -61,15 +62,70 @@ export const ROUTES = {
                     why: 'Tos -> Castle Victoria -> Cor Noth -> Barloque -> Tos, both ways through Ukgoth' },
 };
 
-export async function broker(name, args, { timeoutMs = 300000 } = {}) {
-  try {
-    const r = await fetch(`http://127.0.0.1:${PORT}/`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(timeoutMs),
+// ONE REQUEST, ONE SOCKET, CLOSED WHEN IT IS DONE — and this is not a style preference,
+// it is what stops this tool crashing on the way out.
+//
+// This used `fetch`, which pools keep-alive sockets on undici's global agent and leaves an
+// un-cancelled `AbortSignal.timeout` timer behind. `process.exit()` then tears those down
+// mid-close and Node aborts:
+//
+//     Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76
+//
+// ...with exit 127, AFTER the run has printed perfectly correct output. Measured on this
+// machine at a sharp, deterministic threshold — THREE or more connections still pooled at
+// exit fails 60 times out of 60, two or fewer never fails:
+//
+//     0 live -> 0/15    1 live -> 0/15    2 live -> 0/15    3 live -> 15/15
+//
+// Which is exactly the shape this file runs in. `probe()` below issues TWO calls at once,
+// and the lap loop wraps that in `Promise.all(bots.map(...))` — so any run with two or
+// more bots is over the line, and every `process.exit()` in this file was a coin flip on
+// whether the exit code meant anything. Found first in `m59-which.mjs`, whose entire
+// contract is its exit code; the same pattern is here and in `m59-hoptest.mjs`, which
+// imports this function.
+//
+// `agent: false` with `connection: close` leaves no pooled socket and needs no abort
+// timer, so there is nothing in a closing state when the process ends. That is what makes
+// the plain `process.exit()` calls further down safe, and it is the probe
+// `m59-fleets.mjs` already documents for the same reason.
+//
+// ONE DIFFERENCE WORTH KNOWING: `timeout` here is a socket INACTIVITY timeout, where
+// `AbortSignal.timeout` was a total deadline. For this caller they coincide — the broker
+// sends nothing at all until the tool call finishes — but a future endpoint that streams
+// progress would keep the socket alive past `timeoutMs` rather than being cut off at it.
+function postJson(port, payload, timeoutMs) {
+  return new Promise((done) => {
+    const body = JSON.stringify(payload);
+    const req = http.request({
+      hostname: '127.0.0.1', port, path: '/', method: 'POST',
+      headers: { 'content-type': 'application/json',
+                 'content-length': Buffer.byteLength(body),
+                 connection: 'close' },
+      agent: false, timeout: timeoutMs,
+    }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { text += chunk; });
+      res.on('end', () => done({ status: res.statusCode, text }));
     });
-    if (!r.ok) return { _error: `broker ${r.status}` };
-    const j = await r.json();
+    req.on('timeout', () => { req.destroy(); done({ error: `no reply within ${timeoutMs}ms` }); });
+    req.on('error', e => done({ error: e.message }));
+    req.end(body);
+  });
+}
+
+export async function broker(name, args, { timeoutMs = 300000 } = {}) {
+  {
+    const r = await postJson(PORT, { jsonrpc: '2.0', id: 1, method: 'tools/call',
+                                     params: { name, arguments: args } }, timeoutMs);
+    // Every failure comes back as `{_error}` and nothing throws — `m59-hoptest.mjs`
+    // imports this and turns `_error` into a failed leg, so a rejection here would be a
+    // crash in a caller that has no catch.
+    if (r.error) return { _error: r.error };
+    if (r.status < 200 || r.status >= 300) return { _error: `broker ${r.status}` };
+    let j;
+    try { j = JSON.parse(r.text); }
+    catch { return { _error: `broker sent non-JSON: ${String(r.text).slice(0, 200)}` }; }
     if (j.error) return { _error: j.error.message };
     const text = j.result?.content?.[0]?.text ?? '{}';
     // A REFUSAL COMES BACK AS PROSE, NOT AS JSON, and parsing it blindly turns a perfectly
@@ -80,7 +136,7 @@ export async function broker(name, args, { timeoutMs = 300000 } = {}) {
     if (j.result?.isError) return { _error: String(text).replace(/^error:\s*/, '') };
     try { return JSON.parse(text); }
     catch { return { _error: String(text).slice(0, 200) }; }
-  } catch (e) { return { _error: e.message }; }
+  }
 }
 
 const INCOMING_SWING = /^You\s+\w+\s+.+'s attack\.?$/i;
@@ -102,6 +158,16 @@ export async function probe(agent, mark = 0) {
            swings, seq, last: st?.last_action ?? null, error: st?._error ?? null };
 }
 
+// IS THIS PROBE LOOKING AT A DEAD CHARACTER.
+//
+// By NAME first, with the number as the fallback, which is how `passUnderworld` asks the
+// same question — the room the game names "The Underworld" is what a death puts you in,
+// and matching the string survives a server whose room numbering is not this one's.
+// Room 1 is kept because a probe that timed out mid-name still carries the number.
+export const isDead = p =>
+  /underworld/i.test(p?.name ?? '') || p?.room === 1 ||
+  (p?.health != null && p.health <= 0);
+
 /**
  * One leg: send a character to a room and watch until it arrives or gives up.
  *
@@ -119,6 +185,9 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
   const first = await probe(agent);
   let mark = first.seq, swings = 0, lowest = first.health ?? null, deaths = 0;
   const from = first.room;
+  // Started dead? Then arriving in the Underworld is not news, and counting it would
+  // blame this leg for the previous one's death.
+  let wasDead = isDead(first);
 
   const sent = await broker('travel', { agent, to, background: true, max_hops: 30 }, { timeoutMs: 60000 });
   if (sent?._error) return { agent, to, from, arrived: false, ms: 0, why: 'travel refused: ' + sent._error };
@@ -129,12 +198,24 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
     const p = await probe(agent, mark);
     mark = p.seq;
     swings += p.swings;
-    if (p.health != null) {
-      if (lowest == null || p.health < lowest) lowest = p.health;
-      // A death shows as health at or below zero, or as an unheralded arrival in the
-      // Underworld. Both are worth counting; neither is worth stopping for.
-      if (p.health <= 0) deaths++;
-    }
+    if (p.health != null && (lowest == null || p.health < lowest)) lowest = p.health;
+    // A death shows as health at or below zero, or as an unheralded arrival in the
+    // Underworld. Both are worth counting; neither is worth stopping for.
+    //
+    // ONLY THE FIRST HALF WAS EVER IMPLEMENTED, and the half that was missing is the one
+    // that happens. A 5s poll almost never lands on the frame where health reads zero —
+    // the server moves the body to the Underworld and refills it — so the check that was
+    // here caught almost nothing. Measured: a shuttle run in which NINE of twenty-one
+    // characters died reported `0 death(s)`, with five of them still standing in room 1
+    // when the leg gave up. The comment had described the right rule the whole time.
+    //
+    // COUNTED ON THE EDGE, NEVER ON THE STATE. A corpse stays in the Underworld across
+    // many polls — one leg here spent 903 seconds there — so counting presence would
+    // report a death per poll, and health can read <= 0 on two consecutive samples for
+    // one death. The transition into being dead is the event; being dead is not.
+    const dead = isDead(p);
+    if (dead && !wasDead) deaths++;
+    wasDead = dead;
     if (p.room !== lastRoom) { rooms.push(p.room); lastRoom = p.room; lastSeen = Date.now(); }
     onTick?.({ agent, ...p, elapsed: Date.now() - start });
 

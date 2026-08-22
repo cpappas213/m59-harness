@@ -42,15 +42,39 @@ function lift(signature, name, deps = {}) {
   SOURCE[name] = method;
   return new Function(...Object.keys(deps), `return ({${method}}).${name}`)(...Object.values(deps));
 }
-const pulsePosition = lift('pulsePosition(now, hp) {', 'pulsePosition', { PULSE_SAMPLES: 3 });
+// THE REAL VALUES, READ FROM THE SOURCE, not numbers copied into this file.
+//
+// The ring was widened from 3 to 6 on 2026-08-21 so that `damageRate` could read a RATE
+// off it — half a point a second over five seconds, which is what was killing characters
+// and what a two-second window cannot see. `pennedIn` kept the newest three, because it
+// gets STRICTER as the ring grows and widening it would have quietly switched off the
+// handbrake it feeds. Hardcoding either number here would let those two drift apart with
+// this suite still green, which is precisely the failure it exists to catch.
+const constant = name => {
+  // `[0-9]` rather than an escape, because this pattern lives in a TEMPLATE LITERAL and
+  // the literal eats the backslash before RegExp ever sees it — `\d` becomes a plain `d`,
+  // the pattern silently matches nothing, and both constants read null while every
+  // assertion about them still runs.
+  const m = new RegExp(`const ${name} = ([0-9]+);`).exec(src);
+  ok(`${name} is readable from the source`, !!m);
+  return m ? Number(m[1]) : null;
+};
+const PULSE_SAMPLES = constant('PULSE_SAMPLES');
+const PULSE_MOVEMENT_SAMPLES = constant('PULSE_MOVEMENT_SAMPLES');
+ok('the ring is wide enough to read a damage rate from', PULSE_SAMPLES >= 5, String(PULSE_SAMPLES));
+ok('and the movement tests still read only the newest few',
+   PULSE_MOVEMENT_SAMPLES === 3 && PULSE_MOVEMENT_SAMPLES < PULSE_SAMPLES,
+   `${PULSE_MOVEMENT_SAMPLES} of ${PULSE_SAMPLES}`);
+
+const pulsePosition = lift('pulsePosition(now, hp) {', 'pulsePosition', { PULSE_SAMPLES });
 // `inertBleeding` is the other half of the inert branch and is lifted rather than stubbed
 // for the usual reason: a hand-written imitation would be testing the imitation, and this
 // one decides whether a character being eaten is visible at all.
-const inertBleeding = lift('inertBleeding(w, hp) {', 'inertBleeding', {});
+const inertBleeding = lift('inertBleeding(w, hp) {', 'inertBleeding', { PULSE_MOVEMENT_SAMPLES });
 // `pennedIn` is what makes the inert branch see the two-square BOUNCE rather than only a
 // character standing perfectly still — the failure that killed Cccc with its last three
 // pulses reading 35,33 / 34,33 / 35,33.
-const pennedIn = lift('pennedIn(w) {', 'pennedIn', {});
+const pennedIn = lift('pennedIn(w) {', 'pennedIn', { PULSE_MOVEMENT_SAMPLES });
 
 // ---------------------------------------------------------------------------
 // The smallest thing that can stand in for a keeper mid-walk.

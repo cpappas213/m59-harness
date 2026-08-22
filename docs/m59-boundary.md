@@ -42,6 +42,68 @@ because text assembled at the moment is how a fleet says something nobody chose.
 point, since testing these for real means arranging a player attack, a death and a level
 gain on a live shared server.
 
+### An errand takes a character away. A journey only steers it.
+
+**`goInert` and `goTravelling` are two different stand-downs and the difference is a life.**
+
+`inert` means *stop looking at the survival question* — the loop keeps running, so frames,
+observations, the partner register and the death record all keep working, and everything
+that would MOVE, SWING, SPEAK, TRADE or CAST is skipped. That is exactly right for an
+errand: `m59-outfit.mjs` walks the character across town and the keeper has no useful
+opinion about any of it. The one exemption is death, because a corpse produces no telemetry
+at all.
+
+It was also, until 2026-08-21, what a **journey** took — and a journey is not an errand. It
+steers; it does not take the body away from the keeper's opinion about staying alive. The
+cost of conflating them, from `substrate/postmortems/Cccc-2026-08-21T02-30-25-005Z.json`:
+
+| | |
+|---|---|
+| `02:29:13` | a commute driver saw `stuck in 1` — room 1 is **the Underworld** — and re-sent `travel`. `travelJob` called `goInert` |
+| `02:29:31` | the keeper escaped the Underworld into an inn at 11 of 37. A sanctuary |
+| `02:29:40` | the journey walked it back out at **27% health, against a 70% flee threshold** |
+| `02:30:00` | West Merchant Way through Ilerian Woods. Six things in the room |
+| `02:30:23` | dead, twenty-two seconds later, with no swing recorded and no flee attempted |
+
+Nothing in the survival ladder was broken. The ladder was **switched off**.
+
+So a journey now takes `goTravelling`, which keeps the ladder armed and enumerates what it
+may do. Five faculties, on **two clocks**, and the split is what keeps *only one thing drives
+a body* true:
+
+| | clock | what it does |
+|---|---|---|
+| `flee` | mid-hop | below `flee_below` with something adjacent |
+| `fight_back` | mid-hop | losing health fast enough to empty the bar before the road ends |
+| `arm` | mid-hop | the weapon is gone |
+| `rest` | hop boundary | sit in a sanctuary until health **and** vigor are as high as sitting takes them |
+| `safe_spot` | hop boundary | hold a defensible wall part-way through |
+
+**Mid-hop, the mover is walking, so none of those three act — they CANCEL the journey** and
+hand the character back to the ordinary ladder, which then decides on the next breath with
+real numbers. That is the watchdog rescue's contract and it is why the keeper never fights
+the mover for a body. **At a hop boundary the mover is between rooms and nothing is
+contended**, so the other two pause the journey instead of ending it.
+
+**None of the four asks whether the body is moving.** The rescue this replaced required four
+seconds of stillness, and Cccc's last pulses read 23,3 / 25,5 / 26,5 / 25,5 — a two-square
+shuffle against a wall that reset that timer on every sample, so it fired 5.1 seconds before
+the end. A character being eaten while it walks is in exactly as much trouble as one being
+eaten while it stands, and it is harder to see.
+
+```bash
+autopilot action=set agent=<a> travel_guard='{"safe_spot": false}'   # one faculty off
+autopilot action=set agent=<a> travel_guard=off                      # the old inert behaviour
+autopilot action=set agent=<a> travel_guard=on                       # all six back
+```
+
+All six default **on**, because a character nobody has an opinion about must still defend
+itself — the same argument `PROTECTED_FACULTIES` makes above. An unrecognised faculty name
+is **refused**, never ignored. `autopilot action=status` reports the effective guard whether
+or not anything is travelling, because the question is *what will this character do if a
+journey takes it* and an answer that only exists once one has is an answer arriving too
+late. `node tools/m59-travelling-test.mjs` (64) is the guard.
+
 ### Owning a character and being busy with it are different facts
 
 This is the distinction the whole split runs on, and conflating it deadlocks the bot that
