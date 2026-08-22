@@ -1078,5 +1078,53 @@ console.log('--- a safe wall is the two grids disagreeing ---');
   ok('and no geometry at all is null, not a throw', gridDisagreementAt(null, 5, 5) === null);
 }
 
+
+console.log('');
+console.log('A WALL WE COULD NOT WALK TO IS NOT SHELTER');
+{
+  // From a dead character's own decision trail in the Western border of the Twisted Wood:
+  //
+  //   could not reach the safe spot
+  //   will not rest in the open here
+  //   leaving the room to recover safely
+  //   could not leave
+  //
+  // ...and then it died. Nothing recorded the failure, so every pass chose the SAME
+  // unreachable square, and the crossing was never allowed to proceed. All three of that
+  // room's baked rails answer `moverStepLands` on every step — the room was crossable the
+  // whole time; the character simply never got to walk it.
+  //
+  // Distinct from the safe-spot BOOK, which records squares that failed to HOLD. That is a
+  // fact about the wall and it is permanent. This is a fact about the WALK, usually
+  // temporary — something in the doorway — so it expires rather than condemning a good wall.
+  const spots = [
+    { atStep: 1, detour: 1, col: 10, row: 5, refused_approaches: 3, proven: true },
+    { atStep: 2, detour: 2, col: 20, row: 5, refused_approaches: 2, proven: false },
+  ];
+  const first = shelterAhead(spots, 0, { maxDetour: 4 });
+  ok('with nothing excluded, the nearest planned stop is offered',
+     first?.col === 10, JSON.stringify(first));
+
+  const skipped = shelterAhead(spots, 0, { maxDetour: 4, unreachable: new Set(['10,5']) });
+  ok('a stop we failed to reach is not offered again',
+     skipped?.col === 20, JSON.stringify(skipped));
+
+  // AND WHEN NOTHING IS LEFT, IT SAYS SO rather than handing back a square it already knows
+  // is no good. Null is what lets the rung decline and the journey carry on — which is the
+  // whole point: a shelter that cannot be reached must not keep cancelling the crossing.
+  const none = shelterAhead(spots, 0, { maxDetour: 4, unreachable: new Set(['10,5', '20,5']) });
+  ok('and when every planned stop is unreachable it declines outright', none === null,
+     JSON.stringify(none));
+
+  // The exclusion is applied BEFORE the ranking, not after — otherwise an unreachable square
+  // wins on disagreement and is then failed again, which is the loop this replaces.
+  const ranked = shelterAhead(
+    [{ atStep: 1, detour: 1, col: 30, row: 5, refused_approaches: 9 },
+     { atStep: 1, detour: 1, col: 31, row: 5, refused_approaches: 1 }],
+    0, { maxDetour: 4, unreachable: new Set(['30,5']) });
+  ok('and the best-scoring square does not win it back by scoring well',
+     ranked?.col === 31, JSON.stringify(ranked));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

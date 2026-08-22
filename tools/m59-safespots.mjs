@@ -431,9 +431,14 @@ export function sheltersAlong(geo, steps, {
  * wall twelve squares off the road is not shelter when there are nine seconds of health
  * left, it is a longer way to die.
  */
-export function shelterAhead(shelters, atStep, { maxDetour = 4, requireDisagreement = true } = {}) {
+export function shelterAhead(shelters, atStep,
+                             { maxDetour = 4, requireDisagreement = true, unreachable = null } = {}) {
   if (!Array.isArray(shelters) || !shelters.length) return null;
   let ahead = shelters.filter(s => s.atStep >= atStep && s.detour <= maxDetour);
+  // The same exclusion the room search applies: a planned stop we have just failed to walk
+  // to is not a stop. Applied before the ranking below rather than after, so a shelter that
+  // cannot be reached does not win on disagreement and then fail again.
+  if (unreachable) ahead = ahead.filter(s => !unreachable.has(`${s.col},${s.row}`));
   if (!ahead.length) return null;
 
   // A WALL IS THE TWO GRIDS DISAGREEING, AND THAT IS THE ONLY THING ASKED ABOUT HERE.
@@ -475,6 +480,10 @@ export function nearestSafeSpot(geo, from, {
   within = 12, minAvoided = 20, reach = null, book = null, room = null, toward = null,
   quarryReach = null, strictQuarryReach = false, stats = null, los = 0,
   rule = 'wall', minBackCover = 1, fromFightWeight = 0.3,
+  // SQUARES WE COULD NOT GET TO. A different fact from a square that failed to HOLD, which
+  // is what `discredited` records — this one is about the walk, not about the wall.
+  // See `unreachableSpots` on the keeper for why it is session-scoped and expires.
+  unreachable = null,
 } = {}) {
   if (!geo || !from) return null;
   // EVERY QUALIFYING SQUARE, NOT THE TOP FEW HUNDRED BY SCORE.
@@ -522,6 +531,13 @@ export function nearestSafeSpot(geo, from, {
     const seen = known?.get(key(s.col, s.row)) || null;
     // Never send a character back to a square that has already been disproved.
     if (seen && book.discredited(seen)) continue;
+    // NOR TO ONE WE HAVE JUST FAILED TO WALK TO. A wall that cannot be reached is not
+    // shelter, and offering it again is how a hurt character spends a whole room choosing
+    // the same unreachable square: measured in the Western border of the Twisted Wood, the
+    // decision trail read "could not reach the safe spot" / "will not rest in the open here"
+    // / "leaving the room to recover safely" / "could not leave", and then the character
+    // died. Nothing recorded the failure, so every pass made the identical choice.
+    if (unreachable?.has(key(s.col, s.row))) continue;
     // CHEAP TESTS FIRST. Distance and the defensibility cutoff are arithmetic on two
     // integers; quarryReach and reach are pathfinds. With the candidate list no longer
     // capped this ordering is the difference between one pass over the room and a

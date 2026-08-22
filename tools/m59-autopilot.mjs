@@ -251,6 +251,10 @@ const SETTLE_GRACE_MS = 250;
 // to a square with "0 adjacent" — a contradiction that was written into the book as
 // fact.
 const REACH = 3;
+// HOW LONG A SQUARE STAYS "COULD NOT GET THERE". Long enough that a hurt character stops
+// re-choosing it for the rest of the fight that is stopping it, short enough that a wall
+// blocked by one wandering monster is not written off for the session.
+const UNREACHABLE_SPOT_MS = Number(process.env.M59_UNREACHABLE_SPOT_MS || 5 * 60 * 1000);
 const CROWD_RADIUS = 4;
 // Where resting alone runs out. RestTimer stops awarding vigor at its threshold of 80
 // out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
@@ -2745,6 +2749,9 @@ export class Autopilot {
       this.movedAt = Date.now();
       if (!arrival.arrived) {
         releaseSpot(this.s.name);      // hand the reservation back
+        // REMEMBERED, so the next pass picks a different one — or none, and gets on with
+        // whatever it was doing. This is the line whose absence killed two characters.
+        this.noteUnreachableSpot(room?.num ?? null, spot.col, spot.row);
         this.note('could not reach the safe spot', {
           spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason,
           ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) });
@@ -4166,6 +4173,9 @@ export class Autopilot {
       // the same monster.
       within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
       book: this.book, room: room.num, quarryReach, strictQuarryReach, los,
+      // The same exclusion the other three selectors apply — a wall we have just failed
+      // to walk to is not a candidate, whichever rung is asking for one.
+      unreachable: this.unreachableIn(room.num),
       stats,
       toward: quarry ? { col: quarry.col, row: quarry.row } : null,
       // Skip squares already at the share cap, and squares nothing can be fetched to.
@@ -4542,6 +4552,7 @@ export class Autopilot {
         // next corner. The verdict is tagged `failed_by.travel` so the travel-only
         // rejections can be fished back out. See docs/m59-safe-travel-plan.md.
         spot = nearestSafeSpot(geo, me, { book: this.book, room: at.room?.num ?? null,
+                                          unreachable: this.unreachableIn(at.room?.num ?? null),
                                           within: this.policy.travelHoldWithin ?? 10 });
       } catch { spot = null; }
     }
@@ -5547,6 +5558,41 @@ export class Autopilot {
   // The shelter threshold in force RIGHT HERE, which is not a constant. See roomOutranksUs.
   travelShelterBelow() {
     return this.roomOutranksUs() ? 1 : (this.policy.travelWallBelow ?? 0.8);
+  }
+
+  // A WALL WE COULD NOT WALK TO IS NOT SHELTER, AND OFFERING IT AGAIN IS A LOOP.
+  //
+  // Distinct from the safe-spot BOOK, which records squares that failed to HOLD — that is a
+  // fact about the wall and it is permanent. This is a fact about the WALK, and it is
+  // usually temporary: something was standing in the doorway, or the body was on the wrong
+  // side of a ledge. So it lives on the keeper for a few minutes rather than in the book for
+  // ever, and a square gets another chance once the reason has had time to move.
+  //
+  // Measured in the Western border of the Twisted Wood, from a dead character's own decision
+  // trail: "could not reach the safe spot" / "will not rest in the open here" / "leaving the
+  // room to recover safely" / "could not leave" — then it died. Nothing recorded the failure,
+  // so every pass made the identical choice, and the crossing was never allowed to proceed.
+  noteUnreachableSpot(room, col, row) {
+    if (room == null) return;
+    const per = (this.unreachableSpots ??= new Map());
+    const forRoom = per.get(room) ?? per.set(room, new Map()).get(room);
+    // Bounded, because a long session in a bad room must not grow this without limit.
+    if (forRoom.size > 256) forRoom.clear();
+    forRoom.set(`${col},${row}`, Date.now());
+  }
+
+  /** The squares in this room we have failed to reach recently, as the selectors want them. */
+  unreachableIn(room) {
+    const forRoom = this.unreachableSpots?.get(room);
+    if (!forRoom?.size) return null;
+    const ttl = this.policy.unreachableSpotMs ?? UNREACHABLE_SPOT_MS;
+    const now = Date.now();
+    const live = new Set();
+    for (const [k, at] of forRoom) {
+      if (now - at <= ttl) live.add(k);
+      else forRoom.delete(k);
+    }
+    return live.size ? live : null;
   }
 
   // WHO IN THIS ROOM IS A PERSON AND NOT ONE OF OURS.
@@ -8912,7 +8958,8 @@ export class Autopilot {
       if (planned?.spots?.length) {
         try {
           const stop = shelterAhead(planned.spots, planned.atStep ?? 0,
-                                    { maxDetour: planned.maxDetour ?? 4 });
+                                    { maxDetour: planned.maxDetour ?? 4,
+                                      unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
           if (stop) spot = { col: stop.col, row: stop.row, steps_away: stop.detour,
                              proven: stop.proven, from_route: true,
                              refused_approaches: stop.refused_approaches ?? null };
@@ -8923,6 +8970,7 @@ export class Autopilot {
       if (!spot && geo && me) {
         try {
           spot = nearestSafeSpot(geo, me, { book: this.book,
+                                            unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
                                             room: this.s.world?.room?.num ?? null,
                                             within: this.policy.travelHoldWithin ?? 10 });
         } catch { spot = null; }
