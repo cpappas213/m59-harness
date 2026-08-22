@@ -7446,6 +7446,44 @@ class Session {
         return { arrived: false, log, reason: why, stumbles: totalStumbles,
                  ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
       }
+      // A ROOM CHANGE IS NOT THE ROOM WE ASKED FOR.
+      //
+      // Every success path in `leaveVia` confirms a crossing with `c.room.id !== edgeStartRoom`
+      // — that the room CHANGED — and none of them asks which room it changed to. On a
+      // boundary carrying more than one exit that is not the same question, and the Western
+      // border of the Twisted Wood is exactly that shape: its east edge leads to 586 at row 9
+      // and to 597 at row 46, so walking south along col 67 to reach the second one runs ALONG
+      // the first. Drift across it and the room changes, the check passes, and the crossing to
+      // 597 is reported as having worked.
+      //
+      // Measured: Aaaa recorded `587 -> 597 OK` TEN TIMES IN A ROW, and every hop after each
+      // one started from 587 again. The collision tracer never saw room 597 at all in that
+      // run — 50, 52, 586 and 587, nothing else. The character never went there once.
+      //
+      // The cost is not just a wrong line in a book. Each false success spends a hop out of
+      // `max_hops`, resets the stumble budget that would otherwise have forced a replan, and
+      // leaves `remaining` where it was — which is the "hops climbing while remaining stands
+      // still" signature that made a journey look like it was progressing while it walked in
+      // a circle until the leg timed out.
+      //
+      // Being somewhere unplanned is not a failure to recover from: the loop re-reads the room
+      // at the top and plans again from wherever the body actually is. It just must not be
+      // counted as the hop that was asked for.
+      const landedIn = Number(this.world?.room?.num ?? NaN);
+      if (Number.isFinite(landedIn) && nextHop.to != null && landedIn !== Number(nextHop.to)) {
+        const wrong = `crossed into ${landedIn} instead of ${nextHop.to} — that boundary carries ` +
+                      `more than one exit`;
+        log.push({ from: here.name, to: nextHop.to_name, via: exit.kind, ok: false, reason: wrong });
+        this.noteTransit({
+          room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
+          ms: Date.now() - enteredAt, walkMs: Date.now() - walkBegan, ok: false, tried: 1,
+          reason: wrong, journey: journeyId, hop: hops, destination: toRoomNum,
+        });
+        // A stumble rather than a hop: the body moved, so the patience for THIS room is spent,
+        // but the plan it was following is void and the next pass builds a new one from here.
+        if (await stumble(wrong)) continue;
+        return { arrived: false, log, reason: wrong, stumbles: totalStumbles };
+      }
       hops++;
       stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
       cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
