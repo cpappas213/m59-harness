@@ -65,7 +65,7 @@ const BROKER_SRC = readFileSync('tools/m59-broker.mjs', 'utf8');
 //
 // `who()` resolves to null here on purpose — `recordEvent` is a no-op for a nameless
 // character, so a test that exercises a take-back does not append to the real ledger.
-const keeper = ({ health = 30, max = 37, vigor = 80, adjacent = 0, armed = true,
+const keeper = ({ health = 30, max = 37, vigor = 80, adjacent = 0, players = 0, armed = true,
                   fleeAt = 0.7, guard = null, policy = {}, pulses = null } = {}) => {
   const notes = [];
   const objects = new Map();
@@ -74,6 +74,12 @@ const keeper = ({ health = 30, max = 37, vigor = 80, adjacent = 0, armed = true,
   // roads — so the fixture builds it from the real flags.
   for (let i = 0; i < adjacent; i++)
     objects.set(i + 10, { id: i + 10, flags: OF.ATTACKABLE, col: 25, row: 5, nameRsc: 1 });
+  // A STRANGER IS A PLAYER THAT IS NOT ONE OF OURS, and it needs BOTH flags: the room
+  // filter asks for PLAYER and ATTACKABLE together. `rsc` is absent from this fixture, so
+  // the name lookup yields undefined and `party.isFleetmate` says no — which is what makes
+  // these strangers rather than fleetmates.
+  for (let i = 0; i < players; i++)
+    objects.set(i + 90, { id: i + 90, flags: OF.PLAYER | OF.ATTACKABLE, col: 25, row: 5, nameRsc: 2 });
   const self = { id: 1, col: 25, row: 5 };
   const k = Object.assign(Object.create(Autopilot.prototype), {
     journal: notes, notes, policy, claims: new Map(), passes: 1,
@@ -135,7 +141,17 @@ console.log('\nthe guard: what a journey leaves switched on');
      TRAVEL_GUARD_KEYS.length === 5 && TRAVEL_GUARD_KEYS.every(key => TRAVEL_GUARD_DEFAULTS[key] === true),
      JSON.stringify(TRAVEL_GUARD_DEFAULTS));
   ok('and every one of them says which clock it is on',
-     TRAVEL_GUARD_KEYS.every(key => ['mid-hop', 'hop boundary'].includes(TRAVEL_GUARD_CLOCK[key])));
+     TRAVEL_GUARD_KEYS.every(key => ['mid-hop', 'hop boundary', 'both'].includes(TRAVEL_GUARD_CLOCK[key])),
+     JSON.stringify(TRAVEL_GUARD_CLOCK));
+  // 'both' IS A THIRD ANSWER AND ONLY ONE FACULTY MAY GIVE IT. A wall is the one thing that
+  // has to be reachable from inside a hop as well as between them: the Cragged Mountains is
+  // 2,450 squares and kills a character long before it offers a boundary to be asked at —
+  // seven of eleven deaths in one window were in there, with no refuge taken at all. Every
+  // other faculty stays on exactly one clock, because that is what keeps "only one thing
+  // drives a body" true.
+  ok('and safe_spot is the only one on BOTH, because a big room never offers a boundary',
+     TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'both').join() === 'safe_spot',
+     JSON.stringify(TRAVEL_GUARD_CLOCK));
   // The split is what keeps "only one thing drives a body" true, so it is pinned rather
   // than left to a comment: the four that CANCEL a journey and the two that PAUSE it.
   const midHop = TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'mid-hop');
@@ -143,8 +159,8 @@ console.log('\nthe guard: what a journey leaves switched on');
      JSON.stringify(midHop.sort()) === JSON.stringify(['arm', 'fight_back', 'flee']),
      JSON.stringify(midHop));
   const boundary = TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'hop boundary');
-  ok('and the two that only pause it are the hop-boundary ones',
-     JSON.stringify(boundary.sort()) === JSON.stringify(['rest', 'safe_spot']),
+  ok('and resting is the one that only ever pauses it, at a boundary',
+     JSON.stringify(boundary.sort()) === JSON.stringify(['rest']),
      JSON.stringify(boundary));
 
   const k = keeper({ policy: { travelGuard: { flee: false } } });
@@ -263,11 +279,31 @@ console.log('\nthe triggers — none of them ask whether the body is moving');
   // back whichever of the two you switch off — and is the right answer for him.)
   const bracket = { health: 41, max: 60, adjacent: 2, fleeAt: 0.7,
                     pulses: ring({ from: 41, perSample: 0 }) };
-  const willFlee = keeper({ ...bracket, guard: {} });
-  ok('below the flee line but not yet doomed, the flee trigger is the one that fires',
+  // AND MONSTERS DO NOT REACH THIS RUNG, WHICH IS THE POINT OF IT.
+  //
+  // I asserted the opposite here and was wrong, and the way it was wrong is worth keeping:
+  // rung 4 tests `worthEnding`, and under the default `travel_flee_from: 'players'` that
+  // list is STRANGERS ONLY. Two monsters adjacent, below the flee line, is not this rung's
+  // business — being bitten on the road is the ordinary condition of travel, and the answer
+  // to it is the WALL rung above, which pauses and keeps the objective.
+  //
+  // That is the operator's rule stated as code: never abandon a journey unless a PLAYER is
+  // attacking. A test that expects a monster to end a journey is asking for the behaviour
+  // that made trips accumulate the same damage in both directions and never arrive.
+  const monstersOnly = keeper({ ...bracket, guard: {} });
+  const rMon = await run(monstersOnly);
+  ok('below the flee line with MONSTERS on us, the flee rung does not fire — the wall does',
+     !monstersOnly.notes.some(n => n.detail?.trigger === 'below the flee line with someone adjacent'),
+     JSON.stringify(monstersOnly.notes.map(n => n.detail?.trigger)));
+  ok('and the journey is not abandoned for them', !rMon.abandoned);
+  // A STRANGER IS A DIFFERENT FACT. A wall stops monsters and says nothing about a person,
+  // who can walk to the same square, swing first and take the pack.
+  const willFlee = keeper({ ...bracket, adjacent: 0, players: 2, guard: {} });
+  ok('below the flee line with a STRANGER adjacent, the flee trigger is the one that fires',
      (await run(willFlee)).took &&
-     willFlee.notes.some(n => n.detail?.trigger === 'below the flee line with something adjacent'));
-  const noFlee = keeper({ ...bracket, guard: { flee: false } });
+     willFlee.notes.some(n => n.detail?.trigger === 'below the flee line with someone adjacent'),
+     JSON.stringify(willFlee.notes.map(n => n.detail?.trigger)));
+  const noFlee = keeper({ ...bracket, adjacent: 0, players: 2, guard: { flee: false } });
   const r2 = await run(noFlee);
   ok('and with flee switched off that same character walks on',
      !r2.took && r2.verdict === HANDLED);
@@ -275,12 +311,24 @@ console.log('\nthe triggers — none of them ask whether the body is moving');
 
   // ---- ABOVE THE FLEE LINE, BUT DYING FAST. Nothing adjacent in the room model at all,
   // so this can only fire on the rate.
-  const bleeding = keeper({ health: 30, max: 37, adjacent: 0, fleeAt: 0.7, guard: {},
+  //
+  // AND IT IS GATED ON A PERSON DOING IT, for the same reason rung 4 is: this rung is the
+  // only one in the file that ABANDONS. A bar emptying under monsters is the road doing what
+  // the road does — the wall rung answers that and keeps the objective. I asserted this one
+  // wrongly too, in the same direction, which is what a rule is for.
+  const bleedingMonsters = keeper({ health: 30, max: 37, adjacent: 2, fleeAt: 0.7, guard: {},
+                                    pulses: ring({ from: 34, perSample: 4 }) });
+  const rBleedMon = await run(bleedingMonsters);
+  ok('a bar emptying under MONSTERS never abandons the journey', !rBleedMon.abandoned,
+     JSON.stringify(bleedingMonsters.notes.map(n => n.detail?.trigger)));
+  const bleeding = keeper({ health: 30, max: 37, adjacent: 0, players: 1, fleeAt: 0.7, guard: {},
                             pulses: ring({ from: 34, perSample: 4 }) });
   const r3 = await run(bleeding);
-  ok('losing health fast enough to empty the bar is taken back even with nothing adjacent',
-     r3.took && r3.tookBack);
+  ok('a STRANGER emptying the bar fast enough is taken back on the rate alone',
+     r3.took && r3.tookBack, JSON.stringify(bleeding.notes.map(n => n.detail?.trigger)));
   ok('and says how long it had left', bleeding.notes.some(n => n.detail?.seconds_left != null));
+  ok('and THIS is the one rung that abandons, because a wall does not stop a person',
+     r3.abandoned);
   const noFight = keeper({ health: 30, max: 37, adjacent: 0, fleeAt: 0.7,
                            guard: { fight_back: false },
                            pulses: ring({ from: 34, perSample: 4 }) });
