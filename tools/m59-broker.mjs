@@ -5451,7 +5451,12 @@ class Session {
       let slips = 0;
       for (;;) {
         if (this.movementWasCancelled(movementGeneration, controlToken))
-          return { railed: false, cancelled: true, at: i, walked };
+          // NAMED, BECAUSE AN UNNAMED CANCELLATION READS AS A REFUSAL. This is the only
+          // exit from the follow loop that carried no `reason`, so the ledger printed
+          // "slipped at 16 of 65: undefined" — which looks exactly like the mover rejecting
+          // a baked square, and sent me looking for a bad bake. It is the opposite: the
+          // squares were fine and something took the body away mid-line.
+          return { railed: false, cancelled: true, reason: 'movement_cancelled', at: i, walked };
         const here = this.client?.self;
         if (here && here.col === target.col && here.row === target.row) break;
         // FINE GROUND IS WALKED FINELY. THIS IS THE WHOLE REASON THE RAIL EXISTS.
@@ -5579,7 +5584,10 @@ class Session {
                          tactic: 'baked_rail', trigger: 'exit_crossing',
                          worked: !!ran?.railed, ms: 0, hp_lost: 0,
                          note: ran?.railed ? `followed ${ran.walked} of ${rail.squares.length} baked square(s), skipped ${ran.skipped ?? 0}`
-                                           : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason}` });
+                                           : ran?.cancelled
+                                             ? `cancelled at ${ran?.at} of ${rail.squares.length} — ` +
+                                               'something took the body off the line; the rail did not fail'
+                                             : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason ?? 'unknown'}` });
         }
       }
     }
