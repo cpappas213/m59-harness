@@ -5500,7 +5500,12 @@ class Session {
           // "slipped at 16 of 65: undefined" — which looks exactly like the mover rejecting
           // a baked square, and sent me looking for a bad bake. It is the opposite: the
           // squares were fine and something took the body away mid-line.
-          return { railed: false, cancelled: true, reason: 'movement_cancelled', at: i, walked };
+          return { railed: false, cancelled: true, reason: 'movement_cancelled', at: i, walked,
+                   // WHO, not just THAT. The rail dies at the same index every lap and the
+                   // ledger could only say "something took the body off the line".
+                   cancelled_by: this.lastMovementCancel?.why ?? 'unattributed',
+                   cancelled_ms_ago: this.lastMovementCancel
+                     ? Date.now() - this.lastMovementCancel.at : null };
         const here = this.client?.self;
         if (here && here.col === target.col && here.row === target.row) break;
         // FINE GROUND IS WALKED FINELY. THIS IS THE WHOLE REASON THE RAIL EXISTS.
@@ -5633,6 +5638,42 @@ class Session {
                                     : `no anchor for room ${exit.to}` });
       }
       if (rail && me0) {
+        // JOIN THE LINE WHERE WE ARE STANDING, NOT WHERE IT STARTS.
+        //
+        // A crossing gets interrupted — that is the ordinary condition of travel here, and
+        // the survival ladder is SUPPOSED to interrupt it. `travelShelterBelow` returns 1
+        // (any damage at all) in a zone that outranks the character, which the Twisted Wood
+        // does for every character this fleet has, so a scratch takes a wall and the journey
+        // resumes a moment later. That is all correct.
+        //
+        // What was not correct is where it resumed. Getting on always walked back to the
+        // ENTRY ANCHOR, so six squares of progress were thrown away every time and the body
+        // re-walked the same six. Measured: thirty-two laps of the first six squares of a
+        // sixty-five square rail in room 587, six refusals in two hundred and thirty
+        // attempts. Nothing was blocked; it was being sent back to the start.
+        //
+        // If the body is already on or beside a square of this line, that square is where
+        // the line is joined. Beside as well as on, because a shelter detour ends a step or
+        // two off the road and walking back to the anchor to recover one square is the
+        // behaviour this replaces.
+        let joinAt = -1;
+        for (let n = rail.squares.length - 1; n >= 0; n--) {
+          const sq = rail.squares[n];
+          if (Math.abs(sq.row - me0.row) <= 1 && Math.abs(sq.col - me0.col) <= 1) { joinAt = n; break; }
+        }
+        if (joinAt >= 0 && joinAt < rail.squares.length - 1) {
+          const ahead = rail.squares.slice(joinAt + 1);
+          const ran = await this.followRail(ahead, { movementGeneration, controlToken })
+            .catch(e => ({ railed: false, reason: e.message }));
+          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                         tactic: 'baked_rail', trigger: 'exit_crossing',
+                         worked: !!ran?.railed, ms: 0, hp_lost: 0,
+                         note: `rejoined at ${joinAt} of ${rail.squares.length} — ` +
+                               (ran?.railed ? `followed ${ran.walked} of ${ahead.length} remaining`
+                                            : `${ran?.cancelled ? 'cancelled' : 'slipped'} at ${ran?.at}` +
+                                              (ran?.cancelled_by ? ` by ${ran.cancelled_by}` : '')) });
+          if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked, rejoined: joinAt } };
+        }
         const onIt = me0.col === rail.from.col && me0.row === rail.from.row;
         // 1. GET ON — skipped when we are already standing on the entry anchor.
         const got = onIt ? { arrived: true } : await this.walkTo(rail.from.col, rail.from.row,
@@ -5656,8 +5697,8 @@ class Session {
                          worked: !!ran?.railed, ms: 0, hp_lost: 0,
                          note: ran?.railed ? `followed ${ran.walked} of ${rail.squares.length} baked square(s), skipped ${ran.skipped ?? 0}`
                                            : ran?.cancelled
-                                             ? `cancelled at ${ran?.at} of ${rail.squares.length} — ` +
-                                               'something took the body off the line; the rail did not fail'
+                                             ? `cancelled at ${ran?.at} of ${rail.squares.length} by ` +
+                                               `${ran?.cancelled_by} (${ran?.cancelled_ms_ago}ms ago)`
                                              : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason ?? 'unknown'}` });
         }
       }
