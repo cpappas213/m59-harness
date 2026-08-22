@@ -7286,6 +7286,31 @@ class Session {
       return true;
     };
 
+    // THE ARRIVAL GUARD. ASK WHETHER WE ARE THERE BEFORE REPORTING THAT WE ARE NOT.
+    //
+    // The destination test lives at the TOP of the loop, so every early return between one
+    // top and the next reports failure without ever asking where the body is standing. The
+    // check after the loop was added for exactly this reason in the max-hops case — "a
+    // journey whose final hop is also its last permitted hop leaves the loop standing in the
+    // right room and reported gave up" — and the same hole is open on all six of the others:
+    // no route, room not in the graph, no exit to the next hop, an unreachable door, a barred
+    // room, and a crossing that landed somewhere else.
+    //
+    // Every one of those is REACHED FROM SOMEWHERE, and where a hop lands is not always
+    // where it aimed — that is now a routine outcome rather than a surprise, since a boundary
+    // carrying two exits puts a character in a neighbouring room without asking. Sometimes
+    // the neighbour is the destination. A journey that has arrived is finished, whatever the
+    // reason it was about to give for stopping.
+    const arrivedIfHere = (fallback) => {
+      const at = this.world?.room;
+      if (at && Number(at.num) === Number(toRoomNum))
+        return { arrived: true, room: { num: at.num, name: at.name },
+                 hops, stumbles: totalStumbles, log,
+                 note: 'arrived — noticed while giving up for another reason: ' +
+                       (fallback?.reason ?? 'unstated') };
+      return fallback;
+    };
+
     const stumble = async (why) => {
       // The Underworld is not a room to re-plan in; it is a room to leave.
       if (/no route from 1 to|The Underworld/i.test(String(why)) || Number(this.world?.room?.num) === 1) {
@@ -7308,7 +7333,7 @@ class Session {
       // that produces "start is outside the room grid", and it clears on its own.
       if (!here) {
         if (await stumble('current room is not in the graph')) continue;
-        return { arrived: false, log, reason: 'current room is not in the graph', stumbles: totalStumbles };
+        return arrivedIfHere({ arrived: false, log, reason: 'current room is not in the graph', stumbles: totalStumbles });
       }
       if (here.num === toRoomNum)
         return { arrived: true, room: { num: here.num, name: here.name }, hops, stumbles: totalStumbles, log };
@@ -7323,8 +7348,8 @@ class Session {
         // A route failure right after an arrival is the transient one. A route failure
         // that survives re-reading the room is real, and is reported as it always was.
         if (await stumble(route.reason || 'no route')) continue;
-        return { arrived: false, log, reason: route.reason || 'no route', stumbles: totalStumbles,
-                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
+        return arrivedIfHere({ arrived: false, log, reason: route.reason || 'no route', stumbles: totalStumbles,
+                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
       }
       const nextHop = route.hops[0];
 
@@ -7352,9 +7377,9 @@ class Session {
         // The exit list is republished on arrival, so an exit that is missing right now is
         // usually one we asked about too early.
         if (await stumble('cannot find the exit to ' + nextHop.to_name + ' from here')) continue;
-        return { arrived: false, log, stumbles: totalStumbles,
+        return arrivedIfHere({ arrived: false, log, stumbles: totalStumbles,
                  reason: 'cannot find the exit to ' + nextHop.to_name + ' from here',
-                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
+                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
       }
 
       // Split so the record can say whether the time went on DECIDING or on DOING. Above
@@ -7489,7 +7514,7 @@ class Session {
                      note: 'cannot reach that doorway from this side of the room — replanning ' +
                            'a way out that does not use it' });
           if (await stumble(why)) continue;
-          return { arrived: false, log, reason: why, stumbles: totalStumbles };
+          return arrivedIfHere({ arrived: false, log, reason: why, stumbles: totalStumbles });
         }
         if (BARRED_ON_ENTRY.test(why) && nextHop.to != null && nextHop.to !== toRoomNum) {
           (this.barredRooms ??= new Set()).add(Number(nextHop.to));
@@ -7499,8 +7524,8 @@ class Session {
           continue;
         }
         if (await stumble(why)) continue;
-        return { arrived: false, log, reason: why, stumbles: totalStumbles,
-                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) };
+        return arrivedIfHere({ arrived: false, log, reason: why, stumbles: totalStumbles,
+                 ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
       }
       // A ROOM CHANGE IS NOT THE ROOM WE ASKED FOR.
       //
@@ -7548,7 +7573,7 @@ class Session {
         // A stumble rather than a hop: the body moved, so the patience for THIS room is spent,
         // but the plan it was following is void and the next pass builds a new one from here.
         if (await stumble(wrong)) continue;
-        return { arrived: false, log, reason: wrong, stumbles: totalStumbles };
+        return arrivedIfHere({ arrived: false, log, reason: wrong, stumbles: totalStumbles });
       }
       hops++;
       stumbles = 0;                      // it moved; the patience is for the NEXT sticky room
@@ -7610,8 +7635,8 @@ class Session {
     if (finally_ && finally_.num === toRoomNum)
       return { arrived: true, room: { num: finally_.num, name: finally_.name },
                hops, stumbles: totalStumbles, log };
-    return { arrived: false, log, stumbles: totalStumbles,
-             reason: 'gave up after ' + maxHops + ' hops' };
+    return arrivedIfHere({ arrived: false, log, stumbles: totalStumbles,
+             reason: 'gave up after ' + maxHops + ' hops' });
   }
 }
 

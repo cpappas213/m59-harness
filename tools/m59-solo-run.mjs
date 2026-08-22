@@ -48,7 +48,19 @@ const PORT    = Number(flag('port', 8971));
 const FLEET   = flag('fleet', 'shadow');
 const FROM    = Number(flag('from', 50));     // The Streets of Tos
 const TO      = Number(flag('to', 38));       // Castle Victoria
-const TIMEOUT = Number(flag('timeout', 240)) * 1000;
+// HOW LONG A LEG MAY TAKE BEFORE IT IS A FAILURE RATHER THAN A JOURNEY.
+//
+// 240s was below the human reference — the operator walks Tos to Castle Victoria in under
+// five minutes — so a character doing everything right was still scored as having failed.
+// It cost a real result: a run reported 0 arrivals while one of its two characters was, at
+// that moment, standing in Ukgoth having crossed the Twisted Wood. The leg had been scored
+// and the journey was still going, because `travel` runs in the background and nothing
+// stopped it.
+//
+// Ten minutes, and the rest credit is still counted SEPARATELY on top of it — a character
+// getting well at a wall is not a slow road, and conflating the two is what this column
+// exists to prevent.
+const TIMEOUT = Number(flag('timeout', 600)) * 1000;
 const WALL    = flag('wall-below', null);
 const HOLD    = flag('hold-below', null);
 const ONLY    = flag('agents', null)?.split(',').map(s => s.trim()).filter(Boolean) ?? null;

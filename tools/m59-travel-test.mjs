@@ -85,6 +85,11 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
                  reason: 'Your guardian angel holds you back and prevents you from entering here.' };
       const outcome = script.length ? script.shift() : true;
       if (outcome === 'vanish') { s.at = null; return { left: false, reason: 'coordinates went off grid' }; }
+      // A CROSSING THAT LANDS SOMEWHERE ELSE, which is an ordinary outcome rather than an
+      // exotic one: a boundary carrying two exits puts a character in a neighbouring room
+      // without asking. `overshoot` lands on the LAST room in the fixture — so the hop did
+      // not go where it aimed, and where it went happens to be the destination.
+      if (outcome === 'overshoot') { s.at = rooms.length - 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
       if (outcome) { s.at += 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
       return { left: false, reason: 'no floor anywhere on the north boundary' };
     },
@@ -291,6 +296,55 @@ console.log('a doorway this side of the room cannot reach is replanned around');
   ok('being sent to a room whose doorway is unreachable fails honestly',
      rd.arrived !== true && !dest.routeAvoids.some(a => a && a.includes(3)),
      JSON.stringify({ arrived: rd.arrived, avoids: dest.routeAvoids }));
+}
+
+
+// ---------------------------------------------------------------------------
+console.log('THE ARRIVAL GUARD: ask whether we are there before reporting that we are not');
+{
+  // The destination test lives at the TOP of the loop, so every early return between one
+  // top and the next reports failure without asking where the body is standing. A check
+  // after the loop was added for the max-hops case — "a journey whose final hop is also its
+  // last permitted hop leaves the loop standing in the right room and reported gave up" —
+  // and the same hole was open on all six of the others.
+  //
+  // It is not hypothetical any more. Where a hop LANDS is not always where it aimed: a
+  // boundary carrying two exits puts a character in a neighbouring room without asking, and
+  // sometimes the neighbour is the destination. A journey that has arrived is finished,
+  // whatever reason it was about to give for stopping.
+
+  // THE REAL SHAPE. The first hop aims at room 2 and lands in room 4, which is where the
+  // journey was going. Without the guard this returns the wrong-room failure — "crossed into
+  // 4 instead of 2" — about a character standing in its own destination.
+  const s = fakeSession({ rooms: [1, 2, 3, 4], script: ['overshoot'] });
+  const r = await travel.call(s, 4, {});
+  ok('a hop that lands somewhere else, which IS the destination, arrives',
+     r.arrived === true, JSON.stringify(r));
+
+  // ...AND WITH NO PATIENCE LEFT TO SPEND. With stumbles available the loop simply comes
+  // round and the check at its top notices; the guard is what covers the case where the
+  // budget is gone and the function is on its way out the door. That is the case this
+  // whole thing exists for, and it is the one that used to report a failure about a
+  // character standing in its own destination.
+  const spent = fakeSession({ rooms: [1, 2, 3, 4], script: ['overshoot'] });
+  const g = await travel.call(spent, 4, { maxStumbles: 0 });
+  ok('and with the stumble budget already spent, the guard is what notices',
+     g.arrived === true, JSON.stringify(g));
+  ok('and it says so, rather than silently rewriting a failure',
+     /noticed while giving up/.test(g.note ?? ''), JSON.stringify(g.note));
+
+  // The cheap case too: already standing there when asked.
+  const already = fakeSession({ rooms: [7] });
+  ok('already standing in the destination arrives rather than failing',
+     (await travel.call(already, 7, {})).arrived === true);
+
+  // AND THE GUARD MUST NOT INVENT AN ARRIVAL. Standing somewhere else, the same failure is
+  // still a failure — otherwise it would turn every give-up into a false success, which is
+  // the exact bug the wrong-room check was added to stop.
+  const elsewhere = fakeSession({ rooms: [1, 2] });
+  const no = await travel.call(elsewhere, 99, {});
+  ok('but a journey that has NOT arrived still reports the failure',
+     no.arrived !== true && !!no.reason, JSON.stringify(no));
 }
 
 console.log(`\n${pass + fail} assertions: ${pass} passed, ${fail} failed`);
