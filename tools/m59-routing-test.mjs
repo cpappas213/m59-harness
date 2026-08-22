@@ -944,17 +944,22 @@ console.log('\none-way transits, and the jumps the square walk cannot express');
 
 
 console.log('');
-console.log('A HOP THAT LANDS SOMEWHERE ELSE IS ROUTED AROUND, AS A HOP');
+console.log('A HOP CAN BE BANNED — BUT ONLY BY WHOEVER IS DRIVING');
 {
-  // A room is the wrong unit for a learned travel failure. The room a character cannot cross
-  // from THIS door it can usually cross from another, and the destination is frequently
-  // somewhere it must still be able to arrive at. A HOP either works or it does not.
+  // `blockedHops` is a real thing to want — a road somebody is being hunted on, an exit under
+  // a guard — and `findPath` has honoured it all along. What it must NOT be is something the
+  // walker discovers about itself mid-journey.
   //
-  // The measured case: the Western border of the Twisted Wood (587) publishes a perfectly
-  // reachable crossing to The Twisted Wood (597), and taking it lands the character in the
-  // Main gate to the city of Tos (586) instead — both exits share one boundary, and nothing
-  // in the room model can see that. `findPath` has honoured a `blockedHops` set all along;
-  // what was missing was anything putting EXPERIENCE into it.
+  // It was, briefly, and it cascaded: a crossing that landed in the wrong room banned the hop,
+  // and in one leg ten of those banned SIX GOOD HOPS — 586->585, 50->61, 587->576, 587->597,
+  // 586->596, 586->50. The first hop of a perfectly good road out of Tos, the way BACK to
+  // Tos, and both ways onward from the Main gate. The router had almost nothing left and set
+  // off for the border of the Badlands; hops that took twenty seconds started taking four
+  // hundred. None of those edges is false — the body drifts across a boundary whose exit is
+  // chosen by ROW and fires the neighbour's door.
+  //
+  // So the set stays, the automatic learning is gone, and a ban comes from whoever is driving:
+  // explicit, and temporary.
   const map = loadMap();
   const roomsPresent = [586, 587, 596, 597, 598].every(n => map?.rooms?.[n] || map?.rooms?.[String(n)]);
   if (!roomsPresent) {
@@ -975,6 +980,11 @@ console.log('A HOP THAT LANDS SOMEWHERE ELSE IS ROUTED AROUND, AS A HOP');
        JSON.stringify(viaRe));
     // THE POINT: there is another way of the same length — 596 — so blocking the bad hop
     // costs nothing. A journey that has watched the crossing fail takes it immediately.
+    // AND THE WALKER NEVER PUTS ANYTHING IN THAT SET ITSELF.
+    const walker = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+    ok('the journey loop no longer learns hop bans of its own',
+       !/badHops/.test(walker), 'badHops');
+    ok('while route() still accepts them from a caller', /blockedHops/.test(walker));
     ok('it goes by the Outskirts of Tos instead, which is the same number of hops',
        !!viaRe && viaRe.includes(596) && viaRe.length <= (viaPlain?.length ?? 0) + 1,
        JSON.stringify({ plain: viaPlain, rerouted: viaRe }));

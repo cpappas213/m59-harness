@@ -7362,22 +7362,28 @@ class Session {
     // See the note on UNREACHABLE_EXIT below for why this is per-journey and the barred
     // set is per-session.
     const avoidThisJourney = new Set();
-    // WHAT THIS JOURNEY HAS WATCHED FAIL, AS HOPS RATHER THAN AS ROOMS.
+    // A JOURNEY DOES NOT BAN ITS OWN HOPS. THAT IS THE OPERATOR'S CALL, NOT THE WALKER'S.
     //
-    // A room is the wrong unit for a learned travel failure and always was. The room a
-    // character cannot cross from THIS door it can usually cross from another, and the
-    // destination is frequently somewhere it still has to be able to arrive at. A HOP —
-    // one from-room to one to-room — is the thing that either works or does not.
+    // This kept a journey-scoped set and added to it whenever a crossing landed in the wrong
+    // room. It cascaded exactly as the operator warned it would: in one leg, ten wrong-room
+    // crossings banned SIX GOOD HOPS —
     //
-    // `findPath` has honoured a `blockedHops` set all along; what was missing is anything
-    // putting EXPERIENCE into it. The model's own answer went in and nothing else did, and
-    // the model cannot see the failure that matters here: the Western border of the Twisted
-    // Wood publishes a perfectly reachable crossing to The Twisted Wood, and taking it lands
-    // the character in the Main gate to the city of Tos, because both exits share one
-    // boundary. There is a route to the same destination that does not use it — 586 -> 596
-    // -> 597, the same number of hops — and the router will take it the moment it is told
-    // this one does not work.
-    const badHops = new Set();
+    //   586->585   50->61   587->576   587->597   586->596   586->50
+    //
+    // the first hop of a perfectly good road out of Tos, the way BACK to Tos, and both ways
+    // onward from the Main gate. With those gone the router had almost nothing left and set
+    // off for the border of the Badlands. Hops that had taken twenty seconds started taking
+    // four hundred.
+    //
+    // None of those edges is false. Every one is walkable, and what fails is that the body
+    // drifts across a boundary whose exit is chosen BY ROW, firing the neighbour's door
+    // instead of ours. Deleting the door to work around a drift is how a movement bug
+    // becomes a map that shrinks every time a character stumbles.
+    //
+    // `route()` still TAKES a blockedHops set, because banning a hop is a real thing to want
+    // — a road somebody is being hunted on, an exit under a guard. It comes from whoever is
+    // driving, explicitly and temporarily. It is not something the walker discovers about
+    // itself mid-journey.
 
     // Let the position settle and the room re-publish itself, then try again from
     // wherever we actually are. Returns false when the patience is spent.
@@ -7536,7 +7542,6 @@ class Session {
         return { arrived: true, room: { num: here.num, name: here.name }, hops, stumbles: totalStumbles, log };
 
       const route = this.world.route(toRoomNum, {
-        blockedHops: badHops.size ? badHops : null,
         avoid: avoidThisJourney.size || this.barredRooms?.size
           ? new Set([...(this.barredRooms ?? []), ...avoidThisJourney])
           : null,
@@ -7778,10 +7783,30 @@ class Session {
         // there is another way to the same place — 586 -> 596 -> 597 — of the same length.
         // Journey-scoped, like the unreachable-door bar below and for the same reason: this
         // is a fact about where the body happens to be standing, not about the map.
+        // NOT LEARNED AS A BAD HOP. THIS IS A MOVEMENT BUG WEARING A ROUTING BUG'S CLOTHES.
+        //
+        // The operator said so before the evidence did: "I'm pretty sure this journey doesn't
+        // have any false routes and whatever we're badHopping here is a bug in our code." He
+        // was right, and banning the hop turned one bad crossing into a cascade.
+        //
+        // Measured in a single leg, ten wrong-room crossings banned SIX GOOD HOPS:
+        //
+        //   586->585   50->61   587->576   587->597   586->596   586->50
+        //
+        // That is the first hop of a perfectly good route out of Tos, the way BACK to Tos,
+        // and both ways onward from the Main gate. With those gone the router had almost
+        // nothing left and set off for the border of the Badlands, which is not on the way to
+        // anywhere it was going. Hops that had taken 20 seconds started taking 400.
+        //
+        // Every one of these edges is real and the crossing is walkable. What fails is that
+        // the body drifts over a boundary whose exit is chosen BY ROW, so it fires the
+        // neighbour's door instead of ours. The answer to that is to stop drifting, not to
+        // delete the door: the loop already re-reads the room and plans again from wherever
+        // the body actually is, which is all the recovery this needs.
         if (!died) {
-          badHops.add(`${here.num}>${Number(nextHop.to)}`);
-          log.push({ blocked_hop: `${here.num}>${nextHop.to}`, reason: wrong,
-                     note: 'that crossing lands somewhere else — replanning a way round it' });
+          log.push({ wrong_room: `${here.num}>${nextHop.to}`, landed_in: landedIn, reason: wrong,
+                     note: 'the crossing fired a neighbouring exit — replanning from where we ' +
+                           'actually are. NOT barred: the hop is good, the drift is the bug' });
         } else {
           log.push({ died_in_transit: `${here.num}>${nextHop.to}`, reason: wrong,
                      note: 'the Underworld is where the dead go, not somewhere this hop led' });
