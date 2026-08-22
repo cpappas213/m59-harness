@@ -15235,8 +15235,36 @@ export class Autopilot {
       return;
     }
 
-    // No corner in this room. Fall back to distance, and say plainly that this is the
-    // weak version — it is the branch that precedes most of the deaths.
+    // NO CORNER, AND NO PERSON — SO THERE IS NOTHING HERE WORTH WALKING AWAY FOR.
+    //
+    // This branch's own comment has always said it "precedes most of the deaths", and the
+    // record finally says why. Bbbb, crossing the Cragged Mountains: the wall rung fired at
+    // 2 health, the wall could not be reached, and this fallback picked a square six away
+    // from the nearest troll WITH NO REGARD FOR WHERE THE JOURNEY WAS GOING. It walked east
+    // to 38,25 — twenty squares off a rail that runs down column 18 — and died there.
+    //
+    // Distance does not work on a monster. Vision is 4 + difficulty/2 squares
+    // (monster.kod:1676) and they follow, so this buys seconds and spends them walking
+    // AWAY from the door. Fifty seconds in that room, nine squares of net progress, against
+    // a human who crosses it in about ten. The exposure is the thing that kills, and this
+    // branch is what makes the exposure long.
+    //
+    // A person is the exception, exactly as in the flee rung: a wall says nothing about
+    // somebody who can walk to the same square, and distance is the only answer to them.
+    // So for monsters this declines and the character carries on to where it was going —
+    // which is also the only direction that ends the exposure.
+    if (!this.strangersInReach().length) {
+      this.note('not walking away — a wall would help and distance will not', {
+        threats: threats.length,
+        why: 'monsters follow (vision is 4 + difficulty/2 squares), so walking away spends ' +
+             'seconds being hit and arrives somewhere no safer. There is no wall here, so ' +
+             'the way out is ON — the exit is the only square that ends this.',
+        instead: 'carrying on to the objective',
+      });
+      return { withdrawn: false, declined: 'monsters only, and nowhere better to stand' };
+    }
+
+    // Fall back to distance, and say plainly that this is the weak version.
     this.note('no wall to withdraw to', {
       why: spot.why, threats: threats.length,
       consequence: 'falling back to walking away, which buys seconds rather than safety',

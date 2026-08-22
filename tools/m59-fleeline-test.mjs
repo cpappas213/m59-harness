@@ -160,5 +160,27 @@ console.log('the ladder still has an answer for a monster');
 }
 
 console.log('');
+console.log('AND THE SAME RULE AT THE BOTTOM OF THE LADDER: NO WALL, NO PERSON, NO WALKING AWAY');
+{
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const w = src.slice(src.indexOf('async withdraw(threats)'),
+                      src.indexOf('async withdraw(threats)') + 6000);
+  // `withdraw`'s last resort picks any square six squares from the nearest threat, with no
+  // regard for where the journey is going. Its own comment always said it "precedes most of
+  // the deaths"; the record says why. Bbbb, crossing the Cragged Mountains at 2 health with
+  // no reachable wall, was sent EAST to 38,25 — twenty squares off a rail running down
+  // column 18 — and died there. Fifty seconds in that room, nine squares of net progress,
+  // against a human who crosses it in about ten.
+  ok('the walk-away fallback asks whether a person is in reach',
+     /strangersInReach\(\)\.length/.test(w), w.slice(0, 200));
+  ok('and declines for monsters rather than walking away from the door',
+     /declined: 'monsters only/.test(w));
+  ok('and says what it is doing instead, so a post-mortem can see the choice',
+     /carrying on to the objective/.test(w));
+  // The exception survives, for the same reason it does in the flee rung.
+  ok('while a person still gets the distance answer', /no wall to withdraw to/.test(w));
+}
+
+console.log('');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
