@@ -52,6 +52,12 @@ const HOLD    = flag('hold-below', null);
 const ONLY    = flag('agents', null)?.split(',').map(s => s.trim()).filter(Boolean) ?? null;
 const DRY     = has('dry-run');
 
+// HOW MUCH HEALING A LEG MAY CHARGE TO SOMETHING OTHER THAN THE ROAD. Generous, because a
+// character that walks into the Twisted Wood at 30% genuinely does need a couple of minutes
+// on a wall — and bounded, because an unbounded pause is a hang. Past this the leg ends as
+// `rested out`, which is its own finding: the road was never the thing that was slow.
+const REST_CREDIT_MS = Number(flag('rest-credit', 180)) * 1000;
+
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const UNDERWORLD = 1;
 
@@ -143,7 +149,18 @@ for (const r of rows) {
       // THE CLOCK PAUSES WHILE IT RESTS, and the time is kept rather than discarded — a leg
       // that spent most of its budget healing is a different animal from one that spent it
       // walking, and only reporting both tells them apart.
-      if (isResting(ap)) restedMs += 5000;
+      // A PAUSED CLOCK NEEDS A CEILING, OR IT IS NOT A PAUSE, IT IS A HANG.
+      //
+      // Every 5s poll that reads as resting used to add 5s of credit, with nothing bounding
+      // the total — so a character that rests and never stops cancels its own timeout and
+      // the leg runs for ever. It did: one run sat on its first character for ten minutes
+      // and printed no rows at all, and from outside that is indistinguishable from a
+      // hung broker. The instrument has to be able to fail.
+      //
+      // So rest still buys time, but only up to REST_CREDIT_MS. Past that the leg ends and
+      // says WHY it ended — `rested out` is a different finding from `timed out`, and
+      // conflating them is what this whole column exists to prevent.
+      if (isResting(ap)) restedMs = Math.min(restedMs + 5000, REST_CREDIT_MS);
       const room = st?.where?.num ?? null;
       const hp = st?.vitals?.health?.value ?? null;
       if (room != null) rooms.add(room);
@@ -152,7 +169,10 @@ for (const r of rows) {
       // almost never lands on the frame where health reads zero.
       if (room === UNDERWORLD) { died = true; ended = 'DIED'; break; }
       if (room === TO) { ended = 'arrived'; break; }
-      if (Date.now() - started - restedMs > TIMEOUT) { ended = 'timed out'; break; }
+      if (Date.now() - started - restedMs > TIMEOUT) {
+        ended = restedMs >= REST_CREDIT_MS ? 'rested out' : 'timed out';
+        break;
+      }
     }
   }
   const secs = Math.round((Date.now() - started) / 1000);
