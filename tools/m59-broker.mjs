@@ -4462,10 +4462,52 @@ class Session {
     //
     // Only when the COLLISION view is what refused. A coarse-grid "no route" is the room
     // telling us something, and re-asking it the same question would just be slower.
+    const blockedEdges = new Set();
+    const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
+    // AN EDGE THE MOVER CANNOT WALK IS A FACT ABOUT THE MAP, NOT ABOUT THIS WALK.
+    //
+    // `blockedEdges` is built fresh on every call, so everything the walker learns dies with
+    // the walk and is re-learned from nothing on the next replan. For a body in the way that
+    // is correct — it will have moved. For GEOMETRY it is amnesia, and it is expensive:
+    // measured in room 50, the single step 54,40 -> 53,40 was refused ONE HUNDRED AND
+    // THIRTY-FIVE times in one two-character run, 135 of that room's 145 refusals. Offline,
+    // `moverStepLands(54,40 -> 53,40)` is false. Both squares are walkable and the step
+    // between them is not, so the mover was right every time and the walker asked anyway.
+    //
+    // Nothing reaches the wire — the local validator refuses first — so this is pure thrash
+    // that spends the step budget and the clock while every instrument reports a healthy
+    // character with somewhere to be.
+    //
+    // Where it comes from is the deliberate escape hatch above: when the collision-aware
+    // pathfinder finds no route, `replan` re-asks with `collision: false`. That plan is
+    // allowed to contain edges the mover refuses — the point is that fine positioning
+    // usually rescues them — but the ones that are geometrically impossible have to be
+    // learned ONCE and remembered, or the same blind plan comes back unchanged.
+    //
+    // Only provable impossibility is kept. `object_blocked` is never persisted: a troll
+    // moves, and remembering it would carve permanent holes in a room over a long session.
+    const roomNow = Number(geo?.num ?? this.world?.room?.num ?? NaN);
+    const impossibleHere = Number.isFinite(roomNow)
+      ? ((this.impossibleEdges ??= new Map()).get(roomNow)
+         ?? this.impossibleEdges.set(roomNow, new Set()).get(roomNow))
+      : null;
+    if (impossibleHere) for (const e of impossibleHere) blockedEdges.add(e);
+
+    // BLOCKED EDGES GO INTO THE FIRST QUESTION, NOT ONLY THE LATER ONES.
+    //
+    // The re-plan twenty lines down has always passed `blockedEdges`; the OPENING plan never
+    // did, so every walk began blind to everything the walker already knew. That was
+    // invisible while the set was rebuilt empty on each call — there was nothing to be blind
+    // to. The moment the room's impossible edges survive a walk, the opening plan is the one
+    // place they have to be honoured, or they are learned for ever and consulted never.
+    //
+    // It matters most for the `collision: false` fallback: that plan is ALLOWED to contain
+    // edges the mover refuses, which is the whole point of it, and the blocked set is the
+    // only thing that stops it proposing the same refused edge on every attempt.
     const replan = (r, cc) => {
-      let p = geo.path(r, cc, row, col, { threats, clearance });
+      let p = geo.path(r, cc, row, col, { blockedEdges, threats, clearance });
       if (!p.found && p.collision_view)
-        p = geo.path(r, cc, row, col, { threats, clearance, collision: false });
+        p = geo.path(r, cc, row, col, { blockedEdges, threats, clearance, collision: false });
       return p;
     };
     let plan = replan(from.row, from.col);
@@ -4671,8 +4713,6 @@ class Session {
     // way, with trails reading `4,15->5,15=5,15` / `5,15->4,16=4,15` over and over. Nobody
     // was trapped: the same rooms are 96-100% connected to their own exits when the mover's
     // edges are the ones being walked. The walker simply never learned.
-    const blockedEdges = new Set();
-    const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     // LONG HOPS THAT WERE SENT, MOVED THE BODY, AND DID NOT ARRIVE.
     //
     // Not a blocked edge: nothing refused it, and a single step along the same line is
@@ -5018,6 +5058,23 @@ class Session {
       let learned = false;
       if (!hitSomething && was && blamed && (bdr || bdc || next.fall)) {
         if (!blockedEdges.has(blamed)) { blockedEdges.add(blamed); learned = true; }
+        // AND REMEMBERED PAST THIS WALK, but only when the geometry says so outright.
+        //
+        // `moverStepLands` asked from the square we actually stood on is the same question
+        // the mover just answered, so a `false` here is proof rather than inference — the
+        // one thing worth carrying into the next replan. A refusal we cannot corroborate
+        // (a slide, a fall, an unbaked room) stays local and is forgotten as before.
+        //
+        // Bounded, because a session is long and a map is not: past the cap the room stops
+        // learning rather than growing without limit.
+        if (impossibleHere && !next.fall && (bdr || bdc)
+            && typeof geo?.moverStepLands === 'function'
+            && impossibleHere.size < 4096) {
+          const tr = was.row + bdr, tc = was.col + bdc;
+          try {
+            if (!geo.moverStepLands(was.row, was.col, tr, tc)) impossibleHere.add(blamed);
+          } catch { /* a geometry that cannot answer teaches nothing, which is the old behaviour */ }
+        }
       }
 
       // HALF OF WHAT THE SQUARE LATTICE CALLS A WALL IS A SLIDE THAT LANDED NEXT DOOR.
@@ -5076,7 +5133,11 @@ class Session {
             if (threaded || (at && at.row === next.row && at.col === next.col)) {
               // Through the gap. The edge we blamed was never the problem, so unlearn it —
               // leaving it would push every later replan away from a way that works.
-              if (learned && blamed) blockedEdges.delete(blamed);
+              // Local only. If `moverStepLands` called this edge impossible it is in the
+              // room's memory too, and threading PAST it in fine units does not make the
+              // square-to-square step walkable — that is the distinction the persistent set
+              // exists to keep.
+              if (learned && blamed && !impossibleHere?.has(blamed)) blockedEdges.delete(blamed);
               recordTactic({ character: this.character ?? null, room: geo?.num ?? null,
                              tactic: 'fine_walk', trigger: 'off_plan', worked: true,
                              note: `threaded ${legs.length} fine leg(s) past a lattice refusal` });

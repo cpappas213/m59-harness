@@ -2271,5 +2271,87 @@ if (typeof walkTo !== 'function' || typeof realSidestepAround !== 'function') {
   ok('and it gives up rather than passing through', out?.arrived !== true, JSON.stringify(out));
 }
 
+
+console.log('');
+console.log('AN EDGE THE MOVER CANNOT WALK IS REMEMBERED PAST THE WALK THAT FOUND IT');
+{
+  // Room 50, measured: the single step 54,40 -> 53,40 was refused ONE HUNDRED AND THIRTY-FIVE
+  // times in one two-character run — 135 of that room's 145 refusals. `moverStepLands` says
+  // that step is false: both squares are walkable and the step between them is not, so the
+  // mover was right every time and the walker asked anyway. Nothing reached the wire; the
+  // local validator refuses first, so it was pure thrash against the step budget and the
+  // clock, while every instrument reported a healthy character with somewhere to be.
+  //
+  // `blockedEdges` DID learn it — and is rebuilt empty on the next call, so the lesson died
+  // with the walk and the next blind replan asked the identical question. A body in the way
+  // deserves that amnesia, because it will have moved. Geometry does not.
+  //
+  // WHAT IS ASSERTED IS WHAT THE PLANNER WAS TOLD. The fixture's pathfinder is a stub and
+  // will hand back whatever it likes; the property that matters is that the SECOND walk
+  // starts with the edge already in the set handed to `geo.path`, where the first could not.
+  const IMPOSSIBLE = '1,1>1,2';
+  const mkGeo = told => ({
+    num: 50, rows: 8, cols: 8,
+    collisionReady: true,
+    walkable: () => true,
+    standable: () => true,
+    nearestWalkable: (r, c) => ({ row: r, col: c }),
+    // The one edge the mover refuses, asked centre to centre — the same question the
+    // validator answers when it refuses the step for real.
+    moverStepLands: (fr, fc, tr, tc) => !(fr === 1 && fc === 1 && tr === 1 && tc === 2),
+    path: (_r, _c, _tr, _tc, opts) => {
+      told.push(new Set(opts?.blockedEdges ?? []));
+      return { found: true, steps: [{ col: 2, row: 1 }] };
+    },
+  });
+  const mkSession = (geo, reason = 'geometry_blocked') => ({
+    client: { self: { id: 1, col: 1, row: 1 }, room: { objects: new Map() },
+              async roomContents() { return null; }, async waitFor() { return null; } },
+    world: { geometry: geo, room: { num: 50 } },
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    railAcross() { return null; },
+    async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+    sidestepAround() { return null; },
+    threatsHere() { return []; },
+    async selfOrResync() { return this.client.self; },
+    async step() { return { moved: false, left_room: false, reason }; },
+  });
+
+  const memory = new Map();
+  const toldFirst = [], toldSecond = [];
+  const s1 = mkSession(mkGeo(toldFirst)); s1.impossibleEdges = memory;
+  await walkTo.call(s1, 2, 1, { maxSteps: 6, hardCap: 12 });
+  ok('the refused edge is remembered for the room it happened in',
+     memory.get(50)?.has(IMPOSSIBLE) === true, JSON.stringify([...(memory.get(50) ?? [])]));
+  ok('and the first walk could not have known it up front',
+     toldFirst.length > 0 && !toldFirst[0].has(IMPOSSIBLE));
+
+  const s2 = mkSession(mkGeo(toldSecond)); s2.impossibleEdges = memory;
+  await walkTo.call(s2, 2, 1, { maxSteps: 6, hardCap: 12 });
+  // THE POINT. The next walk plans around it from its very first question.
+  ok('a later walk hands the planner that edge from the first call — that is the 135 refusals',
+     toldSecond.length > 0 && toldSecond[0].has(IMPOSSIBLE),
+     JSON.stringify(toldSecond[0] ? [...toldSecond[0]] : null));
+
+  // A TROLL MOVES AND A WALL DOES NOT. Persisting a body would carve permanent holes in a
+  // room over a long session, so only provable geometry is kept.
+  const memory2 = new Map();
+  const s3 = mkSession(mkGeo([]), 'object_blocked'); s3.impossibleEdges = memory2;
+  await walkTo.call(s3, 2, 1, { maxSteps: 6, hardCap: 12 });
+  ok('a body in the way is never remembered — it will have moved',
+     (memory2.get(50)?.size ?? 0) === 0, JSON.stringify([...(memory2.get(50) ?? [])]));
+
+  // A refusal the geometry will not corroborate stays local, exactly as before.
+  const memory3 = new Map();
+  const openGeo = mkGeo([]);
+  openGeo.moverStepLands = () => true;      // says every step is fine; the step still fails
+  const s4 = mkSession(openGeo); s4.impossibleEdges = memory3;
+  await walkTo.call(s4, 2, 1, { maxSteps: 6, hardCap: 12 });
+  ok('a refusal the geometry will not corroborate is NOT promoted to a map fact',
+     (memory3.get(50)?.size ?? 0) === 0, JSON.stringify([...(memory3.get(50) ?? [])]));
+}
+
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);
 process.exitCode = fail ? 1 : 0;
