@@ -5447,6 +5447,39 @@ class Session {
   }
 
   /**
+   * PUT THE BODY BACK IN THE MIDDLE OF THE SQUARE IT IS ALREADY STANDING ON.
+   *
+   * THE BAKE TRACES CENTRE TO CENTRE. THE MOVER TRACES FROM WHERE THE BODY ACTUALLY IS.
+   * Those are different questions and the gap between them is a wall.
+   *
+   * Measured in room 586: the body sat on square 47,14 and every westward target from 47,13
+   * out to 47,5 was refused `geometry_blocked` — eighteen times for the adjacent one alone.
+   * Offline, from the CENTRE of 47,14, `moverStepLands` and `stepAllowedByCollision` both
+   * say 47,13 is fine, and both squares are walkable and standable. Nothing was wrong with
+   * the line. The body had slid to a fine position inside its own square, hard against a
+   * wall, and from there the fine trace west hits that wall immediately.
+   *
+   * That is the whole of "people get caught on the wall half way through and just stand
+   * there": nine consecutive waypoints refused, the rail abandoned, and every instrument
+   * reporting a healthy character with somewhere to be.
+   *
+   * A step of at most half a square, onto ground the mover has already agreed is standable,
+   * and it is the body's OWN square so there is no boundary to cross. If it fails, nothing
+   * is worse than it was.
+   */
+  async recentreInSquare() {
+    const geo = this.world?.geometry;
+    const me = this.client?.self;
+    if (!geo || !me || typeof geo.standPoint !== 'function'
+        || typeof this.walkFine !== 'function') return false;
+    if (typeof geo.standable === 'function' && !geo.standable(me.row, me.col)) return false;
+    const pt = geo.standPoint(me.row, me.col);
+    if (!pt) return false;
+    const r = await this.walkFine(pt.x, pt.y, { maxSteps: 3, stride: 24 }).catch(() => null);
+    return !!(r?.arrived ?? r?.moved);
+  }
+
+  /**
    * Walk a baked line square by square. NO REPLANNING — that is the contract.
    *
    * A slide re-aims at the SAME square rather than asking the router where to go from the
@@ -5459,7 +5492,7 @@ class Session {
     let walked = 0, skipped = 0, skippedInARow = 0, missed = 0;
     for (let i = 0; i < squares.length; i++) {
       const target = squares[i];
-      let slips = 0, gaveUpOnThisSquare = false;
+      let slips = 0, gaveUpOnThisSquare = false, recentred = false;
       for (;;) {
         if (this.movementWasCancelled(movementGeneration, controlToken))
           // NAMED, BECAUSE AN UNNAMED CANCELLATION READS AS A REFUSAL. This is the only
@@ -5503,6 +5536,16 @@ class Session {
         // index 24 of 64 — on ORDINARY floor — four runs in a row. Skip the square and aim
         // at the next one; the line ahead is still the line. Consecutive skips are bounded,
         // because a rail nothing can be hit on is a rail worth leaving.
+        // ONE RE-CENTRE BEFORE GIVING UP ON A SQUARE, AND ONLY FOR A GEOMETRY REFUSAL.
+        //
+        // `geometry_blocked` from a square the bake calls walkable means the BODY is in the
+        // wrong part of its own square, not that the line is wrong — see recentreInSquare.
+        // Tried once per waypoint: if standing in the middle does not help, the square is
+        // genuinely refused and the skip below is the right answer.
+        if (slips === 1 && r.reason === 'geometry_blocked' && !recentred) {
+          recentred = true;
+          if (await this.recentreInSquare()) continue;
+        }
         if (++slips > maxSlips) {
           skipped++; missed++;
           // CONSECUTIVE, WHICH IS WHAT THE PARAGRAPH ABOVE ALWAYS CLAIMED IT WAS.
