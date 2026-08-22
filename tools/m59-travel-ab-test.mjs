@@ -445,7 +445,13 @@ console.log('a wall is nearer than the next room -- the mid-hop rung');
      /roomOutranksUs\(\) \? 1 :/.test(SRC));
   ok('with "outranks" meaning the engagement ceiling the ladder already uses',
      /roomOutranksUs\(/.test(SRC) && /refuseEngagement\(name\)/.test(SRC));
-  ok('the clock says safe_spot is on both', /safe_spot: 'both'/.test(SRC));
+  // AND THE CLOCK SAYS HOP BOUNDARY, which is the other half of the same argument. A
+  // threshold of 1 — any damage at all — is survivable as a rule for where to PAUSE and
+  // ruinous as a rule for what may CANCEL: mid-hop the only thing the rung can do is take
+  // the body off the line, so at this threshold the crossing was torn down at step 0 of 40
+  // and never finished. The number stays; the clock is what changed.
+  ok('and the clock says safe_spot pauses at a hop boundary rather than cancelling mid-hop',
+     /safe_spot: 'hop boundary'/.test(SRC));
 }
 
 console.log('');

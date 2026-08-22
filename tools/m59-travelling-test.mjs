@@ -143,14 +143,16 @@ console.log('\nthe guard: what a journey leaves switched on');
   ok('and every one of them says which clock it is on',
      TRAVEL_GUARD_KEYS.every(key => ['mid-hop', 'hop boundary', 'both'].includes(TRAVEL_GUARD_CLOCK[key])),
      JSON.stringify(TRAVEL_GUARD_CLOCK));
-  // 'both' IS A THIRD ANSWER AND ONLY ONE FACULTY MAY GIVE IT. A wall is the one thing that
-  // has to be reachable from inside a hop as well as between them: the Cragged Mountains is
-  // 2,450 squares and kills a character long before it offers a boundary to be asked at —
-  // seven of eleven deaths in one window were in there, with no refuge taken at all. Every
-  // other faculty stays on exactly one clock, because that is what keeps "only one thing
-  // drives a body" true.
-  ok('and safe_spot is the only one on BOTH, because a big room never offers a boundary',
-     TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'both').join() === 'safe_spot',
+  // NOTHING IS ON BOTH ANY MORE, AND THE REASON IS WHAT MID-HOP COSTS.
+  //
+  // `safe_spot` was 'both' on a real argument — the Cragged Mountains is 2,450 squares and
+  // kills a character long before it offers a boundary to be asked at. What that argument
+  // missed is that the only thing a mid-hop trigger CAN do is cancel the crossing: the mover
+  // has the body. Firing on any damage in a zone that outranks the character then tore the
+  // crossing down at step 0 of 40, over and over, and a shelter that prevents arrival is not
+  // shelter. One faculty on one clock, and the wall pauses at the boundary instead.
+  ok('nothing is on both clocks — mid-hop can only cancel, and cancelling is the cost',
+     TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'both').length === 0,
      JSON.stringify(TRAVEL_GUARD_CLOCK));
   // The split is what keeps "only one thing drives a body" true, so it is pinned rather
   // than left to a comment: the four that CANCEL a journey and the two that PAUSE it.
@@ -159,8 +161,8 @@ console.log('\nthe guard: what a journey leaves switched on');
      JSON.stringify(midHop.sort()) === JSON.stringify(['arm', 'fight_back', 'flee']),
      JSON.stringify(midHop));
   const boundary = TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'hop boundary');
-  ok('and resting is the one that only ever pauses it, at a boundary',
-     JSON.stringify(boundary.sort()) === JSON.stringify(['rest']),
+  ok('and the two that only pause it are the hop-boundary ones',
+     JSON.stringify(boundary.sort()) === JSON.stringify(['rest', 'safe_spot']),
      JSON.stringify(boundary));
 
   const k = keeper({ policy: { travelGuard: { flee: false } } });
@@ -448,19 +450,23 @@ console.log('\nthe safe-wall A/B is retired');
 
 
 console.log('');
-console.log('A WALL MUST NOT BE ABLE TO STOP A JOURNEY FOR EVER');
+console.log('MID-HOP, A WALL IS NOT AN OPTION — BECAUSE THE ONLY OPTION IS TO CANCEL');
 {
-  // Room 587, measured: the body walked the first six squares of a 65-square baked rail,
-  // was taken back for a wall, was returned to the entry anchor, and started again —
-  // THIRTY times in one leg, with six refusals in two hundred and thirty move attempts.
-  // Nothing was blocked. `travelShelterBelow` returns 1 (ANY damage) when the zone
-  // outranks the character, so a scratch cancelled the crossing and the next scratch
-  // cancelled it again. A room that cannot be crossed without being bitten could not be
-  // crossed at all, and this fleet's road runs through two of them.
+  // Room 587, measured: the body walked six squares of a 65-square baked rail, was taken
+  // back for a wall, and started again. Thirty laps in one leg, with six refusals in two
+  // hundred and thirty move attempts — nothing was blocked, it was being interrupted. Then,
+  // with the interruption bounded, "cancelled at 0 of 40": step zero of forty.
+  //
+  // The cause is that mid-hop there is nothing else this rung can do. The mover has the
+  // body; the keeper cannot walk to a wall without taking the body off the line first. And
+  // `travelShelterBelow` returns 1 — ANY damage — in a zone that outranks the character,
+  // which the Twisted Wood does for every character this fleet has. So the crossing was torn
+  // down continuously, and a shelter that prevents arrival is not shelter.
+  //
+  // The wall is now the HOP BOUNDARY's business, where nothing is contended and the journey
+  // PAUSES rather than ending. What follows pins both halves of that.
   const withPlan = extra => {
     const k = keeper({ adjacent: 2, guard: {}, ...extra });
-    // A planned stop, so the rung has somewhere to go — otherwise it never fires and the
-    // test would pass for the wrong reason.
     k.s.activeShelter = { atStep: 0, maxDetour: 4,
                           spots: [{ atStep: 1, detour: 2, col: 20, row: 5,
                                     refused_approaches: 3, proven: true }] };
@@ -470,50 +476,26 @@ console.log('A WALL MUST NOT BE ABLE TO STOP A JOURNEY FOR EVER');
   const sheltered = async k => { await k.passTravelling(ctxFor(k)); return k.notes.some(n =>
     n.detail?.trigger === 'a wall is nearer than the next room'); };
 
-  // Hurt in a zone that outranks us: the first two crossings buy a wall.
-  const a = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
-  ok('a hurt traveller with a wall ahead takes it', await sheltered(a));
-  ok('and again, because two is the budget',
-     a.notes.length && await sheltered(withPlan({ health: 30, max: 60, fleeAt: 0.2 })));
+  // Hurt, in a zone that outranks us, something on us — and it walks on.
+  const hurt = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
+  ok('a hurt traveller mid-hop does NOT stop for a wall', !(await sheltered(hurt)));
+  ok('and it says so, once, rather than a faculty going quiet',
+     hurt.notes.some(n => /the wall for this is at the end of the hop/.test(n.what ?? '')),
+     JSON.stringify(hurt.notes.map(n => n.what)));
 
-  // THE THIRD ONE IN THE SAME ROOM IS A LOOP, NOT SURVIVAL.
-  const spent = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
-  spent.shelterStops = { room: 535, taken: 2 };
-  ok('a third stop in the same room is refused — that is the thirty-lap loop',
-     !(await sheltered(spent)));
-  ok('and it says so, once, rather than silently walking past a wall',
-     spent.notes.some(n => /already been paid for in wall stops/.test(n.what ?? '')));
+  // ...AND TWO HITS FROM DEATH IS NOT "A BAD ROOM". Waiting for a boundary that is 2,450
+  // squares away is how the Cragged Mountains killed seven of eleven in one window, so the
+  // one case that still stops mid-hop is the one that is about to be a death.
+  const doomed = withPlan({ health: 10, max: 60, fleeAt: 0.7 });
+  ok('but two hits from death still takes the wall where it stands', await sheltered(doomed));
+  // No budget on dying: the same character with a room full of spent stops still stops.
+  const doomedAgain = withPlan({ health: 10, max: 60, fleeAt: 0.7 });
+  doomedAgain.shelterStops = { room: 535, taken: 9 };
+  ok('and nothing rations that — there is no budget on dying', await sheltered(doomedAgain));
 
-  // ...UNLESS THE CHARACTER IS ACTUALLY IN TROUBLE. This is the half that must never
-  // regress: the budget is about progress, and it never outranks dying.
-  const desperate = withPlan({ health: 10, max: 60, fleeAt: 0.7 });
-  desperate.shelterStops = { room: 535, taken: 9 };
-  ok('below the flee line the wall still outranks everything, budget or no budget',
-     await sheltered(desperate));
-
-  // AND THE LINE BETWEEN "BUDGETED" AND "UNLIMITED" IS THE DOOMED ONE, NOT THE FLEE ONE.
-  //
-  // While the flee line meant "abandon what you are doing", keying the bypass on it was
-  // coherent. It is not coherent now that only a person makes a character run: a threshold
-  // that no longer triggers flight was still granting unlimited interruptions, and in a zone
-  // that outranks the character `travelShelterBelow` returns 1 — any damage at all — so a
-  // crossing could not begin. Measured: "cancelled at 0 of 40", before the first square.
-  //
-  // 30 of 60 is below a 0.7 flee line and above the 0.3 doomed line: the old rule sheltered
-  // without limit here, the new one spends the budget and then crosses the room.
-  const midway = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
-  midway.shelterStops = { room: 535, taken: 2 };
-  ok('hurt but not doomed, the budget applies — this is what lets a crossing finish',
-     !(await sheltered(midway)));
-  // ...and one point under the doomed line it does not.
-  const doomedNow = withPlan({ health: 17, max: 60, fleeAt: 0.7 });
-  doomedNow.shelterStops = { room: 535, taken: 9 };
-  ok('and under the doomed line the wall is unlimited again', await sheltered(doomedNow));
-
-  // A NEW ROOM IS A NEW CROSSING. The argument is about one room, not one journey.
-  const nextRoom = withPlan({ health: 30, max: 60, fleeAt: 0.2 });
-  nextRoom.shelterStops = { room: 999, taken: 9 };
-  ok('and entering a new room starts the budget again', await sheltered(nextRoom));
+  // The faculty switch still governs it, so an operator can turn the whole thing off.
+  const off = withPlan({ health: 10, max: 60, fleeAt: 0.7, guard: { safe_spot: false } });
+  ok('with safe_spot switched off even the doomed case declines', !(await sheltered(off)));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -429,7 +429,28 @@ export const TRAVEL_GUARD_CLOCK = Object.freeze({
   // big room kills a character long before it offers a boundary to be asked at: seven of
   // eleven deaths in one window were inside the Cragged Mountains, which is 2,450 squares,
   // with no refuge taken there at all.
-  safe_spot: 'both',
+  // HOP BOUNDARY ONLY, AGAIN, AND THIS TIME BECAUSE MID-HOP COULD NOT PAUSE.
+  //
+  // It was 'both' on a real argument: the Cragged Mountains is 2,450 squares and kills a
+  // character long before it offers a boundary to be asked at, seven of eleven deaths in one
+  // window. What that argument missed is what mid-hop COSTS, because the only thing a
+  // mid-hop trigger can do is CANCEL — the mover has the body, and the keeper cannot take a
+  // wall without taking the body off it first.
+  //
+  // So every scratch in a zone that outranks the character tore down the crossing, and
+  // `travelShelterBelow` returns 1 there, meaning any scratch at all. Measured, repeatedly:
+  //
+  //   586  cancelled at 0 of 40 by a travel guard rung taking the character back
+  //   587  cancelled at 6 of 65 by a travel guard rung taking the character back
+  //
+  // Step zero of forty. The room could not be crossed because the crossing could not begin,
+  // and a shelter that prevents arrival is not shelter.
+  //
+  // At a hop boundary nothing is contended: the mover is between rooms, the keeper can sit
+  // the character down without fighting it for the body, and the journey PAUSES rather than
+  // ending. That is the whole distinction this table exists to record, and it is why the
+  // wall belongs on this clock and not on both.
+  safe_spot: 'hop boundary',
 });
 
 // HOW SOON THE DAMAGE WOULD KILL US BEFORE A JOURNEY IS WORTH INTERRUPTING OVER.
@@ -4602,12 +4623,20 @@ export class Autopilot {
     // restUntil polls every 3s and aborts on damage, which is exactly the behaviour wanted
     // here: a wall that is being hit is not a wall, and walking on is the better of two
     // bad options once that is known.
+    // FULL, NOT NINE TENTHS, AND NOT A SIP EITHER.
+    //
+    // The last tenth costs as long as the first half and every second of it is a second
+    // something can find you — true on open ground, and NOT true on a square a creature
+    // cannot path to, which is the whole mechanism of a safe spot. A traveller that has gone
+    // to the trouble of reaching a wall should leave it healed, and `restUntil` aborts on
+    // damage if the wall turned out to be wrong.
+    //
+    // I shortened this to a sip and it was the wrong lesson from the right measurement. A
+    // leg that spends 180 seconds resting is not a slow road — it is a character getting
+    // well, and the harness already counts that separately for exactly this reason. What must not
+    // happen is the stop DIVERTING the journey: the pause belongs to the hop boundary, the
+    // objective is kept, and the crossing afterwards resumes the same line it was walking.
     const rest = await skills.restUntil(this.s, {
-      // FULL, NOT NINE TENTHS. The old default stopped at 0.9 on the argument that the last
-      // tenth costs as long as the first half and every second of it is a second something
-      // can find you — true on open ground, and not true on a square a creature cannot path
-      // to. A traveller that has gone to the trouble of reaching a wall should leave it
-      // healed, and `restUntil` aborts on damage if the wall was wrong.
       health: this.policy.travelHoldTo ?? 1,
       // Vigor comes along if it is close; it does not hold the journey up from the bottom.
       vigor: (vigorPct(this.s.client?.vitals?.()) ?? 0) >= REST_VIGOR_WORTH_WAITING
@@ -8947,19 +8976,40 @@ export class Autopilot {
     const inRealTrouble = wouldPlayDead || (hp !== null && hp < emergencyBelow);
     const shelterBudget = this.policy.travelShelterPerRoom ?? 2;
     const shelterSpent = !inRealTrouble && this.shelterStops.taken >= shelterBudget;
-    if (shelterSpent && this.travelAllows('safe_spot') && hp !== null && near.length
+    // SAID ONCE PER ROOM, because a decision that does nothing and says nothing is how a
+    // switched-off faculty hides. The character is hurt, there is something on it, and it is
+    // walking on anyway — that is worth a line even though it is the right answer.
+    if (!wouldPlayDead && this.travelAllows('safe_spot') && hp !== null && near.length
         && hp < this.travelShelterBelow() && !this.shelterStops.noted) {
       this.shelterStops.noted = true;
-      this.note('walking on — this room has already been paid for in wall stops', {
-        room: shelterRoom, taken: this.shelterStops.taken, budget: shelterBudget,
-        health: Math.round(hp * 100) + '%',
-        flee_at: Math.round(this.safety().fleeAt * 100) + '%',
-        why: 'a wall that can be taken on every scratch stops a crossing for ever. Below ' +
-             'the flee line, or two hits from death, it still outranks everything.',
+      this.note('walking on — the wall for this is at the end of the hop', {
+        room: shelterRoom, health: Math.round(hp * 100) + '%',
+        adjacent: near.length,
+        doomed_below: emergencyBelow,
+        why: 'mid-hop the only thing this rung can do is cancel the crossing, and a shelter ' +
+             'that prevents arrival is not shelter. The hop boundary is a few seconds away ' +
+             'and can PAUSE instead. Two hits from death still stops us here.',
       });
     }
-    if (!shelterSpent && this.travelAllows('safe_spot') && hp !== null && near.length
-        && (hp < this.travelShelterBelow() || wouldPlayDead)) {
+    // MID-HOP THIS RUNG IS RETIRED, AND `wouldPlayDead` IS ALL THAT IS LEFT OF IT.
+    //
+    // The only thing a mid-hop trigger can do is CANCEL the crossing: the mover has the
+    // body, and the keeper cannot walk to a wall without taking the body off the line
+    // first. That is affordable for a rung that fires rarely. This one fires on ANY damage
+    // in a zone that outranks the character — `travelShelterBelow` returns 1 there — which
+    // in the Twisted Wood is continuous, so the crossing was torn down at step 0 of 40 and
+    // rebuilt and torn down again until the leg ran out of clock.
+    //
+    // A shelter that prevents arrival is not shelter. The wall now belongs to the HOP
+    // BOUNDARY, where nothing is contended: the mover is between rooms, the keeper can sit
+    // the character down without fighting it for the body, and the journey PAUSES instead
+    // of ending. See TRAVEL_GUARD_CLOCK.
+    //
+    // WHAT STAYS. Two hits from death is not "a bad room", it is about to be a death, and
+    // waiting for a boundary that is 2,450 squares away is how the Cragged Mountains killed
+    // seven of eleven. So the rung still fires for `wouldPlayDead` — and only for that.
+    // The budget does not gate it, because there is no budget on dying.
+    if (wouldPlayDead && this.travelAllows('safe_spot') && hp !== null && near.length) {
       const geo = this.s.world?.geometry;
       let spot = null;
       // THE STOP COMES FROM THE ROUTE, NOT FROM A SEARCH AROUND THE BODY.
