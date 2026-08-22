@@ -114,6 +114,46 @@ export const SYMBOLS = {
     },
   },
 
+  critical: {
+    describe: 'HP is critically low — running away from anything, even safe targets',
+    whenUnknown: true,
+    why_unknown: 'unreadable HP must not trigger a panic flee',
+    produce: ({ client, policy }) => {
+      const f = frac(client?.vitals?.()?.health);
+      if (f == null) return null;
+      return f < (policy?.criticalHp ?? 0.3);
+    },
+  },
+
+  // BELOW FLEE — the HP line at which a character should RUN from an in-reach
+  // target. Distinct from `hurt` (below restBelow, ~70%, which also drives resting):
+  // resting is a calm recovery and can start early, but FLEEING abandons a fight, so
+  // it must wait until HP is genuinely dangerous. A 70% flee meant a character dropped
+  // to 69% against a weak mummy and ran off to another room instead of finishing it —
+  // which is the opposite of what we want. 50% is the line: a fight can be fought down
+  // to half HP, but below that the risk of dying (and dropping max HP, a death spiral)
+  // outweighs the loot.
+  below_flee: {
+    describe: 'below the flee line (~50% HP) — a fight should be abandoned, not just rested',
+    whenUnknown: false,
+    why_unknown: 'an unreadable HP bar must not send a character fleeing on no evidence',
+    produce: ({ client, policy }) => {
+      const f = frac(client?.vitals?.()?.health);
+      if (f == null) return null;
+      return f < (policy?.fleeBelow ?? 0.5);
+    },
+  },
+
+  vigor_rested: {
+    describe: 'vigor is at the rest cap (>= 80) — rested as far as sitting can take it',
+    whenUnknown: false,
+    why_unknown: 'unreadable vigor must not gate rest by default',
+    produce: ({ client }) => {
+      const v = client?.vitals?.()?.vigor?.value;
+      return v == null ? null : v >= REST_VIGOR_CAP;
+    },
+  },
+
   vigor_ok: {
     describe: 'vigor is high enough to start a fight',
     // CORRECTED BY THE FIRST LIVE RUN, AND THE ONLY SYMBOL A LIVE RUN HAS MOVED.
@@ -145,6 +185,27 @@ export const SYMBOLS = {
       // stops awarding vigor at 80 of 200, so everything above it has to be EATEN.
       // The two are not the ends of a quiet middle band and no setting clears both.
       return v >= (policy?.fightAboveVigor ?? MIN_FIGHT_VIGOR);
+    },
+  },
+
+  vigor_floor: {
+    describe: 'vigor is above the minimum for effective combat (>= 20)',
+    whenUnknown: false,
+    why_unknown: 'unreadable vigor must not gate combat by default',
+    produce: ({ client }) => {
+      const v = client?.vitals?.()?.vigor?.value;
+      return v == null ? null : v >= 20;
+    },
+  },
+
+  vigor_comfortable: {
+    describe: 'vigor is high enough that fighting now is safe — above the ideal fight threshold',
+    whenUnknown: true,
+    why_unknown: 'unreadable vigor must not suppress a fight by default',
+    produce: ({ client, policy }) => {
+      const v = client?.vitals?.()?.vigor?.value;
+      if (v == null) return null;
+      return v >= (policy?.idealFightVigor ?? 100);
     },
   },
 
@@ -308,6 +369,28 @@ export const SYMBOLS = {
     },
   },
 
+  at_bank: {
+    describe: 'a banker is in the current room, or the room is a known bank',
+    whenUnknown: false,
+    why_unknown: 'no banker visible, no withdraw; a wrong true just wastes a turn',
+    produce: ({ client }) => {
+      // Check for a banker object in the room. Bankers have the
+      // 'bank' affordance (or we check by name).
+      const objects = client?.room?.objects;
+      if (objects) {
+        const list = objects instanceof Map ? [...objects.values()] : Array.isArray(objects) ? objects : [];
+        if (list.some(o => {
+          const name = client?.rsc?.get?.(o.nameRsc) ?? '';
+          return /banker|bank/i.test(name);
+        }))
+          return true;
+      }
+      // Fallback: room name matches a bank type.
+      const roomName = client?.rsc?.get?.(client?.roomNameRsc) ?? client?.room?.name ?? '';
+      return typeof roomName === 'string' && /bank/i.test(roomName);
+    },
+  },
+
   in_underworld: {
     describe: 'the character is in the Underworld (dead, needs to escape)',
     whenUnknown: false,
@@ -322,6 +405,20 @@ export const SYMBOLS = {
       const id = client?.room?.id;
       return /underworld/i.test(name) || id === 6;
     },
+  },
+
+  _fight: {
+    describe: 'no hostile target in reach that should be killed (fight satisfied)',
+    whenUnknown: true,
+    why_unknown: 'a wrong true means the character ignores a mummy standing next to it',
+    produce: () => true, // default: no fight needed; keeper sets _fight=false in ws
+  },
+
+  flee_danger: {
+    describe: 'no out-of-band hostile in the room (safe to stay)',
+    whenUnknown: true,
+    why_unknown: 'a wrong true means the character stays in a room with a deadly mob',
+    produce: () => true, // default: safe; keeper sets flee_danger=false when out-of-band target present
   },
 
   has_loot: {

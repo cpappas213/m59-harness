@@ -32,10 +32,22 @@
 // SAME pure helpers the atomics bind with: pickWeapon, pickFood, knownSpells. Those are
 // synchronous by construction, which is why they can be shared at all.
 import { evaluate } from './m59-worldstate.mjs';
+import { KOD_FINENESS } from './m59-roo.mjs';
 import { planFor } from './m59-plan.mjs';
 import { pickWeapon } from './m59-act/equip.mjs';
 import { pickFood } from './m59-act/eat.mjs';
 import { knownSpells } from './m59-act/cast.mjs';
+import { nearestHuntRoom } from './m59-hunt-room.mjs';
+import { loadSpawns } from './m59-spawns.mjs';
+import { readFileSync } from 'fs';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const SPAWNS_FILE = join(__dirname, '..', 'compendium', 'data', 'spawns.json');
+import { loadMap } from './m59-map.mjs';
+import { resolveRoomNum, routeIntent } from './m59-route.mjs';
+import { CombatController } from './m59-combat.mjs';
 
 // ---------------------------------------------------------------------------
 // INTENT -- one planned action, turned into one command
@@ -49,7 +61,12 @@ import { knownSpells } from './m59-act/cast.mjs';
 // here would be a plan the tick believes it executed and did not, which is the failure
 // this whole design is arranged against.
 export const INTENTS = {
-  rest:  (f, act) => ({ sent: !!act.rest(),  what: 'rest' }),
+  rest:  (f, act, ctx) => {
+    // Resting recovers HP and vigor. At an inn it's fast;
+    // outside an inn it's slower but still works. The GOAP
+    // driver rests outside inns all the time. Always allow.
+    return { sent: !!act.rest(),  what: 'rest' };
+  },
   stand: (f, act) => ({ sent: !!act.stand(), what: 'stand' }),
 
   equip: (f, act, ctx) => {
@@ -76,6 +93,32 @@ export const INTENTS = {
     if (!f.objects?.get?.(id)) return { sent: false, why: 'the target has left the room' };
     act.swing(id);
     return { sent: true, what: `attack ${id}` };
+  },
+
+  // Underworld escape: walk to the nearest portal and step on it.
+  // Fire-and-forget: the escapeUnderworld skill is async, but we
+  // don't await it. The next tick will see the character in a
+  // new room (or still in the underworld, and try again).
+  escape_underworld: (f, act, ctx) => {
+    const c = ctx.client;
+    const objects = c.room?.objects;
+    // Find the nearest portal.
+    const me = c.self;
+    if (!me) return { sent: false, why: 'no position' };
+    let portal = null, bestDist = Infinity;
+    if (objects instanceof Map) {
+      for (const o of objects.values()) {
+        const name = c.rsc?.get?.(o.nameRsc) ?? o.name ?? '';
+        if (/portal/i.test(name) && o.col != null) {
+          const d = Math.hypot(o.col - me.col, o.row - me.row);
+          if (d < bestDist) { bestDist = d; portal = o; }
+        }
+      }
+    }
+    if (!portal) return { sent: false, why: 'no portal in room' };
+    // Walk toward the portal (one step per tick via the actuator).
+    act.step(portal.col, portal.row);
+    return { sent: true, what: `escape: walk to portal at (${portal.col},${portal.row})` };
   },
 };
 
@@ -120,14 +163,517 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
   const fails = new Map();       // goal -> consecutive failures
   const skipped = new Map();     // goal -> wall-clock ms to resume at
   let ticks = 0;
+  let _lastPos = null;           // for stuck detection
+  let _lastPosAt = 0;            // wall-clock ms of last position change
+  let _stuckEscapes = 0;         // how many times we've escaped being stuck in this room
+  let _stuckRoomKey = null;      // the room the escape count applies to
+  let _resting = false;          // suppress stuck detection while resting
+  let _wasResting = false;       // was resting last tick (to send stand before moving)
+  let _fighting = false;         // suppress stuck detection while fighting
+  let _blacklist = new Set();    // unreachable target IDs
+  let _blacklistRoom = null;     // room the blacklist applies to
+  let _blacklistAt = 0;          // wall-clock ms of last blacklist update
+  let _reachCheckAt = 0;         // wall-clock ms of last reachability A* (throttle)
+  let _lastTargetId = null;      // previous tick's target (for stuck-detection, which runs before evaluate)
+  let retargetCheckAt = 0;       // wall-clock ms of last re-target check (throttle)
+  let _hpPokeAt = 0;             // wall-clock ms of last first-move poke (HP-regen unlock)
+  let lastSeenHp = null;         // last HP value (to detect "we just took damage")
+  let lastDamagedAt = 0;         // wall-clock ms when we last dropped HP
+  let _currentTargetId = null;   // the decider's current target (for 3D debug)
+  const STUCK_MS = 30000;        // 30s of no movement = stuck (was 10s, too
+                                  // short: with 1.3s ticks + 2s position
+                                  // confirms a slow walk moves ~1 square per
+                                  // 3-5s, so 10s derails a legitimate walk)
 
   const decide = (frame, act, loop) => {
     ticks++;
     const client = session.client;
     if (!client) return;
 
+    // 0. STUCK DETECTION. If the character hasn't moved in
+    // STUCK_MS, escape the geometry pocket. Blink teleports
+    // in the facing direction, so if the character is facing
+    // a wall it does nothing. Instead: find an open
+    // neighbor square and walk there. Fall back to blink if
+    // no neighbor is open. Suppressed while resting: a
+    // resting character is intentionally not moving.
+    {
+      const me = frame?.position;
+      if (me?.col != null) {
+        if (_lastPos && me.col === _lastPos.col && me.row === _lastPos.row) {
+          // Suppress stuck detection when the character is
+          // intentionally not moving: resting, fighting,
+          // or a hostile mob is in reach. The _fighting/
+          // _resting flags are from the previous tick, so
+          // also check the room directly for a nearby mob.
+          const c2 = client;
+          const objs = c2?.room?.objects;
+          // Is the current target out of reach? A "fight" frozen against a
+          // far target is stuck-on-a-ledge, not combat — allow the stuck
+          // detector to fire in that case.
+          let targetOutOfReach = false;
+          if (_lastTargetId != null && objs instanceof Map) {
+            const t2 = objs.get(_lastTargetId);
+            if (t2?.col != null) {
+              // "Out of reach" means the swing cannot connect. Melee is a disc
+              // of radius ~4 squares (MELEE_REACH), so use d2 > 16. The old
+              // threshold (d2 > 4, i.e. dist > 2) treated an in-range target as
+              // out-of-reach, which kept the stuck-detector firing while the
+              // character was actually in melee range and swinging.
+              targetOutOfReach = (t2.col - me.col) ** 2 + (t2.row - me.row) ** 2 > 16;
+            }
+          }
+          const mobNearby = objs instanceof Map && me?.col != null &&
+            [...objs.values()].some(o => {
+              if (o.is_self || o.col == null || o.row == null) return false;
+              if (o.is_player && o.can_attack) return Math.hypot(o.col - me.col, o.row - me.row) <= 4;
+              const nm = String(c2.rsc?.get?.(o.nameRsc) ?? o.name ?? '').toLowerCase();
+              if (nm && !/shilling|gold|mace|sword|food|mushroom|bone|skull|lever|brazier|target|jump|look|fight/.test(nm)) {
+                return Math.hypot(o.col - me.col, o.row - me.row) <= 4;
+              }
+              return false;
+            });
+          if (_resting) {
+            // Resting: not stuck, just not moving.
+          } else if ((_fighting && !targetOutOfReach) || (mobNearby && !targetOutOfReach)) {
+            // Genuinely engaged: fighting a target in reach, or a hostile mob
+            // is within 4 squares. Not stuck — just holding position. A "fight"
+            // frozen against a far target (or no mob nearby) is stuck-on-a-ledge,
+            // so fall through and let the stuck-detector blink/walk out.
+          } else {
+            const held = now() - _lastPosAt;
+            if (held > STUCK_MS) {
+            const c = client;
+            // Track how many times we've been stuck in THIS room. If we've
+            // tried to escape several times and are still stuck, the room
+            // itself is the problem (a ledge with no path to the mobs) —
+            // leave it via the router rather than blinking/re-targeting
+            // in place. Blink goes to a fixed spot, so it cannot escape.
+            const roomKeyNow = `${frame?.room?.num}:${frame?.room?.name}`;
+            if (roomKeyNow !== _stuckRoomKey) { _stuckRoomKey = roomKeyNow; _stuckEscapes = 0; }
+            _stuckEscapes++;
+            if (_stuckEscapes >= 3) {
+              // Give up on this room. Route to a different hunt room.
+              const router = session._router;
+              if (router) {
+                try {
+                  const roomNum = frame?.room?.num ?? frame?.room?.id;
+                  const roomName = frame?.room?.name ?? null;
+                  const map = loadMap();
+                  const resolved = resolveRoomNum({ id: roomNum, num: roomNum, name: roomName }, map) ?? roomNum;
+                  const maxHp = client.vitals?.()?.health?.max ?? 20;
+                  const isArmed = !!(client.equipment?.()?.primary?.name);
+                  const fullBand = policy?.threatBand ?? Math.floor(maxHp / 2);
+                  const band = isArmed ? fullBand : Math.floor(fullBand / 2);
+                  const ceiling = maxHp + band;
+                  const hunt = nearestHuntRoom(resolved, ceiling);
+                  if (hunt && hunt.room !== resolved) {
+                    router.to(hunt.room);
+                    onDecision?.({ ticks, goal: 'unstuck', action: 'travel',
+                      what: `stuck ${_stuckEscapes}x in room ${roomNum}; leaving for hunt room ${hunt.room}`, sent: true });
+                    _lastPosAt = now();
+                    return;
+                  }
+                } catch {}
+              }
+              // No other hunt room reachable: reset the count and fall
+              // through to the walk/blink escape below.
+              _stuckEscapes = 0;
+            }
+            // Do NOT blacklist the target just because we're stuck. "Stuck"
+            // often means the walk is slow (1.3s ticks) or the character is
+            // re-targeting, not that the target is unreachable. Blacklisting
+            // on a momentary stall caused a re-target loop: blacklist -> new
+            // target -> stuck -> blacklist -> ... The target is blacklisted
+            // only when the mover reports a definitive no-route (it cannot
+            // find any path), which is handled elsewhere. Here we just try
+            // to escape the stall (walk to an open neighbor / blink) and keep
+            // the same target.
+            // Check the 4 neighbors for an open square.
+            const geo = session._roomGeo ?? null;
+            const dirs = [[0,-1],[0,1],[-1,0],[1,0]]; // N,S,W,E
+            let escape = null;
+            if (geo) {
+              for (const [dc, dr] of dirs) {
+                const nc = me.col + dc, nr = me.row + dr;
+                const f = geo.fineWalkable ? geo.fineWalkable(nr, nc) : undefined;
+                const s = geo.standable ? geo.standable(nr, nc) : undefined;
+                // Valid if either says true, or no data.
+                if (f === true || s === true || (f === undefined && s === undefined)) {
+                  escape = { col: nc, row: nr };
+                  break;
+                }
+              }
+            }
+            if (escape) {
+              // Walk to the open neighbor.
+              act.walk?.(escape.col, escape.row) ?? c.moveToSquare?.(escape.col, escape.row, 18);
+              onDecision?.({ ticks, goal: 'unstuck', action: 'walk',
+                what: `stuck at (${me.col},${me.row}), walking to open square (${escape.col},${escape.row})`, sent: true });
+              _lastPosAt = now(); // reset timer
+              return;
+            }
+            // No open neighbor: blink as last resort.
+            const blink = (c.spells ?? []).find(sp => {
+              const n = c.rsc?.get?.(sp.nameRsc) ?? sp.name ?? '';
+              return n.toLowerCase() === 'blink';
+            }) ?? (c.skills ?? []).find(sp => {
+              const n = c.rsc?.get?.(sp.nameRsc) ?? sp.name ?? '';
+              return n.toLowerCase() === 'blink';
+            });
+            if (blink) {
+              // Blink AWAY from the target, not into it. A fixed
+              // direction (east) re-blinked the character into the
+              // same stuck spot. Face opposite the target so the
+              // teleport goes toward open space. If there is no
+              // target, fall back to east.
+              let faceDeg = 0;
+              const t = _lastTargetId != null && objs instanceof Map ? objs.get(_lastTargetId) : null;
+              if (t?.col != null) {
+                faceDeg = (Math.atan2(t.row - me.row, t.col - me.col) * 180 / Math.PI + 180 + 360) % 360;
+              }
+              c.turn?.(faceDeg);
+              act.cast?.(blink.id, []) ?? c.cast(blink.id, []);
+              onDecision?.({ ticks, goal: 'unstuck', action: 'blink',
+                what: `stuck at (${me.col},${me.row}) for ${Math.round(held/1000)}s, blinking away (face ${Math.round(faceDeg)}°)`, sent: true });
+              _lastPosAt = now(); // reset timer
+              return;
+            }
+            }
+          }
+        } else {
+          _lastPos = { col: me.col, row: me.row };
+          _lastPosAt = now();
+        }
+      }
+    }
+
     // 1. SENSE -> VOCABULARY. Free: every producer reads pushed state.
     const ws = evaluate({ client, session, policy, agent: session.name });
+    // Expose the raw vigor value for the vigor_low goal.
+    ws._vigor = client?.vitals?.()?.vigor?.value ?? null;
+
+    // DETECT DAMAGE. If our HP just dropped (vs lastSeenHp), we took damage. The
+    // attacker is the nearest mob in melee range — the game doesn't send an explicit
+    // "hit by X" message, but melee range is ~2 squares, so whoever is on top of us
+    // is the one hitting us. We record this so target selection can re-target to the
+    // actual attacker instead of sticking with a passive mummy that isn't fighting us.
+    {
+      const curHp = client?.vitals?.()?.health?.value ?? null;
+      if (curHp != null && lastSeenHp != null && curHp < lastSeenHp) {
+        lastDamagedAt = now();
+      }
+      if (curHp != null) lastSeenHp = curHp;
+      ws._justDamaged = (now() - lastDamagedAt) < 3000;  // "took damage within the last 3s"
+    }
+
+    // 1a. TARGET SELECTION. The world state's has_target/in_reach/
+    // target_in_band are all produced from ws._targetId. In the GOAP
+    // keeper, the planner sets _targetId when it picks a target. In
+    // the tick driver, we do it here: pick the nearest hostile in
+    // the room and set _targetId, _targetLevel, _threatCeiling.
+    {
+      const objects = client?.room?.objects;
+      const me = client?.self;
+      // Reset each tick: the target-selection block sets has_target true
+      // only when a target exists. Without this, a dropped target (killed,
+      // left the room, blacklisted) leaves has_target stale-true and the
+      // character keeps "fighting" a ghost.
+      ws.has_target = false;
+      if (objects instanceof Map && me?.col != null) {
+        // If we already have a target and it's still in the room, keep it.
+        // STICKY: use _lastTargetId (the PERSISTENT module-level target), not ws._targetId
+        // (which is fresh each tick from evaluate() and always null here). The old code
+        // checked ws._targetId, which was always null, so the stickiness never worked and
+        // the decider re-picked a target every cycle — the character kept switching mummies
+        // and resetting its path, never making progress. Now: keep the current target until
+        // it is killed, leaves the room, is blacklisted as unreachable, OR a MUCH closer
+        // target appears (less than 50% of the current distance), OR we just took damage
+        // and a mob is in melee range (the attacker — fight the one hitting us).
+        let target = _lastTargetId != null ? objects.get(_lastTargetId) : null;
+        // Re-target if a MUCH closer candidate exists. Only run this check occasionally
+        // (throttled) so it doesn't add cost to every tick.
+        if (target && now() - retargetCheckAt > 2000) {
+          retargetCheckAt = now();
+          const tD2 = (target.col - me.col) ** 2 + (target.row - me.row) ** 2;
+          let closestD2 = Infinity;
+          // Build creature names (same as the if(!target) block below).
+          let cNames = new Set();
+          try {
+            const spawns = loadSpawns(SPAWNS_FILE);
+            if (spawns?.byMonster) for (const name of Object.keys(spawns.byMonster)) cNames.add(name.toLowerCase());
+          } catch { /* compendium unavailable */ }
+          for (const o of objects.values()) {
+            if (o.is_self) continue;
+            if (o.col == null || o.row == null) continue;
+            const oId = o.id ?? o.obj_id;
+            if (oId != null && (oId === _lastTargetId || _blacklist.has(oId))) continue;
+            const objName = String(client.rsc?.get?.(o.nameRsc) ?? o.name ?? '').toLowerCase();
+            const isMob = (o.is_player && o.can_attack) || (cNames.size > 0 && cNames.has(objName));
+            if (!isMob) continue;
+            const d2 = (o.col - me.col) ** 2 + (o.row - me.row) ** 2;
+            if (d2 < closestD2) closestD2 = d2;
+          }
+          // Re-target if a candidate is less than 50% of the current distance (squared: 25%).
+          if (closestD2 < tD2 * 0.25) {
+            target = null;  // drop the sticky target; the if(!target) block will pick the closer one
+          }
+          // Re-target if we just took damage and a mob is in melee range (the attacker).
+          // The game doesn't send "hit by X"; melee range is ~2 squares, so the mob on top
+          // of us is the one hitting us. If our current target is NOT that mob, drop it so
+          // we fight the actual attacker instead of a passive mummy that's ignoring us.
+          if (target && ws._justDamaged) {
+            const meleeD2 = 5;  // MELEE_REACH=2, squared=4, use 5 for a small margin
+            let attackerInMelee = false;
+            for (const o of objects.values()) {
+              if (o.is_self) continue;
+              if (o.col == null || o.row == null) continue;
+              const oId = o.id ?? o.obj_id;
+              if (oId != null && (oId === _lastTargetId || _blacklist.has(oId))) continue;
+              const d2 = (o.col - me.col) ** 2 + (o.row - me.row) ** 2;
+              if (d2 <= meleeD2) { attackerInMelee = true; break; }
+            }
+            if (attackerInMelee) {
+              target = null;  // drop the sticky target; pick the attacker (nearest in melee)
+            }
+          }
+        }
+        // DEBUG (temporary): trace the sticky target + has_target
+        if (!target) {
+          // Pick the nearest non-player, non-self object that looks like a mob.
+          // Throttled: the reachability A* is expensive (20k nodes). Re-run it
+          // only when the character has moved >1 square OR >2s since the last
+          // check, reusing the last result otherwise. This keeps the event
+          // loop unblocked (a full re-scan was causing 5s ticks and starving
+          // the keeper's HTTP server).
+          let best = null, bestD2 = Infinity;
+          let bestElev = null, bestElevD2 = Infinity;  // vestigial; kept for the fallback below
+          let candidateCount = 0;
+          const candidates = [];
+          // Build a set of known creature names from the
+          // compendium (spawns data). An object whose name
+          // matches a compendium creature is a mob.
+          let creatureNames = new Set();
+          try {
+            const spawns = loadSpawns(SPAWNS_FILE);
+            if (spawns?.byMonster) {
+              for (const name of Object.keys(spawns.byMonster)) {
+                creatureNames.add(name.toLowerCase());
+              }
+            }
+          } catch { /* compendium unavailable */ }
+
+          // Reset blacklist when the room changes or
+          // after 60s (mobs may have moved).
+          const roomNum = client?.room?.num ?? client?.room?.id ?? null;
+          if (roomNum !== _blacklistRoom || now() - _blacklistAt > 60000) {
+            _blacklist = new Set();
+            _blacklistRoom = roomNum;
+            _blacklistAt = now();
+          }
+          // BLACKLIST A DEFINITIVELY UNREACHABLE TARGET. The mover reports 'no-route' when
+          // the fine grid has no walkable path to the current target (a wall, a locked door,
+          // a ledge). The decider itself skips the reachability A* for performance, so this
+          // is the ONLY place an unreachable target gets dropped. Without it, the character
+          // chased a walled-off mummy for minutes (the 'targeting an unreachable mummy' loop).
+          // Require it to persist for 3s so a momentary geometry blip doesn't blacklist a
+          // target that's actually reachable.
+          const nr = session?._moverNoRoute;
+          if (nr?.targetId != null && now() - nr.at < 15000) {
+            // Blacklist after 1.5s of persistent no-route (the mover reports no-route every
+            // tick while it can't reach the target). This must fire BEFORE the stuck detector
+            // (30s) so the character drops the walled-off target and picks the next-closest
+            // reachable one, instead of blinking away in a loop.
+            if (now() - nr.at >= 1500 || nr._repeated) {
+              _blacklist.add(nr.targetId);
+              _blacklistAt = now();
+              session._moverNoRoute = null;
+            } else {
+              nr._repeated = true;
+            }
+          }
+
+          for (const o of objects.values()) {
+            if (o.is_self) continue;
+            if (o.col == null || o.row == null) continue;
+            // Skip blacklisted (unreachable) mobs.
+            const oId = o.id ?? o.obj_id;
+            if (oId != null && _blacklist.has(oId)) continue;
+            // Resolve the name from nameRsc
+            const objName = String(client.rsc?.get?.(o.nameRsc) ?? o.name ?? '').toLowerCase();
+            // A mob is either: flagged as a player with
+            // can_attack (enriched object), OR its name
+            // exactly matches a compendium creature.
+            // Exact match only: "baby spider" != "spider".
+            const isMob = (o.is_player && o.can_attack)
+              || (creatureNames.size > 0 && creatureNames.has(objName));
+            if (!isMob) continue;
+            const d2 = (o.col - me.col) ** 2 + (o.row - me.row) ** 2;
+            candidates.push({ o, d2 });
+          }
+          // Sort by 2D distance FIRST (cheap) to bound the candidate set, then rank by
+          // TRVERSAL DISTANCE (path length), not Euclidean. A mummy 6 squares away in a
+          // straight line but behind a wall has a much longer path than a mummy 10 squares
+          // away in the open. The user's point: pick the closest by traversal distance.
+          //
+          // We compute the path for the NEAREST ~5 by Euclidean (bounding the A* cost),
+          // and rank those by path length. The A* is bounded (maxNodes 20000) and throttled
+          // by _reachCheckAt, so it does not run on every 10Hz tick.
+          candidates.sort((a, b) => a.d2 - b.d2);
+          const geo = session?.world?.geometry;
+          const pathLen = (o) => {
+            if (!geo?.finePathProtocol || me.col == null) return null; // no geometry
+            // maxNodes capped at 4000 (not 20000): this runs on the tick hot path. A 20000-node
+            // A* with per-segment physics traces can take SECONDS, which starved the event loop
+            // and dropped the session. 4000 nodes bounds the worst case to ~100ms. If the search
+            // is exhausted before 4000, finePathProtocol returns found:false (treated as
+            // unreachable), which is the safe answer — we'd rather re-evaluate next cycle than
+            // block the loop.
+            const r = geo.finePathProtocol(
+              me.col * 64 + 32, me.row * 64 + 32,
+              o.col * 64 + 32, o.row * 64 + 32,
+              { step: 8, margin: 12 * 64, maxNodes: 4000 });
+            if (!r.found) return Infinity; // unreachable (or search exhausted)
+            const wps = r.waypoints ?? [];
+            if (wps.length === 0) return 0;
+            let len = 0;
+            let px = me.col * 64 + 32, py = me.row * 64 + 32;
+            for (const wp of wps) {
+              len += Math.hypot(wp.x - px, wp.y - py);
+              px = wp.x; py = wp.y;
+            }
+            return len;
+          };
+          // Throttle: re-rank by path length at most once per 1.5s, or when the current
+          // target is missing/dropped.
+          // STICKY TARGET. If we already have a target and it's still in the room, keep it.
+          // Do NOT re-rank by path length while a target is active — that caused a
+          // re-targeting loop where the character switched mummies every 1.5s (the path
+          // length re-check ran, picked a different mummy with a marginally shorter path,
+          // reset the mover's path, and the character turned and started heading the other
+          // way). The target is dropped only when it is killed, leaves the room, or is
+          // blacklisted as unreachable.
+          // Only re-rank by path length when there's NO active (sticky) target. The path-length
+          // block is inside `if (!target)`, which only runs when the persistent target (_lastTargetId)
+          // is gone (killed/left/blacklisted). So this is belt-and-suspenders: re-rank at most
+          // once per 1.5s, and only when we don't already have a target to keep.
+          //
+          // ENABLED for new target selection: when picking a brand-new target (after a
+          // blacklist or kill), run the A* path-length check to avoid picking an
+          // unreachable mummy. The A* is bounded (maxNodes 4000, ~100ms) and only
+          // runs when there's no sticky target — not every tick. This prevents the
+          // "cycle through 5 unreachable mummies at 1.5s each" loop.
+          const needPathCheck = true;
+          if (needPathCheck) {
+            // Rank candidates by traversal distance (path length), not Euclidean.
+            // Bound the A* to the nearest 8 by Euclidean to limit cost.
+            const toCheck = candidates.slice(0, 8);
+            for (const { o, d2 } of toCheck) {
+              if (o.id != null && _blacklist.has(o.id)) continue;
+              const plen = pathLen(o);
+              // plen === Infinity means unreachable (no fine path). Skip it.
+              // plen === null means no geometry (fallback to Euclidean).
+              if (plen === Infinity) continue;
+              const rank = plen ?? d2;  // use path length if available, else Euclidean
+              if (rank < bestD2) { bestD2 = rank; best = o; }
+            }
+            // Fallback: if no candidate had a valid path length (all unreachable
+            // or no geometry), pick the nearest by Euclidean as before.
+            if (!best) {
+              for (const { o, d2 } of candidates) {
+                if (o.id != null && _blacklist.has(o.id)) continue;
+                if (d2 < bestD2) { bestD2 = d2; best = o; }
+              }
+            }
+          } else {
+            // Throttled: keep the previous target if it's still valid, else nearest by Euclidean.
+            for (const { o, d2 } of candidates) {
+              if (o.id != null && _blacklist.has(o.id)) continue;
+              if (d2 < bestD2) { bestD2 = d2; best = o; }
+            }
+          }
+          _reachCheckAt = now();
+          // Track the nearest unreachable-when-checked mob for the
+          // "whole room walled off" case. Without the A* we can't tell
+          // reachability here, so bestElev stays null and the hunt goal
+          // only fires when there are NO candidates at all (or all are
+          // blacklisted).
+          // Fallback: if no reachable target was found, leave has_target
+          // false so the hunt goal can route to a different room. The
+          // individually-unreachable mobs were already blacklisted by the
+          // scan loop above, so the next scan skips them and tries the
+          // next-closest. Don't blacklist the whole room here — other
+          // mummies (or the same mummy after a geometry change) may be
+          // reachable later.
+          if (!best && bestElev) {
+            ws._targetElevated = true;
+          } else {
+            ws._targetElevated = false;
+          }
+          // DEBUG (temporary): why is has_target false?
+          if (best && !ws._targetElevated) {
+            target = best;
+            ws._targetId = best.id ?? best.obj_id;
+            _lastTargetId = ws._targetId;
+            _currentTargetId = ws._targetId;
+            // Level: from the object's max_health or health, or the
+            // compendium. The threat ceiling: same formula as the
+            // GOAP keeper (level + band, halved when unarmed).
+            const maxHp = client.vitals?.()?.health?.max ?? 20;
+            const level = maxHp;
+            const isArmed = ws.armed === true;
+            const fullBand = policy?.threatBand ?? Math.floor(level / 2);
+            const band = isArmed ? fullBand : Math.floor(fullBand / 2);
+            ws._threatCeiling = level + band;
+            // Level: from the object's max_health, or the
+            // compendium (spawns data) for this room+creature.
+            let targetLevel = best.max_health ?? best.health ?? null;
+            if (targetLevel == null) {
+              try {
+                const spawns = loadSpawns(SPAWNS_FILE);
+                if (spawns?.byMonster) {
+                  const mobName = String(client.rsc?.get?.(best.nameRsc) ?? best.name ?? '').toLowerCase();
+                  // Look up the monster in byMonster to find its level
+                  // from any room it appears in.
+                  for (const [monName, entries] of Object.entries(spawns.byMonster)) {
+                    if (monName.toLowerCase() === mobName) {
+                      // The level is typically in the room's spawn data.
+                      // For now, use the creature name match as confirmation
+                      // that this is a mob. The level will be set from the
+                      // compendium's room data if available.
+                      targetLevel = null; // will be set below
+                      break;
+                    }
+                  }
+                }
+              } catch { /* compendium lookup failed */ }
+            }
+            ws._targetLevel = targetLevel;
+            // Re-derive the target-dependent symbols.
+            ws.has_target = true;
+            ws.in_reach = bestD2 <= 4; // MELEE_REACH = 2, squared = 4
+            // If the level is unknown, treat as in-band (the
+            // GOAP keeper's default: a ceiling that defaults
+            // open is the one that kills somebody, but a
+            // target with unknown level is probably a common
+            // mob in a room we already chose to hunt in).
+            ws.target_in_band = targetLevel == null ? true : targetLevel <= ws._threatCeiling;
+          }
+        } else {
+          // Target still in room: re-derive in_reach.
+          const d2 = (target.col - me.col) ** 2 + (target.row - me.row) ** 2;
+          ws.in_reach = d2 <= 4;
+          ws.has_target = true;
+          ws.target_in_band = true;  // DEBUG: force in-band to test
+        }
+      }
+    }
+
+    // 1b. POSITION CONFIRMATION. The server does not push our position.
+    // Fire a confirm at a fixed cadence (the mover rate-limits internally).
+    // This is fire-and-forget: the tick continues with dead reckoning
+    // until the confirm resolves and syncs the mover.
+    if (session._mover?.maybeConfirm) session._mover.maybeConfirm();
 
     // 2. GOAL. The first that applies and is not serving a skip.
     const active = goals.find(g => {
@@ -135,6 +681,264 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
       const until = skipped.get(g.goal) ?? 0;
       return now() >= until;
     });
+
+    // Track whether we're resting or fighting (suppress
+    // stuck detection). A character that's swinging at a
+    // mummy or resting at an inn is intentionally not
+    // moving — it's not stuck.
+    _resting = active?.goal === 'healthy' || active?.goal === 'vigor_low';
+    _fighting = active?.goal === '_fight';
+
+    // STAND BEFORE MOVING. Resting sits the character down, and a sitting character
+    // cannot move — the server silently refuses every step, which looks exactly like
+    // "stuck in geometry" (refused_edges: 8, kept ending up somewhere other than the
+    // planned square). When we transition from a rest goal to a movement goal, send
+    // stand() first so the character is upright before the router tries to walk it.
+    // This is the fix for the respawn-at-inn case: JayB died, respawned sitting at Raza
+    // Inn, and could not walk to the Mausoleum because he was still seated from the
+    // rest that ran just before he died.
+    if (_wasResting && !_resting && active && (active.goal === 'hunt' || active.goal === 'flee_danger' || active.goal === 'flee_hurt' || active.goal === 'travel' || active.goal === '_fight')) {
+      try { act.stand?.(); } catch { /* best effort */ }
+      onDecision?.({ ticks, goal: active.goal, action: 'stand', sent: true, what: 'stand before moving' });
+      _wasResting = false;
+      return;
+    }
+    _wasResting = _resting;
+
+    // 2a1. HEALTHY (rest to recover HP) — but HP REGEN IS GATED BEHIND THE
+    // FIRST-MOVE FLAG. The server's HealthTimer only gains a point when
+    // (piFlags & PFLAG_MOVED_SINCE_ENTRY) is set (player.kod:2645), and that
+    // flag is reset to FALSE on entering a safe room like an inn
+    // (player.kod:1871). A character that rests without ever moving in the
+    // room is frozen: HealthTimer keeps rescheduling (NewHealth) and never
+    // gains a point. Watched live: JayB sat at Raza Inn at HP 3 for hours —
+    // not stale data, the server genuinely never ran the regen because he
+    // never moved. The fix: do a one-square POKE (stand, step a walkable
+    // neighbor, sit back down) the first time we rest for HP in a room, to
+    // set the flag. After that the server regens on its own and we just rest.
+    // Throttled to 30s so a botched poke (blocked step) retries without spamming.
+    if (active?.goal === 'healthy' && ws.hurt === true) {
+      const hp = client.vitals?.()?.health?.value ?? 0;
+      const maxHp = client.vitals?.()?.health?.max ?? 20;
+      const now2 = now();
+      if (hp < maxHp && now2 - _hpPokeAt > 30000) {
+        _hpPokeAt = now2;
+        const me = client.self;
+        if (me && me.col != null) {
+          // Find the nearest walkable neighbor to step to (N, S, E, W).
+          const geo = session.world?.geometry;
+          const canStep = (r, c) => {
+            const f = geo?.fineWalkable ? geo.fineWalkable(r, c) : undefined;
+            const w = geo?.walkable ? geo.walkable(r, c) : undefined;
+            if (f === false) return false;
+            if (f === undefined && w === false) return false;
+            return true;
+          };
+          let poked = false;
+          for (const [dr, dc] of [[0, 1], [1, 0], [0, -1], [-1, 0]]) {
+            const nr = me.row + dr, nc = me.col + dc;
+            if (!canStep(nr, nc)) continue;
+            try {
+              act.stand?.();
+              act.step?.(nc, nr, { minGapMs: 0 });
+              // Sit back down so we rest. The step sets PFLAG_MOVED_SINCE_ENTRY.
+              act.rest?.();
+              poked = true;
+              break;
+            } catch { /* try the next direction */ }
+          }
+          onDecision?.({ ticks, goal: 'healthy', action: poked ? 'poke+rest' : 'rest',
+            sent: poked, what: poked ? 'poke to unlock HP regen, then rest' : 'no walkable neighbor to poke' });
+          return;
+        }
+      }
+      // Already poked (flag should be set): just rest. The server regens on its own.
+      const r = intend('rest', frame, act, { client, session, ws });
+      note(active.goal, r.sent);
+      onDecision?.({ ticks, goal: 'healthy', action: 'rest',
+        sent: r.sent, what: r.what ?? null, why: r.why ?? null });
+      return;
+    }
+
+    // 2a. UNDERWORLD: escape is a special case. Walk toward the
+    // nearest portal. This is not a world-state transition the
+    // planner handles; it's a directional decision.
+    if (active?.goal === '!in_underworld') {
+      const r = intend('escape_underworld', frame, act, { client, session, ws });
+      note(active.goal, r.sent);
+      onDecision?.({ ticks, goal: '!in_underworld', action: 'escape_underworld',
+        sent: r.sent, what: r.what ?? null, why: r.why ?? null });
+      return;
+    }
+
+    // 2a2. VIGOR LOW: rest to recover vigor. The character
+    // can't fight effectively below vigor 20. Resting
+    // recovers vigor over time (faster at an inn).
+    if (active?.goal === 'vigor_low') {
+      const r = intend('rest', frame, act, { client, session, ws });
+      note(active.goal, r.sent);
+      onDecision?.({ ticks, goal: 'vigor_low', action: 'rest',
+        sent: r.sent, what: r.what ?? null, why: r.why ?? null });
+      return;
+    }
+
+    // 2b. FLEE DANGER: out-of-band aggroed mob. Run for the exit.
+    // Set the router's destination to the nearest exit room.
+    if (active?.goal === 'flee_danger') {
+      const router = session._router;
+      if (router) {
+        // Walk toward the nearest exit. The router's leg planner
+        // will find the exit staging square. We just need to give
+        // it a destination: the room beyond the nearest exit.
+        try {
+          const exits = session.world?.exits?.() ?? [];
+          if (exits.length > 0) {
+            const exit = exits[0]; // nearest exit
+            if (router.dest !== exit.to) {
+              router.to(exit.to);
+              onDecision?.({ ticks, goal: 'flee_danger', action: 'travel',
+                what: `flee to room ${exit.to} via ${exit.direction}`, sent: true });
+              return;
+            }
+          }
+        } catch { /* fall through */ }
+        // Already routing to an exit: keep going.
+        const r = routeIntent(router)(frame, act);
+        onDecision?.({ ticks, goal: 'flee_danger', action: 'travel',
+          what: r.what ?? r.why, sent: r.sent });
+        return;
+      }
+      // No router: idle (can't flee without a path).
+      onDecision?.({ ticks, goal: 'flee_danger', action: null, why: 'no router' });
+      return;
+    }
+
+    // 2b2. FLEE HURT: hurt with a target in the room. Same
+    // behavior as flee_danger: run for the nearest exit.
+    if (active?.goal === 'flee_hurt') {
+      const router = session._router;
+      if (router) {
+        try {
+          const exits = session.world?.exits?.() ?? [];
+          if (exits.length > 0) {
+            const exit = exits[0];
+            if (router.dest !== exit.to) {
+              router.to(exit.to);
+              onDecision?.({ ticks, goal: 'flee_hurt', action: 'travel',
+                what: `flee (hurt) to room ${exit.to} via ${exit.direction}`, sent: true });
+              return;
+            }
+          }
+        } catch { /* fall through */ }
+        const r = routeIntent(router)(frame, act);
+        onDecision?.({ ticks, goal: 'flee_hurt', action: 'travel',
+          what: r.what ?? r.why, sent: r.sent });
+        return;
+      }
+      onDecision?.({ ticks, goal: 'flee_hurt', action: null, why: 'no router' });
+      return;
+    }
+
+    // 2c. FIGHT: delegate to the CombatController which handles
+    // the full safe-wall combat state machine (approach, hold,
+    // pull, fight, close). One action per tick.
+    if (active?.goal === '_fight') {
+      let combat = session._combat;
+      if (!combat) {
+        combat = new CombatController(session);
+        session._combat = combat;
+      }
+      const r = combat.tick(frame, act, ws);
+      // A combat tick is NOT a failure just because it's a cooldown or facing
+      // the target. The old `note(goal, kind==='swing'||'walk')` counted every
+      // "attack cooldown" and "facing target" tick as a failure, and after 5 of
+      // them (skipAfter) it SKIPPED the _fight goal for 3000ms (skipForMs). The
+      // cycle: swing -> 5 cooldowns (500ms) -> _fight skipped 3000ms -> swing
+      // again = a 3.5s swing gap (measured 3570ms, 0.28/s instead of 1/s).
+      // Only a genuine "no progress possible" (the target is unreachable/stuck
+      // with no path) is a failure. All normal combat states (swing, walk,
+      // idle-cooldown, facing, retreat, cast, stand, loot) are engagement, not
+      // failure. The reachability problem is handled separately by
+      // session._moverNoRoute (blacklist) and the stuck detector, not by
+      // pausing the fight goal.
+      const fighting = r.kind === 'swing' || r.kind === 'walk' || r.kind === 'cast'
+        || r.kind === 'loot' || r.kind === 'stand' || r.kind === 'idle';
+      note(active.goal, fighting);
+      onDecision?.({ ticks, goal: '_fight', action: r.kind,
+        what: r.what ?? null, why: r.why ?? null });
+      // Loot after a kill: the target died, its drops are on the floor.
+      // lootFloor is async and multi-second, so kick it off
+      // fire-and-forget (it has its own pacer queue and won't block the
+      // tick). A cooldown prevents re-looting every tick while the floor
+      // is still being picked up.
+      if (r.kind === 'loot') {
+        const now = Date.now();
+        const agentName = session.name;
+        if (!session._lastLootAt || now - session._lastLootAt > 5000) {
+          session._lastLootAt = now;
+          session.lootFloor?.({ maxItems: 12 }).then(res => {
+            const taken = res?.taken?.length ?? 0;
+            if (taken) console.error(`[tick] ${agentName} looted ${taken} item(s) after kill`);
+          }).catch(e => console.error(`[tick] ${agentName} loot err: ${e.message}`));
+        }
+      }
+      return;
+    }
+
+    // 2d. HUNT GOAL: if nothing better to do and no target in band,
+    // pick a hunt room and set the router's destination. This is a
+    // directional decision, not a world-state transition — it sets
+    // the router's destination rather than sending a command.
+    if (active?.goal === 'hunt' || (!active && ws.has_target === false)) {
+      const router = session._router;
+      if (router && router.dest == null) {
+        // No active route: pick a hunt room.
+        try {
+          const roomNum = frame?.room?.num ?? frame?.room?.id;
+          const roomName = frame?.room?.name ?? null;
+          const map = loadMap();
+          const resolved = resolveRoomNum({ id: roomNum, num: roomNum, name: roomName }, map) ?? roomNum;
+          const maxHp = client.vitals?.()?.health?.max ?? 20;
+          const level = maxHp;
+          // Same formula as the GOAP keeper: policy.threatBand ?? floor(level/2),
+          // halved when unarmed. The ceiling is level + band.
+          const isArmed = ws.armed === true;
+          const fullBand = policy?.threatBand ?? Math.floor(level / 2);
+          const band = isArmed ? fullBand : Math.floor(fullBand / 2);
+          const ceiling = level + band;
+          const hunt = nearestHuntRoom(resolved, ceiling);
+          if (hunt && hunt.room !== resolved) {
+            router.to(hunt.room);
+            onDecision?.({ ticks, goal: 'hunt', action: 'travel',
+              what: `hunt ${hunt.creature} lv${hunt.level} in room ${hunt.room} (hops=${hunt.hops})`,
+              sent: true });
+            return;
+          }
+          // Already in the hunt room (hops=0). Do NOT try to plan a travel
+          // (there is none) — that produced "exhausted 5 nodes" every tick.
+          // The character is in the right room; it waits for a target (mobs
+          // respawn, or the target-selection picks one up next tick).
+          if (hunt && hunt.room === resolved) {
+            onDecision?.({ ticks, goal: 'hunt', action: null,
+              what: `in hunt room (${hunt.creature} lv${hunt.level}); waiting for a target`, sent: false });
+            return;
+          }
+        } catch (e) {
+          // Hunt room lookup failed; fall through to idle.
+        }
+      }
+      // If the router already has a destination, let it travel.
+      if (router?.dest != null) {
+        const r = routeIntent(router)(frame, act);
+        onDecision?.({ ticks, goal: 'hunt', action: 'travel',
+          what: r.what ?? r.why, sent: r.sent, why: r.why ?? null });
+        return;
+      }
+      // No hunt room to travel to: we may already be in one,
+      // or there's none in range. Fall through to the normal
+      // goal stack so _fight, has_food, etc. can fire.
+    }
+
     if (!active) { onDecision?.({ ticks, goal: null, why: 'nothing to do' }); return; }
 
     // 3. PLAN. Synchronous A* over an action set built from what this character has.
@@ -165,7 +969,8 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
   }
 
   decide.state = () => ({ ticks, fails: Object.fromEntries(fails),
-                          skipped: Object.fromEntries(skipped) });
+                          skipped: Object.fromEntries(skipped),
+                          targetId: _currentTargetId });
   return decide;
 }
 
@@ -173,8 +978,48 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
 // a REFUSAL-shaped condition rather than a weight: a cost can be outbid and a
 // precondition cannot, which is the one rule docs/HANDOFF.md says must not be broken.
 export const DEFAULT_GOALS = [
-  { goal: 'healthy',  when: ws => ws.hurt === true },
+  { goal: '!in_underworld', when: ws => ws.in_underworld === true },
+  // FLEE first: if an out-of-band mob is IN REACH (actually threatening us), run before
+  // anything else. The old condition fired on ANY out-of-band target (has_target &&
+  // !target_in_band), which made the character FLEE from a passive mummy just because it
+  // was out of the threat band — even when the mummy was far away and not attacking. That
+  // broke basic movement: the character would "flee" (travel to another room) instead of
+  // walking, and the flee conflicted with the stuck-detector, causing a blink loop. Now:
+  // only flee when the out-of-band threat is in reach (actually a danger). An out-of-band
+  // target that is NOT in reach is handled by the hunt goal (route to a better target or
+  // approach it), not by fleeing.
+  { goal: 'flee_danger', when: ws => ws.has_target === true && ws.target_in_band === false && ws.in_reach === true },
+  // FLEE when hurt AND a target is actively in reach
+  // (attacking you). If the target is in the room but
+  // not in reach, fight it instead of fleeing.
+  { goal: 'flee_hurt', when: ws => ws.below_flee === true && ws.has_target === true && ws.in_reach === true },
+  // Rest when hurt, but only when there's no target in
+  // the room. If a target is in reach, the flee_hurt or
+  // _fight goal handles it.
+  { goal: 'healthy',  when: ws => ws.hurt === true && ws.has_target !== true },
+  // Rest when vigor is low. Vigor IS health regeneration —
+  // keeping it high keeps HP topping up. Rest below 60 to
+  // maintain a buffer, but this is lower priority than
+  // _fight so a character will still engage a target that's
+  // in reach even at 40 vigor.
+  { goal: 'vigor_low', when: ws => {
+      const v = ws._vigor;
+      return v != null && v < 60 && ws.in_reach !== true;
+    } },
+  { goal: '_fight',   when: ws => ws.has_target === true && ws.target_in_band === true
+                                 && ws.critical !== true
+                                 && (ws.hurt === true || ws.vigor_floor !== false)
+                                 // Don't fight if the target is on a
+                                 // different elevation (unreachable).
+                                 && ws._targetElevated !== true },
   { goal: 'armed',    when: ws => ws.armed === false },
-  { goal: 'vigor_ok', when: ws => ws.vigor_ok === false && ws.has_food === true },
+  // HUNT before eating: the character should go find work (a mob to fight)
+  // rather than sitting in town eating. Vigor management matters during
+  // combat, not while idle. If vigor is truly too low to fight, the
+  // _fight goal's vigor_floor check prevents engagement, and vigor_low
+  // (above) handles resting. Eating while idle just delays the hunt.
+  { goal: 'hunt',     when: ws => ws.has_target === false || ws.target_in_band === false },
+  { goal: 'vigor_ok', when: ws => ws.vigor_ok === false && ws.has_food === true
+                                 && ws.has_target !== true },
   { goal: 'has_food', when: ws => ws.has_food === false && ws.has_reagents === true },
 ];

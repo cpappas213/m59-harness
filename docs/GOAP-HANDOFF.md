@@ -11,9 +11,9 @@ described in `CLAUDE.md`.
 | Character | Agent | Build | Karma filter | Current hunt | Room |
 |---|---|---|---|---|---|
 | Gountrug | t1 | Weaponcraft | none | slime | 583 |
-| Kage | t2 | Shal'ille caster | `good` (kills negative-karma only) | giant rat | 586 |
+| Kage | t2 | Shal'ille caster | `good` (kills negative-karma only) | baby spider | 534 |
 | JayB | t3 | Qor caster | `evil` (kills positive-karma only) | fungus beast | 544 |
-| Lee | t4 | Weaponcraft | none | giant rat | 586 |
+| Lee | t4 | Weaponcraft | none | baby spider | 534 |
 
 All four are PvP-enabled (base max health ≥ 30, so `PFLAG_PKILL_ENABLE` is set).
 
@@ -48,6 +48,61 @@ creature in the band automatically. No manual intervention needed unless she get
 
 `substrate/loadouts/Kage.json` has a full learning queue: minor heal → Shal'ille 1–6.
 The GOAP `buy_next_skill` action handles purchases automatically when funds are available.
+
+### Scaled hunt bands (as of 2026-08-19)
+
+The fleet is currently at **lv20–27**. The threat band is `floor(level/2)` when armed,
+`floor(level/4)` when unarmed. The engagement ceiling is `level + band`. A character
+may fight any mob at or below the ceiling, but *may* is not *will survive*.
+
+### Safe-wall fight strategy
+
+Mobs are **not hostile until you swing at them**. Once you do, they chase you.
+The safe-wall strategy exploits this:
+
+1. **Engage**: swing at a mob in band. It now chases you.
+2. **Reposition**: move to a wall or corner. The mob follows.
+3. **Hold**: stay at the wall. The mob arrives in reach.
+4. **Fight**: swing until it dies. One mob at a time, wall behind you.
+5. **Repeat**: next mob approaches, fight it.
+
+A character at a wall takes hits from one direction, not five. The `scavenge`
+action implements this: it calls `fight()` with `holdPosition: false` first
+(walk to target, swing, engage), then `takeSafeSpot()`, then `fight()` with
+`holdPosition: true` (stay at the wall, fight when the mob arrives). If the
+mob is out of reach, the action returns `holding: true` and the GOAP re-plans
+on the next pass — the mob is still chasing, it just hasn't arrived yet.
+
+**Do not take a safe spot before engaging.** The mob isn't hostile yet, so it
+won't follow you to the wall. You'd be standing at a corner waiting for
+something that has no idea you exist.
+
+**Practical hunt targets for the current level range:**
+
+| Character level | Safe hunt | Mobs (level) | Rooms |
+|---|---|---|---|
+| 20–24 | baby spider | lv25 | 534, 535, 545, 554, 568, 574, 575, 593, 603 |
+| 25–29 | giant rat | lv30 | 535, 567, 583, 586, 603 (NOT the sewers — see below) |
+| 30+ | scale up | — | — |
+
+**Both baby spiders (lv25) and giant rats (lv30) are viable right now** for characters
+at lv20–30. Baby spiders are the safer choice at the low end (lv20–24); giant rats
+become the better target once the character reaches lv25+.
+
+**The Sewers of Jasper (rooms 377–379, 108, 111, 112) have giant rats AND lupoggs (lv105).**
+Lupoggs hit extremely hard and will one-shot a low-level character. NEVER send a
+character below lv60+ to the sewer rooms to hunt giant rats. Use the non-sewer giant
+rat rooms instead: 535, 567, 583, 586, 603. A character below lv25 who is routed into
+the Sewers will be fighting over-level mobs and slowly bleeding HP through the death
+spiral (each death −1 to −2 max HP). The GOAP's `nearestHuntRoom` uses the character's
+engagement ceiling, so a lv21 character in the Sewers sees the rats as "in band"
+(ceiling 31 ≥ 30) and stays. If a character is losing HP over successive passes, the
+fix is to route them to a baby-spider room, not to raise the ceiling.
+
+**Death spiral warning:** when a character's max HP drops below the level of the mobs
+they're hunting, every death makes the next fight harder. The GOAP should detect
+"HP dropping over N consecutive passes" and route to an inn to rest, or to a room
+with weaker mobs. This check is not yet implemented.
 
 ### Weaponcraft builds (Gountrug, Lee)
 

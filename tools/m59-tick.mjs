@@ -76,6 +76,20 @@
 // illegal move, and a refusal costs a tick rather than a character.
 
 const DEFAULT_HZ = 10;
+// LIVENESS: the keepalive sends an inventory request every 20s and the server
+// replies. A live in-game session therefore receives a byte from the server at
+// least every 20s (and far more often in a busy room). If nothing arrives for
+// this long while we still believe we are in game, the connection is stale —
+// a "ghost" (the client replays its last copy of the world while the server has
+// moved on or dropped us). 45s = more than two missed keepalive replies. Shorter
+// risks a false positive on a quiet room; longer leaves the ghost running long
+// enough to swing at phantoms, as happened to JayB in the Mausoleum.
+const LIVENESS_STALE_MS = 45_000;
+// FACE coalescing tolerance (degrees). The combat controller re-issues face() every tick
+// to keep the weapon on target; we only send a NEW face when the heading changes by more
+// than this. Small enough to track a turning target, large enough to suppress the per-tick
+// re-issue that pushed us over the server's 5-packet/s throttle. See docs/packet-throttle.md.
+const FACE_EPS = 5;
 
 // ---------------------------------------------------------------------------
 // SENSOR -- free, synchronous, sends nothing
@@ -109,7 +123,13 @@ export class Sensor {
       agent: s.name ?? null,
       character: c.me?.name ?? null,
       selfId: c.selfId ?? null,
-      room: { id: c.room?.id ?? null, num: c.room?.num ?? null },
+      // THE NAME IS CARRIED BECAUSE THE NUMBER LIES. A live room id can collide with
+      // an unrelated map number -- JayB stood in "Raza" reporting id 2013, which is a
+      // real map room called "The East Tower" -- so anything routing off the raw number
+      // plans from the wrong room and says nothing. The name is the server's own word
+      // and is what resolves it. See resolveRoomNum in m59-route.mjs.
+      room: { id: c.room?.id ?? null, num: c.room?.num ?? null,
+              name: c.roomNameRsc ? (c.rsc?.get?.(c.roomNameRsc) ?? null) : (c.room?.name ?? null) },
       // The position the SERVER last told us, and whether it is our own guess.
       // `predicted` is cleared by the BP_MOVE handler, so this distinguishes "the
       // server said so" from "we think so", which a decider is entitled to know.
@@ -135,6 +155,7 @@ export class Actuator {
   constructor(session) {
     this.session = session;
     this.sent = [];            // a small ring, for the record and for tests
+    this.walking = null;       // the one outstanding walk, if any
     this.maxSent = 64;
   }
 
@@ -155,14 +176,80 @@ export class Actuator {
     return rec;
   }
 
-  // -- movement. One square, sent, not confirmed. The next tick reads where we are.
+  // -- movement.
+  //
+  // `step` is a RAW square request: it goes to the wire as-is, and the server is the
+  // collision authority. Right for a short hop you have already reasoned about.
   step(col, row, { minGapMs = 250 } = {}) {
     const c = this.session.client;
     return this._send('move', () => c.moveToSquare(col, row), minGapMs);
   }
+
+  // `walk` is the COLLISION-AWARE MOVER, fired and not awaited.
+  //
+  // Session.walkTo/stepFine already know how to get past an obstacle -- "WHEN BLOCKED,
+  // SLIDE: a locally clipped step usually means the straight line touched rock, not that
+  // the way is shut, and fanning the heading out to either side is what hugging the wall
+  // actually is". Reimplementing that as `me.col + sign(target.col - me.col)` is a
+  // BEELINE, and a beeline walks into the fence and stands there: watched live, JayB
+  // aiming at a staging square 16 steps away, refused every time, never moving.
+  //
+  // So the pathing is not rewritten -- it is reused, without being waited for.
+  //
+  // ONE OUTSTANDING MOVE AT A TIME. walkTo is a long operation (it may confirm position,
+  // which is bounded at 8s), so issuing a fresh one every tick would stack dozens of
+  // overlapping walks fighting over the same body. While one is in flight this reports
+  // `sent: false, why: 'a move is already in flight'` -- an honest refusal the caller
+  // can see, not a silent drop.
+  walk(col, row, { maxSteps = 1 } = {}) {
+    const rec = { kind: 'walk', at: Date.now(), ok: null, to: { col, row } };
+    if (this.walking) { rec.ok = false; rec.why = 'a move is already in flight'; return rec; }
+    if (typeof this.session.walkTo !== 'function') {
+      rec.ok = false; rec.why = 'no walker on this session'; return rec;
+    }
+    this.sent.push(rec);
+    if (this.sent.length > this.maxSent) this.sent.shift();
+    this.walking = rec;
+    Promise.resolve(this.session.walkTo(col, row, { maxSteps }))
+      .then(r => { rec.ok = r?.arrived !== false; rec.result = r; },
+            e => { rec.ok = false; rec.why = e?.message; })
+      .finally(() => { this.walking = null; });
+    return rec;
+  }
   face(degrees) {
     const c = this.session.client;
-    return this._send('move', () => c.face(degrees), 0);
+    // FACE COALESCING (the packet-throttle fix, docs/packet-throttle.md). The combat
+    // controller calls face() every tick (10Hz) to keep the weapon on target. Re-submitting
+    // an unchanged heading 10x/second is pure production noise that pushed us over the
+    // server's 5/s throttle. We only send a face when it actually changes the heading by
+    // more than FACE_EPS — the first face, or a real turn.
+    const norm = d => ((d % 360) + 360) % 360;
+    if (this._lastFace != null) {
+      const a = norm(this._lastFace), b = norm(degrees);
+      const diff = Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+      if (diff <= FACE_EPS) return { kind: 'face', at: Date.now(), ok: true, coalesced: true };
+    }
+    this._lastFace = degrees;
+    // Combat-facing lock (docs/packet-throttle.md). When we face a target to swing, the
+    // session's turn-before-move in walkTo must NOT re-face us to the movement heading —
+    // that was overriding the combat facing and making the character oscillate between
+    // "face the mummy" (180°) and "face the walk direction" (270°), so every swing
+    // whiffed (the server rejects a melee hit on a target behind the facing line).
+    // Record the facing so walkTo's turn-before-move skips its re-face for a short while.
+    if (this.session && this.session.client) {
+      this.session.client._combatFacing = { deg: degrees, at: Date.now() };
+    }
+    // BYPASS THE PACER for combat faces. The face goes out directly so it doesn't
+    // queue behind move/turn packets. The coalescing above (FACE_EPS) already
+    // suppresses most faces; the ones that get through are heading changes that
+    // matter (target moved). Sending them directly keeps the swing+face pair
+    // atomic and at the correct rate.
+    try {
+      c.face(degrees);
+      return { kind: 'face', at: Date.now(), ok: true };
+    } catch (e) {
+      return { kind: 'face', at: Date.now(), ok: false, why: e?.message };
+    }
   }
   go() {
     const c = this.session.client;
@@ -172,7 +259,19 @@ export class Actuator {
   // -- combat
   swing(targetId) {
     const c = this.session.client;
-    return this._send('attack', () => c.attack(targetId), 1050);
+    // BYPASS THE PACER. The pacer's async pump loop interacts badly with the
+    // 10hz tick loop: attacks get queued behind move/turn/read packets and
+    // the effective swing rate drops to 1 per 3.5s. The CombatController
+    // already paces swings at SWING_MS (1000ms) — that IS the rate limiter.
+    // The server's 5/s throttle is safe: in combat the character produces
+    // ~1 attack/s + occasional moves = well under 5/s. Direct send skips
+    // the queue entirely; the packet goes out on the next socket flush.
+    try {
+      c.attack(targetId);
+      return { kind: 'attack', at: Date.now(), ok: true };
+    } catch (e) {
+      return { kind: 'attack', at: Date.now(), ok: false, why: e?.message };
+    }
   }
 
   // -- posture. Sitting down IS the behaviour when recovering; it is not a stall.
@@ -217,7 +316,7 @@ export class TickLoop {
    *                            as a programming error and reported once.
    * @param {number}   hz       ticks per second
    */
-  constructor({ session, decide, hz = DEFAULT_HZ, onError = null }) {
+  constructor({ session, decide, hz = DEFAULT_HZ, onError = null, onSessionDead = null }) {
     if (!session) throw new Error('TickLoop: no session');
     if (typeof decide !== 'function') throw new Error('TickLoop: no decide()');
     this.session = session;
@@ -226,16 +325,50 @@ export class TickLoop {
     this.sensor = new Sensor(session);
     this.actuator = new Actuator(session);
     this.onError = onError;
+    // Called when the liveness guard decides the session is a ghost (no server data
+    // for LIVENESS_STALE_MS while in-game). The keeper uses this to force a rejoin.
+    this.onSessionDead = onSessionDead;
     this.timer = null;
     this.busy = false;
+    this._livenessFlagged = false;
     this.stats = { ticks: 0, skipped: 0, errors: 0, awaited: 0,
-                   longest_decide_ms: 0, lastError: null };
+                   longest_decide_ms: 0, lastError: null, stale_sessions: 0 };
   }
 
   start() {
     if (this.timer) return this;
     this.timer = setInterval(() => this.tick(), this.intervalMs);
     this.timer.unref?.();
+    // A separate, un-unref'd watchdog: if the main tick timer stops firing (an
+    // unref'd timer can be starved), this one detects the silence and restarts the
+    // loop. This is the fix for the "0% CPU, no log" stall — the tick loop silently
+    // stops and nothing notices. The watchdog is un-unref'd so it always runs.
+    this._watchdog = setInterval(() => {
+      const now = Date.now();
+      if (now - (this._lastTickAt ?? now) > 5000) {
+        console.error(`[tick-watchdog] tick loop silent for ${Math.round((now - this._lastTickAt)/1000)}s (busy=${this.busy}, longest=${this.stats.longest_decide_ms}ms) — forcing recovery`);
+        this._lastTickAt = now;
+        // A decide() that has been running for > 5s is hung (decides should be < 50ms).
+        // The busy flag is stuck true, so every tick is skipped and the loop silently
+        // dies. Force-reset it so the next tick can run. We cannot interrupt the hung
+        // synchronous call, but we CAN ensure the NEXT tick proceeds once it returns
+        // (or never does — in which case the liveness guard will exit the keeper).
+        if (this.busy) {
+          console.error(`[tick-watchdog] forcing busy=false (a decide was hung for ${Math.round((now - this._lastTickAt)/1000)}s)`);
+          this.busy = false;
+        }
+        // The timer may have been cleared or starved. Restart it.
+        if (this.timer) { clearInterval(this.timer); this.timer = null; }
+        this.timer = setInterval(() => this.tick(), this.intervalMs);
+        this.timer.unref?.();
+        // Also fire one tick immediately to unstick.
+        try { this.tick(); } catch (e) { console.error(`[tick-watchdog] immediate tick failed: ${e?.message}`); }
+      }
+    }, 3000);
+    // NOT unref'd: the watchdog must always fire, even if the main tick timer is
+    // starved. This is deliberate — it keeps the process alive while it is supposed
+    // to be playing. (The HTTP server also keeps the process alive, but the watchdog
+    // is the explicit guarantee.)
     return this;
   }
 
@@ -252,9 +385,61 @@ export class TickLoop {
     if (this.busy) { this.stats.skipped++; return; }
     this.busy = true;
     const t0 = Date.now();
+    // DIAGNOSTIC: a heartbeat so a silent stall is visible. A tick loop that has stopped
+    // producing decide() calls (0% CPU, no log) is otherwise indistinguishable from a
+    // healthy idle. Log the stats every 50 ticks and on the first 10s of silence.
+    const now = Date.now();
+    this._lastTickAt = now;
+    if (this.stats.ticks > 0 && now - (this._lastBeatAt ?? 0) > 10000) {
+      this._lastBeatAt = now;
+      const staleRx = this.session.client?.lastRxAt ? Math.round((now - this.session.client.lastRxAt)/1000) : -1;
+      console.error(`[tick-alive] ticks=${this.stats.ticks} skipped=${this.stats.skipped} errors=${this.stats.errors} longest=${this.stats.longest_decide_ms}ms staleRx=${staleRx}s busy=${this.busy}`);
+    }
     try {
       const frame = this.sensor.read();
       if (!frame.in_game) return;
+      // LIVENESS GUARD: a live in-game session receives server data continuously
+      // (the keepalive reply alone guarantees one per 20s). If no byte has
+      // arrived for LIVENESS_STALE_MS, the session is a ghost — the client is
+      // replaying stale in-memory state while the server has moved on or dropped
+      // us. The character still reports "in game" and a frozen position, which is
+      // exactly the signature JayB showed: 0% CPU, "fighting mummies" at a fixed
+      // (col,row,degrees), invisible to anyone actually on the server. Flag it
+      // once and ask the keeper to rejoin.
+      const c = this.session.client;
+      const lastRx = c?.lastRxAt ?? 0;
+      // DIAGNOSTIC: log the guard's decision every 5s so a non-firing guard is visible.
+      if (now - (this._lastGuardLogAt ?? 0) > 5000) {
+        this._lastGuardLogAt = now;
+        console.error(`[liveness-guard] lastRx=${lastRx} age=${lastRx?Math.round((now-lastRx)/1000):'-1'}s threshold=${LIVENESS_STALE_MS/1000}s inGame=${frame.in_game} wouldFire=${lastRx > 0 && now - lastRx > LIVENESS_STALE_MS}`);
+      }
+      if (lastRx > 0 && Date.now() - lastRx > LIVENESS_STALE_MS) {
+        if (!this._livenessFlagged) {
+          this._livenessFlagged = true;
+          this.stats.stale_sessions++;
+          const staleMs = Date.now() - lastRx;
+          try {
+            this.onError?.(new Error(`session stale: no server data for ${Math.round(staleMs/1000)}s while in game`));
+            this.onSessionDead?.({ staleMs });
+          } catch { /* the reporter is not allowed to matter */ }
+        }
+        return;  // do not decide against a dead session
+      }
+      this._livenessFlagged = false;
+      // POSITION RECOVERY: the character is in-game but has no position (the room
+      // contents were read but our own object isn't in them, or a room change dropped
+      // us). Without a position the decider can do nothing — it idles in a "hunt /
+      // exhausted 5 nodes" loop. Re-request the room contents (throttled) to
+      // re-establish the position. The server pushes it back and c.self comes back.
+      if (frame.selfId != null && !frame.position) {
+        const now = Date.now();
+        if (!this._lastPosRecovery || now - this._lastPosRecovery > 3000) {
+          this._lastPosRecovery = now;
+          try {
+            this.session.client.roomContents?.();
+          } catch { /* best effort */ }
+        }
+      }
       const out = this.decide(frame, this.actuator, this);
       // RULE 1, ENFORCED RATHER THAN TRUSTED. A decide that returns a promise is doing
       // something asynchronous, which is the exact habit this model exists to remove.
@@ -268,6 +453,10 @@ export class TickLoop {
     } catch (e) {
       this.stats.errors++;
       this.stats.lastError = e?.message ?? String(e);
+      // Log the first 3 errors so a crashing decide is visible in the keeper log.
+      if (this.stats.errors <= 3) {
+        console.error(`[tick-ERROR] #${this.stats.errors}: ${e?.message}\n${e?.stack?.split('\n').slice(0,4).join('\n')}`);
+      }
       // A throwing decide must not kill the timer. That is how a guard dies silently.
       try { this.onError?.(e); } catch { /* the reporter is not allowed to matter */ }
     } finally {

@@ -280,6 +280,7 @@ export function renderHero(h, { localhost = false } = {}) {
   <div class="sub">${esc(h.agent ?? '')} · ${esc(h.strategy ?? 'no strategy')} ·
     ${h.in_game ? 'in game' : '<span class="bad">not in game</span>'} ·
     ${roomLink(h.room?.name, h.room?.num)}
+    ${h.room ? `<a href="/room3d/${esc(h.name)}" style="font-size:.75rem;margin-left:8px">3D view</a>` : ''}
     ${h.position ? `<span class="dim">(col ${h.position.col}, row ${h.position.row})</span>` : ''}</div>
 
   <section class="faction-priority ${factionNeutral ? 'missing' : factionKnown ? 'member' : 'unknown'}"

@@ -101,8 +101,10 @@ console.log('\nthe per-kind pacing the server needs is preserved');
   a.step(6, 5); a.swing(9); a.cast(3, []);
   const gaps = Object.fromEntries(s.submitted.map(x => [x.kind, x.gap]));
   ok('a move carries the move interval', gaps.move === 250);
-  ok('a swing carries the attack interval', gaps.attack === 1050);
-  ok('a cast does too', gaps.cast === 1050);
+  // The swing bypasses the pacer entirely (direct c.attack call). No 'attack'
+  // entry in the pacer's submitted list. The CombatController paces at SWING_MS.
+  ok('a swing bypasses the pacer (not in submitted list)', gaps.attack === undefined);
+  ok('a cast uses the pacer with 1050ms gap', gaps.cast === 1050);
 }
 
 console.log('\nthe loop ticks at a fixed rate regardless of the server');
@@ -183,6 +185,37 @@ console.log('\nthe legacy driver is untouched');
      !/^\s*import[^\n]*m59-autopilot/m.test(src),
      'this is a second driver alongside the first, not a change to it');
   ok('and nothing here reaches for a keeper', !/\bkeeper\./.test(src));
+}
+
+console.log('\nthe liveness guard flags a ghost (no server data while in game)');
+{
+  const session = fakeSession();
+  // A live session has recent data; a ghost does not.
+  session.client.lastRxAt = Date.now();
+  let deadCalled = null;
+  const loop = new TickLoop({
+    session, hz: 50,
+    decide: () => {},
+    onSessionDead: (info) => { deadCalled = info; },
+  });
+  // Simulate: in game, but no server data for 60s (a ghost).
+  session.client.lastRxAt = Date.now() - 60000;
+  loop.tick();  // should flag dead, not decide
+  ok('onSessionDead was called', deadCalled != null, JSON.stringify(deadCalled));
+  ok('it reports how stale', deadCalled && deadCalled.staleMs > 45000, JSON.stringify(deadCalled));
+  // A fresh session does NOT flag.
+  deadCalled = null;
+  session.client.lastRxAt = Date.now();
+  loop._livenessFlagged = false;
+  loop.tick();
+  ok('a live session is not flagged', deadCalled == null, JSON.stringify(deadCalled));
+  // No data ever seen (lastRxAt=0) is NOT flagged (can't tell fresh from dead).
+  deadCalled = null;
+  session.client.lastRxAt = 0;
+  loop._livenessFlagged = false;
+  loop.tick();
+  ok('no-data-yet is not flagged', deadCalled == null, JSON.stringify(deadCalled));
+  loop.stop();
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

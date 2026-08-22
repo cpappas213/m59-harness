@@ -33,6 +33,12 @@ import * as bankbook from './m59-bank.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { RemainingRequiredToLearnNewSkills, PointsToNextLevelOfTarget } from '../compendium/tools/learn.mjs';
 import { StorageCache } from './m59-storage.mjs';
+// Session.join() calls joinSessionOnce and the Phase 3 extraction left it behind: the
+// BROKER imports it, and ESM modules do not share scope, so the reference here was free
+// and `join()` threw ReferenceError wherever it was called. Nothing called it -- the
+// keeper process uses joinOnce directly -- so a broken method sat in the class until the
+// first outside caller found it.
+import { joinSessionOnce } from './m59-session-readiness.mjs';
 
 // noteGeometryDrift is defined in m59-broker.mjs and used here for
 // drift logging. In the keeper process (no broker), it's undefined.
@@ -55,9 +61,33 @@ const RECORD_DIR = process.env.M59_RECORD_DIR ||
   fileURLToPath(new URL('../substrate/recordings/', import.meta.url));
 const RECORD_WINDOW_MS = Number(process.env.M59_RECORD_WINDOW_MS || 120_000);
 const RECORD_KEEP = Number(process.env.M59_RECORD_KEEP || 15);
+// Facing coalescing tolerance (degrees) for the turn-before-move in walkTo. A player only
+// turns when the heading changes; we suppress the per-step re-face that pushed us over the
+// server's 5-packet/s throttle. See docs/packet-throttle.md.
+const FACE_EPS = 8;
+// How long (ms) after the combat controller faces a target the walkTo turn-before-move must
+// NOT re-face to the movement heading. Without this, closing the gap to a target oscillated
+// the facing between the target and the walk direction, so every melee swing whiffed on the
+// server's view-cone check (player.kod ~4185: a target behind the facing line is rejected).
+const COMBAT_FACE_HOLD_MS = 1500;
 
 // ---------------------------------------------------------------- constants
-const PACKETS_PER_SECOND = Number(process.env.M59_RATE || 12);
+// Server hard limit: INCOMING_PACKET_THROTTLE = 5 (user.kod:50). Above this the server
+// sets bSpam and SILENTLY DROPS the packet (no error, no response). We were at 12, which
+// meant ~2.4x our packets were being dropped as spam -- the cause of the slow movement,
+// the ~0.2/s swing rate, and the zero combat responses.
+//
+// 8 is a deliberate middle value, NOT the fix. The real fix is to stop PRODUCING more
+// than ~5 packets/s (see docs/packet-throttle.md): the tick loop at 10Hz was submitting
+// a move/face every 100ms regardless of whether it changed anything, so the queue grew
+// faster than any drain rate could keep up. Capping the drain at 5 made it worse (attacks
+// queued behind a flood of redundant moves). 8 keeps the backlog from growing unbounded
+// while the production throttle is implemented; it is a stopgap, not a solution.
+// Server throttle: INCOMING_PACKET_THROTTLE = 5 (user.kod:50). The server drops
+// packets silently when it receives more than 5/s. We pace at exactly 5/s so we
+// never trip the throttle. The old 8/s was 60% over the limit — the server was
+// dropping our swings and moves.
+const PACKETS_PER_SECOND = Number(process.env.M59_RATE || 5);
 const ATTACK_INTERVAL_MS = 1050;     // IsOkayAttackTime, plus a little
 
 // WALKING AT ONE SQUARE A SECOND WAS COSTING US CHARACTERS.
@@ -400,14 +430,64 @@ class Pacer {
     this.running = false;
     this.lastSent = 0;
     this.lastByKind = new Map();
+    // Packet-rate accounting for the server's 5/s throttle (user.kod:50). production =
+    // how many jobs the tick loop SUBMITS per second (the bug: >5/s); sent = how many
+    // actually leave the socket per second (what the server counts). If production > sent
+    // the queue is backing up; if sent > 5 the server is dropping us as spam. Exposed via
+    // the keeper's /pacerstats for ground-truth measurement.
+    this.prodTimes = [];   // submission timestamps (rolling)
+    this.sentTimes = [];   // send timestamps (rolling)
+    this.prodByKind = new Map();  // kind -> rolling submission timestamps
+  }
+
+  // Per-kind production rate, for diagnosing WHAT is flooding the queue.
+  prodByKindRate() {
+    const cutoff = Date.now() - 3000;
+    const out = {};
+    for (const [kind, times] of this.prodByKind) {
+      while (times.length && times[0] < cutoff) times.shift();
+      out[kind] = +(times.length / 3).toFixed(2);
+    }
+    return out;
+  }
+
+  // Rolling per-second counts. Keep a 3s window so a just-ended second is still visible.
+  _rate(times) {
+    const cutoff = Date.now() - 3000;
+    while (times.length && times[0] < cutoff) times.shift();
+    return times.length / 3;  // avg per second over the window
   }
 
   submit(kind, fn, minGapForKind = 0) {
+    this.prodTimes.push(Date.now());
+    if (!this.prodByKind.has(kind)) this.prodByKind.set(kind, []);
+    this.prodByKind.get(kind).push(Date.now());
+    const job = { kind, fn, minGapForKind, resolve: null, reject: null, queuedAt: Date.now() };
+    // PRIORITY: attack packets are time-critical (server cooldown = 1s). They jump
+    // the queue ahead of move/turn/read packets so swings don't wait behind a backlog
+    // of movement packets. Without this, a busy mover (move+turn every ~270ms) pushes
+    // the swing to every 3s instead of every 1s.
+    const isUrgent = kind === 'attack' || kind === 'cast';
+    if (isUrgent) {
+      // Insert after any other urgent packets but before non-urgent ones.
+      let i = 0;
+      while (i < this.q.length && (this.q[i].kind === 'attack' || this.q[i].kind === 'cast')) i++;
+      this.q.splice(i, 0, job);
+    } else {
+      this.q.push(job);
+    }
     return new Promise((resolve, reject) => {
-      this.q.push({ kind, fn, minGapForKind, resolve, reject, queuedAt: Date.now() });
+      job.resolve = resolve;
+      job.reject = reject;
       this.pump();
     });
   }
+
+  // What the server sees: jobs that actually leave the socket, per second.
+  sentRate() { return this._rate(this.sentTimes); }
+  // What the tick loop is asking for: submissions per second. If this is >> sentRate()
+  // the queue is backing up; if it is > 5 we are over the server's throttle.
+  prodRate() { return this._rate(this.prodTimes); }
 
   static budget = new Map();
   static startedAt = Date.now();
@@ -439,6 +519,7 @@ class Pacer {
         else await new Promise(r => setTimeout(r, 0));
         this.lastSent = Date.now();
         this.lastByKind.set(job.kind, this.lastSent);
+        this.sentTimes.push(this.lastSent);
         const t0 = Date.now();
         try { job.resolve(await job.fn()); } catch (e) { job.reject(e); }
         Pacer.note(job.kind, 'send', Date.now() - t0);
@@ -1634,13 +1715,33 @@ class Session {
     const before = c.self ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row } : null;
     // Turn to face the destination first. It costs nothing, it is what a player
     // does, and several things in this game care about facing.
+    //
+    // FACE COALESCING (the packet-throttle fix, docs/packet-throttle.md). The session used to
+    // send a turn packet BEFORE EVERY move, so a walk produced a turn+move pair every tick
+    // (~4-6/s) which tripped the server's 5/s throttle. A player only turns when the heading
+    // actually changes. Compare the requested heading against our current facing (c.self.degrees,
+    // kept up to date by server pushes) and only send a turn when it differs by more than
+    // FACE_EPS. This drops turn production from ~4/s to near zero while tracking.
     if (before && (before.col !== col || before.row !== row)) {
       const deg = (Math.atan2(row - before.row, col - before.col) * 180 / Math.PI + 360) % 360;
-      await this.pacer.submit('turn', () => {
-        if (c.room.id !== roomId) return false;
-        if (typeof beforeMutation === 'function') beforeMutation('turn', { col, row });
-        return c.face(deg);
-      });
+      const curDeg = c.self?.degrees;
+      // COMBAT-FACING LOCK. If the combat controller just faced a target (to swing), do NOT
+      // re-face to the movement heading. Re-facing to the walk direction overrode the combat
+      // facing, making the character oscillate between the target and the heading, so every
+      // melee swing landed on a target behind the facing line (rejected by the server's
+      // view-cone check, player.kod ~4185). Honor the combat face for COMBAT_FACE_HOLD_MS.
+      const cf = c._combatFacing;
+      const combatHolding = cf && (Date.now() - cf.at) < COMBAT_FACE_HOLD_MS;
+      const facingChanged = !combatHolding && (curDeg == null ||
+        (() => { const a = ((curDeg % 360) + 360) % 360, b = ((deg % 360) + 360) % 360;
+                 const d = Math.abs(a - b); return Math.min(d, 360 - d) > FACE_EPS; })());
+      if (facingChanged) {
+        await this.pacer.submit('turn', () => {
+          if (c.room.id !== roomId) return false;
+          if (typeof beforeMutation === 'function') beforeMutation('turn', { col, row });
+          return c.face(deg);
+        });
+      }
     }
     if (c.room.id !== roomId) return {
       moved: false, position: c.self ? { x: c.self.x, y: c.self.y,

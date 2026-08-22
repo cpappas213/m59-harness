@@ -23,14 +23,21 @@ export function renderRoom3D(name, rv, hero) {
   const wallSegs = (rv.walls ?? []).map(w => [w[0], w[1], w[2], w[3]]);
   const wallSegsJson = JSON.stringify(wallSegs);
   const objectsJson = JSON.stringify(objects.map(o => ({
-    x: Math.min(Math.max(o.col, 0), cols - 1),
-    z: Math.min(Math.max(o.row, 0), rows - 1),
+    x: Math.min(Math.max(o.col - 1, 0), cols - 1),
+    z: Math.min(Math.max(o.row - 1, 0), rows - 1),
     t: o.is_self ? 0 : o.is_player ? 1 : 2,
     n: o.name,
   })));
   const selfJson = self ? JSON.stringify({
-    x: Math.min(Math.max(self.col, 0), cols - 1),
-    z: Math.min(Math.max(self.row, 0), rows - 1),
+    x: Math.min(Math.max(self.col - 1, 0), cols - 1),
+    z: Math.min(Math.max(self.row - 1, 0), rows - 1),
+  }) : 'null';
+  // The decider's current target: a tall beacon above it.
+  const target = rv?.target ?? null;
+  const targetJson = target && target.col != null ? JSON.stringify({
+    x: Math.min(Math.max(target.col - 1, 0), cols - 1),
+    z: Math.min(Math.max(target.row - 1, 0), rows - 1),
+    name: target.name ?? '',
   }) : 'null';
 
   // Floor height data (cells, i.e. units of 1024). -1 = void/cliff.
@@ -42,6 +49,7 @@ export function renderRoom3D(name, rv, hero) {
   const hMax = heights ? (hObj.max ?? 0) : 0;
   const hiddenJson = JSON.stringify(rv.hidden ?? []);
   const hiddenCount = (rv.hidden ?? []).length;
+  const safeSpotsJson = JSON.stringify((rv.safe_spots ?? []).map(s => ({ x: s.x, z: s.z, score: s.score })));
 
   return `<!doctype html>
 <html><head>
@@ -85,6 +93,7 @@ export function renderRoom3D(name, rv, hero) {
     <span class="mana">MP ${mana.value}/${mana.max}</span>
     <span class="vigor">VIG ${vigor.value}/${vigMax}</span>
     ${hiddenCount ? `<span style="color:#ffcc33" title="Asymmetric safe cells: we can stand here, monsters (NSEW grid) cannot">&#9670; ${hiddenCount} hidden</span>` : ''}
+    ${(rv.safe_spots?.length ?? 0) ? `<span style="color:#ffd700" title="Computed safe spots: walls that block enemy line-of-sight">&#9679; ${rv.safe_spots.length} safe</span>` : ''}
   </div>
 </div>
 <div id="err"></div>
@@ -102,6 +111,7 @@ const WALLS = ${wallData};
 const WALL_SEGS = ${wallSegsJson};
 const OBJECTS = ${objectsJson};
 const SELF = ${selfJson};
+const TARGET = ${targetJson};
 
 // Room (col, row) -> Three.js (x, z). Y is up.
 // Floor center in Three.js: (COLS/2, 0, ROWS/2)
@@ -111,7 +121,59 @@ const HMIN = ${hMin}, HMAX = ${hMax};
 // Asymmetric safe cells: coarse-grid WALL but fine-grid open. The player can stand
 // here (fine-grid, any direction); a monster (NSEW on the coarse grid) cannot step in.
 const HIDDEN = ${hiddenJson};
+const SAFE_SPOTS = ${safeSpotsJson};
 let roomName = ${JSON.stringify(roomName)};
+
+// Debug path overlay state: the fine path (green) + the direct raycast (red if blocked).
+let pathGroup = null;
+let pathLine = null, pathDots = null, directLine = null, directX = null;
+function setPath3d(p) {
+  if (pathGroup) { scene.remove(pathGroup); pathGroup.traverse(n => { n.geometry?.dispose?.(); n.material?.dispose?.(); }); pathGroup = null; }
+  pathLine = pathDots = directLine = directX = null;
+  if (!p) return;
+  pathGroup = new THREE.Group();
+  // The fine path: a green line through the waypoints (self -> ... -> target).
+  if (Array.isArray(p.path) && p.path.length) {
+    const pts = p.path.map(w => new THREE.Vector3(w.x + 0.5, 0.15 + heightAt(w.x, w.z), w.z + 0.5));
+    if (pts.length >= 2) {
+      const g = new THREE.BufferGeometry().setFromPoints(pts);
+      pathLine = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x33ff66, linewidth: 3 }));
+      pathGroup.add(pathLine);
+    }
+    // Waypoint dots.
+    const dotPts = pts.map(pt => [pt.x, pt.y, pt.z]).flat();
+    const dg = new THREE.BufferGeometry();
+    dg.setAttribute('position', new THREE.Float32BufferAttribute(dotPts, 3));
+    pathDots = new THREE.Points(dg, new THREE.PointsMaterial({ color: 0x66ffaa, size: 0.5 }));
+    pathGroup.add(pathDots);
+  }
+  // The direct raycast: a red line self->target, with an X at the block point if blocked.
+  if (p.direct && p.self && p.target) {
+    const s = new THREE.Vector3(p.self.x + 0.5, 0.2 + heightAt(p.self.x, p.self.z), p.self.z + 0.5);
+    const e = new THREE.Vector3(p.target.x + 0.5, 0.2 + heightAt(p.target.x, p.target.z), p.target.z + 0.5);
+    if (p.direct.blocked) {
+      const dg = new THREE.BufferGeometry().setFromPoints([s, e]);
+      directLine = new THREE.Line(dg, new THREE.LineBasicMaterial({ color: 0xff3333, linewidth: 3, transparent: true, opacity: 0.7 }));
+      pathGroup.add(directLine);
+      // X at the block point.
+      if (p.direct.stopX != null && p.direct.stopZ != null) {
+        const bx = p.direct.stopX + 0.5, bz = p.direct.stopZ + 0.5, by = 0.3 + heightAt(p.direct.stopX, p.direct.stopZ);
+        const xg = new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(bx - 0.3, by, bz - 0.3), new THREE.Vector3(bx + 0.3, by, bz + 0.3),
+          new THREE.Vector3(bx - 0.3, by, bz + 0.3), new THREE.Vector3(bx + 0.3, by, bz - 0.3),
+        ]);
+        directX = new THREE.LineSegments(xg, new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 4 }));
+        pathGroup.add(directX);
+      }
+    } else {
+      // Direct line is clear: draw it faintly (blue) so you can see the straight shot.
+      const dg = new THREE.BufferGeometry().setFromPoints([s, e]);
+      directLine = new THREE.Line(dg, new THREE.LineBasicMaterial({ color: 0x4488ff, transparent: true, opacity: 0.3 }));
+      pathGroup.add(directLine);
+    }
+  }
+  scene.add(pathGroup);
+}
 
 const canvas = document.getElementById('c');
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
@@ -209,6 +271,22 @@ if (Array.isArray(HIDDEN) && HIDDEN.length) {
   }
 }
 
+// Computed safe spots: bright green floor tiles. These are positions where the
+// character can fight with reduced enemy line-of-sight (back against a wall/corner).
+if (Array.isArray(SAFE_SPOTS) && SAFE_SPOTS.length) {
+  for (const s of SAFE_SPOTS) {
+    if (s.x < 0 || s.z < 0 || s.x >= COLS || s.z >= ROWS) continue;
+    const h = hAt(s.x, s.z);
+    const y = (h != null ? h - HMIN : 0) * 1 + 0.07;   // slightly above hidden tiles
+    const g = new THREE.PlaneGeometry(0.85, 0.85);
+    const m = new THREE.MeshLambertMaterial({ color: 0x00ff88, emissive: 0x004422, side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+    const tile = new THREE.Mesh(g, m);
+    tile.rotation.x = -Math.PI / 2;
+    tile.position.set(s.x + 0.5, y, s.z + 0.5);
+    scene.add(tile);
+  }
+}
+
 // Keep a thin reference plane at y=0 for rooms with no height data.
 if (!HEIGHTS) {
   const floorGeo = new THREE.PlaneGeometry(COLS, ROWS);
@@ -299,6 +377,46 @@ if (WALL_SEGS.length) {
 // Entities — built as a group so we can update positions in-place on poll.
 const entityGroup = new THREE.Group();
 scene.add(entityGroup);
+
+// Target beacon: a tall, pulsating cylinder pointing down from above at the
+// decider's current target. Makes it obvious what the character is engaging.
+let targetBeacon = null;
+function setTargetBeacon(t) {
+  // Remove existing.
+  if (targetBeacon) {
+    targetBeacon.group.traverse(n => { n.geometry?.dispose?.(); n.material?.map?.dispose?.(); n.material?.dispose?.(); });
+    scene.remove(targetBeacon.group);
+    targetBeacon = null;
+  }
+  if (!t) return;
+  const x = t.x + 0.5, z = t.z + 0.5;
+  const oh = heightAt(t.x, t.z);
+  const group = new THREE.Group();
+  const shaftGeo = new THREE.CylinderGeometry(0.18, 0.35, 22, 16, 1, true);
+  const shaftMat = new THREE.MeshBasicMaterial({
+    color: 0xff2255, transparent: true, opacity: 0.5,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const shaft = new THREE.Mesh(shaftGeo, shaftMat);
+  shaft.position.set(x, 11 + oh, z);
+  group.add(shaft);
+  const ringGeo = new THREE.RingGeometry(0.5, 0.85, 32);
+  const ringMat = new THREE.MeshBasicMaterial({
+    color: 0xff2255, transparent: true, opacity: 0.9,
+    side: THREE.DoubleSide, depthWrite: false,
+  });
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.set(x, 0.05 + oh, z);
+  group.add(ring);
+  const label = makeLabel('TARGET: ' + (t.name || '?'), '#ff5577');
+  label.position.set(x, 23 + oh, z);
+  label.scale.set(5, 1.2, 1);
+  group.add(label);
+  scene.add(group);
+  targetBeacon = { group, shaftMat, ring, ringMat };
+}
+setTargetBeacon(TARGET);
 const colors = [0x44ffaa, 0xff4444, 0xffaa44];
 const selfRing = { mesh: null };
 
@@ -439,7 +557,13 @@ async function pollData() {
       var objs = (d.objects || []).map(function(o) { o._objId = o.id; return o; });
       buildEntities(objs, d.facing, targetId, targetInBand);
       entityKey = key;
+      // Update the tall target beacon to track the current target.
+      var tObj = (d.objects || []).find(function(o) { return o._objId === targetId; });
+      setTargetBeacon(tObj ? { x: tObj.x, z: tObj.z, name: tObj.n } : null);
     }
+    // Update the debug path overlay (fine path + direct raycast) on EVERY poll —
+    // the path can replan even when the entity set is unchanged.
+    setPath3d(d.path3d || null);
     // Update vitals
     if (d.vitals) {
       const v = d.vitals;
@@ -471,9 +595,21 @@ pollData();
 setInterval(pollData, 3000);
 
 // Animate
+let _t0 = performance.now();
 (function animate() {
   requestAnimationFrame(animate);
   controls.update();
+  // Pulse the target beacon: the ring expands + fades, the shaft shimmers.
+  if (targetBeacon) {
+    const t = (performance.now() - _t0) / 1000;
+    const pulse = (Math.sin(t * 4) + 1) / 2;  // 0..1, ~1.5Hz
+    targetBeacon.ringMat.opacity = 0.4 + 0.6 * pulse;
+    const s = 0.7 + 0.9 * pulse;
+    targetBeacon.ring.scale.set(s, s, 1);
+    targetBeacon.shaftMat.opacity = 0.25 + 0.35 * pulse;
+    // Slow spin of the shaft for extra visibility.
+    targetBeacon.group.children[0].rotation.y = t * 0.8;
+  }
   renderer.render(scene, camera);
 })();
 

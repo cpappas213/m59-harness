@@ -1,6 +1,11 @@
 # Server credentials — IP, port, account names and password. Never commit.
 .env
 
+# Per-agent keeper state (live runtime: character name, HP, pack, room) — one
+# server's characters, rewritten by a running keeper. Same class as the sheets.
+/substrate/keeper-*.json
+/substrate/keeper-*.log
+
 # The client's own art: 5,355 PNGs decoded from its .bgf files, 40 MB of it, and
 # not ours to redistribute. Regenerate from any local client with
 #     python tools/pull-client-assets.py
@@ -24,6 +29,7 @@ node_modules/
 # which is other players' speech as well as combat text, so it is one server's
 # transcript and not reference material.
 /substrate/postmortems/
+/substrate/deaths.jsonl
 # One JSON per character: how good it is at each skill and spell, and every change
 # since it was first read. One server's characters, and the history is theirs — the
 # same reason the roster and the post-mortems are not here.
@@ -309,3 +315,7 @@ m59-nav-learned.json
 /substrate/walktrials.json
 .DS_Store
 .pi/
+
+# Scratch verification scripts and one-run verification outputs — not reference.
+_verify2.mjs
+/substrate/phase3-health-verification.txt

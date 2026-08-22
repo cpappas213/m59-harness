@@ -233,6 +233,14 @@ export class M59Client {
 
     this.keepaliveTimer = null;      // see startKeepalive — the session dies without it
     this.keepalivePending = 0;       // heartbeat inventory replies still owed to us
+    // Wall-clock (ms) of the last byte received from the server. A live in-game
+    // session receives data continuously — the keepalive's inventory reply alone
+    // guarantees at least one reply per 20s, and a busy room pushes far more. If
+    // this stops advancing while we still believe we are in game, the connection
+    // has gone stale (a "ghost": the client replays its last copy of the world
+    // while the server has moved on, or dropped us). The tick loop's liveness guard
+    // reads this to detect the ghost and force a rejoin. See m59-tick.mjs.
+    this.lastRxAt = 0;
 
     this.room = { id: null, security: null, flags: 0, overrideDepths: [0, 0, 0, 0],
                   objects: new Map(), collisionInvalidated: null };
@@ -666,6 +674,9 @@ export class M59Client {
   }
 
   onData(chunk) {
+    this.lastRxAt = Date.now();
+    this.rxBytes = (this.rxBytes ?? 0) + chunk.length;
+    this.rxPackets = (this.rxPackets ?? 0) + 1;
     this.buf = Buffer.concat([this.buf, chunk]);
 
     // doc/login.txt describes a three-step raw byte exchange before login mode.
@@ -862,7 +873,14 @@ export class M59Client {
     const half = KOD_FINENESS >> 1;
     return this.moveTo(col * KOD_FINENESS + half, row * KOD_FINENESS + half, speed, room);
   }
-  turn(angle)           { this.send(BP.REQ_TURN, u32(objId(this.selfId || 0)), u16b(angle)); }
+  turn(angle)           {
+    this.send(BP.REQ_TURN, u32(objId(this.selfId || 0)), u16b(angle));
+    // Track our own angle LOCALLY so a caller can coalesce re-faces (the packet-throttle
+    // fix, docs/packet-throttle.md). The real client keeps a local angle; we were only
+    // updating it from server BP.TURN pushes, which lag, so the coalescing compared
+    // against a stale value and re-sent every turn. Update immediately on send.
+    if (this.self) this.self.degrees = Math.round(angle * 360 / MAX_ANGLE);
+  }
   face(degrees)         { this.turn(Math.round(degrees * MAX_ANGLE / 360) & (MAX_ANGLE - 1)); }
 
   look(id)              { this.send(BP.REQ_LOOK, u32(objId(id))); }
@@ -889,7 +907,37 @@ export class M59Client {
     this.send(BP.CHANGE_DESCRIPTION, u32(objId(this.selfId)), pstr(String(text)));
   }
 
-  attack(id, info = 1)  { this.send(BP.REQ_ATTACK, u8b(info), u32(objId(id))); }
+  // Swing/attack packet. Instrumented for diagnosis: every REQ_ATTACK is
+  // timestamped into this.attackLog so a caller (or the keeper's /swingstats
+  // endpoint) can measure the ACTUAL rate the client is sending swings — as
+  // opposed to what the decider "decided". A decision to swing and a packet
+  // sent are different things; this is the packet. Kept bounded so a long
+  // session does not grow it without bound.
+  attack(id, info = 1)  {
+    if (!Array.isArray(this.attackLog)) this.attackLog = [];
+    this.attackLog.push({ at: Date.now(), id });
+    if (this.attackLog.length > 500) this.attackLog.splice(0, this.attackLog.length - 500);
+    this.send(BP.REQ_ATTACK, u8b(info), u32(objId(id)));
+  }
+
+  // Record a combat outcome from a server message. The server sends prose for
+  // every attack result (verified against the .kod source, stroke.kod):
+  //   hit:  "Your <weapon> hits <target>."      (stroke_hit_attacker)
+  //   miss: "Your <weapon> misses <target>."    (stroke_miss_attacker)
+  //   far:  the out-of-range message             (player_attack_out_of_range)
+  // This is the ground truth for whether a swing LANDED — the server is telling
+  // us, and we can finally read it instead of assuming. Bounded ring.
+  _noteCombatOutcome(text) {
+    const t = String(text);
+    let kind = null;
+    if (/out of range/i.test(t)) kind = 'out_of_range';
+    else if (/your .* hits /i.test(t) || /^you hit /i.test(t)) kind = 'hit';
+    else if (/your .* misses /i.test(t) || /^you miss /i.test(t)) kind = 'miss';
+    if (!kind) return;
+    if (!Array.isArray(this.combatLog)) this.combatLog = [];
+    this.combatLog.push({ at: Date.now(), kind, text: t.slice(0, 120) });
+    if (this.combatLog.length > 500) this.combatLog.splice(0, this.combatLog.length - 500);
+  }
   use(id)               { this.send(BP.REQ_USE, u32(objId(id))); }
   unuse(id)             { this.send(BP.REQ_UNUSE, u32(objId(id))); }
   get(id)               { this.send(BP.REQ_GET, u32(objId(id))); }
@@ -1805,7 +1853,11 @@ export class M59Client {
       case BP.MESSAGE:
       case BP.SYS_MESSAGE: {
         const res = parseStringMessage(body, this.lookup);
-        if (res.text) { this.log(`message: ${res.text}`); this.emit('message', { text: res.text }); }
+        if (res.text) {
+          this.log(`message: ${res.text}`);
+          this._noteCombatOutcome?.(res.text);
+          this.emit('message', { text: res.text });
+        }
         break;
       }
 

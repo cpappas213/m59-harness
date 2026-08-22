@@ -54,16 +54,37 @@ export function objIdToNum(objId) {
  * Find rooms with huntable mobs at or below the given level.
  *
  * @param {number} level - the character's level
+ * @param {number} [ceiling] - optional threat ceiling (level + band).
+ *   When provided, mobs up to this level are included, not just
+ *   those at or below the character's level. This lets a level-20
+ *   armed character (ceiling 30) hunt level-25 baby spiders.
  * @returns {Array<{room: number, creature: string, level: number}>}
  */
-export function huntRoomsAtOrBelow(level) {
+// Rooms that contain spiders which are too dangerous for low-level characters.
+// The hunt room search will skip these rooms. Baby spiders (lv25) are fine;
+// regular spiders (lv50) and above will one-shot a level-20 character.
+const DANGEROUS_SPIDER_ROOMS = new Set([
+  35,   // spider lv50 + queen spider lv165
+  536, 537, 556, 564, 584, 587, 596, 597,  // spider lv50
+  578, 579, 589, 598, 826,  // black spider lv75
+  4, 6, 26, 27, 28,  // spider lv50 (underworld/early rooms)
+  // Sewer rooms: giant rats (lv30) co-spawn with lupoggs (lv105)
+  377, 378, 379, 108, 111, 112, 380,
+]);
+
+export function huntRoomsAtOrBelow(level, ceiling) {
   const spawns = loadSpawns();
   if (!spawns) return [];
+  const maxLevel = ceiling ?? level;
   const out = [];
   for (const [num, entries] of Object.entries(spawns.rooms ?? {})) {
+    const roomNum = parseInt(num);
+    // Skip rooms with dangerous spiders — a character can filter out the
+    // spider as a target, but the spider can still aggro and kill them.
+    if (DANGEROUS_SPIDER_ROOMS.has(roomNum)) continue;
     for (const e of entries) {
-      if (e.huntable && e.level <= level) {
-        out.push({ room: parseInt(num), creature: e.creature, level: e.level });
+      if (e.huntable && e.level != null && e.level <= maxLevel) {
+        out.push({ room: roomNum, creature: e.creature, level: e.level });
         break;  // one match per room is enough
       }
     }
@@ -78,10 +99,10 @@ export function huntRoomsAtOrBelow(level) {
  * @param {number} level - the character's level
  * @returns {{room: number, creature: string, level: number, hops: number, path: number[]}|null}
  */
-export function nearestHuntRoom(fromRoom, level) {
+export function nearestHuntRoom(fromRoom, level, ceiling) {
   // Convert objId to map num if needed.
   const mapNum = objIdToNum(fromRoom) ?? fromRoom;
-  const candidates = huntRoomsAtOrBelow(level);
+  const candidates = huntRoomsAtOrBelow(level, ceiling);
   if (!candidates.length) return null;
 
   const map = loadMap();

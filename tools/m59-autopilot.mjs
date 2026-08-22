@@ -750,7 +750,7 @@ export function townDestinations({ needsCashFirst = false, supplyTrip = false, s
   return BANKS;
 }
 
-export const MODES = ['survive', 'farm', 'idle'];
+export const MODES = ['survive', 'farm', 'idle', 'tick'];
 
 // Farming patterns, as a table rather than scattered conditionals, so that adding a
 // sixth is a row and so that the differences between them are readable side by side.
