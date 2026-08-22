@@ -1087,6 +1087,14 @@ const walkTo = compileSessionMethod(brokerSource,
     // lock. It is not 1 because the mover slides and the router aims at centres.
     OFF_PLAN_STEP_BUDGET: 3,
   });
+// The follower, lifted like the rest. It is not reached by `leaveVia`'s lifted copy — that
+// one stubs it — so it needs its own.
+const followRail = compileSessionMethod(brokerSource,
+  'async followRail(squares, {', 'followRail', {
+    isTerminalMovementReason,
+    RAIL_STALL_WAYPOINTS: 3, RAIL_STALL_JUMP: 3,
+  });
+
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0,
@@ -2277,6 +2285,56 @@ if (typeof walkTo !== 'function' || typeof realSidestepAround !== 'function') {
   ok('and it gives up rather than passing through', out?.arrived !== true, JSON.stringify(out));
 }
 
+
+console.log('');
+console.log('A RAIL NEVER GIVES BACK GROUND IT HAS ALREADY MADE');
+{
+  // A rail is an ordered line, so "how far along are we" is a NUMBER — and the follower never
+  // consulted it. Measured in the Cragged Mountains: the body reached waypoint 24 at col 23
+  // row 26, slid back to col 22 row 26 (not on the line at all) and ping-ponged between the
+  // two while trolls hit it. Fifty seconds in that room, nine squares of net progress, against
+  // a human who crosses it at about five squares a second.
+  //
+  // The slide is ordinary and unavoidable — a step lands where the geometry puts it. What
+  // turned a slide into a dither is that the next aim was taken from wherever the body ended
+  // up, with no memory that it had already been further on.
+  const line = [ {row:1,col:1}, {row:2,col:1}, {row:3,col:1}, {row:4,col:1}, {row:5,col:1} ];
+
+  // A body that SLIDES FORWARD past the cursor must not be walked back to collect the
+  // waypoint it skipped: it is already past it.
+  const aimed = [];
+  const jumper = {
+    client: { self: { row: 1, col: 1 } },
+    movementWasCancelled: () => false,
+    world: { geometry: null },
+    async step(col, row) {
+      aimed.push(`${row},${col}`);
+      // Every step overshoots to the end of the line, exactly as a slide can.
+      this.client.self = { row: 5, col: 1 };
+      return { moved: true, left_room: false };
+    },
+  };
+  const ran = await followRail.call(jumper, line, {});
+  ok('a slide that lands further along the line is credited, not re-walked',
+     aimed.length <= 2, JSON.stringify(aimed));
+  ok('and the follow reports success rather than grinding to the skip budget',
+     ran?.railed === true, JSON.stringify(ran));
+
+  // A body that cannot advance at all must JUMP rather than ask for the same neighbour for
+  // ever — the line ahead is still the line, and every retry is a second in the room.
+  const stuckAims = [];
+  const stuck = {
+    client: { self: { row: 1, col: 1 } },
+    movementWasCancelled: () => false,
+    world: { geometry: null },
+    async step(col, row) { stuckAims.push(`${row},${col}`); return { moved: false, reason: 'object_blocked' }; },
+  };
+  const out = await followRail.call(stuck, line, { maxSlips: 1, maxSkips: 2 });
+  ok('a line that yields nothing gives up rather than dithering for ever',
+     out?.railed === false, JSON.stringify(out));
+  ok('and it says the body never got further along', /no forward progress|slipped_off_rail/.test(out?.reason ?? ''),
+     JSON.stringify(out?.reason));
+}
 
 console.log('');
 console.log('AN EDGE THE MOVER CANNOT WALK IS REMEMBERED PAST THE WALK THAT FOUND IT');

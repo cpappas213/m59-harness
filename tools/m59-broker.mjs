@@ -476,6 +476,13 @@ const UNREACHABLE_EXIT =
 // line that starts somewhere else is strictly worse — sometimes catastrophically, when the
 // line's start is itself a doorway to somewhere we do not want to go.
 const RAIL_SKIP_WITHIN_SQUARES = Number(process.env.M59_RAIL_SKIP_WITHIN || 8);
+// HOW MANY WAYPOINTS MAY PASS WITH THE BODY NO FURTHER ALONG THE LINE before the follower
+// stops asking for the next square and jumps. Small, because each one is a second or two
+// spent standing in whatever room this is, and the Cragged Mountains is not a room to spend
+// seconds in. The jump is short for the same reason a skip is: the line ahead is still the
+// line, and `walkFine` covers a gap of a few squares perfectly well.
+const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
+const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
 
 const LEAVE_VIA_CLEARANCE = Number(process.env.M59_LEAVE_VIA_CLEARANCE ?? 0);
 const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
@@ -5557,7 +5564,37 @@ class Session {
   async followRail(squares, { movementGeneration = this.movementGeneration,
                               controlToken = null, maxSlips = 4, maxSkips = 8 } = {}) {
     let walked = 0, skipped = 0, skippedInARow = 0, missed = 0;
+    // GROUND ALREADY MADE IS NOT GIVEN BACK.
+    //
+    // A rail is an ordered line, so "how far along are we" is a NUMBER, and the walker never
+    // consulted it. Measured in the Cragged Mountains: the body reached waypoint 24 at
+    // col 23 row 26, slid back to col 22 row 26 — which is not on the line at all — and then
+    // ping-ponged between the two while trolls hit it. Fifty seconds in that room, nine
+    // squares of net progress, against a human who crosses it in about five squares a second.
+    //
+    // The slide itself is ordinary and unavoidable: a step lands where the geometry puts it,
+    // not where it was aimed. What turned a slide into a dither is that the next aim was taken
+    // from wherever the body ended up, with no memory that it had already been further on. So
+    // it walked the same two squares over and over, each attempt perfectly reasonable.
+    //
+    // `furthest` is the highest waypoint index the body has actually stood on. Aiming never
+    // goes behind it, and when the line stops yielding it jumps AHEAD rather than retrying the
+    // neighbour — a line that cannot be walked one square at a time from here is frequently
+    // rejoinable a few squares on, and every second spent proving otherwise is a second in the
+    // room.
+    let furthest = -1, sinceProgress = 0;
+    const onLine = (at) => {
+      if (!at) return -1;
+      for (let n = squares.length - 1; n >= 0; n--)
+        if (squares[n].row === at.row && squares[n].col === at.col) return n;
+      return -1;
+    };
     for (let i = 0; i < squares.length; i++) {
+      // NEVER AIM BEHIND. If a slide put us further along than the cursor, take the credit;
+      // re-walking ground we are already past is the dither itself.
+      const standingAt = onLine(this.client?.self);
+      if (standingAt > furthest) { furthest = standingAt; sinceProgress = 0; }
+      if (furthest >= i) { i = furthest; continue; }
       const target = squares[i];
       let slips = 0, gaveUpOnThisSquare = false, recentred = false;
       for (;;) {
@@ -5600,7 +5637,15 @@ class Session {
         if (isTerminalMovementReason(r.reason))
           return { railed: false, reason: r.reason, at: i, walked };
         const now = this.client?.self;
-        if (now && now.col === target.col && now.row === target.row) break;
+        // ON THIS WAYPOINT *OR FURTHER ALONG* IS PROGRESS, AND BOTH END THE RETRY.
+        //
+        // This asked only "did we land exactly on the square we aimed at", so a step that
+        // OVERSHOT — landed further down the same line, which a slide does routinely — read
+        // as a miss and the retry re-aimed at a waypoint the body was already past. That is
+        // the dither, and it is invisible from inside the loop: every individual aim is
+        // correct, and the body walks backwards to collect a square it does not need.
+        const landed = onLine(now);
+        if (landed >= i) break;
         // SLID. Aim at the same square again rather than re-deriving the route.
         // A WAYPOINT IS NOT THE LINE. Missing one square does not invalidate the other
         // sixty-three, and abandoning the whole rail for it is how a crossing that was
@@ -5642,6 +5687,23 @@ class Session {
       }
       if (!gaveUpOnThisSquare) skippedInARow = 0;
       walked++;
+      // DID THAT WAYPOINT BUY ANYTHING? Measured on the line rather than on the cursor: the
+      // cursor advances whether or not the body did, which is exactly how the dither stayed
+      // invisible to every counter here.
+      const after = onLine(this.client?.self);
+      if (after > furthest) { furthest = after; sinceProgress = 0; }
+      else if (++sinceProgress >= RAIL_STALL_WAYPOINTS) {
+        // The line is not yielding from here. Jump ahead rather than grinding: a rail that
+        // cannot be walked square by square at this point is usually rejoinable further on,
+        // and `walkFine` covers the gap. Bounded by the same skip budget, so a rail nothing
+        // can be hit on still gives up rather than skimming to the end.
+        sinceProgress = 0;
+        skipped += RAIL_STALL_JUMP;
+        if (++skippedInARow > maxSkips)
+          return { railed: false, reason: 'slipped_off_rail', at: i, walked, skipped,
+                   note: `no forward progress on the line after ${maxSkips} jumps` };
+        i += RAIL_STALL_JUMP;
+      }
     }
     return { railed: true, walked, skipped, missed };
   }

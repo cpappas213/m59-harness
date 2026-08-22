@@ -1896,6 +1896,46 @@ export class Autopilot {
     // ceiling — otherwise the implicit target above would be computed and never used.
     if (vigor < floor || (!floor && vigor < ceiling)) this.climbing = true;
 
+    // RECOVERING IN THE OPEN IS NOT AN OPTION, AND EATING IS RECOVERING.
+    //
+    // Raising vigor means standing still and not looking, exactly as resting does — the
+    // ladder has always refused a REST in a room that can reach us and this path walked
+    // straight past that rule, because it is filed under provisioning rather than under
+    // survival. It is the same act with the same cost.
+    //
+    // Bbbb, from its own frames: `doing: recovering` at 29,26 in the Cragged Mountains with
+    // EIGHT threats in the room, then a detour eight squares west, an oscillation, and a
+    // death at 38,25 twenty squares off its route. Its last vigor reading was 89, above the
+    // 80 that resting alone can reach — so it had eaten, there, with trolls on it. The other
+    // post-mortem says it in the character's own words: "ate rather than reporting myself
+    // trapped".
+    //
+    // A room with something hostile in it is not somewhere to open the larder. The vigor is
+    // worth having and it is worth having SOMEWHERE ELSE — behind a wall, in a sanctuary, or
+    // in the next room. Deferred rather than abandoned: `climbing` stays set, so the moment
+    // the character is somewhere it can afford to stand still, it eats.
+    if (this.climbing && !this.hold && !this.sanctuary?.()) {
+      const c = this.s?.client;
+      const hostiles = c?.room?.objects
+        ? [...c.room.objects.values()].filter(o =>
+            o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER))
+        : [];
+      if (hostiles.length) {
+        if (!this.notedNoEatingHere) {
+          this.notedNoEatingHere = true;
+          this.note('not eating here — something in this room can reach us', {
+            vigor, floor, ceiling, monsters_in_room: hostiles.length,
+            why: 'raising vigor is standing still and not looking, which is the same act as ' +
+                 'resting and costs the same. The ladder refuses a rest in a room that can ' +
+                 'reach us; this is that rule, applied to the larder.',
+            next: 'still climbing — it will eat behind a wall, in a sanctuary, or one room on',
+          });
+        }
+        return false;
+      }
+    }
+    this.notedNoEatingHere = false;
+
     if (this.climbing) {
       this.doing = 'recovering';
       if (vigor < (ceiling || floor)) {
@@ -15253,6 +15293,42 @@ export class Autopilot {
     // somebody who can walk to the same square, and distance is the only answer to them.
     // So for monsters this declines and the character carries on to where it was going —
     // which is also the only direction that ends the exposure.
+    // DURING A JOURNEY, "WITHDRAW" MEANS THE NEXT WALL FORWARD.
+    //
+    // The route already knows where the walls are: `sheltersAlong` worked them out when the
+    // crossing was planned, and `shelterAhead` returns the next one that is still IN FRONT
+    // and within a short detour. Going to that is a withdrawal and a hop of progress at the
+    // same time, which is the only kind of withdrawal that ends the exposure — the room is
+    // what is dangerous, and every square toward the exit is a square closer to leaving it.
+    //
+    // Bbbb died proving the alternative: sent six squares from the nearest troll with no
+    // regard for direction, it went east to 38,25, twenty squares off a rail running down
+    // column 18.
+    const journey = this.travelling;
+    const planned = this.s.activeShelter;
+    if (journey && planned?.spots?.length && !this.strangersInReach().length) {
+      let ahead = null;
+      try {
+        ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
+                             { maxDetour: planned.maxDetour ?? 4,
+                               unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
+      } catch { ahead = null; }
+      if (ahead) {
+        this.note('withdrawing FORWARD — the next wall on the route', {
+          to: { col: ahead.col, row: ahead.row }, detour: ahead.detour,
+          threats: threats.length,
+          why: 'the room is what is dangerous, so a withdrawal that goes backwards pays the ' +
+               'exposure twice. This one is a wall AND a hop of progress.',
+        });
+        const took = await this.takeSafeSpot('withdrawing forward to the next wall on the route',
+                                             threats[0] ?? null, { source: 'travel' })
+                               .catch(() => ({ took: false }));
+        if (took?.took) return { withdrawn: true, forward: true };
+        // Falling through is deliberate: an unreachable wall is already remembered by
+        // `takeSafeSpot`, so the next pass picks a different one or none at all.
+      }
+    }
+
     if (!this.strangersInReach().length) {
       this.note('not walking away — a wall would help and distance will not', {
         threats: threats.length,
