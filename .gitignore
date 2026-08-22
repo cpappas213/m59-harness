@@ -359,3 +359,7 @@ __pycache__/
 /substrate/shuttle-runs.json
 /substrate/collision-trace.jsonl
 /substrate/cragged-stalls.jsonl
+
+# The fleet-run lock: which process is currently driving a fleet. Runtime state,
+# one per machine, and meaningless in anybody else's checkout.
+/substrate/run-*.lock

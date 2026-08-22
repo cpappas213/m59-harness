@@ -33,6 +33,8 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import { rosterGameEndpoint } from './m59-fleetpath.mjs';
+import { takeRunLock, inspectRunLock, releaseRunLock,
+         exitWhenOutputIsGone } from './m59-runlock.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -57,6 +59,21 @@ const DRY     = has('dry-run');
 // on a wall — and bounded, because an unbounded pause is a hang. Past this the leg ends as
 // `rested out`, which is its own finding: the road was never the thing that was slow.
 const REST_CREDIT_MS = Number(flag('rest-credit', 180)) * 1000;
+
+// ONLY ONE OF THESE MAY DRIVE A FLEET, AND A DEAD ONE MUST NOT KEEP DRIVING IT.
+//
+// Both halves were learned the same afternoon. Three copies of this script were live against
+// the same twenty-one characters — one sixty-five minutes after it had been "stopped" through
+// a wrapper that took the shell and left the node process, one killed at launch by a `tee`
+// that could not open its file and never noticed the broken pipe. They fought for the same
+// bodies and every collision reached the transit book as `movement cancelled by a newer
+// command`, which is the same sentence a real survival interrupt produces. The travel bug
+// being investigated was, in part, three copies of the investigation.
+//
+// So the run claims the fleet, a second one is refused by name, and a run whose output has
+// gone away stops rather than continuing in silence. `--stop` clears a holder; `--force`
+// overrides the refusal for somebody who knows what they are doing.
+exitWhenOutputIsGone();
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
 const UNDERWORLD = 1;
@@ -90,6 +107,42 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // safe spot was recorded as having failed to cross — when what it actually did was survive.
 const RESTING = /rest|holding a (proven|untested) safe spot|healing|recovering/i;
 const isResting = ap => RESTING.test(String(ap?.activity ?? ''));
+
+// ---------------------------------------------------------------- who is driving
+if (has('stop')) {
+  const found = inspectRunLock(FLEET);
+  if (found.state === 'none') { console.log(`nothing holds fleet "${FLEET}"`); process.exit(0); }
+  const pid = Number(found.lock?.pid);
+  console.log(`fleet "${FLEET}" is ${found.state} by pid ${pid}` +
+              (found.why ? ` (${found.why})` : '') +
+              (found.lock?.at ? `, since ${new Date(found.lock.at).toISOString()}` : ''));
+  if (found.state === 'held' && Number.isInteger(pid) && pid !== process.pid) {
+    // BY PID, NEVER BY NAME. Matching `node` or `m59-*` across every process once killed a
+    // live broker belonging to a different checkout and logged out its whole fleet.
+    try {
+      process.kill(pid, 'SIGTERM');
+      console.log(`  signalled pid ${pid}`);
+    } catch (e) { console.log(`  could not signal pid ${pid}: ${e.message}`); }
+  }
+  releaseRunLock(FLEET);
+  console.log('  lock cleared');
+  process.exit(0);
+}
+
+const claim = takeRunLock(FLEET, { label: `solo-run ${FROM}->${TO}`, force: has('force') });
+if (!claim.ok) {
+  const h = claim.holder ?? {};
+  console.error(`solo-run: REFUSING — fleet "${FLEET}" is already being driven.`);
+  console.error(`          pid ${h.pid}, "${h.label ?? '?'}", since ` +
+                `${h.at ? new Date(h.at).toISOString() : '?'}`);
+  console.error(`          ${h.argv ?? ''}`);
+  console.error(`          Two runs on one fleet fight for the same bodies and both report`);
+  console.error(`          "movement cancelled by a newer command". Stop that one first:`);
+  console.error(`            node tools/m59-solo-run.mjs --stop --fleet ${FLEET}`);
+  process.exit(3);
+}
+if (claim.tookOverFrom)
+  console.log(`(took over a stale lock: ${claim.tookOverFrom.why})`);
 
 // ---------------------------------------------------------------- which fleet
 const rosterFile = FLEET === '-' ? join(REPO, 'substrate', 'fleet-state.json')
