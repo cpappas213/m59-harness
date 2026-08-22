@@ -7772,7 +7772,7 @@ export class Autopilot {
         w.rescues = (w.rescues ?? 0) + 1;
         this.tally.inert_rescues = (this.tally.inert_rescues || 0) + 1;
         const stopped = (() => {
-          try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+          try { return s.cancelMovement(null, 'the watchdog rescuing a stalled driver'); } catch (e) { return { cancelled: false, why: e.message }; }
         })();
         const was = this.inert?.why ?? 'inert';
         this.revive('the character stopped moving and started dying while ' + was);
@@ -7815,7 +7815,7 @@ export class Autopilot {
     w.interrupts++;
     this.tally.watchdog_interrupts = (this.tally.watchdog_interrupts || 0) + 1;
     const stopped = (() => {
-      try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+      try { return s.cancelMovement(null, 'the watchdog pulling us out of a blind walk below the flee line'); } catch (e) { return { cancelled: false, why: e.message }; }
     })();
     this.note('WATCHDOG — pulled the character out of a blind walk', {
       health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
@@ -8677,7 +8677,7 @@ export class Autopilot {
     // about, and it is the same argument here.
     const takeBack = (what, why, detail = {}, { abandon = false } = {}) => {
       const stopped = (() => {
-        try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+        try { return s.cancelMovement(null, 'a travel guard rung taking the character back'); } catch (e) { return { cancelled: false, why: e.message }; }
       })();
       const was = held.why ?? 'travelling';
       this.tally.travel_takebacks = (this.tally.travel_takebacks || 0) + 1;

@@ -2496,11 +2496,22 @@ class Session {
 
   cancelledMovement(extra = {}) {
     return { arrived: false, left: false, cancelled: true,
-             reason: 'movement cancelled by a newer command', ...extra };
+             reason: 'movement cancelled by a newer command',
+             // WHO PULLED THE HANDBRAKE, AND WHEN. Without this the transit book records
+             // 45 of 46 hop failures as "movement cancelled by a newer command" and there
+             // is no way to tell WHICH newer command — the flee watchdog, a travel guard
+             // rung, an operator, or the keeper starting an errand of its own over the top
+             // of a journey. Four different bugs behind one sentence.
+             cancelled_by: this.lastMovementCancel?.why ?? 'unattributed',
+             cancelled_ms_ago: this.lastMovementCancel
+               ? Date.now() - this.lastMovementCancel.at : null,
+             ...extra };
   }
 
-  cancelMovement(controlToken) {
+  cancelMovement(controlToken, why = 'unattributed') {
     const job = this.job && !this.job.done ? this.job : null;
+    this.lastMovementCancel = { why, at: Date.now(),
+                                room: this.world?.room?.num ?? null };
     this.movementGeneration++;
     if (controlToken) {
       this.cancelledMovementTokens.add(controlToken);
@@ -7172,7 +7183,9 @@ class Session {
       // Never log an empty reason: a hop that fails without saying why is exactly the
       // silent failure this whole broker exists to avoid, so surface whatever stage
       // it got to.
-      const why = r.reason || r.note ||
+      const why = (r.cancelled && r.cancelled_by
+                    ? `movement cancelled by ${r.cancelled_by}`
+                    : r.reason) || r.note ||
         (r.stage ? `failed while trying to ${r.stage}` +
                    (r.blocked_at ? ` (blocked at ${r.blocked_at.col},${r.blocked_at.row})` : '')
                  : 'no reason reported');
@@ -8183,7 +8196,7 @@ const TOOLS = [
       agent: { type: 'string' },
       control_token: { type: 'string', description: 'also reject a late stale movement carrying this token' },
     }, required: ['agent'] },
-    run: (a) => session(a.agent).cancelMovement(a.control_token),
+    run: (a) => session(a.agent).cancelMovement(a.control_token, 'the cancel_movement tool'),
   },
   {
     name: 'go_through',
