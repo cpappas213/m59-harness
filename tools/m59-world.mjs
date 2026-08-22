@@ -20,7 +20,7 @@
 
 import { sharedRoomGeometry } from './m59-roo.mjs';
 import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE,
-         AVOID_IN_TRANSIT } from './m59-map.mjs';
+         AVOID_IN_TRANSIT, selectedEdgeAt } from './m59-map.mjs';
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
@@ -956,6 +956,64 @@ export class World {
       if (anchorReach(table, room, inA, outA)) return true;
       return sameRegion(table, room, inA, outA);
     };
+  }
+
+  /**
+   * THE SQUARES ON THIS EXIT'S BOUNDARY THAT WOULD FIRE A DIFFERENT EXIT.
+   *
+   * A boundary is not one door. The server picks between the exits on an edge by evaluating
+   * a condition on the crossing square, and `selectedEdgeAt` simulates that ordered scan
+   * exactly — it is the same question the server answers when the body crosses.
+   *
+   * The Western border of the Twisted Wood is the measured case. Its east edge is split by a
+   * row threshold:
+   *
+   *     east -> 586  Main gate to the city of Tos   when row < 19
+   *     east -> 597  The Twisted Wood               when row > 20
+   *
+   * A character entering from Tos lands at row 8, column 66 — one square from that boundary,
+   * inside the FIRST band. Every walk toward the Twisted Wood door at row 46 begins beside
+   * the door back to Tos, and one slide east takes it. Measured: thirteen consecutive
+   * attempts at `587 -> 597`, each reporting the crossing and then landing in 586, a hundred
+   * and eighty seconds in one room without leaving it.
+   *
+   * Keeping AWAY from a boundary was the wrong shape of fix, because the arrival square is
+   * already beside it. The right one is to refuse the squares that fire the wrong door: they
+   * are known before the walk starts, they are few, and the router can simply route around
+   * them. The strip one square inland goes too, because that is where a slide starts.
+   *
+   * Empty whenever the edge carries only one exit, which is nearly always — this costs
+   * nothing on an ordinary boundary.
+   */
+  wrongExitSquares(exit, { includeInland = false } = {}) {
+    const out = new Set();
+    const room = this.room && this.map?.rooms?.[this.room.num];
+    const dir = exit?.direction ?? exit?.leaveName;
+    if (!room || !dir || exit?.to == null) return out;
+    const edges = (room.edgeExits ?? []).filter(e => (e.leaveName ?? '') === dir);
+    if (edges.length < 2) return out;                 // one door on this edge: nothing to avoid
+    const geo = this.geometry;
+    const rows = Number(geo?.rows ?? room.rows), cols = Number(geo?.cols ?? room.cols);
+    if (!Number.isFinite(rows) || !Number.isFinite(cols)) return out;
+    const want = Number(exit.to);
+    const along = (dir === 'east' || dir === 'west')
+      ? { count: rows, at: (n) => ({ row: n, col: dir === 'east' ? cols : 1 }), inland: dir === 'east' ? -1 : 1, axis: 'col' }
+      : { count: cols, at: (n) => ({ row: dir === 'south' ? rows : 1, col: n }), inland: dir === 'south' ? -1 : 1, axis: 'row' };
+    for (let n = 1; n <= along.count; n++) {
+      const sq = along.at(n);
+      const fires = selectedEdgeAt(room, dir, sq);
+      if (!fires || Number(fires.to) === want) continue;
+      out.add(`${sq.row},${sq.col}`);
+      // THE STRIP ONE SQUARE INLAND IS WHERE A SLIDE STARTS — and it is also where the baked
+      // rail runs, because a line leaving this room hugs the edge before it turns away.
+      // Blocking it would make the crossing unplannable, which is a worse failure than the
+      // one being fixed, so it is off by default and available to a caller that wants it.
+      if (includeInland) {
+        if (along.axis === 'col') out.add(`${sq.row},${sq.col + along.inland}`);
+        else out.add(`${sq.row + along.inland},${sq.col}`);
+      }
+    }
+    return out;
   }
 
   /**

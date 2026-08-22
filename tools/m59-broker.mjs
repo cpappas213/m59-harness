@@ -4354,6 +4354,8 @@ class Session {
     movementGeneration = this.movementGeneration,
     controlToken,
     beforeMutation = null,
+    // Squares to route around, as `row,col` strings. See the note beside `occupied`.
+    avoidSquares = null,
     // KEEP OFF THE WALLS ON THE WAY PAST THEM — OPT IN, AND OFF BY DEFAULT.
     //
     // See RoomGeometry.clearanceField. It is right for CROSSING a room and wrong for a
@@ -4745,6 +4747,14 @@ class Session {
     // about occupancy, and these rooms cap at seven to twelve monsters — so the common
     // reason a step does not happen is that something is in the way.
     const occupied = new Set();
+    // SQUARES THAT WOULD FIRE THE WRONG DOOR. A boundary is not one exit: the server picks
+    // between the exits on an edge by evaluating a condition on the crossing square, so on a
+    // split edge some of that boundary leads somewhere we are not going. Standing there and
+    // sliding one square is how `587 -> 597` reported the crossing and landed in 586 THIRTEEN
+    // TIMES in one leg — a hundred and eighty seconds in one room without leaving it.
+    //
+    // Passed in rather than derived here, because only the caller knows which door it wants.
+    for (const sq of (avoidSquares ?? [])) occupied.add(sq);
     // AND EDGES THE MOVER WILL NOT CROSS, WHICH IS A DIFFERENT FACT AND WAS NOT RECORDED
     // AT ALL. A monster moves; a wall does not. Blaming the SQUARE for a wall between two
     // squares removes a perfectly good place to stand that other neighbours still reach,
@@ -6217,9 +6227,14 @@ class Session {
       // No reachable boundary square, says the square grid — the same verdict it
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
       // floor square actually on that boundary and walk to it with fine BSP collision.
+      // ROUTE AROUND THE PART OF THIS BOUNDARY THAT LEADS SOMEWHERE ELSE. Guarded because
+      // `leaveVia` is lifted out of this file by text and evaluated against a fake world.
+      const wrongDoor = typeof this.world?.wrongExitSquares === 'function'
+        ? this.world.wrongExitSquares(exit) : null;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
                                      { maxSteps: budget(exit), movementGeneration, controlToken,
-                                       clearance: LEAVE_VIA_CLEARANCE });
+                                       clearance: LEAVE_VIA_CLEARANCE,
+                                       avoidSquares: wrongDoor?.size ? wrongDoor : null });
       if (walk.left_room || c.room.id !== edgeStartRoom)
         return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                  note: 'the room changed while approaching the boundary' };

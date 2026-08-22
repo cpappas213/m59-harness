@@ -1150,5 +1150,47 @@ console.log('SAME NUMBER OF ROOMS IS NOT THE SAME JOURNEY');
   }
 }
 
+
+console.log('');
+console.log('A SPLIT BOUNDARY HAS SQUARES THAT LEAD SOMEWHERE ELSE, AND THEY ARE KNOWN IN ADVANCE');
+{
+  // The failure this ends, measured in one leg: `587 -> 597` reported the crossing and landed
+  // in 586 THIRTEEN CONSECUTIVE TIMES, a hundred and eighty seconds in one room without ever
+  // leaving it. Keeping AWAY from the boundary was the wrong shape of fix, because the
+  // arrival square is already beside it — a character entering from Tos lands at 8,66, one
+  // column from an edge whose row<19 band is the door back to Tos.
+  //
+  // `selectedEdgeAt` simulates the server's own ordered scan, so which squares fire which
+  // door is knowable before the walk starts. They are few, and the router can route around
+  // them.
+  const map = loadMap();
+  const room = map?.rooms?.[587] ?? map?.rooms?.['587'];
+  if (!room) { console.log('  --   skipped: this map does not carry room 587'); }
+  else {
+    const W = await import('./m59-world.mjs');
+    const w = Object.create(W.World.prototype);
+    w.map = map;
+    Object.defineProperty(w, 'room', { value: { num: 587 }, configurable: true });
+    Object.defineProperty(w, 'geometry', { value: { rows: 55, cols: 67 }, configurable: true });
+
+    const avoid = w.wrongExitSquares({ direction: 'east', to: 597 });
+    ok('heading east to the Twisted Wood, some of that edge is off limits', avoid.size > 0, String(avoid.size));
+    ok('the band that fires the Tos door is avoided', avoid.has('8,67'), '8,67');
+    ok('including the row we ARRIVE on from Tos', avoid.has('8,67') && avoid.has('18,67'));
+    // THE DOOR WE WANT IS NOT AVOIDED. A guard that blocked the destination would be worse
+    // than the bug.
+    ok('and the door we actually want stays open', !avoid.has('46,67'), '46,67');
+    ok('as does everything past the threshold', !avoid.has('21,67') && !avoid.has('55,67'));
+
+    // AN ORDINARY BOUNDARY COSTS NOTHING. Only a split edge has anything to avoid.
+    const plain = w.wrongExitSquares({ direction: 'west', to: 576 });
+    ok('a boundary carrying one exit yields nothing to avoid', plain.size === 0, String(plain.size));
+
+    // The inland strip is where a slide starts AND where the baked line runs, so it is opt-in.
+    const withInland = w.wrongExitSquares({ direction: 'east', to: 597 }, { includeInland: true });
+    ok('the inland strip is available but not the default', withInland.size > avoid.size);
+  }
+}
+
 console.log(`\n${passed} passed, ${failed} failed, ${skipped} skipped`);
 process.exit(failed ? 1 : 0);
