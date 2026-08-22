@@ -128,6 +128,47 @@ export function exposureAt(geo, row, col, { fine = false } = {}) {
   return { attackers, free_shots: freeShots, our_ground: ourGround };
 }
 
+// WHERE THE TWO GRIDS DISAGREE ABOUT WALKABILITY — WHICH IS WHAT A SAFE WALL *IS*.
+//
+// Everything else in this file scores a square on the COARSE grid: how many of the disc
+// squares are walkable, what has line of sight, how long the blocked arc behind is. That
+// describes a wall as the server's own artifact sees it, and the server's artifact is the
+// thing MONSTERS path on. It says nothing about whether an approach the coarse grid offers
+// can actually be MADE.
+//
+// The safety is exactly that gap. A monster paths to a square the coarse grid says is
+// adjacent to us; the BSP the real geometry is built from refuses the step; the monster
+// mills about outside a wall it believes it is standing next to. So the measure of a good
+// wall is not how enclosed it looks — it is HOW MANY WAYS IN THE GRID OFFERS THAT THE
+// MOVER REFUSES.
+//
+// `refused` counts approaches into this square that a coarse-grid pather believes in and
+// the mover will not make. `offered` is how many the grid believes in at all, so the pair
+// can be read as a ratio rather than as a raw count — a square with two of two refused is
+// better cover than one with two of eight.
+//
+// IT RETURNS NULL WHEN IT CANNOT TELL, AND THAT IS NOT THE SAME AS ZERO.
+// `moverStepLands` answers TRUE for everything when `collisionReady` is false — it is
+// designed to get out of the way rather than to veto steps it cannot check. Reading that
+// as "no disagreement" would score every square in the world as ordinary floor and quietly
+// turn this whole criterion off, which is the shape of failure this repository keeps
+// finding: a measurement that degrades to a plausible number instead of to an absence.
+export function gridDisagreementAt(geo, row, col) {
+  if (!geo || !geo.collisionReady || typeof geo.moverStepLands !== 'function') return null;
+  let offered = 0, refused = 0;
+  for (const [dr, dc] of RING) {
+    const ar = row + dr, ac = col + dc;
+    // Not offered by the coarse grid either, so there is nothing to disagree about.
+    if (!geo.walkable(ar, ac)) continue;
+    offered++;
+    // The step a thing standing there would have to make to close on us. Asked in the
+    // monster's direction — INTO this square — because that is the move that has to fail
+    // for the wall to be worth standing at.
+    if (!geo.moverStepLands(ar, ac, row, col)) refused++;
+  }
+  return { offered, refused };
+}
+
 // The longest run of blocked directions, treating the ring as circular. A square
 // with four blocked neighbours scattered around it is exposed from every side; one
 // with four in a row has its back covered, which is the thing players describe.
@@ -193,8 +234,16 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
         dr += RING[i][0]; dc += RING[i][1];
       }
       const wall = (dr || dc) ? { dr: Math.sign(dr), dc: Math.sign(dc) } : null;
+      // The two grids disagreeing, which is what actually makes a wall hold. Computed per
+      // candidate rather than per returned spot: callers filter and sort on it, so it has
+      // to exist before the narrowing rather than be attached to the survivors.
+      const disagree = gridDisagreementAt(geo, r, c);
       out.push({
         col: c, row: r,
+        // APPROACHES THE COARSE GRID OFFERS AND THE MOVER REFUSES. null when collision is
+        // not baked for this room — "cannot tell", never "none". See gridDisagreementAt.
+        refused_approaches: disagree ? disagree.refused : null,
+        offered_approaches: disagree ? disagree.offered : null,
         // How many squares something can actually swing at us from. The old field name
         // is kept because it is written into the book and the fleet page, but it now
         // counts the disc rather than the eight neighbours, so it runs 0..28 not 0..8.
@@ -361,6 +410,12 @@ export function sheltersAlong(geo, steps, {
       detour: spot.steps_away ?? Math.max(Math.abs(spot.row - st.row), Math.abs(spot.col - st.col)),
       proven: !!spot.proven,
       backCover: spot.back_cover ?? null,
+      // WHAT MAKES IT A WALL AT ALL — the approaches the coarse grid offers and the mover
+      // refuses. Carried through from the candidate so `shelterAhead` can rank on the
+      // mechanism rather than on whether we happen to have stood here before. null means
+      // the room is not baked and the question could not be asked; see gridDisagreementAt.
+      refused_approaches: spot.refused_approaches ?? null,
+      offered_approaches: spot.offered_approaches ?? null,
     });
     if (out.length >= limit) break;
   }
@@ -376,14 +431,42 @@ export function sheltersAlong(geo, steps, {
  * wall twelve squares off the road is not shelter when there are nine seconds of health
  * left, it is a longer way to die.
  */
-export function shelterAhead(shelters, atStep, { maxDetour = 4, preferProven = true } = {}) {
+export function shelterAhead(shelters, atStep, { maxDetour = 4, requireDisagreement = true } = {}) {
   if (!Array.isArray(shelters) || !shelters.length) return null;
-  const ahead = shelters.filter(s => s.atStep >= atStep && s.detour <= maxDetour);
+  let ahead = shelters.filter(s => s.atStep >= atStep && s.detour <= maxDetour);
   if (!ahead.length) return null;
+
+  // A WALL IS THE TWO GRIDS DISAGREEING, AND THAT IS THE ONLY THING ASKED ABOUT HERE.
+  //
+  // `preferProven` used to break ties, and it was the wrong question twice over. It ranked
+  // by whether this fleet had happened to stand somewhere before — which is a fact about
+  // where it has been, not about the square — and on a road nobody has walked yet it is
+  // simply absent, so the tie-break did nothing exactly where a stop matters most.
+  //
+  // The mechanism is available instead: `refused_approaches` counts the ways in that the
+  // coarse grid offers and the mover refuses. That is what stops a monster reaching us, it
+  // is computable for a square nobody has ever visited, and it does not decay when the book
+  // is discredited.
+  //
+  // NULL IS NOT ZERO. An unbaked room cannot answer, and dropping those would empty the
+  // list in exactly the rooms where collision has not been baked yet — so a null is kept
+  // and sorted last, never filtered out. Only a square that CAN answer and answers "no
+  // disagreement" is refused, because that square is plain floor wearing a wall's name.
+  if (requireDisagreement) {
+    const answerable = ahead.filter(s => s.refused_approaches != null);
+    const disagreeing = answerable.filter(s => s.refused_approaches > 0);
+    // Everything that could answer said no: fall through to the unanswerable ones rather
+    // than returning null, since "not baked" is not evidence against a square.
+    ahead = disagreeing.length || answerable.length < ahead.length
+      ? [...disagreeing, ...ahead.filter(s => s.refused_approaches == null)]
+      : [];
+    if (!ahead.length) return null;
+  }
+
   // Nearest along the route first, so the stop is the next one rather than the best one —
   // the best one may be forty squares further on, which is the same mistake as searching.
   ahead.sort((a, b) => (a.atStep - b.atStep)
-    || (preferProven ? (Number(b.proven) - Number(a.proven)) : 0)
+    || ((b.refused_approaches ?? -1) - (a.refused_approaches ?? -1))
     || (a.detour - b.detour));
   return ahead[0];
 }

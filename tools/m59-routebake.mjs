@@ -101,7 +101,21 @@ const BY_LETTER = new Map(STEP_DIRS.map(([ch, dr, dc]) => [ch, { dr, dc }]));
 export function replay(fromRow, fromCol, path) {
   const out = [];
   let r = fromRow, c = fromCol;
-  for (const ch of String(path ?? '')) {
+  const str = String(path ?? '');
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    // An inline jump: `(dr,dc)`. See pathString — a fall is a single move of more than one
+    // square and has no direction letter, so it is spelled out where it happens.
+    if (ch === '(') {
+      const close = str.indexOf(')', i);
+      if (close < 0) return out;
+      const m = /^(-?\d+),(-?\d+)$/.exec(str.slice(i + 1, close));
+      if (!m) return out;
+      r += Number(m[1]); c += Number(m[2]);
+      out.push({ row: r, col: c });
+      i = close;
+      continue;
+    }
     const d = BY_LETTER.get(ch);
     if (!d) return out;
     r += d.dr; c += d.dc;
@@ -347,8 +361,21 @@ function pathString(came, key, fromRow, fromCol, toRow, toCol) {
     const prev = came.get(key(r, c));
     if (prev === undefined) return null;          // unreachable
     if (prev === null) break;                     // reached the start
-    const ch = LETTER.get(`${r - prev.row},${c - prev.col}`);
-    if (!ch) return null;
+    // A JUMP IS WRITTEN INLINE, NOT IN A SEPARATE TABLE.
+    //
+    // The eight letters cover every unit step and nothing else, so a route containing a
+    // FALL — Ukgoth's cliff is row 36,col 16 to row 38,col 10, two rows and six columns in
+    // one move — could not be spelled and was dropped WHOLE. Room 599 has three anchors,
+    // six ordered pairs between them, and exactly one baked route; the crossing a traveller
+    // actually needs was reachable, unspellable, and therefore absent.
+    //
+    // The first fix here put those pairs in a separate squares-only table, which made the
+    // two encodings alternatives — and they are not. A real route is mostly ordinary steps
+    // WITH a jump in the middle of it, so one string has to be able to say both. `(dr,dc)`
+    // is that: every old string still decodes unchanged, and a jump costs a few bytes where
+    // it occurs instead of costing the route its place in the table.
+    const dr = r - prev.row, dc = c - prev.col;
+    const ch = LETTER.get(`${dr},${dc}`) ?? `(${dr},${dc})`;
     steps.push(ch);
     r = prev.row; c = prev.col;
     if (r === fromRow && c === fromCol) break;

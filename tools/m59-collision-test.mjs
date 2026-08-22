@@ -23,11 +23,12 @@ import {
   sharedRoomGeometry,
 } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
+import { activeRoutes, anchorFor } from './m59-routes.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { BP, M59Client } from './m59-client.mjs';
-import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
+import { MOVEON, blocksMovement, parsePlayer, OF } from './m59-parse.mjs';
 import {
   COND, LEAVE, edgeCandidatesOf, edgeExitsOf, findPath,
   geometryManifest, movementMapReadiness, roomResourceDirs, setGeometryProvenance,
@@ -1038,6 +1039,11 @@ const ordinaryStep = compileSessionMethod(brokerSource,
   'async step(col, row, {', 'step', {
     MOVE_INTERVAL_MS: 0, ROOM_RESYNC_MS: Number.POSITIVE_INFINITY,
     KOD_FINENESS, squaresPerSecond: () => 2.5,
+    // The movement tracer, stubbed. It is OFF in every real run unless the environment
+    // turns it on, but `step` names it unconditionally, and a free identifier here throws
+    // ReferenceError in the eval'd copy while working perfectly in the broker — which is
+    // the whole class of failure this dependency map exists to catch. It did catch it.
+    traceMove: () => {},
   });
 // THE AIM, LIFTED LIKE EVERYTHING ELSE. `step` calls `this.aimInto` to decide where in the
 // next square to walk, so a fixture without it is a fixture testing a different method —
@@ -1049,6 +1055,12 @@ const walkFine = compileSessionMethod(brokerSource,
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     provedSquares,
+    // THE REAL FLAGS, not a stub. `walkTo` asks whether the body in its way is a PLAYER —
+    // a player is also dodging and needs the object-id tie-break, a monster gets the fixed
+    // clockwise-first order — and a fixture that invented its own bit would build a room
+    // whose occupants the code under test cannot classify, then pass every assertion that
+    // expects the monster path.
+    OF,
     isTerminalMovementReason, KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8,
     // Thirteen, and the number is the server's speedhack check — see the constant.
     PROVED_HOP_MAX_SQUARES: 13,
@@ -1078,6 +1090,17 @@ const walkTo = compileSessionMethod(brokerSource,
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0,
+    // The tactics ledger, as the real one. `leaveVia` now writes down whether the baked
+    // rail carried the crossing or slipped, and the ledger is written to be unable to
+    // throw — which is the property worth exercising rather than stubbing. It writes under
+    // M59_TACTICS_DIR, which this file already points at a scratch path.
+    recordTactic,
+    // AND THE ROUTE ACCESSORS, AS THE REAL ONES. `leaveVia` looks a baked rail up by
+    // DESTINATION — `anchorFor` — rather than by the square an exit happens to offer, which
+    // is the distinction that makes a rail findable at all. With no table attached in this
+    // fixture `activeRoutes()` returns null and `anchorFor` answers null, so the rail branch
+    // falls through to the ordinary walk: the state these tests are about.
+    activeRoutes, anchorFor,
     // THE REAL FUNCTIONS, NOT STUBS. Both are ordinary exports of m59-world.mjs — which,
     // unlike the broker, imports without taking the fleet lock — so lifting `leaveVia`
     // and handing it hand-written imitations of the two helpers it drives would be
@@ -1101,6 +1124,12 @@ const leaveVia = compileSessionMethod(brokerSource,
     EDGE_NUDGE_WITHIN: 16, EDGE_NUDGE_MAX_STEPS: 6,
     Pacer: { note() {} }, forgetInferredExit() {},
   });
+// THE REAL ONE, not the `() => null` stub the fixtures above use. Those stubs are correct
+// where the test is about something else; the blocked-door cases at the end of this file are
+// about the detour itself, and stubbing it there would make them pass by removing it.
+const realSidestepAround = compileSessionMethod(brokerSource,
+  'sidestepAround(was, blocked, {', 'sidestepAround', {});
+
 const leaveViaAny = compileSessionMethod(brokerSource,
   'async leaveViaAny(candidates, {', 'leaveViaAny', {
     isTerminalMovementReason, spreadEdges, orderExits: exits => exits, KOD_FINENESS,
@@ -1251,6 +1280,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, world: { geometry }, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
       threatsHere() { return []; },
       async step() {
         stepCalls++;
@@ -1378,6 +1414,19 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
       async walkTo() { return { arrived: false, reason: 'room_security_unknown' }; },
       async walkFine() { throw new Error('terminal movement must not fall through'); },
       async queueValidatedMove() { edgePackets++; return { sent: true }; },
@@ -1415,6 +1464,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       movementGeneration: 0, finePositionUnknown: false,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
       async walkTo() { return { arrived: true }; },
       async confirmPosition() { return null; },
       async stepFine() { fineCorrections++; return { moved: true }; },
@@ -1471,6 +1527,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, world: { geometry }, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
       threatsHere() { return []; },
       sidestepAround() { return null; },
       async step() { asks++; return { moved: false, left_room: false, reason: 'object_blocked' }; },
@@ -2080,6 +2143,132 @@ console.log('\na square whose CENTRE has no floor is not a cage');
     ok('and it cannot land on a neighbour that has no floor either',
        intoWall.moved === false || intoWall.available === false, JSON.stringify(intoWall.reason));
   }
+}
+
+// ===================== A DOOR HELD SHUT BY PEOPLE IS SHUT =====================
+//
+// The detour ladder — clockwise, anticlockwise, then back up along breadcrumbs — exists so a
+// character pinned by bodies can get moving again. Every one of those tiers widens what the
+// walker is willing to try, and a widening is exactly the kind of change that quietly buys
+// itself permission it was never meant to have. So these are the NEGATIVE cases: the two
+// situations where the honest answer is "no".
+//
+// The scenario is the operator's. Characters stand shoulder to shoulder across the approach
+// to the north-west door out of the Streets of Tos, so the door cannot be reached at all.
+//
+//   ONE DOOR BLOCKED    the crossing must go round to the OTHER door into the same room.
+//   BOTH DOORS BLOCKED  the order must be REFUSED. Not squeezed through a person, not
+//                       clipped through the wall beside them, not reported as arrived.
+//
+// A body is not a wall and this file spends most of its length on that distinction — but a
+// body is not a door either, and "go round it" must never become "go through it".
+console.log('');
+console.log('a door held shut by people is shut');
+{
+  const doorA = { kind: 'edge', to: 52, stand_on: { col: 4, row: 1 } };
+  const doorB = { kind: 'edge', to: 52, stand_on: { col: 26, row: 1 } };
+
+  // A refusal shaped exactly like the one a wall of people produces: the square could not be
+  // reached because bodies were standing on it. `object_blocked` is OUR pass, which is why
+  // the server never sees these attempts at all.
+  const heldByPeople = { left: false, reason: 'object_blocked', monster_blocked: 4 };
+
+  if (typeof leaveViaAny !== 'function') {
+    skip('a door blocked by people sends the crossing to the other door', 'leaveViaAny did not extract');
+    skip('and the character leaves by it', 'ditto');
+    skip('both doors blocked refuses the crossing', 'ditto');
+    skip('and it does not claim to have left', 'ditto');
+    skip('and it blames the bodies rather than the wall', 'ditto');
+  } else {
+    // ---- ONE DOOR BLOCKED. The other one is still a door.
+    const asked = [];
+    const oneShut = {
+      movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
+      movementWasCancelled() { return false; },
+      async leaveVia(door) {
+        asked.push(door.stand_on.col);
+        return door.stand_on.col === doorA.stand_on.col ? heldByPeople : { left: true };
+      },
+    };
+    const wentRound = await leaveViaAny.call(oneShut, [doorA, doorB], {});
+    ok('a door blocked by people sends the crossing to the other door',
+       asked.includes(doorB.stand_on.col), JSON.stringify(asked));
+    ok('and the character leaves by it', wentRound?.left === true, JSON.stringify(wentRound));
+
+    // ---- BOTH DOORS BLOCKED. There is no third answer.
+    const bothAsked = [];
+    let forcedThrough = 0;
+    const bothShut = {
+      movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
+      movementWasCancelled() { return false; },
+      async leaveVia(door) { bothAsked.push(door.stand_on.col); return heldByPeople; },
+      // THE CHEAT, MADE VISIBLE. `leaveViaAny` has an unvalidated last resort for the case
+      // where our model refuses a square people demonstrably walk on. Wiring it to SUCCEED
+      // here is what makes this a real negative test: if the gate above it ever stops
+      // distinguishing a body from a wall, this fixture crosses the doorway and the
+      // assertions below fail. A stub that refused would hide exactly the bug being hunted.
+      async leaveViaUnvalidated() { forcedThrough++; return { left: true, forced: true }; },
+    };
+    const refused = await leaveViaAny.call(bothShut, [doorA, doorB], {});
+    ok('both doors blocked refuses the crossing', bothAsked.length >= 2, JSON.stringify(bothAsked));
+    // THE ONE THAT MATTERS. Anything truthy here is the walker reporting a crossing it did
+    // not make, which is worse than failing: the journey then carries on from a room the
+    // character is not standing in.
+    ok('and it does not claim to have left', refused?.left !== true, JSON.stringify(refused));
+    ok('and it blames the bodies rather than the wall',
+       !/wall|geometry/i.test(String(refused?.reason ?? '')), JSON.stringify(refused?.reason));
+    // THE POINT OF THE WHOLE BLOCK. The unvalidated step is admission that our GEOMETRY is
+    // wrong; a person standing in a doorway is not a hole in the map, and forcing past one
+    // is walking through them.
+    ok('and it never forces the unvalidated crossing past a person', forcedThrough === 0,
+       `leaveViaUnvalidated called ${forcedThrough}x`);
+  }
+}
+
+// AND THE WALKER ITSELF NEVER WALKS THROUGH SOMEBODY.
+//
+// The block above is about which door. This is about the ground: with the whole approach
+// occupied, the detour must exhaust itself and report failure rather than find a way through
+// a person. The REAL `sidestepAround` runs here — the `() => null` stub used elsewhere in
+// this file would make it pass by deleting the thing under test.
+console.log('');
+console.log('and the ground under a person is not walkable');
+if (typeof walkTo !== 'function' || typeof realSidestepAround !== 'function') {
+  skip('a walk hemmed in by bodies never moves onto one', 'walkTo/sidestepAround did not extract');
+  skip('and it gives up rather than passing through', 'ditto');
+} else {
+  // Shoulder to shoulder across the approach and around us: the situation the trace recorded
+  // as seventy-five refusals in ten seconds with zero packets sent.
+  const bodies = new Set(['2,3', '2,4', '2,5', '3,3', '3,5', '4,3', '4,4', '4,5']);
+  const movedOnto = [];
+  const geometry = {
+    walkable: () => true, standable: () => true, collisionReady: true,
+    moverStepLands: () => true,
+    path: (r, c) => ({ found: true, steps: [{ row: r - 1, col: c }] }),
+  };
+  const client = { self: { id: 9, col: 4, row: 3, x: 4 * 1024, y: 3 * 1024 },
+                   selfId: 9, room: { id: 1, objects: new Map() } };
+  const session = {
+    client, world: { geometry, room: { num: 50 } }, movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    threatsHere() { return []; },
+    sidestepAround: realSidestepAround,
+    async retreatAlongBreadcrumbs() { return { steps: 0 }; },
+    async step(col, row) {
+      // The mover's own answer, and the only one it can give: something is standing there.
+      if (bodies.has(`${row},${col}`)) return { moved: false, left_room: false, reason: 'object_blocked' };
+      movedOnto.push(`${row},${col}`);
+      client.self.col = col; client.self.row = row;
+      return { moved: true, left_room: false, position: { col, row } };
+    },
+  };
+  const out = await walkTo.call(session, 4, 1, { maxSteps: 8 });
+  // ATTEMPTS ARE FINE; ARRIVALS ARE NOT. The walker is allowed to try an occupied square and
+  // be refused — that is how it learns one is taken. What it may never do is END UP on one.
+  ok('a walk hemmed in by bodies never moves onto one',
+     movedOnto.every(sq => !bodies.has(sq)), JSON.stringify(movedOnto.slice(0, 8)));
+  ok('and it gives up rather than passing through', out?.arrived !== true, JSON.stringify(out));
 }
 
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);

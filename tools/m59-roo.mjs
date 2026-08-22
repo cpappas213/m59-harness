@@ -592,6 +592,28 @@ export const DEFAULT_ROO_DIRS = [
   'C:/Program Files (x86)/Steam/steamapps/common/Meridian 59/resource',
 ].filter(Boolean);
 
+// THE CLIP SWITCH, AND THE EXPERIMENT THAT SET IT.
+//
+// `M59_CLIP_STEPS=0` requires a step to END on ground the COARSE grid agrees exists.
+// Default ON, and that is a measured result rather than the status quo winning by default.
+//
+// The permission plainly causes harm — see moverStepLands: one character aimed at the
+// grid-solid square 7,15 sixty-one times in seventy seconds while holding a live order to
+// cross the room, and 598 has 187 clip squares over 5.3% of its steps. So it was switched
+// OFF and the offline suite asked what that costs. The answer was decisive and the wrong
+// way round:
+//
+//   the Cragged Mountains' walkable body        2450 squares -> 672, in 1555 REGIONS
+//   the mover vs the strict centre-to-centre    refuses MORE (1323) than strict (1186),
+//                                               inverting the invariant routing depends on
+//   exits reachable from the basin              cut
+//
+// So the fine-only ground in 598 is not a curiosity at its edges; it is most of the room.
+// Requiring the coarse grid does not stop bots wandering into rock, it stops them walking
+// at all. The permission stays until something replaces it with a PATH — see the note in
+// moverStepLands about the rail this was supposed to be.
+const CLIP_STEPS = process.env.M59_CLIP_STEPS !== '0';
+
 export class RoomGeometry {
   constructor({ file, version, security, rows, cols, grid, flags, monsterGrid, walls, sidedefs,
                 sectors, nodes, leaves, bspRoot = 0, clientSize, collisionVersion = null,
@@ -1931,11 +1953,34 @@ export class RoomGeometry {
 
   moverStepLands(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
-    // `standable`, not `walkable` — see standable(). The coarse grid is a SERVER artifact
-    // and nothing server-side consults it for a player move, so letting it veto a step the
-    // BSP allows removed ground people demonstrably walk on. The trace below is still the
-    // gate: it has to arrive, and it has to arrive IN this square.
-    if (!this.inBounds(toRow, toCol) || !this.standable(toRow, toCol)) return false;
+    if (!this.inBounds(toRow, toCol)) return false;
+    // ======================= FINE-ONLY TERRAIN: OFF BY DEFAULT =======================
+    //
+    // `standable` returns true for a square the coarse grid calls SOLID whenever any part
+    // of it holds fine floor. Requiring only that let the mover authorise a step INTO rock,
+    // and the argument for it was sound in isolation: the coarse grid is a server artifact,
+    // nothing server-side consults it for a player move, and vetoing on it removes ground
+    // people demonstrably walk on.
+    //
+    // WHAT IT WAS FOR, AND WHAT IT BECAME. The idea was a rail. Precompute the fine walk
+    // across a stretch of fine-only terrain between two reachable exits, and when a bot
+    // reached the edge of the coarse grid it would clip ONTO that precomputed line, follow
+    // it, and come off the far side back into ordinary travel. An alternative navigation
+    // system for ground the coarse grid cannot express.
+    //
+    // No rail was ever consulted here. What survived is the permission without the path —
+    // so instead of "follow the known line across", it means "the edge of the grid is
+    // steppable", and a walker that meets one steps off the grid into rock, slides, and
+    // comes back. Measured in the Cragged Mountains: square 7,15 is grid-solid, this
+    // returned true for the step onto it, and one character aimed at it SIXTY-ONE times in
+    // seventy seconds while holding a live order to cross the room. That room has 187 clip
+    // squares and 334 clip steps, 5.3% of everything in it. It is not a shortcut; it is a
+    // pit that opens wherever the grid ends.
+    //
+    // So the destination must be ground the coarse grid agrees exists. `M59_CLIP_STEPS=1`
+    // restores the old behaviour for anyone who wants to measure it — see clipsweep, which
+    // has always called this disagreement the one that "cannot be explained by coarseness".
+    if (!(CLIP_STEPS ? this.standable(toRow, toCol) : this.walkable(toRow, toCol))) return false;
     const mask = this._stepMask;
     if (mask) {
       const bit = STEP_MASK_BIT.get(`${toRow - fromRow},${toCol - fromCol}`);

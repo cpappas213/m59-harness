@@ -356,3 +356,5 @@ __pycache__/
 # WHERE THIS FLEET COMMUTES. Orders to characters rather than a description of them, so it
 # lives on the machine that owns the roster. substrate/commute.example.json carries the shape.
 /substrate/commute.json
+/substrate/shuttle-runs.json
+/substrate/collision-trace.jsonl

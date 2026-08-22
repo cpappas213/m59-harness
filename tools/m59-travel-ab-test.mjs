@@ -406,9 +406,21 @@ console.log('a wall is nearer than the next room -- the mid-hop rung');
   ok('it uses the same reach the boundary hold uses', /travelHoldWithin/.test(body));
   ok('it hands back rather than steering, like the rungs around it', /takeBack\(/.test(body));
   ok('and it fires at its own threshold, well above the health people die at',
-     /travelWallBelow/.test(body));
-  ok('which defaults to 80%, because health leaves at 4.7/s and a 45 bar is 9.5 seconds',
-     /travelWallBelow \?\? 0\.8/.test(body));
+     /travelShelterBelow\(\)/.test(body));
+  // THE THRESHOLD IS NO LONGER A CONSTANT — 2026-08-21, the operator's rule. In a zone the
+  // character would never CHOOSE to fight in, any damage at all is a reason to take a wall;
+  // everywhere else the ordinary 80% still applies, so a journey is not stopped by a
+  // scratch. Measured cause: a level-33 character rested to full in the Cragged Mountains,
+  // walked on, and lost twenty-two health in twenty seconds. Waiting to fall through 80%
+  // there spends most of the margin it had.
+  ok('and the threshold is asked for, not hardcoded, because it depends on the room',
+     /travelShelterBelow\(\) \{/.test(SRC));
+  ok('which is the ordinary 80% where we would fight',
+     /travelWallBelow \?\? 0\.8/.test(SRC));
+  ok('and 100% — any damage — where the room outranks us',
+     /roomOutranksUs\(\) \? 1 :/.test(SRC));
+  ok('with "outranks" meaning the engagement ceiling the ladder already uses',
+     /roomOutranksUs\(/.test(SRC) && /refuseEngagement\(name\)/.test(SRC));
   ok('the clock says safe_spot is on both', /safe_spot: 'both'/.test(SRC));
 }
 
@@ -425,7 +437,7 @@ console.log('the fuel-stop policy is actually handed to the mover');
   ok('and only when the safe_spot faculty is allowed', /allow\.safe_spot/.test(body));
   ok('need() reads health at the moment it is asked, not when the journey began',
      /need: \(\) => \{[\s\S]{0,220}vitals/.test(body));
-  ok('and it asks the same threshold the ladder does', /travelWallBelow/.test(body));
+  ok('and it asks the same threshold the ladder does', /travelShelterBelow\(\)/.test(body));
   // AND IT IS CLEARED. Left set, it would offer a stop on an errand or a shopping trip,
   // neither of which has a route ahead to fold one into.
   const rev = SRC.indexOf('revive(why = null)');
@@ -447,12 +459,14 @@ console.log('playing dead can actually fire');
   ok('a sheltered character still plays dead', /if \(sheltered\)[\s\S]{0,200}playDead/.test(body));
   ok('an unsheltered one still tries a town FIRST, which is the better option',
      /townTripIfCornered/.test(body));
-  // AND FALLS BACK TO FREEZING RATHER THAN FALLING THROUGH. The old comment argued that a
-  // freeze recovers no health and leaves you where you were. True -- and an argument about
-  // which of two GOOD options to take. By this line both have already failed.
-  ok('and freezes when there is no town to reach, instead of falling through',
-     body.indexOf('townTripIfCornered') < body.lastIndexOf('playDead'));
-  ok('the fallback says why it is there', /no town within reach/.test(body));
+  // THE FREEZE FALLBACK IS GONE, AND ITS ASSERTIONS MOVED. Reversed 2026-08-21: playing
+  // dead off a proven safe spot is refused outright, because it recovers vigor and NEVER
+  // health, and three characters were measured freezing in the open at 4, 10 and 13 health
+  // in a fifteen-monster room and dying there.
+  //
+  // The checks for it live in `m59-playdead-test.mjs`, which is where somebody looking for
+  // the rule would go — this file is named for an experiment that CLOSED on the same day,
+  // and it had quietly become the home for rungs that have nothing to do with the A/B.
   // The operator's number, and it has to mean the same thing everywhere.
   ok('doomed is 30% behind a wall', /doomedInSpotBelow \?\? 0\.3\b/.test(PD));
   ok('and 30% in the open', /doomedInOpenBelow \?\? 0\.3\b/.test(PD));

@@ -50,6 +50,7 @@ import { recordCrossing } from './m59-crossings.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
 import { nearestSafeSpot, sheltersAlong, shelterAhead } from './m59-safespots.mjs';
+import { traceMove } from './m59-collision-trace.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -62,7 +63,7 @@ import * as bankbook from './m59-bank.mjs';
 import * as hitbook from './m59-hits.mjs';
 import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
-import { resolveFleet } from './m59-fleetpath.mjs';
+import { resolveFleet, rosterGameEndpoint } from './m59-fleetpath.mjs';
 import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
 import { resolveItemNames, weighItem } from './m59-items.mjs';
 import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
@@ -84,7 +85,7 @@ import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRA
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import * as exitgap from './m59-exitgap.mjs';
-import { attachStepMasks } from './m59-routes.mjs';
+import { attachStepMasks, activeRoutes, anchorFor, bakedPath } from './m59-routes.mjs';
 import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
 import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
          DEFAULT_RANK_TITLES, maturityWait, inductionPlan, INVITATION_MS,
@@ -2464,7 +2465,7 @@ class Session {
       const assert_ = () => {
         if (!keeper || keeper.inert) return;
         if (this.movementWasCancelled(movementGeneration)) return;
-        keeper.goTravelling(`travelling to ${where}`);
+        keeper.goTravelling(`travelling to ${where}`, { to: dest });
         ours = keeper.inert;
       };
       assert_();
@@ -3588,7 +3589,20 @@ class Session {
            y: protocolToClient(st.row * KOD_FINENESS + half) };
     let remaining = planSteps.slice();
 
+    // PUBLISHED SO THE KEEPER CAN ASK THE SAME QUESTION THE WALKER ASKS.
+    //
+    // The fuel stops are worked out here, when the crossing is planned, and until now they
+    // never left this function — so the keeper's mid-hop wall rung had no way to see them
+    // and searched the room from wherever the body happened to be standing instead. That is
+    // the braking version this whole mechanism exists to replace, and it was still running
+    // one layer up. `atStep` is kept current per leg so `shelterAhead` can refuse anything
+    // already passed; behind is where the character has already been bitten.
+    this.activeShelter = shelter?.spots?.length
+      ? { spots: shelter.spots, maxDetour: shelter.maxDetour ?? 4, atStep: 0 }
+      : null;
+
     while (remaining.length && legs + singles < budget) {
+      if (this.activeShelter) this.activeShelter.atStep = planSteps.length - remaining.length;
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return { done: false, legs, singles, cancelled: true };
 
@@ -3666,6 +3680,12 @@ class Session {
       const queued = await this.queueValidatedMove(target.x, target.y,
         { speed, slide: false, minGap: Math.max(this._moveGapMs ?? MOVE_INTERVAL_MS, owed),
           expectedRoomId: roomId });
+      // Traced at the CALL SITE, never inside `queueValidatedMove` — that method is lifted
+      // out of this file by text and evaluated by m59-collision-test.mjs, so anything it
+      // calls has to exist in that scope too. Off unless M59_COLLISION_TRACE=1.
+      traceMove({ agent: this.name, room: this.world?.room?.num ?? null, kind: 'pivot',
+                  to: { x: target.x, y: target.y }, sent: !!queued.sent,
+                  reason: queued.validation?.reason ?? null });
       if (!queued.sent)
         return { done: false, legs, singles, why: queued.validation?.reason ?? 'refused',
                  note: queued.validation?.note };
@@ -3766,6 +3786,14 @@ class Session {
         beforeMutation: typeof beforeMutation === 'function'
           ? () => beforeMutation('move', { col, row }) : null,
         minGap: Math.max(gap, owed), expectedRoomId: roomId });
+    // `col`/`row` are `step`'s ARGUMENTS, which are where it is going — not where it is.
+    // The first cut of this called them `from`, and a trace of an oscillating walk then read
+    // as a character teleporting between two distant squares. Both ends are recorded now:
+    // `at` is the body, `target` is the aim, and a loop is the pair repeating.
+    traceMove({ agent: this.name, room: this.world?.room?.num ?? null, kind: 'step',
+                square: c.self ? { col: c.self.col, row: c.self.row } : null,
+                target: { col, row }, to: { x: aim.x, y: aim.y }, sent: !!queued.sent,
+                reason: queued.validation?.reason ?? null });
     if (!queued.sent) {
       const validation = queued.validation ?? {};
       const leftRoom = c.room.id !== roomId;
@@ -4196,7 +4224,8 @@ class Session {
   // already knows — the mover's step relation, the edges it has been refused, and the
   // squares it has seen bodies on — so a sidestep cannot propose a traversal the ordinary
   // path would reject.
-  sidestepAround(was, blocked, { blockedEdges, occupied, geo, prefer = 0 }) {
+  sidestepAround(was, blocked, { blockedEdges, occupied, geo, prefer = 0,
+                                 blockerIsPlayer = false }) {
     if (!was || !blocked || !geo) return null;
     const dr = Math.sign(blocked.row - was.row), dc = Math.sign(blocked.col - was.col);
     if (!dr && !dc) return null;
@@ -4204,18 +4233,30 @@ class Session {
     // cardinals it decomposes into, which is the right answer for the same reason.
     let sides = (dr && dc) ? [{ dr, dc: 0 }, { dr: 0, dc }]
                            : [{ dr: dc, dc: dr }, { dr: -dc, dc: -dr }];
-    // BREAK THE TIE ON SOMETHING THAT DIFFERS BETWEEN THE TWO PARTIES, or the fix becomes
-    // the bug. Both characters run this identical function, so with a fixed side order
-    // two of them meeting head-on both dodge the same way, collide, both dodge back, and
-    // mirror each other indefinitely — watched live and described exactly: *"like two
-    // people stuck in a hallway, I'll go left, no you go left, no my left, no your
-    // left"*. Ordering by the mover's own object id makes two characters prefer opposite
-    // sides by construction, which is the one thing a shared rule cannot achieve.
+    // CLOCKWISE FIRST, THEN COUNTERCLOCKWISE. The operator's rule, and the reason it is a
+    // fixed order rather than a preference is that a detour round a MONSTER has no second
+    // party to deadlock with — the thing in the way is not also running this function.
     //
-    // The object id and not a random number: a coin flip breaks the deadlock eventually
-    // and produces a different dance each pass, which is both slower to converge and
-    // impossible to reproduce in a test.
-    if (prefer & 1) sides = [sides[1], sides[0]];
+    // Clockwise in room coordinates, where row increases DOWNWARD: rotating a heading right
+    // takes east to south, south to west, west to north. The cross product `dr*s.dc -
+    // dc*s.dr` is negative for exactly those, which is the test used here rather than a
+    // table, so it is right for the diagonal decompositions too.
+    const clockwise = s2 => (dr * s2.dc - dc * s2.dr) < 0;
+    sides = [...sides.filter(clockwise), ...sides.filter(s2 => !clockwise(s2))];
+
+    // AND THE OBJECT-ID TIE-BREAK SURVIVES, FOR PLAYERS ONLY.
+    //
+    // Two CHARACTERS meeting head-on both run this identical function, so a fixed order
+    // makes them both dodge the same way, collide, both dodge back, and mirror each other
+    // indefinitely — watched live and described exactly: "like two people stuck in a
+    // hallway, I'll go left, no you go left, no my left, no your left". Ordering by the
+    // mover's own object id makes them prefer opposite sides by construction.
+    //
+    // That argument is entirely about a blocker that is ALSO dodging. A troll is not, so
+    // applying it there bought nothing and cost the fixed order the operator asked for —
+    // half the fleet would take the long way round the same body for no reason. So the
+    // swap is now conditional on what is actually in the way.
+    if (blockerIsPlayer && (prefer & 1)) sides = [sides[1], sides[0]];
     // `standable`: somewhere to step round a body is somewhere a body can BE, which is a
     // question about floor rather than about the server's byte. `moverStepLands` still has
     // to authorise the step itself, so this only widens the candidates, never the rules.
@@ -4621,6 +4662,19 @@ class Session {
     // edges are the ones being walked. The walker simply never learned.
     const blockedEdges = new Set();
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
+    // LONG HOPS THAT WERE SENT, MOVED THE BODY, AND DID NOT ARRIVE.
+    //
+    // Not a blocked edge: nothing refused it, and a single step along the same line is
+    // usually fine — it is the LENGTH that fails, because the move slides and lands
+    // somewhere the plan did not ask for. `blockedEdges` records refusals and so never
+    // learns this, and the reach collapse below is undone by the next arrival.
+    //
+    // Which is how a character with 200 health, taking no damage at all, spent sixty
+    // seconds inside three squares of the Cragged Mountains: 30,33 -> 36,34 slides to
+    // 30,32; 30,32 -> 31,35 slides to 29,34; 29,34 -> 30,33 ARRIVES, which restores the
+    // full reach — and the six-square hop that never works is offered again. Thirty-two
+    // moves sent, none refused, no progress.
+    const missedHops = new Set();
     let stalledOn = null, stalledTimes = 0;
     // THE SQUARE WE WERE IN BEFORE THE ONE WE ARE IN NOW. A refused FALL is a bad approach
     // rather than a bad ledge, and blaming it needs the step before last — see the learning
@@ -4630,6 +4684,11 @@ class Session {
     // increments these: a body is not a wall, it moves, and a walk that failed because of
     // one has a completely different remedy from a walk the geometry refused.
     let monsterBlocks = 0;
+    // ONCE PER WALK. Backing up to make an attacker follow is the last tier and it costs
+    // ground; doing it repeatedly is how a character walks backwards out of a corridor it
+    // was trying to cross. If one retreat does not free the square, the ordinary occupancy
+    // replan below is the honest answer.
+    let retreatedFromBodies = false, bodyRetreats = 0;
     const blockedBy = new Set();       // squares a body was standing on
     const sidestepped = new Set();     // squares we have already tried to go round, once each
     // HOW OFTEN THE MOVER PUT US SOMEWHERE THE PLAN DID NOT ASK FOR. See the note where
@@ -4689,6 +4748,13 @@ class Session {
       // 66 pivots. See RoomGeometry.stringPull and m59-stringpull-test.mjs.
       let next = queue.shift();
       let hop = 1;
+      // A HOP THAT MISSED FROM A GIVEN SQUARE IS NOT TRIED FROM THAT SQUARE AGAIN.
+      // Declared outside the loop — see `missedHops` above the loop.
+      // THE SQUARES A COALESCED HOP SWALLOWED, kept so they can be given back if it misses.
+      // See the `hop > 1` branch below: without these, collapsing the reach to one achieves
+      // nothing, because the only square left on the queue is the far end of the hop that
+      // just failed.
+      const skipped = [];
       const from0 = c.self ? { col: c.self.col, row: c.self.row } : null;
       // THE SECOND AIM, AND IT HAS TO MATCH THE FIRST. This traces a straight line across
       // several squares to decide which of them may be skipped, so if it measured that
@@ -4752,9 +4818,36 @@ class Session {
         // square inside the hop cap is takeable for free. This is the 5.8x, and it is also
         // what stops the walker burning the shared event loop on proofs it already has.
         let took = -1;
+        // Where the body is, for the mover check below and for `missedHops` further down.
+        const hereSq = c.self ?? from0;
         if (pulled && next && pulled.squares.has(`${next.row},${next.col}`)) {
-          for (let i = reach.length - 1; i >= 0; i--)
-            if (pulled.squares.has(`${reach[i].row},${reach[i].col}`)) { took = i; break; }
+          for (let i = reach.length - 1; i >= 0; i--) {
+            const s = reach[i];
+            if (!pulled.squares.has(`${s.row},${s.col}`)) continue;
+            // THE PROOF IS A SHORTCUT PAST THE TRACE. IT IS NOT A SHORTCUT PAST THE MOVER.
+            //
+            // A proved leg skips the per-square `arrives()` trace, which is the 5.8x and
+            // worth keeping. What it must not skip is the question of whether the step LANDS,
+            // because the pull is computed from the character's exact FINE position and a
+            // line that was clear from one sub-square offset is not clear from another — and
+            // after the first slide the walker is never at a centre again.
+            //
+            // Left unchecked it offered squares the coarse grid calls SOLID ROCK. Measured in
+            // the Cragged Mountains on a character at full health taking no damage at all:
+            // targets 36,34 / 31,35 / 38,34 all read walkable=false, standable=true,
+            // moverStepLands=false, and the walker aimed a six-square hop into the rock face
+            // over and over. Every move was SENT — thirty-two of them, none refused — and
+            // each one clipped and slid along the wall instead of arriving, which is what an
+            // operator watching it described as the character walking along the western wall.
+            // Sixty seconds inside three squares, untouched.
+            //
+            // `moverStepLands` is the same question the router is required to plan on
+            // (docs/m59-routing.md), so this makes the fast path agree with the slow one
+            // about what a step is, rather than agreeing with a proof about what a LINE is.
+            if (hereSq && typeof geo.moverStepLands === 'function' &&
+                !geo.moverStepLands(hereSq.row, hereSq.col, s.row, s.col)) continue;
+            took = i; break;
+          }
         }
         // Otherwise, or on a leg the pull could NOT prove, ask the geometry exactly as
         // before. An unproved leg carries no promise and must not be jumped along.
@@ -4762,8 +4855,19 @@ class Session {
           for (let i = reach.length - 1; i >= 0; i--)
             if (arrives(here, fineOf(reach[i]))) { took = i; break; }
         }
+        // Never re-offer a hop this walk has already watched miss from this square. The
+        // shorter candidates below it are still available, which is the point: the line is
+        // walkable, the LENGTH is not.
+        while (took >= 0 && hereSq &&
+               missedHops.has(edgeKey(hereSq.row, hereSq.col, reach[took].row, reach[took].col)))
+          took--;
         if (took >= 0) {
-          for (let k = 0; k <= took; k++) { next = queue.shift(); hop++; }
+          for (let k = 0; k <= took; k++) {
+            const s = queue.shift();
+            if (k < took) skipped.push(s);   // everything between here and the far end
+            next = s;
+            hop++;
+          }
           hop--;                         // `next` was already counted by the shift above
         }
       } else {
@@ -4776,6 +4880,7 @@ class Session {
           if (Math.sign(peek.col - next.col) !== dc0 || Math.sign(peek.row - next.row) !== dr0) break;
           if (occupied.has(`${peek.row},${peek.col}`)) break;
           if (blockedEdges.has(edgeKey(next.row, next.col, peek.row, peek.col))) break;
+          skipped.push(next);
           next = queue.shift(); hop++;
         }
       }
@@ -4808,7 +4913,35 @@ class Session {
       // A LONG MOVE THAT MISSED SAYS NOTHING ABOUT A SHORT ONE. Shorten before blaming the
       // route, the edge or the body in the way: those verdicts are all about a step, and
       // what just failed was several.
-      if (hop > 1) { hopLimit = 1; queue.unshift(next); taken -= hop - 1; continue; }
+      if (hop > 1) {
+        hopLimit = 1;
+        // REMEMBERED, so the next arrival cannot hand this same hop back. `hopLimit` alone
+        // is not enough: it climbs back to full on the first step that lands where it was
+        // aimed, and in a cycle that step comes round every three moves.
+        if (was) missedHops.add(edgeKey(was.row, was.col, next.row, next.col));
+        // AND GIVE BACK EVERY SQUARE THE HOP SWALLOWED, not just its far end.
+        //
+        // Collapsing the reach to one is the right instinct and it did nothing, because the
+        // coalescer SHIFTS the intermediate squares off the queue and keeps only the far
+        // endpoint. Re-queueing that endpoint alone leaves the walker with a single plan
+        // entry thirteen squares away — so "retry as single steps" has no single steps to
+        // take, and the next attempt is the identical long move.
+        //
+        // Measured in the Cragged Mountains, one character, traced move by move:
+        //
+        //   at 7,14 -> target 7,27   sent      (slides to 8,15 instead of arriving)
+        //   at 8,15 -> target 7,27   REFUSED   geometry_blocked
+        //   at 8,15 -> target 7,14   sent      (walks back to the proof line)
+        //   at 7,14 -> target 7,27   sent      ...and round again, seven times, until dead
+        //
+        // Twenty-five seconds inside two squares while things ate it. The operator ran the
+        // same room by hand in under twenty seconds. Putting the swallowed squares back is
+        // what turns the retry into an actual walk.
+        queue.unshift(next);
+        if (skipped.length) queue.unshift(...skipped);
+        taken -= hop - 1;
+        continue;
+      }
 
       // LANDED SOMEWHERE ELSE — counted, because the RATE is the diagnosis.
       //
@@ -5001,8 +5134,14 @@ class Session {
           // It is only ever a PREFERENCE. If neither side works the ordinary occupancy
           // path below runs exactly as it did before, so this can cost a couple of steps
           // and cannot cost the walk.
+          // WHAT IS IN THE WAY DECIDES WHICH ORDER TO TRY THE SIDES IN. A player is also
+          // dodging and needs the id tie-break; a monster is not, and gets the fixed
+          // clockwise-first order. Read off the room rather than assumed: `blockedBy` only
+          // records the square.
+          const blockerIsPlayer = !!(c.room?.objects && [...c.room.objects.values()].some(o =>
+            o.id !== c.selfId && o.col === next.col && o.row === next.row && (o.flags & OF.PLAYER)));
           const side = this.sidestepAround(was, next,
-            { blockedEdges, occupied, geo, prefer: Number(c.self?.id ?? 0) });
+            { blockedEdges, occupied, geo, prefer: Number(c.self?.id ?? 0), blockerIsPlayer });
           if (side && !sidestepped.has(`${next.row},${next.col}`)) {
             sidestepped.add(`${next.row},${next.col}`);
             queue.unshift(next);
@@ -5014,6 +5153,42 @@ class Session {
             pulled = null;
             stalledOn = null; stalledTimes = 0;
             continue;
+          }
+          // NEITHER SIDE WORKED. BACK UP THE WAY WE CAME AND LET IT FOLLOW US.
+          //
+          // The third tier, and the operator's: a monster that is attacking will step
+          // FORWARD into the square we vacate, which moves the body that is blocking us and
+          // opens the ground it was standing on. Retreating is not an escape here — it is a
+          // way of making the obstacle move, which is the one thing a sidestep cannot do
+          // when every square around us is occupied.
+          //
+          // ONLY UNDER FIRE, and that is the whole justification. A body that is merely in
+          // the way will drift off on its own and the polite wait above is cheaper; a body
+          // that is EATING us will not, and the trace that prompted this recorded seventy-
+          // five refusals in ten seconds with zero packets sent while health fell from 33 to
+          // 4. Standing still there is certain; backing up is merely uncertain.
+          //
+          // Breadcrumbs rather than any free square, because every crumb is a move the
+          // validator already accepted — so the retreat cannot open a hole the collision
+          // rules would refuse, which is the property that makes this safe to do at all.
+          // `until` stops it the moment the blocked square frees up: the goal is to make the
+          // thing move, not to undo the journey.
+          if (underFire && !retreatedFromBodies && typeof this.retreatAlongBreadcrumbs === 'function') {
+            retreatedFromBodies = true;
+            const stillThere = () => !!(c.room?.objects && [...c.room.objects.values()].some(o =>
+              o.id !== c.selfId && o.col === next.col && o.row === next.row));
+            const back = await this.retreatAlongBreadcrumbs({
+              maxCrumbs: Number(process.env.M59_BODY_RETREAT_CRUMBS || 3),
+              until: () => !stillThere(),
+              movementGeneration, controlToken,
+            }).catch(() => null);
+            if (back?.steps) {
+              bodyRetreats++;
+              queue.unshift(next);       // and try the same square again from further back
+              pulled = null;
+              stalledOn = null; stalledTimes = 0;
+              continue;
+            }
           }
           occupied.add(`${next.row},${next.col}`);
           stalledOn = null; stalledTimes = 0; learned = true;
@@ -5212,6 +5387,117 @@ class Session {
   // produces no reply at all:
   //   an edge exit -> walk to the boundary square, then one more step outward
   //   a `go` exit  -> stand on EXACTLY the exit square, then BP_REQ_GO
+  // ================== THE RAIL: A BAKED CROSSING, FOLLOWED RATHER THAN REPLANNED ==================
+  //
+  // WHY THIS EXISTS. Whether a character is "on the coarse grid" or "on the fine grid" it is
+  // always walking the fine one — the coarse square is a handle, a short name for a stand
+  // point. The trouble is that the PLANNER re-derives its route from wherever the body
+  // actually is, and inside terrain the coarse grid cannot express, every move slides. So
+  // the walker lands off-plan, replans, produces a route that slides again, and thrashes:
+  // measured in the Cragged Mountains, one character aimed at the same grid-solid square
+  // sixty-one times in seventy seconds while holding a live order to cross the room.
+  //
+  // The routes for exactly this were baked long ago and never driven. `bakedPath` returns
+  // the square-by-square crossing between two exit anchors — 64 steps for 598's north exit
+  // to its south one — and `m59-routes.mjs --verify` already re-walks every one of them.
+  // The only caller in the tree was a COMMENT explaining why something else asked a
+  // different question. The permission to leave the grid got wired in; the path did not.
+  //
+  // Three parts, and the middle one is the whole point:
+  //
+  //   1. GET ON    an ordinary walk to the entry anchor, over ground the grid does express
+  //   2. FOLLOW    the baked squares in order, re-aiming at the SAME square when a move
+  //                slides, and never replanning — a replan is what loses the line
+  //   3. COME OFF  arrive at the far anchor and hand back to ordinary travel
+  //
+  // It is advisory. Every failure returns null or a reason and the caller walks as it always
+  // did, so a room with no baked route, a stale table, or a rail that cannot be joined costs
+  // nothing but the attempt.
+  railAcross(toSquare) {
+    const table = activeRoutes();
+    const room = Number(this.world?.room?.num ?? NaN);
+    const r = table?.rooms?.[room] ?? table?.rooms?.[String(room)];
+    if (!r?.anchors?.length || !toSquare) return null;
+    const me = this.client?.self;
+    if (!me) return null;
+    // The entry anchor is whichever baked start actually has a line to where we are going.
+    // Nearest first, because getting on is an ordinary walk and a shorter one is cheaper.
+    const starts = r.anchors
+      .filter(a => !(a.row === toSquare.row && a.col === toSquare.col))
+      .sort((a, b) => (Math.hypot(a.col - me.col, a.row - me.row))
+                    - (Math.hypot(b.col - me.col, b.row - me.row)));
+    for (const a of starts) {
+      let squares = null;
+      try { squares = bakedPath(table, room, { row: a.row, col: a.col }, toSquare); }
+      catch { squares = null; }
+      if (Array.isArray(squares) && squares.length) return { from: a, squares };
+    }
+    return null;
+  }
+
+  /**
+   * Walk a baked line square by square. NO REPLANNING — that is the contract.
+   *
+   * A slide re-aims at the SAME square rather than asking the router where to go from the
+   * new position, because the router's answer inside fine-only ground is what produced the
+   * thrash this replaces. `maxSlips` bounds how long one square may be insisted on, so a
+   * rail that genuinely cannot be walked gives up and lets the ordinary walk try.
+   */
+  async followRail(squares, { movementGeneration = this.movementGeneration,
+                              controlToken = null, maxSlips = 4, maxSkips = 8 } = {}) {
+    let walked = 0, skipped = 0;
+    for (let i = 0; i < squares.length; i++) {
+      const target = squares[i];
+      let slips = 0;
+      for (;;) {
+        if (this.movementWasCancelled(movementGeneration, controlToken))
+          return { railed: false, cancelled: true, at: i, walked };
+        const here = this.client?.self;
+        if (here && here.col === target.col && here.row === target.row) break;
+        // FINE GROUND IS WALKED FINELY. THIS IS THE WHOLE REASON THE RAIL EXISTS.
+        //
+        // A rail crosses terrain the coarse grid cannot express — that is what it is for —
+        // and `step` aims at a square's stand point as a COARSE move, which is the thing
+        // that slides in exactly this ground. Measured: the rail carried a character 24 of
+        // 64 squares and gave up at the boundary where the line enters fine-only floor
+        // (index 26 onward reads walkable=false the whole way).
+        //
+        // So where the grid does not admit the square, hand the step to the fine mover and
+        // aim at the same stand point in client units. The square is still the handle; the
+        // walk underneath it is the fine one it always really was.
+        const geo = this.world?.geometry;
+        const fineOnly = geo && typeof geo.walkable === 'function'
+          && !geo.walkable(target.row, target.col);
+        const pt = fineOnly && typeof geo.standPoint === 'function'
+          ? geo.standPoint(target.row, target.col) : null;
+        const r = (pt && typeof this.walkFine === 'function')
+          ? await this.walkFine(pt.x, pt.y, { maxSteps: 6, stride: 40 })
+              .then(w => ({ ...w, moved: w?.arrived ?? w?.moved }))
+              .catch(e => ({ moved: false, reason: e.message }))
+          : await this.step(target.col, target.row);
+        if (r.left_room) return { railed: true, left_room: true, at: i, walked };
+        if (isTerminalMovementReason(r.reason))
+          return { railed: false, reason: r.reason, at: i, walked };
+        const now = this.client?.self;
+        if (now && now.col === target.col && now.row === target.row) break;
+        // SLID. Aim at the same square again rather than re-deriving the route.
+        // A WAYPOINT IS NOT THE LINE. Missing one square does not invalidate the other
+        // sixty-three, and abandoning the whole rail for it is how a crossing that was
+        // three-quarters done went back to the thrash: measured, the follower gave up at
+        // index 24 of 64 — on ORDINARY floor — four runs in a row. Skip the square and aim
+        // at the next one; the line ahead is still the line. Consecutive skips are bounded,
+        // because a rail nothing can be hit on is a rail worth leaving.
+        if (++slips > maxSlips) {
+          if (++skipped > maxSkips)
+            return { railed: false, reason: 'slipped_off_rail', at: i, walked, skipped };
+          break;
+        }
+      }
+      walked++;
+    }
+    return { railed: true, walked, skipped };
+  }
+
   async leaveVia(exit, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     const c = this.need();
     if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
@@ -5236,6 +5522,67 @@ class Session {
     // needs, and the monster refund and the progress rule above already stop a walk that
     // is going nowhere from reaching this number at all.
     const budget = e => Math.max(60, (e.steps_away ?? 0) * 2 + 20);
+
+    // ---- THE RAIL, TRIED FIRST AND NEVER INSISTED ON. See railAcross / followRail.
+    //
+    // Only where the ordinary walk is known to struggle: a crossing whose far end is an exit
+    // anchor with a baked line to it. Getting ON is an ordinary walk to the entry anchor over
+    // ground the coarse grid does express; the crossing itself is then replayed rather than
+    // re-planned, which is the difference between arriving and thrashing.
+    //
+    // Every failure below falls through to exactly the walk this function always did, so a
+    // room with no baked route, a stale table, or a rail that cannot be joined costs one
+    // attempt and nothing else. `M59_RAIL=0` switches it off for comparison.
+    if (process.env.M59_RAIL !== '0' && exit.to != null) {
+      // ASKED BY DESTINATION, NOT BY THE SQUARE THIS EXIT HAPPENS TO OFFER.
+      //
+      // `exit.stand_on` is one crossable square among many on a boundary — 598's west edge
+      // alone offers eight. The baked routes are keyed on the ANCHOR, one per declared exit,
+      // so looking a rail up by `stand_on` finds nothing and the whole mechanism silently
+      // never runs. It did exactly that: zero `baked_rail` rows in the ledger after a full
+      // crossing attempt. `anchorFor` is the accessor that cannot express the mistake.
+      const railTable = activeRoutes();
+      const railRoom = Number(this.world?.room?.num ?? NaN);
+      const target = anchorFor(railTable, railRoom, Number(exit.to));
+      const rail = target ? this.railAcross({ row: target.row, col: target.col }) : null;
+      const me0 = this.client?.self;
+      // LOGGED EVEN WHEN NOTHING HAPPENS. The first two attempts at this wrote a ledger row
+      // only after the character had got onto the rail, so a run that found no rail at all
+      // and a run where `leaveVia` was never reached produced the same evidence — nothing —
+      // and there was no way to tell which. The decision is the thing worth recording.
+      if (!rail) {
+        recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                       tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
+                       note: target ? `no baked line to the anchor ${target.row},${target.col}`
+                                    : `no anchor for room ${exit.to}` });
+      }
+      if (rail && me0) {
+        const onIt = me0.col === rail.from.col && me0.row === rail.from.row;
+        // 1. GET ON — skipped when we are already standing on the entry anchor.
+        const got = onIt ? { arrived: true } : await this.walkTo(rail.from.col, rail.from.row,
+          { maxSteps: budget({ steps_away: Math.hypot(rail.from.col - me0.col, rail.from.row - me0.row) }) })
+          .catch(e => ({ arrived: false, reason: e.message }));
+        if (!got?.arrived) {
+          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                         tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
+                         note: `could not get on at ${rail.from.row},${rail.from.col}: ${got?.reason ?? '?'}` });
+        }
+        if (got?.arrived) {
+          // 2. FOLLOW.
+          const ran = await this.followRail(rail.squares, { movementGeneration, controlToken })
+            .catch(e => ({ railed: false, reason: e.message }));
+          if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked } };
+          // 3. COME OFF — at the far anchor, so the ordinary crossing below is a step, not
+          //    a room-crossing. A rail that slipped leaves the body somewhere real and the
+          //    walk below simply carries on from there.
+          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                         tactic: 'baked_rail', trigger: 'exit_crossing',
+                         worked: !!ran?.railed, ms: 0, hp_lost: 0,
+                         note: ran?.railed ? `followed ${ran.walked} of ${rail.squares.length} baked square(s), skipped ${ran.skipped ?? 0}`
+                                           : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason}` });
+        }
+      }
+    }
 
     if (exit.kind === 'go') {
       // CLEARANCE ON, because this is the long routing: crossing a whole room to a
@@ -6246,6 +6593,32 @@ class Session {
     // the whole ordered list has been tried, and only when nothing terminal stopped us
     // (a terminal reason returned above; it means the contract itself is broken, and
     // walking anyway would be walking on geometry we know is wrong).
+    // A BODY IS NOT A GAP IN THE MODEL, SO IT DOES NOT EARN THE UNVALIDATED STEP.
+    //
+    // The fallback above exists for one situation: our collision model refuses a square that
+    // people demonstrably walk on, so the model is wrong and the door is real. Every word of
+    // that argument is about GEOMETRY.
+    //
+    // It said nothing about bodies, and `object_blocked` is not terminal — so a doorway held
+    // by players refused every square, fell through here, and forced a crossing anyway. That
+    // is walking through a person: the one thing the whole collision subsystem exists to
+    // stop, arriving through the door reserved for admitting the subsystem is wrong.
+    //
+    // And it is not even the same bet. A wall the model invented will be there next time; a
+    // body will not. The honest answer to a door full of people is that the crossing cannot
+    // be made right now, which sends the journey to the OTHER door — or, if that is held
+    // too, reports a refusal the caller can act on.
+    //
+    // Found by the operator's own negative case: four characters shoulder to shoulder across
+    // a doorway, and the test asked what happens when both ways in are shut.
+    const everyRefusalWasABody = tried.length > 0 &&
+      tried.every(t => /object_blocked|body_blocked/i.test(String(t.why ?? '')));
+    if (everyRefusalWasABody)
+      return { left: false, tried, blocked_by_bodies: true,
+               reason: 'object_blocked',
+               note: 'every square on this boundary had somebody standing on it. Not forcing ' +
+                     'the crossing: the unvalidated step is for geometry we know is wrong, ' +
+                     'and a person is not a hole in the map' };
     if (tried.length && process.env.M59_EXIT_FALLBACK !== '0') {
       const best = ordered[0] ?? null;
       if (best) {
@@ -11155,6 +11528,28 @@ const TOOLS = [
           'TOO, to the resting cap of 80 of 200 — everything above that has to be EATEN, so ' +
           '"full vigor" by resting is not a thing that exists. Set 0 to switch it off. Only ' +
           'applies in a sanctuary, read from the spawn index rather than the room name.' },
+      resume_travel: { type: 'boolean',
+        description: 'whether a journey the SURVIVAL LADDER interrupted is picked back up once ' +
+          'the character is well again. Default true. The four mid-hop guards — flee, fight_back, ' +
+          'play_dead, arm — end the movement on purpose, and until this existed they ended the ' +
+          'OBJECTIVE with it: a character pulled off the road at 30% health healed up and went ' +
+          'back to farming with no memory of where it had been sent, which reads from outside as ' +
+          'travel silently not working. Resuming happens in the last pass stage, so it can only ' +
+          'run on a tick where nothing more urgent applied.' },
+      resume_travel_attempts: { type: 'number',
+        description: 'how many times one objective may be resumed before it is dropped. Default 12, ' +
+          'and it is a RUNAWAY BACKSTOP rather than the abandon policy: a journey is given up ' +
+          'only when a PLAYER is attacking, and every other kind of trouble pauses at a safe ' +
+          'wall and carries on, so a road with eight wall-rests along it is a road and not a ' +
+          'bug. Set low and this quietly becomes a second abandon rule.' },
+      resume_travel_within_ms: { type: 'number',
+        description: 'how long a suspended objective stays good, in milliseconds. Default 1800000 ' +
+          '(thirty minutes — long enough to rest to FULL at a wall and still be resumed; five ' +
+          'minutes was shorter than a bad rest, so an objective could expire while the ' +
+          'character was doing the very thing it had been taken off the road to do). ' +
+          'Older than this and it is somebody\'s earlier plan: a bot or an ' +
+          'operator has had time to want something else, and a stale objective resurfacing under ' +
+          'a live instruction is two directions on one body.' },
       travel_hold_pvp: { type: 'string', enum: ['refuse', 'room', 'ignore'],
         description: 'what a mid-journey rest does when there are PEOPLE about. A safe spot works ' +
           'because a creature cannot path to it, and that says nothing whatever about a player — ' +
@@ -11244,7 +11639,7 @@ const TOOLS = [
           'swing first and take the pack, so dying to the troll costs the walk back and dying ' +
           'to the player costs everything carried. "anything" is the behaviour before this ' +
           'existed; "never" walks the road whatever happens. Gates flee and fight_back; ' +
-          'play_dead and arm are last-ditch and are not about who is attacking.' },
+          'arm is last-ditch and is not about who is attacking.' },
       travel_guard: {
         description: 'WHAT THE KEEPER IS STILL ALLOWED TO DO WHILE A JOURNEY IS STEERING. An ' +
           'object of booleans, or the string "on"/"off" for all of them at once. A journey used ' +
@@ -11259,14 +11654,18 @@ const TOOLS = [
           '"fight_back" (losing health fast enough that the bar empties before the road ends — ' +
           'keyed on the damage RATE, never on whether the body is moving, because the shuffle ' +
           'against a wall that killed Cccc reset every stillness timer it met), ' +
-          '"play_dead" (inside two hits of death), ' +
           '"arm" (the weapon is gone). ' +
           'HOP BOUNDARY — the mover is between rooms and nothing is contended, so these pause ' +
           'the journey rather than ending it: ' +
           '"rest" (sit in a sanctuary until health AND vigor are as high as sitting takes them — ' +
           'full health and 80 of 200 vigor, because everything above that has to be eaten), ' +
           '"safe_spot" (hold a defensible wall part-way through; see travel_hold). ' +
-          'All six default ON. An unrecognised key is REFUSED, not ignored.',
+          'All five default ON. An unrecognised key is REFUSED, not ignored — which includes ' +
+          '"play_dead", removed 2026-08-21: it cancelled a journey so the ladder could freeze, ' +
+          'and freezing is now refused anywhere but a proven safe spot because it recovers vigor ' +
+          'and NEVER health. Three characters were measured freezing in the open at 4, 10 and 13 ' +
+          'health in rooms of twelve to fifteen monsters and all three died. "flee" catches every ' +
+          'character that rung used to and hands over to moving instead.',
         oneOf: [
           { type: 'string', enum: ['on', 'off'] },
           { type: 'object',
@@ -11507,6 +11906,21 @@ const TOOLS = [
         if (!Number.isFinite(n) || n < 0 || n > 1)
           throw new Error('travel_start_health must be a health fraction in [0,1] — 1 is full, 0 is off');
         p.policy.travelStartHealth = n;
+      }
+      if (a.resume_travel !== undefined) p.policy.resumeTravel = !!a.resume_travel;
+      if (a.resume_travel_attempts !== undefined) {
+        const n = Number(a.resume_travel_attempts);
+        if (!Number.isInteger(n) || n < 0 || n > 50)
+          throw new Error('resume_travel_attempts must be a whole number of retries in [0,50]');
+        p.policy.resumeTravelAttempts = n;
+      }
+      if (a.resume_travel_within_ms !== undefined) {
+        const n = Number(a.resume_travel_within_ms);
+        // A floor because an objective that expires faster than a rest at a wall can never
+        // be resumed at all, and the setting would read as "on" while doing nothing.
+        if (!Number.isFinite(n) || n < 10_000 || n > 3_600_000)
+          throw new Error('resume_travel_within_ms must be between 10000 and 3600000');
+        p.policy.resumeTravelWithinMs = n;
       }
       if (a.travel_hold_pvp !== undefined) {
         const want = String(a.travel_hold_pvp);
@@ -15398,6 +15812,32 @@ const TOOLS = [
           breakoffs: st?.did?.breakoffs ?? 0,
           logoffs: st?.did?.logoffs ?? 0,
           carrying: c.inventory?.length ?? null,
+          // WHAT THOSE STACKS ACTUALLY ARE. `carrying: 14` cannot answer the only
+          // question anybody asks of a full pack — what is in it that could come out —
+          // and the answer was one `inventory` call per character, on the wire, to read
+          // something the client already had.
+          //
+          // This is the CARRIED list and not the worn one: what you carry and what you
+          // are wearing are two different lists (see CLAUDE.md), and `equipment()` is the
+          // only answer to the second. Nothing here goes to the server — `c.inventory` is
+          // the client's cached pack, the same list the purse and the pack meter above
+          // are computed from, so a row that already knows how full the pack is now says
+          // what filled it.
+          //
+          // Grouped by NAME rather than left as stacks, because three stacks of herbs is
+          // one fact to a reader and three rows to a table, and `carrying` above is
+          // already the stack count for anyone who wants it. Biggest amount first.
+          pack_items: (() => {
+            if (!c.inventory) return null;
+            const by = new Map();
+            for (const o of c.inventory) {
+              const name = c.rsc.get(o.nameRsc) || '';
+              if (!name) continue;
+              by.set(name, (by.get(name) || 0) + (o.amount || 1));
+            }
+            return [...by].map(([name, amount]) => ({ name, amount }))
+                          .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+          })(),
           // HOW FULL THAT PACK IS, which the count above cannot answer: twenty stacks of
           // feathers and twenty of plate are the same `carrying` and opposite answers to
           // "will the next pickup be refused".
@@ -15964,6 +16404,27 @@ function brokerGameEndpoints() {
   };
 }
 
+// WHAT THE STARTUP BANNER IS ALLOWED TO CLAIM.
+//
+// HOST/PORT are this PROCESS's defaults — where a join that names no host of its own
+// would go — and for a named fleet they are usually not where anybody actually is,
+// because every session's endpoint comes from the ROSTER. Printing the default as
+// "game server" is how broker-shadow.log came to announce 127.0.0.1:5959 in a banner
+// over twenty-one sessions established to 127.0.0.1:15959. On the one fleet whose
+// entire purpose is not being prod, that line is worse than no line at all.
+//
+// brokerGameEndpoints() cannot answer at banner time: the HTTP server starts listening
+// BEFORE resumeFleet() runs, so `sessions` is still empty. rosterGameEndpoint() can,
+// because the roster is exactly what the resume is about to dial.
+//
+// Never silently substitute one for the other: a reader has to be able to tell "this is
+// where the fleet is" from "this is what an unqualified join would use".
+function gameServerBanner() {
+  const rostered = rosterGameEndpoint(STATE_FILE);
+  if (rostered) return `game server ${rostered.host}:${rostered.port}`;
+  return `game server ${HOST}:${PORT} (this process's default; the roster names none)`;
+}
+
 // WHERE THE BAKED MAP AND THE LIVE SERVER DISAGREE.
 //
 // One entry per room, first seen and last seen, with both security values. It is a fact
@@ -15982,12 +16443,26 @@ const GEOMETRY_DRIFT_MAX = 64;
 function noteGeometryDrift(session, drift) {
   if (!session || !drift) return;
   const book = (session.geometryDrift ??= new Map());
-  const key = String(drift.room);
+  // KEYED BY THE ROOM NUMBER, NOT BY THE ROOM OBJECT.
+  //
+  // `drift.room` is `c.room.id` — a live handle the server renumbers on every system save,
+  // alongside garbage collection. The line below says the room is the key so a fleet
+  // walking a drifted zone updates rather than appends, and that stopped being true the
+  // first time the server saved: the same room came back under a new handle, appended a
+  // second entry, and the book filled with duplicates of one room until it hit its cap.
+  //
+  // `validateFineTarget` cannot resolve the number itself — it is PURE and text-lifted into
+  // m59-collision-test.mjs, and the client's room object carries only an id. The session
+  // can, so it is resolved here, at the one place that writes the record down. The handle
+  // is kept beside it under a name that says what it is, for matching against a live read.
+  const num = session.world?.room?.num ?? null;
+  const key = String(num ?? `object:${drift.room}`);
   const prev = book.get(key);
   // The room is the key, so a fleet walking a drifted zone updates rather than appends.
   if (prev) { prev.at = Date.now(); prev.seen++; return; }
   if (book.size >= GEOMETRY_DRIFT_MAX) return;
-  book.set(key, { room: drift.room, live_security: drift.live >>> 0,
+  book.set(key, { room: num, room_object: drift.room,
+                  live_security: drift.live >>> 0,
                   baked_security: drift.baked >>> 0,
                   first: Date.now(), at: Date.now(), seen: 1 });
 }
@@ -16392,7 +16867,7 @@ function serveHttp(port, dashboardPort = null) {
   const bind = process.env.M59_BIND || '127.0.0.1';
   server.listen(port, bind, () =>
     console.error(`m59 broker on http://${bind}:${port} — ${TOOLS.length} tools, ` +
-                  `${resources.size} resources; game server ${HOST}:${PORT}` +
+                  `${resources.size} resources; ${gameServerBanner()}` +
                   (bind === '127.0.0.1' ? '' : '  [WARNING: bound beyond loopback and UNAUTHENTICATED]')));
 }
 

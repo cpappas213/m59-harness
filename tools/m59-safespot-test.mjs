@@ -16,7 +16,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import { unlinkSync } from 'node:fs';
 import { Autopilot, farmRoomDenials,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
-import { SafeSpotBook , shelterAhead } from './m59-safespots.mjs';
+import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
@@ -650,6 +650,13 @@ console.log('\n--- a freeze that changed nothing is not repeated ---');
   // outcome, not on the cause.
   const w = world({ health: 4, max: 25 });
   const p = keeper(w);
+  // ON A PROVEN WALL, because since 2026-08-21 that is the only place a freeze is legal at
+  // all: off one, playDead refuses outright, since it recovers vigor and NEVER health and
+  // three characters were measured freezing in the open and dying. That rule is pinned in
+  // m59-playdead-test.mjs. THIS block is about something else — the livelock guard, which
+  // is on the OUTCOME rather than the cause — so it has to set up the one situation where
+  // a freeze can happen, or it is testing the refusal instead of the repeat.
+  p.hold = { col: w.me().col, row: w.me().row, proven: true, takenAt: Date.now() - 60_000 };
   let rejoins = 0;
   p.s.rejoin = async () => { rejoins++; };
   const first = await p.playDead('test');
@@ -1022,6 +1029,53 @@ console.log('shelters planned with the route, not searched for from a standstill
   ok('unless the caller says it will pay that far', at(11, { maxDetour: 12 })?.atStep === 18);
   ok('an empty list is null rather than a throw', shelterAhead([], 0) === null);
   ok('and so is nothing at all', shelterAhead(null, 0) === null);
+}
+
+console.log('');
+console.log('--- a safe wall is the two grids disagreeing ---');
+{
+  // The criterion the operator set, 2026-08-21: a wall is worth standing at because the
+  // COARSE grid offers approaches the MOVER refuses. Everything else in this file scores a
+  // square on coarse walkability and line of sight, which describes the server artifact
+  // monsters path on and says nothing about whether the approach can be MADE.
+  //
+  // A stub geometry rather than a baked room: this is arithmetic over two predicates, and
+  // pinning it against a real room would pin the room instead of the rule.
+  const dgeo = (walkable, lands, ready = true) => ({
+    rows: 9, cols: 9, collisionReady: ready,
+    walkable: (r, c) => walkable(r, c),
+    moverStepLands: (fr, fc, tr, tc) => lands(fr, fc, tr, tc),
+  });
+  const allOpen = () => true;
+
+  const none = gridDisagreementAt(dgeo(allOpen, () => true), 5, 5);
+  ok('open floor the mover agrees with has nothing refused',
+     none && none.offered === 8 && none.refused === 0, JSON.stringify(none));
+
+  const all = gridDisagreementAt(dgeo(allOpen, () => false), 5, 5);
+  ok('a square the mover will not let anything into is refused from every side',
+     all && all.offered === 8 && all.refused === 8, JSON.stringify(all));
+
+  const half = gridDisagreementAt(dgeo(allOpen, (fr) => fr >= 5), 5, 5);
+  ok('and a genuine wall refuses SOME of what the grid offers',
+     half && half.offered === 8 && half.refused > 0 && half.refused < 8, JSON.stringify(half));
+
+  // Squares the coarse grid already calls solid are not a disagreement — there is nothing
+  // being offered to refuse, and counting them would score plain rock as perfect cover.
+  const walled = gridDisagreementAt(dgeo((r) => r >= 5, () => true), 5, 5);
+  ok('rock the grid already refuses is not counted as a disagreement',
+     walled && walled.offered < 8 && walled.refused === 0, JSON.stringify(walled));
+
+  // THE ONE THAT MATTERS MOST. `moverStepLands` answers TRUE for everything when collision
+  // is not baked — it is built to get out of the way, not to veto what it cannot check. So
+  // "no disagreement" and "cannot tell" read identically unless this refuses to answer, and
+  // a measurement that degrades to a plausible number instead of to an absence is how a
+  // whole criterion gets switched off without anybody noticing.
+  ok('an unbaked room answers NULL rather than zero',
+     gridDisagreementAt(dgeo(allOpen, () => true, false), 5, 5) === null);
+  ok('and so does a geometry with no mover at all',
+     gridDisagreementAt({ rows: 9, cols: 9, collisionReady: true, walkable: allOpen }, 5, 5) === null);
+  ok('and no geometry at all is null, not a throw', gridDisagreementAt(null, 5, 5) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

@@ -142,3 +142,35 @@ export function resolveFleet(argv = process.argv.slice(2), env = process.env) {
     strategyStatsDir: strategyStatsDirFor(name, env),
   };
 }
+
+// WHERE THIS ROSTER'S CHARACTERS ACTUALLY CONNECT.
+//
+// A roster is per-server, so the endpoint is a property of the FILE, and it is not the
+// same question as "what would this process do with a join that names no host". The
+// broker's M59_HOST/M59_PORT answer the second; only the roster answers the first.
+//
+// Confusing the two is not hypothetical: the broker's startup banner printed the process
+// default and so announced `game server 127.0.0.1:5959` while twenty-one shadow sessions
+// were established to 127.0.0.1:15959 — on the one fleet whose whole purpose is not being
+// prod. Read at banner time this is the only thing that CAN answer, because the HTTP
+// listener comes up before the resume and the session table is still empty.
+//
+// Returns null rather than guessing: an unreadable roster, one with no endpoints, and one
+// that MIXES endpoints are all "this file does not name a single server", and a caller
+// that wants to fall back to a default should have to say so.
+export function rosterGameEndpoint(stateFile) {
+  let parsed;
+  try { parsed = JSON.parse(readFileSync(stateFile, 'utf8')); }
+  catch { return null; }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+  const endpoints = new Map();
+  for (const record of Object.values(parsed)) {
+    const host = typeof record?.credentials?.host === 'string' ? record.credentials.host.trim() : '';
+    const port = Number(record?.credentials?.port);
+    if (host && Number.isInteger(port) && port > 0 && port <= 65535)
+      endpoints.set(`${host.toLowerCase()}:${port}`, { host, port });
+  }
+  // A roster mixing endpoints describes a fleet that does not exist. Report the
+  // disagreement rather than picking one of them — the same rule m59-fleets.mjs applies.
+  return endpoints.size === 1 ? [...endpoints.values()][0] : null;
+}

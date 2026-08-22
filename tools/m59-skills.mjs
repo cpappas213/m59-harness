@@ -1464,6 +1464,13 @@ export async function turnInPlace(s, { degrees = null, verify = true } = {}) {
 // is not the same request as "stand where I was standing", and the difference is the
 // difference between a wall at your back and a wall nearby. Fine movement is the only
 // way to say the second one.
+// HOW CLOSE COUNTS AS "IN THE POCKET", where the fine mover owns the approach and the
+// square walker becomes the fallback. Three squares: a safe wall's disagreement with the
+// coarse grid is a local thing — it is the ring of neighbours around the square — so the
+// handover wants to happen at about the radius of that ring rather than at some fraction
+// of the whole trip, which would move with how far away the character happened to start.
+const FINE_HANDOVER_SQUARES = Number(process.env.M59_FINE_HANDOVER_SQUARES || 3);
+
 export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = {}) {
   const c = s.need();
   if (!spot) return { arrived: false, why: 'no spot given' };
@@ -1520,13 +1527,43 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
   // attempt: it is worse on average and it reaches two walls in the Cragged Mountains that
   // the square walker loses, which is the room the whole road turns on. Free when the square
   // walk works, because it does not run.
+  // THE LAST FEW SQUARES BELONG TO THE FINE GRID, AND THE HANDOVER USED TO COME TOO LATE.
+  //
+  // The order above is right for the HAUL — the square walker reaches the wall 85% of the
+  // time against the sliding fan's 69% — and it is wrong for the ARRIVAL. A safe wall IS
+  // the coarse grid and the BSP disagreeing about which neighbours exist; that is the whole
+  // reason the square is worth standing on, and it is also the reason the square router is
+  // at its worst in exactly the last two or three steps. Running it all the way in and only
+  // reaching for the fine tools once it had failed the WHOLE approach meant the coarse
+  // walker got to fail at the one part of the trip it cannot do, and `could not reach the
+  // safe spot` was the commonest thing in the death records — 12 of 21 postmortems in one
+  // window, with `fine approach did not arrive` under it.
+  //
+  // So the handover is by DISTANCE now. Far away, the square walker does what it is good
+  // at. Once we are inside the pocket, the fine mover owns the approach and the square
+  // walker is the fallback rather than the opener. The 85/69 measurement is not contradicted
+  // by this — it compared whole approaches, and this changes which tool owns which part.
   if (c.self && (c.self.col !== spot.col || c.self.row !== spot.row)) {
-    let w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
-    if (!w.arrived && typeof s.approachFine === 'function') {
-      const fine = await s.approachFine(spot.col, spot.row, { toX: spot.x, toY: spot.y })
-                          .catch(e => ({ arrived: false, reason: e.message }));
-      if (fine.arrived) w = fine;
-      else w = { ...w, fine_tried: fine.reason ?? 'fine approach did not arrive' };
+    const away = Math.max(Math.abs(c.self.col - spot.col), Math.abs(c.self.row - spot.row));
+    const fineOwnsIt = away <= FINE_HANDOVER_SQUARES && typeof s.approachFine === 'function';
+    let w;
+    if (fineOwnsIt) {
+      w = await s.approachFine(spot.col, spot.row, { toX: spot.x, toY: spot.y })
+                 .catch(e => ({ arrived: false, reason: e.message }));
+      if (!w.arrived) {
+        const square = await s.walkTo(spot.col, spot.row, { maxSteps })
+                              .catch(e => ({ arrived: false, reason: e.message }));
+        if (square.arrived) w = square;
+        else w = { ...square, fine_tried: w.reason ?? 'fine approach did not arrive' };
+      }
+    } else {
+      w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
+      if (!w.arrived && typeof s.approachFine === 'function') {
+        const fine = await s.approachFine(spot.col, spot.row, { toX: spot.x, toY: spot.y })
+                            .catch(e => ({ arrived: false, reason: e.message }));
+        if (fine.arrived) w = fine;
+        else w = { ...w, fine_tried: fine.reason ?? 'fine approach did not arrive' };
+      }
     }
     if (!w.arrived)
       return { arrived: false, why: w.reason || 'could not walk back to the square',

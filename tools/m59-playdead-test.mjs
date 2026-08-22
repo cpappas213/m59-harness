@@ -20,6 +20,7 @@
 // as a wall that holds — because the wall does hold — while the health sits at four.
 
 import { Autopilot } from './m59-autopilot.mjs';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (name, cond, extra = '') => {
@@ -184,6 +185,69 @@ console.log('a turn that does not go through is said out loud');
   // is still the best thing available.
   ok('a freeze is still available next pass, since nothing is healing',
      !(a.hold?.reclaimed && a.turnedAt && a.turnedAt >= a.hold.takenAt));
+}
+
+// ---------------------------------------------------------------------------
+// A FREEZE OFF A PROVEN SPOT IS REFUSED — added 2026-08-21, by measurement.
+//
+// Everything above this pins what a freeze buys ON a safe spot. This pins that it is not
+// available anywhere else, which is the other half and the one that was costing lives.
+//
+// The whole file's fixture stubs `holdWorks = () => true`, so every assertion above runs
+// with a wall that holds. That is correct for them and it is exactly why this case has to
+// be written separately: the refusal is invisible to a suite that never has a bad spot.
+//
+// THE EVIDENCE. Shadow fleet, Twisted Wood corridor, 2026-08-21: three characters froze in
+// the OPEN at 4, 10 and 13 health, in rooms holding twelve to fifteen monsters, for about
+// thirteen seconds each. All three died. Their own journal line said why — "recovering
+// vigor; health needs us to move again first". Of 21 deaths in that window, 20 were
+// stationary at the moment of death, median 29 seconds still. In that corridor, standing
+// still IS the cause of death, and a freeze is a way of standing still on purpose.
+console.log('');
+console.log('and off a proven spot it is refused outright');
+{
+  const s = fakeSession({ health: 4, max: 37 });
+  const a = keeper(s);
+  a.holdWorks = () => false;          // the open ground, which is where they were dying
+  a.hold = { col: 9, row: 24, proven: false };
+  const froze = await a.playDead('at 4 health with 15 adjacent, nothing that holds');
+  ok('playDead returns false rather than freezing', froze === false);
+  ok('and nothing was sent to the server — no disconnect, no reconnect', s.sent.length === 0,
+     JSON.stringify(s.sent).slice(0, 120));
+  ok('and it says why, naming the trade rather than just refusing',
+     a.notes.some(n => /refusing to play dead/.test(n.msg ?? '') &&
+                       /never health/i.test(JSON.stringify(n.detail ?? {}))));
+
+  // An UNPROVEN wall is not a wall. holdWorks() is `hold && hold.proven`, and the deaths
+  // that prompted all of this included two on unproven walls — a spot the book has not
+  // confirmed is exactly as reachable as open floor.
+  const s2 = fakeSession({ health: 6, max: 40 });
+  const b = keeper(s2);
+  b.holdWorks = () => false;
+  b.hold = { col: 1, row: 1, proven: false, takenAt: Date.now() };
+  ok('an UNPROVEN wall is refused too — it is not a spot until the book says so',
+     (await b.playDead('on a wall nobody has tested')) === false);
+}
+
+// The rule lives in the VERB, not in one caller, and the caller that used to override it
+// is gone. Both pinned by source, because an absence cannot be exercised.
+console.log('');
+console.log('the rule is enforced where it cannot be routed around');
+{
+  const SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  ok('playDead itself refuses off a proven spot, before anything is sent',
+     /async playDead\(why\) \{[\s\S]{0,1800}if \(!this\.holdWorks\(\)\)[\s\S]{0,400}refusing to play dead/.test(SRC));
+  const doomed = SRC.slice(SRC.indexOf('if (doomed && this.policy.panicLogoff !== false)'));
+  const afterTown = doomed.slice(doomed.indexOf('townTripIfCornered'), doomed.indexOf('townTripIfCornered') + 2600);
+  ok('the open-ground fallback that used to freeze anyway is GONE',
+     !/await this\.playDead\(/.test(afterTown),
+     afterTown.match(/await this\.playDead\([^)]*/)?.[0] ?? '');
+  ok('and what replaced it says it withdraws instead',
+     /withdrawing rather than freezing/.test(SRC));
+  // A journey no longer ends for a tactic that will be refused. `flee` catches the same
+  // characters (doomed_in_open_below 0.3 sits under flee_below) and hands over to moving.
+  ok('play_dead is no longer a travel guard, so it cannot cancel a journey',
+     !/play_dead: true/.test(SRC) && !/travelAllows\('play_dead'\)/.test(SRC));
 }
 
 console.log('');
