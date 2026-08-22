@@ -2791,6 +2791,16 @@ class Session {
       room: { id: c.room.id, name: c.rsc.get(c.roomNameRsc) },
       position: me ? { col: me.col, row: me.row, facing_degrees: me.degrees } : null,
       vitals: c.vitals(),
+      // WHAT IS ON US, because health alone cannot tell poison from a fight.
+      //
+      // Poison takes a character to 1 health and then makes it rest to full once the
+      // enchantment ends, so a poisoned journey spends minutes standing still through no
+      // fault of the route — and from outside it is indistinguishable from a slow road. The
+      // keeper has read `ailments()` since BP_ADD_ENCHANTMENT (147) was declared, and the
+      // safe-spot book already refuses to discredit a wall for damage taken while poisoned,
+      // but nothing put it where a timing could see it. Absent rather than empty when the
+      // client cannot answer, so "we did not look" never reads as "nothing was on us".
+      ailments: typeof c.ailments === 'function' ? (c.ailments() ?? []) : undefined,
       queued_requests: this.pacer.depth,
     };
   }

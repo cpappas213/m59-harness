@@ -203,6 +203,15 @@ for (const r of rows) {
   let ended = null, low = null, died = false, restedMs = 0;
   const rooms = new Set([FROM]);
   const perRoom = {};                 // room number -> seconds spent in it
+  // POISON RUINS A TIMING AND LOOKS EXACTLY LIKE A SLOW ROAD.
+  //
+  // It takes a character to 1 health and then makes it rest to full once the enchantment
+  // ends, so a poisoned leg spends minutes standing still through no fault of the route. The
+  // keeper has seen this all along — `client.ailments()` comes off BP_ADD_ENCHANTMENT, and
+  // the safe-spot book already refuses to discredit a wall for poison damage — but nothing
+  // carried it into the travel record, so a poisoned leg has been indistinguishable from a
+  // bad one. A state rather than an event: the leg either met it or it did not.
+  const ailments = new Set();
   let roomNow = FROM;
   if (sent?._error || sent?.refused) {
     ended = 'refused';
@@ -228,6 +237,7 @@ for (const r of rows) {
       // says WHY it ended — `rested out` is a different finding from `timed out`, and
       // conflating them is what this whole column exists to prevent.
       if (isResting(ap)) restedMs = Math.min(restedMs + 5000, REST_CREDIT_MS);
+      for (const e of (st?.ailments ?? [])) if (e?.name) ailments.add(e.name);
       const room = st?.where?.num ?? null;
       // SECONDS PER ROOM, because a journey that fails is usually a journey that was slow
       // somewhere specific, and a room total hides it. The operator crosses Ukgoth in under a
@@ -254,13 +264,17 @@ for (const r of rows) {
   const restSecs = Math.round(restedMs / 1000);
   const at = await call('status', { agent: r.agent }, 30000);
   results.push({ character: r.character, ended, secs, restSecs, died, low,
-                 endedIn: at?.where?.num ?? null, rooms: [...rooms], perRoom });
+                 endedIn: at?.where?.num ?? null, rooms: [...rooms], perRoom, ailments: [...ailments] });
   console.log(`  ${String(r.character).padEnd(12)} ${String(ended).padEnd(10)} ${String(secs).padStart(3)}   ` +
               `${String(FROM).padStart(4)} -> ${String(at?.where?.num ?? '?').padStart(5)}   ` +
               `${String(low ?? '?').padStart(3)}  ${String(restSecs).padStart(4)}r  ${[...rooms].join(',')}`);
   // WHERE THE TIME WENT, worst room first. Sampled at the poll interval, so it is coarse —
   // but a room holding a character for minutes shows up unmistakably, and that is the
   // question this answers.
+  // SAID ON THE LEG'S OWN LINE, because a timing without it is a number nobody can trust.
+  if (ailments.size)
+    console.log('               AILING: ' + [...ailments].join(', ') +
+                " — this leg's time is not a measurement of the road");
   const spent = Object.entries(perRoom).sort((x, y) => y[1] - x[1]).filter(([, sec]) => sec >= 10);
   if (spent.length)
     console.log('               time by room: ' +
