@@ -218,6 +218,10 @@ export class M59Client {
   constructor({ host = '127.0.0.1', port = 5959, verbose = true, resources = null } = {}) {
     Object.assign(this, { host, port, verbose });
     this.state = 'connecting';      // connecting -> handshake -> login -> game
+    // Whether the SERVER's plain `char` is signed -- see gameSecurity(). x86 (the
+    // public servers) is signed; aarch64 is not. M59_MSG_CHAR_SIGNED=0 forces the
+    // ARM answer for a lab server known to be one.
+    this.charSigned = process.env.M59_MSG_CHAR_SIGNED !== '0';
     this.buf = Buffer.alloc(0);
     this.epoch = 0;
     this.gameMsgs = 0;
@@ -2071,16 +2075,39 @@ export class M59Client {
   // unsigned here differs from the server by exactly 0xF000 for any opcode with
   // the top bit set.
   //
-  // Only ONE opcode this client sends is >= 128: BP_USERCOMMAND (155). So the
-  // whole user-command surface — rest, stand, safety, deposit, withdraw,
-  // balance, the guild commands — silently killed the session, and it stayed
-  // hidden because resting produces no reply even when it works, so a dropped
-  // connection was indistinguishable from the documented silence.
+  // TWO opcodes this client sends are >= 128: BP_USERCOMMAND (155) and
+  // BP_REQ_DEPOSIT (230). So the whole user-command surface — rest, stand,
+  // safety, deposit, withdraw, balance, the guild commands — silently killed the
+  // session, and it stayed hidden because resting produces no reply even when it
+  // works, so a dropped connection was indistinguishable from the documented
+  // silence. (An earlier version of this comment said ONE; enumerate the sends
+  // rather than trusting the count, because a second one is just as fatal.)
+  // ...AND WHETHER `char` IS SIGNED IS THE SERVER'S ARCHITECTURE, NOT THE PROTOCOL.
+  // `msg.data` is `char data[]` and the server casts `(unsigned int)msg.data[0] << 4`
+  // (game.c:179). Plain `char` is SIGNED on x86 (MSVC and gcc alike) and UNSIGNED on
+  // ARM, so the same opcode 155 gives the server 0xF9B0 on an x86 host and 0x09B0 on
+  // an aarch64 one -- differing by exactly the 0xF000 described above, in whichever
+  // direction the client did not choose. Measured 2026-08-23 against an aarch64
+  // container: every BP_USERCOMMAND was answered with "found invalid security
+  // account 3" in the server log and the connection dropped, with nothing on the wire.
+  //
+  // So the convention is a PROPERTY OF THE PEER. It is NOT auto-detected: the default
+  // is the x86 answer, which is what the public servers are, and M59_MSG_CHAR_SIGNED=0
+  // selects the ARM one for a lab server known to be one. Detection would mean sending
+  // a >=128 opcode and watching for a drop, which COSTS THE SESSION each time it
+  // guesses wrong -- and a wrong guess is silent on the wire, visible only as
+  // "invalid security" in the SERVER's log, which a client cannot read.
+  //
+  // Nothing below opcode 128 is affected either way. That is why a bot that only walks
+  // and fights works perfectly against both, and why this stayed invisible for so long:
+  // it is exactly the user-command surface that breaks, and resting produces no reply
+  // even when it works.
   gameSecurity(payload) {
     const streamIdx = this.securityStep();
     let sec = this.seeds[streamIdx] & 0xffff;
     sec ^= payload.length;
-    sec ^= ((payload[0] << 24) >> 24) << 4;   // as a signed char, like the server
+    const op = this.charSigned ? ((payload[0] << 24) >> 24) : payload[0];
+    sec ^= op << 4;
     sec ^= crc16(payload);
     return sec & 0xffff;
   }
