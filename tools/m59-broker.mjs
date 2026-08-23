@@ -3048,6 +3048,13 @@ const TOOLS = [
       control_token: { type: 'string', description: 'optional owner token that can invalidate stale movement' },
       background: { type: 'boolean', description: 'return at once and walk in the background; ' +
         'watch for it under `busy` in status/fleet, and the outcome under `last_action`' },
+      run_errands: { type: 'boolean', description: 'do the outstanding errands — bank the ' +
+        'takings, visit a vault being passed, hand over farm supplies — BEFORE setting off. ' +
+        'Default true, because a character sent across the world should stock up first ' +
+        'rather than discover halfway through that it wants a bank. Set false to leave now: ' +
+        'that is what a timed measurement of the road wants, and what an emergency wants. ' +
+        'Errands never run DURING a journey either way — every one of them walks the ' +
+        'character somewhere, and it is already going somewhere.' },
     }, required: ['agent', 'to'] },
     run: async (a) => {
       const s = session(a.agent);
@@ -3122,6 +3129,7 @@ const TOOLS = [
       // the file had neither. ONE definition, two ways to wait for it.
       const startTravel = () => s.travelJob(dest, {
         where: where.name, maxHops: num(a.max_hops, 25), controlToken: a.control_token,
+        runErrands: a.run_errands !== false,
       });
 
       if (a.background) {

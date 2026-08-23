@@ -195,9 +195,53 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
   // monsters move and see on the COARSE grid — see RoomGeometry.LOS.
   const fine = RoomGeometry.monsterUsesFine(los);
   const out = [];
+  // A SAFE SPOT IS THE TWO GRIDS DISAGREEING. NOTHING ELSE IS A CANDIDATE.
+  //
+  // This loop used to open `if (!geo.walkable(r, c)) continue;` — only ever considering
+  // squares the COARSE grid admits, which is the grid monsters path on. That excluded, by
+  // construction, every square that IS the mechanism, and left the search choosing between
+  // pieces of open floor on the strength of how enclosed they looked.
+  //
+  // Measured 2026-08-23 against the shadow fleet's own book, on the three rooms it dies in:
+  //
+  //     room                      in the book      real walls in the room
+  //     598 Cragged Mountains      15 squares      1778
+  //     597 The Twisted Wood        8 squares       112
+  //     587 W border Twisted Wood 140 squares       277
+  //
+  // and EVERY square in the book, in all three rooms — including the ones recorded as having
+  // HELD — read `coarse=true, fine=true`. Ordinary grass. Not one wall among them. So nine
+  // travel shelters in a row "failed", the book wrote those failures down as facts about the
+  // squares, the search walked further out to the next patch of grass, and a character at 7
+  // of 46 was sent eighteen steps across the Cragged Mountains to stand in a field.
+  //
+  // The operator's account is the other half of the evidence and it is worth recording as
+  // such: a wall chosen by grid disagreement has never once been seen to fail, and the
+  // failures in this book are suspected to be poison — which damages through any geometry
+  // and which `failed()` already declines to blame a square for.
+  //
+  // So the candidate set is now exactly the squares where the grids disagree, in either of
+  // the two ways that matters:
+  //
+  //   THE SQUARE ITSELF   coarse refuses it, the BSP allows a body in it. The strongest
+  //                       form there is: a monster's pather will not target the square at
+  //                       all, because as far as it is concerned there is no floor here.
+  //   THE APPROACHES      the coarse grid offers ways in and the mover refuses them. The
+  //                       monster paths to a square it believes is adjacent and mills about
+  //                       outside a wall it thinks it is standing next to.
+  //
+  // AND WHERE IT CANNOT BE MEASURED, NOTHING IS OFFERED. `moverStepLands` answers true for
+  // everything when collision is not ready, so accepting candidates in that state would
+  // silently restore exactly the behaviour above — the search would go back to grading open
+  // floor and would look like it was working. This module already refuses to read that as
+  // "no disagreement"; refusing to read it as "good enough" is the same rule applied one
+  // level up. An empty answer is a fact; a plausible one is a fault.
+  if (!geo.collisionReady || typeof geo.moverStepLands !== 'function') return [];
   for (let r = 1; r <= geo.rows; r++) {
     for (let c = 1; c <= geo.cols; c++) {
-      if (!geo.walkable(r, c)) continue;
+      // A body has to fit. This is the BSP question, and it is the only one asked of the
+      // square itself — `walkable` is deliberately not consulted here any more.
+      if (typeof geo.standable === 'function' && !geo.standable(r, c)) continue;
       // Never recommend the outermost ring. Walking past row 1 / piRows or col 1 /
       // piCols is what triggers StandardLeaveDir, so a "safe corner" on the boundary
       // is a square that quietly ejects you from the room mid-fight — the opposite of
@@ -249,6 +293,11 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
       // candidate rather than per returned spot: callers filter and sort on it, so it has
       // to exist before the narrowing rather than be attached to the survivors.
       const disagree = gridDisagreementAt(geo, r, c);
+      // THE GATE. A square the coarse grid refuses is itself a disagreement and the strongest
+      // one; otherwise at least one offered approach has to be one the mover will not make.
+      // Anything else is open floor and is not a safe spot however good it scores.
+      const coarseRefusesIt = geo.walkable(r, c) !== true;
+      if (!coarseRefusesIt && !((disagree?.refused ?? 0) > 0)) continue;
       out.push({
         col: c, row: r,
         // APPROACHES THE COARSE GRID OFFERS AND THE MOVER REFUSES. null when collision is

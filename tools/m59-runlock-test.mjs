@@ -150,5 +150,40 @@ console.log('the fleet-driving tools actually take it');
 }
 
 console.log('');
+console.log('AN UNRECOGNISED FLAG IS NOT A REQUEST TO DO THE DEFAULT THING TO A LIVE FLEET');
+{
+  // Measured 2026-08-23, and it was a watcher script for this very tool that did it:
+  //
+  //     node tools/m59-solo-run.mjs --help
+  //
+  // There was no `--help`. The flag was ignored, every other setting fell back to its
+  // default, and the tool did what it does — took the fleet lock and walked two characters
+  // from Tos to Castle Victoria. One of them died in Ukgoth. The real run, started a second
+  // later, was then refused because the fleet was already being driven, and the holder it
+  // named had a command line reading `--help`.
+  //
+  // THE LOCK WORKED PERFECTLY. What was missing sits upstream of it: a tool that drives a
+  // live fleet needs a way to ask what it does that does not do it, and a typo — `--agent`
+  // for `--agents`, `--stagger 60s` for `--stagger 60` — must not silently become a
+  // full run with defaults against a shared server. No error has never meant success here.
+  const solo = readFileSync(join(HERE, 'm59-solo-run.mjs'), 'utf8');
+  const lockAt = solo.indexOf('takeRunLock(FLEET');
+  ok('--help is handled at all', /has\('help'\)/.test(solo));
+  ok('and it exits BEFORE the lock is taken',
+     solo.indexOf('process.exit(0)') >= 0 && solo.indexOf('process.exit(0)') < lockAt,
+     'asking what a tool does must not do it');
+  ok('an unknown option is refused rather than ignored',
+     /unknown option\(s\)/.test(solo) && /process\.exit\(2\)/.test(solo));
+  ok('and that refusal also happens before the lock',
+     solo.indexOf('unknown option') < lockAt);
+  // The allow-list has to actually list what the tool documents, or the guard becomes a
+  // second way to refuse a legitimate run.
+  ok('the allow-list names every option the tool takes',
+     ['agents', 'tour', 'stagger', 'timeout', 'fleet', 'from', 'to', 'stop', 'force',
+      'dry-run', 'wall-below', 'hold-below', 'rest-credit', 'recovery-wait', 'port']
+       .every(k => solo.includes(`'${k}'`)));
+}
+
+console.log('');
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

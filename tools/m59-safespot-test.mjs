@@ -13,7 +13,7 @@
 // stand still and rest while something eats it. Refusing to believe a good one throws
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
-import { unlinkSync } from 'node:fs';
+import { unlinkSync, readFileSync } from 'node:fs';
 import { Autopilot, farmRoomDenials,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
@@ -1124,6 +1124,77 @@ console.log('A WALL WE COULD NOT WALK TO IS NOT SHELTER');
     0, { maxDetour: 4, unreachable: new Set(['30,5']) });
   ok('and the best-scoring square does not win it back by scoring well',
      ranked?.col === 31, JSON.stringify(ranked));
+}
+
+// ---------------------------------------------------------------------------
+// A SAFE SPOT IS THE TWO GRIDS DISAGREEING, AND NOTHING ELSE IS A CANDIDATE.
+//
+// Added 2026-08-23. The search used to open its candidate loop with
+//
+//     if (!geo.walkable(r, c)) continue;
+//
+// which considers only squares the COARSE grid admits — the grid monsters path on. That
+// excluded, by construction, every square that IS the mechanism, and left the search
+// grading pieces of open floor by how enclosed they looked.
+//
+// Measured against the shadow fleet's own book on the three rooms it was dying in: 15
+// squares recorded in the Cragged Mountains against 1,778 real walls in the room, 8 in the
+// Twisted Wood against 112 — and every square in the book, in all three rooms, INCLUDING
+// the ones recorded as having held, read `coarse=true, fine=true`. Ordinary grass. Nine
+// travel shelters in a row failed, the book wrote those down as facts about the squares,
+// and a character at 7 of 46 was sent eighteen steps across open ground to stand in a field.
+//
+// It should fail the day open floor can be offered as shelter again.
+console.log('');
+console.log('ONLY GRID-DISAGREEMENT SQUARES ARE CANDIDATES');
+{
+  const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export function safeSpots'),
+                       src.indexOf('export function safeSpots') + 16000);
+  ok('the candidate loop no longer opens on the coarse grid',
+     !/for \(let c = 1; c <= geo\.cols; c\+\+\) \{\s*\n\s*if \(!geo\.walkable\(r, c\)\) continue;/.test(fn));
+  ok('a body still has to fit, which is the BSP question',
+     /!geo\.standable\(r, c\)\) continue/.test(fn));
+  ok('and a square is only a candidate if the grids disagree about it',
+     /coarseRefusesIt[\s\S]{0,200}disagree\?\.refused/.test(fn));
+  ok('a square the coarse grid refuses counts as the strongest disagreement there is',
+     /geo\.walkable\(r, c\) !== true/.test(fn));
+  // AND WHERE IT CANNOT BE MEASURED, NOTHING IS OFFERED. `moverStepLands` answers true for
+  // everything when collision is not ready, so accepting candidates in that state would
+  // silently restore the old behaviour and look like it was working.
+  ok('and with no collision to measure against, nothing is offered rather than everything',
+     /!geo\.collisionReady[\s\S]{0,80}return \[\]/.test(fn));
+}
+
+// ---------------------------------------------------------------------------
+// LEAVING A REAL WALL MEANS WALKING BACK OUT OF THE POCKET IT PUT YOU IN.
+//
+// docs/m59-routing.md already says it — a safe spot is a pocket the router frequently
+// cannot plan out of, which is what breadcrumbs are for — and it became LIVE the moment
+// safe spots started being real walls. A real wall is a square the COARSE grid refuses;
+// that refusal is the whole mechanism, and it applies to us exactly as much as to the thing
+// that wanted to eat us. The router plans on the coarse grid, so a body left standing there
+// can be refused every exit in the room.
+//
+// Measured, Bbbb, The Twisted Wood: sheltered, rested to full, resumed — and then spent
+// four hundred and twenty-six seconds failing to leave a room it had crossed in twenty-five
+// when it was healthy. Seven attempts, every one "every square for that exit refused".
+console.log('');
+console.log('LEAVING A REAL WALL MEANS WALKING BACK OUT OF THE POCKET IT PUT YOU IN');
+{
+  const src = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  const at = src.indexOf('async stepOutOfThePocket');
+  const fn = src.slice(at, at + 2500);
+  ok('leaving a hold steps out of the pocket first',
+     /const stepped = await this\.stepOutOfThePocket/.test(src));
+  ok('and only from a square the coarse grid refuses',
+     /geo\.walkable\(me\.row, me\.col\) !== false\) return null/.test(fn));
+  ok('by breadcrumbs rather than a coarse-grid escape hatch',
+     /retreatAlongBreadcrumbs/.test(fn));
+  ok('stopping the moment the grid admits the square again, not unwinding the journey',
+     /until: at => at && geo\.walkable\(at\.row, at\.col\) === true/.test(fn));
+  ok('and it says so, including when it is STILL stuck afterwards',
+     /still_stuck/.test(fn) && /stepped back out of the pocket/.test(fn));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
