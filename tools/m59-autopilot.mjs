@@ -10833,6 +10833,17 @@ export class Autopilot {
     return true;
   }
 
+  // WHY THE RESUME SAID NO, ONCE PER REASON. A refusal that returns CONTINUE and writes
+  // nothing is how this stayed unexplained through three fixes: the journey was kept, the
+  // wall was released, the character stood there anyway, and every instrument said "idle".
+  // Once per reason rather than once per pass, because this runs about once a second.
+  resumeDeclined(why, detail = {}) {
+    if (this.resumeSaid === why) return CONTINUE;
+    this.resumeSaid = why;
+    this.note('not resuming the journey yet', { why, ...detail });
+    return CONTINUE;
+  }
+
   async resumeSuspendedJourney(ctx) {
     // Asked FIRST, and unconditionally: a held character that is whole should be moving
     // whether or not it has an objective to resume. Releasing costs nothing when there is
@@ -10840,7 +10851,8 @@ export class Autopilot {
     this.releaseRestedHold();
     const j = this.suspendedJourney;
     if (!j) return CONTINUE;
-    if (this.policy.resumeTravel === false) return CONTINUE;
+    if (this.policy.resumeTravel === false)
+      return this.resumeDeclined('resume_travel is switched off for this character');
 
     const drop = (why, detail = {}) => {
       this.suspendedJourney = null;
@@ -10911,9 +10923,13 @@ export class Autopilot {
     }
     // The wall is still working: let it.
     const stillMending = (this.resumeFlat ?? 0) < RESUME_FLAT_SAMPLES;
-    if (hp !== null && hp < floor && stillMending) return CONTINUE;
+    if (hp !== null && hp < floor && stillMending)
+      return this.resumeDeclined('still mending — health is below the start floor and climbing',
+                                 { health: Math.round(hp * 100) + '%', floor, flat: this.resumeFlat ?? 0 });
     const vig = vigorPct(v);
-    if (vig !== null && vig < REST_VIGOR_CAP && stillMending) return CONTINUE;
+    if (vig !== null && vig < REST_VIGOR_CAP && stillMending)
+      return this.resumeDeclined('still mending — vigor is under the resting cap and climbing',
+                                 { vigor: vig, cap: REST_VIGOR_CAP, flat: this.resumeFlat ?? 0 });
     // Already there. Nothing to resume, and reporting it as a resume would put a journey in
     // the ledger that never moved.
     if (ctx.room?.num === j.to) { this.suspendedJourney = null; return CONTINUE; }
