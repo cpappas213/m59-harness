@@ -10838,8 +10838,13 @@ export class Autopilot {
   // wall was released, the character stood there anyway, and every instrument said "idle".
   // Once per reason rather than once per pass, because this runs about once a second.
   resumeDeclined(why, detail = {}) {
-    if (this.resumeSaid === why) return CONTINUE;
-    this.resumeSaid = why;
+    // Keyed on the reason AND the numbers, so a gate that is stuck at one reading says so
+    // once and a gate that is genuinely working prints its progress. Keyed on the reason
+    // alone, the note scrolled out of `recent` long before anybody looked and the refusal
+    // was invisible again — which is the whole failure this was added to end.
+    const key = why + '|' + JSON.stringify(detail);
+    if (this.resumeSaid === key) return CONTINUE;
+    this.resumeSaid = key;
     this.note('not resuming the journey yet', { why, ...detail });
     return CONTINUE;
   }
@@ -10850,7 +10855,7 @@ export class Autopilot {
     // no hold, and the stage below decides where to go.
     this.releaseRestedHold();
     const j = this.suspendedJourney;
-    if (!j) return CONTINUE;
+    if (!j) { this.resumeBest = null; this.resumeFlat = 0; this.resumeSaid = null; return CONTINUE; }
     if (this.policy.resumeTravel === false)
       return this.resumeDeclined('resume_travel is switched off for this character');
 
@@ -10915,11 +10920,24 @@ export class Autopilot {
     // simply no longer the only way through.
     const floor = this.policy.travelStartHealth ?? 1;
     const { hp, v } = ctx;
+    // AGAINST THE BEST SEEN, NOT AGAINST THE LAST SAMPLE. This compared each reading to the
+    // previous one, so ANY upward tick counted as still climbing and reset the counter. A
+    // character at 19 of 20 regenerates to 20, gets scratched back to 19, regenerates again
+    // — and every one of those ticks reset it, so `resumeFlat` never reached
+    // RESUME_FLAT_SAMPLES and the journey never resumed. Measured on shadow02: whole,
+    // unhurt, out of recovery, `mode idle` for six minutes holding a live objective, with
+    // the trend gate refusing on the grounds that it was still getting better.
+    //
+    // The wall has stopped paying when health stops reaching a NEW high. An oscillation
+    // between the same two points is not progress, and the default floor here is FULL
+    // health, so without this the gate can only open on a character that hits its maximum
+    // exactly and holds it.
     const nowHp = v?.health?.value ?? null;
     if (nowHp !== null) {
-      const climbing = this.resumeWatch != null && nowHp > this.resumeWatch;
+      const better = this.resumeBest == null || nowHp > this.resumeBest;
+      this.resumeBest = better ? nowHp : this.resumeBest;
       this.resumeWatch = nowHp;
-      this.resumeFlat = climbing ? 0 : (this.resumeFlat ?? 0) + 1;
+      this.resumeFlat = better ? 0 : (this.resumeFlat ?? 0) + 1;
     }
     // The wall is still working: let it.
     const stillMending = (this.resumeFlat ?? 0) < RESUME_FLAT_SAMPLES;

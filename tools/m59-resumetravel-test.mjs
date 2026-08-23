@@ -335,7 +335,7 @@ console.log('FIT TO GO ON MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUM
 {
   const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
   const fn = src.slice(src.indexOf('async resumeSuspendedJourney'),
-                       src.indexOf('async resumeSuspendedJourney') + 6000);
+                       src.indexOf('async resumeSuspendedJourney') + 9000);
   // Full health is the right bar for a character resting somewhere safe and the wrong one for
   // one stalled mid-journey — because a stalled character is usually stalled SOMEWHERE IT
   // CANNOT HEAL, and then the gate never opens. Measured, both characters, the same shape:
@@ -352,6 +352,19 @@ console.log('FIT TO GO ON MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUM
   ok('as does the vigor gate', /vig < REST_VIGOR_CAP && stillMending/.test(fn));
   ok('and the absolute floor is still there for anyone who wants one',
      /travelStartHealth/.test(fn));
+  // AGAINST THE BEST SEEN, NOT THE LAST SAMPLE. Comparing each reading to the previous one
+  // makes any upward tick count as "still climbing" — and a character regenerating between
+  // the same two points ticks upward for ever. Measured on shadow02: whole, out of recovery,
+  // `mode idle` for six minutes holding a live objective, at 19 of 20, with the trend gate
+  // refusing on the grounds that it was still getting better. The default floor is FULL
+  // health, so without this the gate opens only for a character that hits its maximum
+  // exactly and holds it there.
+  ok('the trend is measured against the best reading seen, not the previous one',
+     /resumeBest/.test(fn), 'the oscillation that never resumed');
+  ok('and an equal reading counts as flat rather than as progress',
+     /nowHp > this\.resumeBest/.test(fn));
+  ok('and the memory is cleared when there is no journey, so the next one starts fresh',
+     /this\.resumeBest = null/.test(fn));
   // The same argument releaseRestedHold already makes about a rest stop, which is where this
   // rule came from — standing there is worth it only while it is buying something.
   ok('which is the rule the rest stop already follows',
