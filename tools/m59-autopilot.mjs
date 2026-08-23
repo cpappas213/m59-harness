@@ -5796,20 +5796,40 @@ export class Autopilot {
 
   // The shelter threshold in force RIGHT HERE, which is not a constant. See roomOutranksUs.
   //
-  // IT USED TO RETURN 1 IN AN OUTRANKING ZONE — "shelter at any damage at all" — and that
-  // single number is what retired the whole mid-hop rung. In the Twisted Wood an outranking
-  // creature is the continuous condition, so any scratch tore the crossing down:
+  // ANY DAMAGE AT ALL, AND THE OPERATOR IS RIGHT THAT THIS IS NOW THE CHEAP OPTION.
+  //
+  // This has been 1 before and it was a disaster then, so the change of mind needs its
+  // reasons written down rather than just its new number. It produced
   //
   //     586  cancelled at 0 of 40 by a travel guard rung taking the character back
   //     587  cancelled at 6 of 65 by a travel guard rung taking the character back
   //
-  // Step zero of forty. The conclusion drawn at the time was that the wall belonged to the
-  // hop boundary; the truer reading is that a threshold of 1 is not a threshold. A dangerous
-  // room is a reason to shelter EARLIER, not a reason to shelter at full health.
+  // thirty laps of stop-and-restart in one leg. I read that as "1 is not a threshold" and
+  // moved the wall to the hop boundary. THAT WAS THE WRONG LESSON. What made a trigger
+  // unaffordable was never its sensitivity — it was that the shelter it triggered NEVER
+  // COMPLETED. Three things have changed since, and each of them was a real bug:
+  //
+  //   THE SPOT IS A WALL NOW.  The search only ever considered coarse-walkable squares, so
+  //     every "safe spot" in this fleet's book was ordinary floor — 15 recorded squares in
+  //     the Cragged Mountains against 1,778 real walls in the room, and not one of the 15
+  //     was one. Standing on grass does not stop anything, so a stop bought nothing and the
+  //     rung fired again immediately.
+  //   THE SPOT IS NEAR NOW.  Eighteen steps across open ground became 2.2 squares onto a
+  //     fully enclosed wall. Most of the cost of a stop was the walk to it.
+  //   THE CANCEL KEEPS THE ROAD NOW.  f245be5 and a4bb63f — a journey that ends short keeps
+  //     its destination and the rung that resumes it actually runs.
+  //
+  // So the trade has inverted. A stop costs a few seconds and returns the character to full
+  // health on a square nothing can path to; not stopping risks the whole trip and the max
+  // health a death costs. With rooms crossing in fifteen to twenty-five seconds, a few
+  // seconds of resting is cheap against any chance of dying.
+  //
+  // `travel_shelter_per_room` remains the loop guard, and it is what makes a sensitive
+  // trigger safe rather than the threshold doing that job badly.
   travelShelterBelow() {
     return this.roomOutranksUs()
-      ? (this.policy.travelWallBelowOutranked ?? 0.9)
-      : (this.policy.travelWallBelow ?? 0.8);
+      ? (this.policy.travelWallBelowOutranked ?? 1)
+      : (this.policy.travelWallBelow ?? 1);
   }
 
   /**
@@ -9353,7 +9373,12 @@ export class Autopilot {
     const emergencyBelow = this.policy.travelShelterUnlimitedBelow
       ?? (this.policy.doomedInOpenBelow ?? 0.3);
     const inRealTrouble = wouldPlayDead || (hp !== null && hp < emergencyBelow);
-    const shelterBudget = this.policy.travelShelterPerRoom ?? 2;
+    // THE LOOP GUARD, AND NOW THE ONLY ONE. With the trigger at any damage this is what
+    // stops a hostile room becoming stop-and-restart for ever — and it is raised from 2
+    // because each stop now returns the character to FULL health behind real geometry
+    // rather than buying nothing on a patch of grass. Two stops was a bound on a thing that
+    // did not work; four is a bound on a thing that does.
+    const shelterBudget = this.policy.travelShelterPerRoom ?? 4;
     const shelterSpent = !inRealTrouble && this.shelterStops.taken >= shelterBudget;
     // SAID ONCE PER ROOM, because a decision that does nothing and says nothing is how a
     // switched-off faculty hides. The character is hurt, there is something on it, and it is

@@ -168,9 +168,30 @@ console.log('\nthe guard: what a journey leaves switched on');
      JSON.stringify(TRAVEL_GUARD_CLOCK));
   // A THRESHOLD OF 1 IS NOT A THRESHOLD, and that is the assertion that would have stopped
   // the whole detour. A dangerous room is a reason to shelter EARLIER, not at full health.
-  ok('and an outranking room shelters earlier rather than at any scratch',
-     !/roomOutranksUs\(\) \? 1 :/.test(
-       readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8')));
+  // CORRECTED AGAIN, SAME DAY, AND DELIBERATELY LEFT AS A TRAIL RATHER THAN TIDIED.
+  //
+  // This line first said "nothing is on both clocks". Then it said "an outranking room
+  // shelters earlier rather than at any scratch", asserting that the threshold was no longer
+  // 1. It is 1 again, and the operator's argument for that is the one that holds:
+  //
+  //   What made a sensitive trigger unaffordable was never its sensitivity. It was that the
+  //   shelter it triggered never COMPLETED — the search only considered coarse-walkable
+  //   squares, so every spot in the book was ordinary floor, eighteen steps away, and a stop
+  //   bought nothing. Standing on grass does not stop anything, so the rung fired again
+  //   immediately and the crossing was torn down thirty times in a leg.
+  //
+  // With the spot a real wall 2.2 squares away and the cancel keeping its destination, a
+  // stop costs a few seconds and returns full health behind geometry nothing can path to.
+  // Against rooms that cross in fifteen to twenty-five seconds, that is cheap against any
+  // chance of dying.
+  //
+  // So what is pinned now is the LOOP GUARD, because that is what carries the load once the
+  // threshold stops trying to: a per-room budget, with the doomed case exempt from it.
+  ok('any damage is enough to want a wall — the threshold is not doing the rationing',
+     /travelWallBelowOutranked \?\? 1/.test(AUTOPILOT_SRC)
+     && /travelWallBelow \?\? 1\)/.test(AUTOPILOT_SRC));
+  ok('and the per-room budget is what stops a hostile room looping',
+     /travelShelterPerRoom \?\? 4/.test(AUTOPILOT_SRC));
   // The split is what keeps "only one thing drives a body" true, so it is pinned rather
   // than left to a comment: the four that CANCEL a journey and the two that PAUSE it.
   const midHop = TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'mid-hop');
