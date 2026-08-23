@@ -4049,6 +4049,10 @@ class Session {
   }
 
   async walkFine(destX, destY, {
+    // SQUARES THIS WALK MAY NOT ENTER, as `row,col` strings. The coarse walker has honoured
+    // these since the split-boundary fix; the FINE walker never saw them, and it is the one
+    // that actually reaches a boundary. See wrongExitSquares.
+    avoidSquares = null,
     maxSteps = 120,
     stride = 48,
     arriveWithin = 40,
@@ -4104,7 +4108,26 @@ class Session {
         if (this.movementWasCancelled(movementGeneration, controlToken))
           return this.cancelledMovement({ steps: i, log });
         const a = base + off;
-        const r = await this.stepFine(me.x + Math.cos(a) * reach, me.y + Math.sin(a) * reach);
+        const aimX = me.x + Math.cos(a) * reach, aimY = me.y + Math.sin(a) * reach;
+        // DO NOT DRAG ONTO A SQUARE THAT FIRES THE WRONG DOOR.
+        //
+        // This is where the Western border of the Twisted Wood was losing every crossing. The
+        // rail wants WEST — seven south-west steps and then a long west run before it turns
+        // south and finally east to the door at 46,67. When the rail stopped, the fine
+        // fallback aimed straight at that door, which is EAST and ON the boundary, and every
+        // refusal nudged the body a few fine units along the wall:
+        //
+        //   3936 -> 3974 -> 4012 -> 4050 -> 4088 -> 4126 -> 4164 -> 4202
+        //   15,61   15,62   15,63   15,64   15,65   14,65   ...
+        //
+        // Four hundred and thirty refused fine moves, creeping east until it reached column
+        // 66 at row 14 — inside the `row < 19` band — and the server sent it back to the Main
+        // gate to the city of Tos. Dragging along a wall, back out the entrance it came in by.
+        if (avoidSquares?.size) {
+          const col = Math.floor(aimX / KOD_FINENESS), row = Math.floor(aimY / KOD_FINENESS);
+          if (avoidSquares.has(`${row},${col}`)) continue;
+        }
+        const r = await this.stepFine(aimX, aimY);
         // THE FINE WALK IS WHERE THE TRACE USED TO GO DARK.
         //
         // `traceMove` sat on the two square-step call sites only, so every fine move was
@@ -5727,7 +5750,8 @@ class Session {
    * rail that genuinely cannot be walked gives up and lets the ordinary walk try.
    */
   async followRail(squares, { movementGeneration = this.movementGeneration,
-                              controlToken = null, maxSlips = 4, maxSkips = 8 } = {}) {
+                              controlToken = null, maxSlips = 4, maxSkips = 8,
+                              avoidSquares = null } = {}) {
     let walked = 0, skipped = 0, skippedInARow = 0, missed = 0;
     // GROUND ALREADY MADE IS NOT GIVEN BACK.
     //
@@ -5794,7 +5818,7 @@ class Session {
         const pt = fineOnly && typeof geo.standPoint === 'function'
           ? geo.standPoint(target.row, target.col) : null;
         const r = (pt && typeof this.walkFine === 'function')
-          ? await this.walkFine(pt.x, pt.y, { maxSteps: 6, stride: 40 })
+          ? await this.walkFine(pt.x, pt.y, { maxSteps: 6, stride: 40, avoidSquares })
               .then(w => ({ ...w, moved: w?.arrived ?? w?.moved }))
               .catch(e => ({ moved: false, reason: e.message }))
           : await this.step(target.col, target.row);
@@ -5874,6 +5898,18 @@ class Session {
   }
 
   async leaveVia(exit, { movementGeneration = this.movementGeneration, controlToken } = {}) {
+    // ROUTE AROUND THE PART OF THIS BOUNDARY THAT LEADS SOMEWHERE ELSE.
+    //
+    // Computed once, here, because BOTH movers need it and they are used in different
+    // branches below. The coarse walker has honoured it since the split-boundary fix; the
+    // fine walker is the one that actually reaches a boundary, and it was dragging along the
+    // wall into the wrong door — four hundred and thirty refused fine moves creeping east
+    // until the server sent the character back to the Main gate to the city of Tos.
+    //
+    // Guarded because `leaveVia` is lifted out of this file by text and evaluated against a
+    // fake world that has no such method.
+    const wrongDoor = typeof this.world?.wrongExitSquares === 'function'
+      ? this.world.wrongExitSquares(exit) : null;
     const c = this.need();
     if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
 
@@ -5990,7 +6026,8 @@ class Session {
         }
         if (joinAt >= 0 && joinAt < rail.squares.length - 1) {
           const ahead = rail.squares.slice(joinAt + 1);
-          const ran = await this.followRail(ahead, { movementGeneration, controlToken })
+          const ran = await this.followRail(ahead, { movementGeneration, controlToken,
+                                         avoidSquares: wrongDoor?.size ? wrongDoor : null })
             .catch(e => ({ railed: false, reason: e.message }));
           recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
                          tactic: 'baked_rail', trigger: 'exit_crossing',
@@ -6013,7 +6050,8 @@ class Session {
         }
         if (got?.arrived) {
           // 2. FOLLOW.
-          const ran = await this.followRail(rail.squares, { movementGeneration, controlToken })
+          const ran = await this.followRail(rail.squares, { movementGeneration, controlToken,
+                                                avoidSquares: wrongDoor?.size ? wrongDoor : null })
             .catch(e => ({ railed: false, reason: e.message }));
           if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked } };
           // 3. COME OFF — at the far anchor, so the ordinary crossing below is a step, not
@@ -6058,9 +6096,12 @@ class Session {
         // col*64 + 32. Passing square coordinates walks to the top-left corner of
         // the map instead, which looks like a wildly broken pathfinder.
         const half = KOD_FINENESS >> 1;
+        // THE FINE WALK GETS THE SAME AVOID SET AS THE COARSE ONE. It is the mover that
+        // actually reaches a boundary, and it was dragging along the wall into the wrong door.
         const fine = await this.walkFine(exit.stand_on.col * KOD_FINENESS + half,
                                          exit.stand_on.row * KOD_FINENESS + half,
-                                         { maxSteps: budget(exit), movementGeneration, controlToken }).catch(() => null);
+                                         { maxSteps: budget(exit), movementGeneration, controlToken,
+                                           avoidSquares: wrongDoor?.size ? wrongDoor : null }).catch(() => null);
         if (isTerminalMovementReason(fine?.reason))
           return { left: false, stage: 'walk', ...fine };
         if (fine?.arrived) walk = { ...fine, via: 'fine movement after coarse pathing failed' };
@@ -6247,10 +6288,6 @@ class Session {
       // No reachable boundary square, says the square grid — the same verdict it
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
       // floor square actually on that boundary and walk to it with fine BSP collision.
-      // ROUTE AROUND THE PART OF THIS BOUNDARY THAT LEADS SOMEWHERE ELSE. Guarded because
-      // `leaveVia` is lifted out of this file by text and evaluated against a fake world.
-      const wrongDoor = typeof this.world?.wrongExitSquares === 'function'
-        ? this.world.wrongExitSquares(exit) : null;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
                                      { maxSteps: budget(exit), movementGeneration, controlToken,
                                        clearance: LEAVE_VIA_CLEARANCE,
@@ -6318,6 +6355,9 @@ class Session {
         const fine = await this.walkFine(point.x, point.y, {
           maxSteps: EDGE_NUDGE_MAX_STEPS, stride: 32, arriveWithin: EDGE_NUDGE_WITHIN,
           movementGeneration, controlToken,
+          // The nudge stays inside the square we already walked to, so this can only ever
+          // refuse a fine point that is already over the wrong door.
+          avoidSquares: wrongDoor?.size ? wrongDoor : null,
         });
         if (fine.left_room || c.room.id !== edgeStartRoom)
           return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
