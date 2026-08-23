@@ -212,6 +212,18 @@ for (const r of rows) {
   // carried it into the travel record, so a poisoned leg has been indistinguishable from a
   // bad one. A state rather than an event: the leg either met it or it did not.
   const ailments = new Set();
+  // WHAT THE KEEPER SAID IT WAS DOING, MINUTE BY MINUTE.
+  //
+  // The keeper's own journal is an in-memory ring and keepers restart about once a minute, so
+  // it never reaches back far enough to explain anything: a post-mortem taken after a death in
+  // Ukgoth held twenty-six seconds of decisions, and the episode worth reading was ten minutes
+  // earlier in The Streets of Tos.
+  //
+  // This poll already asks `autopilot action=status` every five seconds and threw the answer
+  // away. Keeping the CHANGES — not every sample — is a per-leg record of what the character
+  // thought it was doing and where, which is exactly the question a 204-second walk across a
+  // town room raises and nothing could answer.
+  const activity = [];
   let roomNow = FROM;
   if (sent?._error || sent?.refused) {
     ended = 'refused';
@@ -238,6 +250,9 @@ for (const r of rows) {
       // conflating them is what this whole column exists to prevent.
       if (isResting(ap)) restedMs = Math.min(restedMs + 5000, REST_CREDIT_MS);
       for (const e of (st?.ailments ?? [])) if (e?.name) ailments.add(e.name);
+      const doing = String(ap?.activity ?? '').slice(0, 60);
+      if (doing && doing !== activity[activity.length - 1]?.what)
+        activity.push({ what: doing, at: Date.now(), room });
       const room = st?.where?.num ?? null;
       // SECONDS PER ROOM, because a journey that fails is usually a journey that was slow
       // somewhere specific, and a room total hides it. The operator crosses Ukgoth in under a
@@ -264,7 +279,7 @@ for (const r of rows) {
   const restSecs = Math.round(restedMs / 1000);
   const at = await call('status', { agent: r.agent }, 30000);
   results.push({ character: r.character, ended, secs, restSecs, died, low,
-                 endedIn: at?.where?.num ?? null, rooms: [...rooms], perRoom, ailments: [...ailments] });
+                 endedIn: at?.where?.num ?? null, rooms: [...rooms], perRoom, ailments: [...ailments], activity });
   console.log(`  ${String(r.character).padEnd(12)} ${String(ended).padEnd(10)} ${String(secs).padStart(3)}   ` +
               `${String(FROM).padStart(4)} -> ${String(at?.where?.num ?? '?').padStart(5)}   ` +
               `${String(low ?? '?').padStart(3)}  ${String(restSecs).padStart(4)}r  ${[...rooms].join(',')}`);
@@ -275,6 +290,15 @@ for (const r of rows) {
   if (ailments.size)
     console.log('               AILING: ' + [...ailments].join(', ') +
                 " — this leg's time is not a measurement of the road");
+  // Printed when the leg did not simply arrive, because that is when anybody asks.
+  if (ended !== 'arrived' && activity.length) {
+    const t0 = activity[0].at;
+    console.log('               what it thought it was doing:');
+    for (const a of activity.slice(0, 12))
+      console.log('                 +' + String(Math.round((a.at - t0) / 1000)).padStart(3) + 's  room ' +
+                  String(a.room ?? '?').padStart(4) + '  ' + a.what);
+    if (activity.length > 12) console.log('                 ... and ' + (activity.length - 12) + ' more');
+  }
   const spent = Object.entries(perRoom).sort((x, y) => y[1] - x[1]).filter(([, sec]) => sec >= 10);
   if (spent.length)
     console.log('               time by room: ' +
