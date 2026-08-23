@@ -9499,7 +9499,32 @@ export class Autopilot {
     // The budget does not gate it, because there is no budget on dying.
     const shelterNow = wouldPlayDead
       || (hp !== null && hp < this.travelShelterBelow() && !shelterSpent);
-    if (shelterNow && this.travelAllows('safe_spot') && hp !== null && near.length) {
+    // NO ADJACENCY REQUIREMENT. BEING HURT ON A ROAD IS THE WHOLE CONDITION.
+    //
+    // This asked for something within melee reach AT THE INSTANT OF THE PASS, and that is
+    // why a character shelters once and then never again for the rest of a journey. A
+    // traveller gets hit and keeps walking; by the next sample the thing that hit it is
+    // three squares back and `inReachOfUs()` is empty. The damage is real, the health is
+    // gone, and the rung that would answer sees an empty room.
+    //
+    // Measured across a whole run: ZERO `travel_paused_for_wall` events for two characters
+    // who between them lost thirty-eight health and both died. The one shelter that did
+    // happen came from the ordinary ladder's rest rung, not from this one at all.
+    //
+    // Bbbb is the shape: rested to full in 586, resumed, then crossed 587, 597 and 598 in a
+    // hundred and seven seconds, arriving in the Cragged Mountains at 8 of 20 having never
+    // been offered a wall on the way. It died there in fifteen seconds.
+    //
+    // THIS REPOSITORY ALREADY MADE THIS ARGUMENT, about the watchdog rescue, and it is the
+    // same one: "the trigger is DAMAGE, and it does not care whether the body is moving. A
+    // character walking a road while something eats it is in exactly as much trouble as one
+    // standing in the same place while something eats it, and the walking one is harder to
+    // see." A stillness requirement missed it; an adjacency requirement misses it the same
+    // way and for the same reason.
+    //
+    // What bounds it is the per-room budget, which is where the rationing belongs — not a
+    // condition that happens to be false most of the time something is wrong.
+    if (shelterNow && this.travelAllows('safe_spot') && hp !== null) {
       const geo = this.s.world?.geometry;
       let spot = null;
       // THE STOP COMES FROM THE ROUTE, NOT FROM A SEARCH AROUND THE BODY.
@@ -9527,7 +9552,23 @@ export class Autopilot {
       }
       // Only when there is no plan to be ahead ON — a hop that was never routed, or a
       // journey whose walk has already finished. Then a search is the only thing left.
+      //
+      // AND IT IS SAID OUT LOUD, because this is the branch that can walk a character
+      // BACKWARDS. It is a radius search around the body with no notion of the route, so it
+      // will offer a wall back through whatever just bit us: Bbbb was in 587 and sheltered
+      // in 586, a room it had already crossed. The route branch above cannot do that —
+      // `shelterAhead` refuses anything already passed.
+      //
+      // Measured after the disagreement rewrite, the plan is almost always there: 12 to 21
+      // real walls along a single crossing of 597, 598 or 587. So this firing at all now
+      // means a hop was never routed, which is worth a line rather than a silence.
       if (!spot && geo && me) {
+        this.note('no planned wall ahead — searching around the body instead', {
+          room: this.s.world?.room?.num ?? null,
+          health: Math.round(hp * 100) + '%',
+          why: 'this hop has no shelter plan, so the route cannot be asked. A radius search ' +
+               'has no idea which way the road went and can offer a wall behind us',
+        });
         try {
           spot = nearestSafeSpot(geo, me, { book: this.book,
                                             unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
@@ -9539,7 +9580,9 @@ export class Autopilot {
       if (spot) this.shelterStops.taken = (this.shelterStops.taken ?? 0) + 1;
       if (spot)
         return takeBack('a wall is nearer than the next room',
-                        `${Math.round(hp * 100)}% health with ${near.length} on us, and a ` +
+                        `${Math.round(hp * 100)}% health with ` +
+                        `${near.length ? `${near.length} on us` : 'nothing in reach right now'}` +
+                        `, and a ` +
                         `defensible square ${spot.steps_away ?? '?'} step(s) away. A creature ` +
                         'cannot path to it, so reaching it ends this rather than outrunning it',
                         { adjacent: near.length,

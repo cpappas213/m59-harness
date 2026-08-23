@@ -560,5 +560,52 @@ console.log('MID-HOP A WALL IS AN OPTION AGAIN — BECAUSE A CANCEL NO LONGER LO
   ok('with safe_spot switched off even the doomed case declines', !(await sheltered(off)));
 }
 
+
+// ---------------------------------------------------------------------------
+// THE WALL IS FOUND ALONG THE ROUTE, AND BEING HURT ON A ROAD IS THE WHOLE TRIGGER.
+//
+// Two separate things kept a character from ever sheltering twice on one journey.
+//
+// THE TRIGGER asked for something within melee reach AT THE INSTANT OF THE PASS. A traveller
+// is hit and keeps walking; by the next sample the thing that hit it is three squares back
+// and `inReachOfUs()` is empty. Measured across a whole run: ZERO travel_paused_for_wall
+// events for two characters who between them lost thirty-eight health and both died. Bbbb
+// rested to full in 586, resumed, crossed 587, 597 and 598 in a hundred and seven seconds,
+// arrived in the Cragged Mountains at 8 of 20 having never once been offered a wall, and
+// died there in fifteen seconds.
+//
+// This repository already made this argument about the watchdog rescue — "the trigger is
+// DAMAGE, and it does not care whether the body is moving" — and a stillness requirement
+// missed it the same way an adjacency requirement does.
+//
+// THE SEARCH is the operator's rule: look along the PLANNED ROUTE and take the next wall
+// near it. That branch already existed and was simply never reached. The radius fallback is
+// what walked Bbbb backwards into 586, a room it had already crossed.
+console.log('');
+console.log('THE WALL IS FOUND ALONG THE ROUTE, AND DAMAGE ALONE IS THE TRIGGER');
+{
+  const stage = AUTOPILOT_SRC.slice(AUTOPILOT_SRC.indexOf('async passTravelling'),
+                                    AUTOPILOT_SRC.indexOf('async passFollow'));
+  ok('the shelter no longer waits for something to be standing next to us',
+     !/shelterNow && this\.travelAllows\('safe_spot'\) && hp !== null && near\.length/.test(stage));
+  ok('and says why an adjacency test is the wrong shape',
+     /NO ADJACENCY REQUIREMENT/.test(stage));
+  // THE ROUTE IS ASKED FIRST. `shelterAhead` refuses anything already passed, which is the
+  // property a radius search cannot have.
+  ok('the route is consulted before any search around the body',
+     stage.indexOf('shelterAhead(') < stage.indexOf('nearestSafeSpot(') ||
+     stage.indexOf('nearestSafeSpot(') === -1);
+  ok('and it is the planned stops it asks, not a fresh guess',
+     /const planned = this\.s\.activeShelter/.test(stage));
+  // THE FALLBACK IS THE ONE THAT CAN GO BACKWARDS, so it may not be silent.
+  ok('falling back to a radius search says so',
+     /no planned wall ahead — searching around the body instead/.test(stage));
+  ok('and names the risk rather than just the fact',
+     /can offer a wall behind us/.test(stage));
+  // The reason string has to survive an empty reach list now that one is expected.
+  ok('the reason reads sensibly with nothing in reach',
+     /nothing in reach right now/.test(stage));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
