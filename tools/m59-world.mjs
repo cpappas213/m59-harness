@@ -1075,43 +1075,61 @@ export class World {
     // the arena fleet, that one shape was four of nine torture-run failures.
     //
     // For the first hop the question is not about anchors at all — it is where this
-    // character is standing right now, which `exits()` already answers per exit. A
-    // destination whose every published exit reports unreachable is not somewhere we can
-    // set off for.
+    // character is standing right now, which `exits()` already answers per exit. A raw
+    // graph destination that is absent from that authoritative offered list is not
+    // somewhere we can set off for.
     //
-    // A PREFERENCE, LIKE EVERY OTHER ENTRY IN THIS SET. `findPath` falls back through it,
-    // so if that really is the only way out the route is still returned and the walk still
-    // gets its attempt — `exits()` is a model and it is stricter than the world.
-    // BLOCKED AS AN EDGE, NOT AS A ROOM, and that distinction is the whole of it. The
-    // destination is frequently the very room whose door we cannot reach — Delta standing
-    // in West Merchant Way, sent to Deep Forest of Farol next door — and `avoid` refuses to
-    // exclude a destination, correctly, because a character sent somewhere has to be able
-    // to arrive. What is unusable is the single hop FROM HERE to it; the same room by way
-    // of 535/536/537 is perfectly walkable, and that is the route we want back.
+    // NOT A PREFERENCE. The graph's permissive transit pass exists because an offline bake
+    // may be stricter than the server. A raw destination that is absent from an
+    // AUTHORITATIVE live exit list is different: the executor has no action it can take for
+    // that hop. Falling back through it plans a journey whose first instruction cannot be
+    // executed. Room 27 is the measured case: the raw graph declares west -> 2500, but that
+    // boundary is a stranded collision pocket and `exits()` correctly offers only 587 and
+    // 5; the permissive pass nevertheless planned west and stopped in the cave.
+    //
+    // CONSTRAIN THE FIRST EXPANSION, NOT THE ROOM. A later route may legitimately re-enter
+    // this room through another door, from another position, and the live answer observed
+    // here says nothing about that later state.
+    let availableFirstHops = null;
     const blockedHops = new Set();
     try {
-      // ANY usable door to that room clears the hop. A room publishing four crossings of
-      // which one works is a room we can leave, so this collapses per DESTINATION and only
-      // blocks when nothing to it is usable.
-      //
-      // AND `verified` IS THE TEST, NOT `reachable`. `reachable` says a route exists;
-      // `verified` says the mover will walk every step of it. The gap between them is
-      // precisely this failure: standing in West Merchant Way, the door to Deep Forest of
-      // Farol reports reachable — `path` found a route by exempting a last step across a
-      // 1664-unit face — and the walk then failed four squares at a time, seven times, for
-      // eighty seconds. A `go` exit is routinely unverified and that is fine; what matters
-      // is that a JOURNEY is not planned through one when another way round exists.
-      //
-      // NULL IS NOT FALSE. No geometry, no position, a locked door: all answer null, and
-      // null must clear the hop, or a checkout with no baked geometry would block the world.
-      const byDest = new Map();
-      for (const e of this.exits()) {
-        if (e.to == null) continue;
-        const usable = e.reachable !== false && e.verified !== false;
-        byDest.set(e.to, byDest.get(e.to) === true ? true : usable);
+      const geometry = this.geometry;
+      const self = this.self;
+      const origin = geometry && self ? this.origin() : null;
+      // `origin()` deliberately falls back to `self` when it cannot reconcile that
+      // position to a floor. That is useful to callers, but it is not authority for a
+      // HARD absence claim: ROOM_CONTENTS can briefly describe the previous room and put
+      // self outside this geometry. Fail open unless both the raw position and reconciled
+      // origin are actually in the current room's bounds.
+      if (geometry && self && origin
+          && typeof geometry.inBounds === 'function'
+          && geometry.inBounds(self.row, self.col)
+          && geometry.inBounds(origin.row, origin.col)) {
+        // CACHE THE ONE LIVE READ. `exits()` is expensive and, more importantly, a second
+        // read can observe a different ROOM_CONTENTS generation. Every offered non-null
+        // destination counts, including `reachable:false` / `verified:false`: those are
+        // soft model warnings and the executor still has a concrete action to attempt.
+        const offered = this.exits();
+        availableFirstHops = new Set(offered
+          .filter(e => e.to != null && Number.isFinite(Number(e.to)))
+          .map(e => Number(e.to)));
+
+        // ABSENCE IS HARD; AN OFFERED BUT UNVERIFIED EXIT IS STILL SOFT. Preserve the
+        // existing preference against a destination whose every offered action is known
+        // unreachable/unverified, using this SAME snapshot. `findPath` drops blockedHops
+        // on its permissive pass but retains availableFirstHops, so the exit is avoided
+        // when another executable route exists and still attempted when it is the only one.
+        const byDest = new Map();
+        for (const exit of offered) {
+          if (exit.to == null || !Number.isFinite(Number(exit.to))) continue;
+          const to = Number(exit.to);
+          const usable = exit.reachable !== false && exit.verified !== false;
+          byDest.set(to, byDest.get(to) === true ? true : usable);
+        }
+        for (const [to, usable] of byDest)
+          if (!usable) blockedHops.add(`${room.num}>${to}`);
       }
-      for (const [to, ok] of byDest) if (!ok) blockedHops.add(`${room.num}>${Number(to)}`);
-    } catch { /* exits() needs a live room; without one this simply blocks nothing */ }
+    } catch { /* no authoritative geometry/self means no first-hop constraint */ }
     // AND WHAT THE CALLER HAS ACTUALLY WATCHED FAIL. `exits()` is a model, and a model that
     // says a hop is fine is not evidence that it is: the Western border of the Twisted Wood
     // publishes a perfectly reachable crossing to The Twisted Wood, and taking it lands the
@@ -1121,7 +1139,7 @@ export class World {
     const r = findPath(this.map, room.num, toRoomNum,
                        { avoid: merged, transitOk: this.transitOk(),
                          blockedHops: blockedHops.size ? blockedHops : null,
-                         crossCost: this.crossCost() });
+                         crossCost: this.crossCost(), availableFirstHops });
     if (!r.found) return r;
     return {
       found: true,

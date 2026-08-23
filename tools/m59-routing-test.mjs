@@ -50,6 +50,7 @@ import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINE
          sharedRoomGeometry, STEP_MASK_VERSION, elideLoops } from './m59-roo.mjs';
 import { components, exitAnchors } from './m59-routebake.mjs';
 import { loadMap, selectedEdgeAt, findPath } from './m59-map.mjs';
+import { World } from './m59-world.mjs';
 import { crossingBook, WALKS_DIR } from './m59-crossings.mjs';
 import { stepMaskCurrent, attachStepMasks } from './m59-routes.mjs';
 
@@ -939,6 +940,205 @@ console.log('\none-way transits, and the jumps the square walk cannot express');
        `${uphill} uphill`);
     ok('and not one of them is ground the walk could already cover', alreadyWalkable === 0,
        `${alreadyWalkable} already walkable`);
+  }
+}
+
+
+// ------------------------------------------ the live first hop is an execution constraint
+// A permissive transit fallback is allowed to distrust an OFFLINE region model. It is not
+// allowed to invent an action missing from an authoritative LIVE exit list. The distinction
+// matters in room 27: the raw graph declares 2500, but the collision-aware executor offers
+// only 587 and 5 from the body that arrived there.
+console.log('\nthe executable first hop — hard through fallbacks, local to expansion zero');
+{
+  const START = 91001, SHORT = 91002, LONG = 91003, MID = 91004, GOAL = 91005;
+  const room = (num, destinations) => ({
+    num, name: `fixture ${num}`, cls: `Fixture${num}`,
+    nameRsc: num, roomRsc: num + 100000, objId: num + 200000,
+    edgeExits: [],
+    goExits: destinations.map((to, index) => ({
+      row: 1, col: index + 1, to, locked: false,
+      arriveRow: 1, arriveCol: 1,
+    })),
+  });
+  const map = { rooms: {
+    [START]: room(START, [SHORT, LONG]),
+    [SHORT]: room(SHORT, [GOAL]),
+    [LONG]: room(LONG, [MID]),
+    [MID]: room(MID, [GOAL]),
+    [GOAL]: room(GOAL, []),
+  } };
+  const rooms = result => result.hops.map(hop => hop.to);
+
+  const unconstrained = findPath(map, START, GOAL,
+    { danger: false, availableFirstHops: null });
+  ok('null leaves the first expansion unconstrained',
+     unconstrained.found && rooms(unconstrained)[0] === SHORT,
+     JSON.stringify(rooms(unconstrained)));
+
+  // Deny every strict in-room transit so the answer MUST come from the loose recursive
+  // pass. If that recursion drops the allowlist, BFS takes the unavailable two-hop route.
+  const fallback = findPath(map, START, GOAL, {
+    danger: false,
+    transitOk: () => false,
+    availableFirstHops: new Set([LONG]),
+  });
+  ok('the permissive transit fallback preserves the executable first-hop allowlist',
+     fallback.found && fallback.transit_unverified === true
+       && rooms(fallback).join(',') === [LONG, MID, GOAL].join(','),
+     JSON.stringify({ rooms: rooms(fallback), unverified: fallback.transit_unverified }));
+
+  const none = findPath(map, START, GOAL,
+    { danger: false, availableFirstHops: new Set() });
+  ok('an authoritative empty allowlist means there is no executable route',
+     none.found === false, JSON.stringify(none));
+
+  // World.route is the producer. A published but all-false destination remains a SOFT
+  // block: prefer the verified longer way when it exists. Count the call too; two reads can
+  // span different ROOM_CONTENTS generations and must not be combined.
+  const client = {
+    roomNameRsc: START,
+    roomRsc: START + 100000,
+    room: { id: START + 200000, objects: new Map() },
+    selfId: 1,
+    self: { id: 1, row: 1, col: 1 },
+    rsc: { get: () => '' },
+  };
+  const world = new World(client, map);
+  Object.defineProperty(world, 'geometry', { value: { inBounds: () => true } });
+  world.origin = () => client.self;
+  world.transitOk = () => () => true;
+  let exitReads = 0;
+  world.exits = () => {
+    exitReads++;
+    return [
+      { kind: 'go', to: SHORT, row: 1, col: 1, reachable: false, verified: false },
+      { kind: 'go', to: LONG, row: 1, col: 2, reachable: true, verified: true },
+    ];
+  };
+  const wired = world.route(GOAL);
+  ok('World.route caches one authoritative read and avoids an all-false direct hop',
+     exitReads === 1 && wired.found && wired.hops[0]?.to === LONG,
+     JSON.stringify({ exitReads, found: wired.found, first: wired.hops[0]?.to }));
+
+  // A self/origin pair outside the current RoomGeometry is the characteristic stale
+  // ROOM_CONTENTS case. Its empty exits() answer is not authoritative and must fail open
+  // to the raw graph rather than manufacturing an empty hard allowlist.
+  const staleWorld = new World(client, map);
+  Object.defineProperty(staleWorld, 'geometry', { value: { inBounds: () => false } });
+  staleWorld.origin = () => client.self;
+  staleWorld.transitOk = () => null;
+  let staleExitReads = 0;
+  staleWorld.exits = () => { staleExitReads++; return []; };
+  const staleRoute = staleWorld.route(GOAL);
+  ok('an out-of-bounds origin is not authority for a hard empty allowlist',
+     staleExitReads === 0 && staleRoute.found && staleRoute.hops[0]?.to === SHORT,
+     JSON.stringify({ exitReads: staleExitReads, found: staleRoute.found,
+                      first: staleRoute.hops[0]?.to }));
+
+  // `origin()` can project a stale raw position back onto nearby floor. That projection is
+  // useful for ordinary reachability, but it cannot turn previous-room coordinates into
+  // authority for a hard absence claim about this room's exits.
+  const projectedClient = {
+    ...client,
+    self: { ...client.self, row: 99, col: 99 },
+  };
+  const projectedWorld = new World(projectedClient, map);
+  Object.defineProperty(projectedWorld, 'geometry', { value: {
+    inBounds: (row, col) => row === 1 && col === 1,
+    walkable: () => false,
+    nearestWalkable: () => ({ row: 1, col: 1 }),
+  } });
+  projectedWorld.transitOk = () => null;
+  let projectedExitReads = 0;
+  projectedWorld.exits = () => { projectedExitReads++; return []; };
+  const projectedRoute = projectedWorld.route(GOAL);
+  ok('a projected in-bounds origin does not authorize exits for an out-of-bounds raw self',
+     projectedExitReads === 0 && projectedRoute.found
+       && projectedRoute.hops[0]?.to === SHORT,
+     JSON.stringify({ exitReads: projectedExitReads, found: projectedRoute.found,
+                      first: projectedRoute.hops[0]?.to }));
+
+  // But that soft block must still fall through when it is the only executable answer. The
+  // hard allowlist survives the loose recursion, so proving this also proves that the
+  // all-false offered destination was INCLUDED rather than mistaken for an absent one.
+  const fallbackMap = { rooms: {
+    [START]: room(START, [SHORT]),
+    [SHORT]: room(SHORT, [GOAL]),
+    [GOAL]: room(GOAL, []),
+  } };
+  const fallbackClient = {
+    ...client,
+    room: { id: START + 200000, objects: new Map() },
+  };
+  const fallbackWorld = new World(fallbackClient, fallbackMap);
+  Object.defineProperty(fallbackWorld, 'geometry', { value: { inBounds: () => true } });
+  fallbackWorld.origin = () => fallbackClient.self;
+  fallbackWorld.transitOk = () => null;
+  fallbackWorld.exits = () => [
+    { kind: 'go', to: SHORT, row: 1, col: 1, reachable: false, verified: false },
+  ];
+  const softFallback = fallbackWorld.route(GOAL);
+  ok('an all-false published hop remains executable through the loose fallback',
+     softFallback.found && softFallback.hops[0]?.to === SHORT,
+     JSON.stringify({ found: softFallback.found, first: softFallback.hops[0]?.to }));
+}
+
+{
+  const START = 91101, ALLOWED = 91102, LATER = 91103, GOAL = 91104;
+  const room = (num, destinations) => ({
+    num, name: `re-entry fixture ${num}`, cls: `Reentry${num}`,
+    edgeExits: [],
+    goExits: destinations.map((to, index) => ({
+      row: 1, col: index + 1, to, locked: false,
+      arriveRow: 1, arriveCol: 1,
+    })),
+  });
+  const map = { rooms: {
+    [START]: room(START, [ALLOWED, LATER]),
+    [ALLOWED]: room(ALLOWED, [START]),
+    [LATER]: room(LATER, [GOAL]),
+    [GOAL]: room(GOAL, []),
+  } };
+  const reentered = findPath(map, START, GOAL, {
+    danger: false,
+    transitOk: () => true,
+    availableFirstHops: new Set([ALLOWED]),
+  });
+  const path = reentered.hops.map(hop => hop.to);
+  ok('the allowlist applies only initially and does not block a later re-entry expansion',
+     reentered.found && path.join(',') === [ALLOWED, START, LATER, GOAL].join(','),
+     JSON.stringify(path));
+}
+
+// The preserved production fixture. This is the raw/live disagreement that made four
+// mainland -> Ko'catan legs stop in the Icky Cave: west -> 2500 exists in m59-map.json but
+// has no collision-reachable live candidate from the room's body.
+{
+  const realMap = existsSync(join('substrate', 'm59-map.json')) ? loadMap() : null;
+  const cave = realMap?.rooms?.['27'] ?? realMap?.rooms?.[27];
+  if (!cave?.roo) {
+    skip('room 27 refuses a route to 2001 when 2500 is not offered',
+         'no room 27 collision fixture on disk');
+  } else {
+    const self = { id: 1, row: 57, col: 45 };
+    const client = {
+      roomNameRsc: cave.nameRsc,
+      roomRsc: cave.roomRsc,
+      room: { id: cave.objId, objects: new Map([[self.id, self]]) },
+      selfId: self.id,
+      self,
+      rsc: { get: () => '' },
+    };
+    const world = new World(client, realMap);
+    const offered = [...new Set(world.exits()
+      .filter(exit => exit.to != null).map(exit => Number(exit.to)))].sort((a, b) => a - b);
+    const route = world.route(2001);
+    ok('room 27 live exits offer 5 and 587 but not the stranded 2500 boundary',
+       offered.includes(5) && offered.includes(587) && !offered.includes(2500),
+       JSON.stringify(offered));
+    ok('room 27 therefore refuses the raw-graph route to 2001',
+       route.found === false, JSON.stringify(route));
   }
 }
 
