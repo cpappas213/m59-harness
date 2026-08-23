@@ -89,6 +89,19 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   suite is STRUCTURAL — that the walk is spelled exactly once — because the mechanism was
   never broken and `startJob`'s own assertions pass on the buggy code; set
   `M59_BROKER_SRC` at a copy with the old path and exactly those two go red) and
+  `node tools/m59-stepsymmetry-test.mjs` (4 — **a step you can take is a step you can take
+  back**. In this game you can leave any square you can enter; there are no one-way squares.
+  So `moverStepLands(a,b)` and `moverStepLands(b,a)` must agree, and where they do not the
+  disagreement is OURS. Measured 2026-08-23 across the rooms this fleet travels: The Twisted
+  Wood 1.2%, Western border 3.0%, Main gate to Tos 4.5%, and **The Cragged Mountains 8.0%** —
+  which is the room the fleet dies in more than any other. An asymmetric predicate
+  MANUFACTURES ISLANDS: 597 has a five-square pocket the mover steps into and not out of, a
+  character that sheltered there could never leave the room, and it cost 450 seconds a leg
+  while the transit book called it "every square for that exit refused". This does not
+  assert a standard nobody has met — it is a RATCHET, per room, at the measured rate, so the
+  day somebody makes the mover worse is visible and the day somebody fixes it is too. It
+  reads .roo files if it can find them and SKIPS CLEANLY if it cannot, because a fresh clone
+  has no game resources and a test that fails for want of them teaches nothing) and
   `node tools/m59-sincefull-test.mjs` (24 — **what the body did since it was last
   whole, and whether the moving went anywhere**. Health falling is in every reading here;
   none of them could say what the character was DOING about it, and on a journey under

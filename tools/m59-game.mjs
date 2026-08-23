@@ -6936,8 +6936,33 @@ class Session {
         // The one that worked plus the ones that did not. Above 1 means squares are being
         // refused, which is the suspicion this exists to confirm or kill.
         tried: (r.tried?.length ?? 0) + 1,
+        // WHAT EACH SQUARE ACTUALLY SAID, AND NOT JUST HOW MANY THERE WERE.
+        //
+        // `leaveViaAny` computes a `why` per candidate square and this line dropped all of
+        // them on the floor, keeping the count. So the transit book has been recording
+        //
+        //     to 598  every square for that exit refused (4 tried)   56.2s
+        //
+        // over and over — six times in one leg, four hundred and fifty seconds — and the
+        // record could not say whether those four squares were blocked by a body, refused by
+        // collision, unreachable from where the character stood, or never walked to at all.
+        // Four different bugs, one sentence, and no way to tell them apart after the fact.
+        ...(r.tried?.length ? { refusals: r.tried.slice(0, 8).map(t => ({
+              square: t.stand_on ? `${t.stand_on.row},${t.stand_on.col}` : null,
+              stage: t.stage ?? null,
+              why: String(t.why ?? t.reason ?? '?').slice(0, 90),
+            })) } : {}),
+        // The best square the model could offer, so a refusal can be set against the square
+        // a character is standing on when the same door works. See m59-exitgap.mjs.
+        ...(r.gap?.believed ? { believed: r.gap.believed } : {}),
+        // THE UNDERWORLD IS A DEATH, NOT A DOORWAY — AND THIS ROW DID NOT KNOW THAT.
+        // The hop loop already special-cases room 1; this row was computed separately and
+        // had no such case, so every death mid-hop was recorded as a wrong doorway — a
+        // sentence about geometry describing a character being killed.
         reason: wrongRoom
-          ? `crossed into ${landedNow} instead of ${nextHop.to} — that boundary carries more than one exit`
+          ? (landedNow === 1
+              ? `died on the way to ${nextHop.to} — this is the Underworld, not a wrong doorway`
+              : `crossed into ${landedNow} instead of ${nextHop.to} — that boundary carries more than one exit`)
           : (r.left ? null : why),
         journey: journeyId, hop: hops, destination: toRoomNum,
       });

@@ -1197,5 +1197,39 @@ console.log('LEAVING A REAL WALL MEANS WALKING BACK OUT OF THE POCKET IT PUT YOU
      /still_stuck/.test(fn) && /stepped back out of the pocket/.test(fn));
 }
 
+// ---------------------------------------------------------------------------
+// A SHELTER YOU CANNOT LEAVE IS A TRAP, NOT A SHELTER.
+//
+// The Twisted Wood, 2026-08-23. The book held row 5, col 35 marked as having HELD, and from
+// it the mover reaches FIVE squares and none of the room's five exits. A character that
+// sheltered there could never leave the room — four hundred and fifty seconds a leg,
+// recorded in the transit book as "every square for that exit refused (4 tried)", which is
+// a sentence about the exit describing a body stranded on an island somewhere else:
+//
+//     row  col   coarse   reaches   exit squares reachable
+//       7    2   true       1092    5 of 5      <- the entry square
+//       5   35   true          5    0 of 5      <- the trap
+//      21   14   false      1092    5 of 5      <- a real wall
+//
+// AND THE BOOK CALLED IT PROVEN, which is the cruel part: nothing could reach the character
+// there, so it held, so it was remembered as good. A perfect shelter and a perfect prison
+// are the same square until you try to leave.
+console.log('');
+console.log('A SHELTER YOU CANNOT LEAVE IS A TRAP, NOT A SHELTER');
+{
+  const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
+  ok('there is an escape test at all', /export function escapeRoom/.test(src));
+  ok('and every candidate has to pass it',
+     /if \(!escapeRoom\(geo, r, c, minEscape\)\) continue/.test(src));
+  ok('it is bounded, so it stays affordable run over every square in a room',
+     /ESCAPE_CAP/.test(src));
+  ok('and it stops counting the moment the answer is yes', /out is out; stop counting/.test(src));
+  // FAIL OPEN WHERE IT CANNOT BE MEASURED. The disagreement gate fails CLOSED for the
+  // opposite reason — there, a missing measurement would readmit open floor. Here it would
+  // refuse every square in a checkout with no collision, so the safe direction is reversed.
+  ok('with no mover to ask, a square is allowed rather than refused',
+     /cannot tell: allow/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
