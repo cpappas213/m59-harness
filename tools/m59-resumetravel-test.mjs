@@ -507,5 +507,39 @@ console.log('AND THE WALK IS RECORDED, BECAUSE THAT IS WHAT FOUND IT');
      /never break the keeper/.test(src));
 }
 
+console.log('');
+console.log('A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE');
+{
+  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+  const job = broker.slice(broker.indexOf('travelJob(dest,'),
+                           broker.indexOf('travelExclusive(dest'));
+
+  // THE OPERATOR'S RULE. Out of the Underworld, to the inn the exit lands in, and rest —
+  // and do NOT pick the road back up. Whatever killed the character is still on it,
+  // everything carried is on the floor where it fell, and max health has already been paid.
+  ok('a death clears the objective rather than suspending it',
+     /diedOnTheWay[\s\S]{0,400}suspendedJourney = null/.test(job));
+  ok('and says so, because a journey that vanishes silently is the bug this replaces',
+     /the journey ended in a death, so it is not resumed/.test(job));
+  ok('and names what happens instead', /out of the Underworld, then rest at the inn/.test(job));
+
+  // THE HOLE THIS CLOSES. `resumeSuspendedJourney` refuses when `tally.deaths !==
+  // j.deaths_at`, but `deaths_at` was stamped in the `finally` — which runs AFTER the
+  // death — so the two numbers agreed and the guard could never fire. Reading it before
+  // the walk is the whole fix, and it is one word of difference in the source.
+  ok('the death count is read BEFORE the walk, not after it',
+     /const deathsAtStart = Number\(keeper\?\.tally\?\.deaths/.test(job));
+  ok('and that is the value a suspension carries',
+     /deaths_at: Number\.isFinite\(deathsAtStart\)/.test(job));
+
+  // THREE SIGNALS. Room 1 does not survive the escape, `recoverUntilWhole` does, and the
+  // counter is the weakest — keepers restart about once a minute and a tally is not a rate.
+  ok('room 1 counts as a death', /here === 1/.test(job));
+  ok('and so does still being on the recovery hold, which survives leaving room 1',
+     /keeper\?\.recoverUntilWhole === true/.test(job));
+  ok('and the tally is only ever used as a comparison, never on its own',
+     /> deathsAtStart/.test(job));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

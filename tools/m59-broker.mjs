@@ -2495,6 +2495,10 @@ class Session {
     const keeper = autopilotIfAny(this.name);
     return this.startJob('travel', `walk to ${where}`, async movementGeneration => {
       let ours = null;
+      // READ BEFORE THE WALK, BECAUSE THE ONLY USE FOR IT IS A COMPARISON. Read afterwards
+      // it is the count that already includes the death it is supposed to detect — which is
+      // exactly the bug this pairs with below.
+      const deathsAtStart = Number(keeper?.tally?.deaths ?? NaN);
       // RE-ASSERTED ON A TIMER, because a stood-down keeper WAKES ON A DEADLINE
       // (`INERT_MAX_MS`, so a crashed errand cannot silence one for ever) and that
       // deadline does not know a journey is in progress. Watched live before this
@@ -2563,12 +2567,52 @@ class Session {
           // tries, stale, too hurt, switched off — so all it needed was to be told.
           const arrived = outcome?.arrived === true;
           const here = Number(this.world?.room?.num ?? NaN);
-          if (!arrived && dest != null && here !== Number(dest)) {
+
+          // A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE. THE OPERATOR'S RULE.
+          //
+          // Get out of the Underworld, go to the inn the exit lands in, and rest. Do not
+          // pick the road back up: whatever killed the character is still on it, the body
+          // has lost everything it was carrying, and max health has already been paid. A
+          // second attempt on the same road with less of everything is how one death
+          // becomes three.
+          //
+          // AND THIS LINE WAS ALREADY WRONG IN A WAY THAT DEFEATED THE EXISTING GUARD.
+          // `resumeSuspendedJourney` refuses when `tally.deaths !== j.deaths_at` — "died
+          // since it was suspended" — but `deaths_at` was being stamped HERE, in the
+          // `finally`, which runs AFTER the death. So the two numbers agreed, the guard
+          // never fired, and a character that had just been killed would set off again.
+          //
+          // THREE SIGNALS, BECAUSE ONE OF THEM IS NOT TRUSTWORTHY ON ITS OWN. Room 1 is
+          // where the game puts the dead and the hop loop already treats it as a death
+          // rather than a wrong doorway. `recoverUntilWhole` is set on the way out of the
+          // Underworld and stays set until health, mana and vigor are all back, so it
+          // survives the escape that room 1 does not. The counter is the weakest of the
+          // three and is only ever used as a comparison against the value read before the
+          // walk — keepers restart about once a minute and a tally is not a rate, which is
+          // this repository's own warning and the reason it is not asked on its own.
+          const diedOnTheWay = here === 1
+            || keeper?.recoverUntilWhole === true
+            || (Number.isFinite(deathsAtStart)
+                && Number(keeper?.tally?.deaths ?? deathsAtStart) > deathsAtStart);
+
+          if (diedOnTheWay) {
+            keeper.suspendedJourney = null;
+            keeper.note?.('the journey ended in a death, so it is not resumed', {
+              to: Number(dest), where,
+              ended_in: Number.isFinite(here) ? here : null,
+              still_recovering: keeper?.recoverUntilWhole === true,
+              what_happens_now: 'out of the Underworld, then rest at the inn it lands in',
+              why: 'a death is a failed journey. Whatever killed the character is still on ' +
+                   'that road, everything carried is on the floor where it fell, and max ' +
+                   'health has already been paid for the trip',
+            });
+          } else if (!arrived && dest != null && here !== Number(dest)) {
             keeper.suspendedJourney = {
               to: Number(dest), why: `travelling to ${where}`, at: Date.now(),
               trigger: 'the travel job ended short of the destination',
               attempts: (keeper.inert?.attempts ?? 0) + 1,
-              deaths_at: keeper.tally?.deaths ?? 0,
+              deaths_at: Number.isFinite(deathsAtStart) ? deathsAtStart
+                                                        : (keeper.tally?.deaths ?? 0),
             };
           }
           keeper.revive('travel finished');
