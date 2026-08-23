@@ -437,6 +437,23 @@ function provedSquares(geo, from, steps) {
   } catch { return null; }
 }
 
+// The one packet that intentionally leaves the room grid must be bound to the exact baked
+// opening it belongs to. Keep this predicate pure: `queueValidatedMove` repeats it inside
+// the paced callback, against the position that will actually send the packet.
+function atEdgeOpening(position, opening, direction) {
+  if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y)
+      || !Number.isFinite(opening?.x) || !Number.isFinite(opening?.y)) return false;
+  const name = String(direction ?? '').toLowerCase();
+  const fixedAxisMatches = name === 'north' || name === 'south'
+    ? Number.isInteger(position.row) && position.row === Math.floor(opening.y / KOD_FINENESS)
+    : name === 'west' || name === 'east'
+      ? Number.isInteger(position.col) && position.col === Math.floor(opening.x / KOD_FINENESS)
+      : false;
+  return fixedAxisMatches
+    && Math.abs(position.x - opening.x) <= KOD_FINENESS
+    && Math.abs(position.y - opening.y) <= KOD_FINENESS;
+}
+
 const BARRED_ON_ENTRY = /guardian angel holds you back/i;
 // A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
 // never got there. `leaveViaAny` has already tried every square the room publishes for
@@ -3340,40 +3357,77 @@ class Session {
       available: false, moved: false, blocked: true, reason: 'room_changed_before_move',
     } };
 
-    // OFF THE MAP IS A LEGAL DESTINATION, AND THE LOCAL VALIDATOR CANNOT KNOW THAT.
+    // OFF THE MAP IS A LEGAL DESTINATION, AND IT STILL NEEDS AN ATOMIC LOCAL PROOF.
     //
     // One move in the whole client deliberately targets a square that does not exist:
     // the outward step past a room boundary, which is the ONLY thing that reaches
     // `Room.SomethingMoved`'s `new_col < 1` branch and therefore the only thing that
-    // triggers StandardLeaveDir (room.kod:2232-2258). The BSP has no floor out there, so
-    // `validateFineTarget` clips at the boundary, never reports `arrived`, and the packet
-    // is never sent. Measured on Alpha against 587 -> 576: 50 attempts, 5 crossings, and
-    // 28 of the 45 failures were "every square for that exit refused". The operator's
-    // description of watching it was exact — it looked scared to touch the wall.
+    // triggers StandardLeaveDir (room.kod:2232-2258). `RoomGeometry` explicitly models
+    // those minimum outside coordinates: a baked edge candidate exists only when its
+    // inside-to-outside, no-slide trace arrives.
     //
-    // Sending anyway is not a relaxation of collision. `UserMove` BYPASSES
+    // `UserMove` BYPASSES
     // `ReqSomethingMoved` for users — room.kod's own comment is "already been checked by
-    // client (HAHA!)" — so there is no server-side geometry check on a player move to
-    // defer to, and the real client sends this same packet. See the dead-reckoning note
-    // below, which is the same argument.
+    // client (HAHA!)" — so the proof is repeated synchronously from the live position
+    // inside the paced callback. Proximity to a candidate is only a precondition; the exact
+    // packet must also arrive through BSP geometry with no slide before it can be sent.
     //
-    // It is opt-in per call and used in exactly one place. NO BREADCRUMB IS RECORDED: the
-    // escape logic replays crumbs in reverse and its whole safety argument is that every
-    // crumb was a move the validator accepted, so a crumb pointing off the map would let
-    // it "undo" its way through a wall.
+    // It is opt-in per call and used by the ordinary edge path. The explicitly unvalidated
+    // diagnostic fallback is separate and disabled by default. NO BREADCRUMB IS RECORDED:
+    // the escape logic replays crumbs in reverse and its whole safety argument is that every
+    // crumb was a move the validator accepted, so a crumb pointing off the map would let it
+    // "undo" its way through a wall.
     if (offMap) {
       const target = { x: Math.round(x), y: Math.round(y) };
       return this.pacer.submit('move', () => {
         if (c.room.id !== roomId) return { sent: false, validation: {
           available: false, moved: false, blocked: true, reason: 'room_changed_before_move' } };
-        const before = c.self ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row } : null;
-        if (!before) return { sent: false, validation: {
+        const observed = c.self;
+        if (!observed) return { sent: false, validation: {
           available: false, moved: false, blocked: true, reason: 'own position unknown' } };
         if (typeof beforeMutation === 'function') beforeMutation('move', { x, y });
+        // The hook records mutation authority and may synchronously change session state.
+        // Re-read both the room and position after it; no callback or await occurs between
+        // the proof below and `moveTo`.
+        if (c.room.id !== roomId) return { sent: false, validation: {
+          available: false, moved: false, blocked: true, reason: 'room_changed_before_move' } };
+        const before = c.self
+          ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row }
+          : null;
+        if (!before) return { sent: false, validation: {
+          available: false, moved: false, blocked: true, reason: 'own position unknown' } };
+        // This is the authority check, not merely a caller preflight. Pacing can delay the
+        // callback while combat or dead reckoning changes `c.self`; approving the earlier
+        // position and sending from the later one would reopen the wall bypass this guard
+        // exists to close.
+        if (typeof offMap !== 'object'
+            || !atEdgeOpening(before, offMap.opening, offMap.direction))
+          return { sent: false, validation: {
+            available: false, moved: false, blocked: true, reason: 'not_at_edge_opening',
+            note: 'the live send position is not at the BSP-proved boundary opening',
+          } };
+        // Prove the ACTUAL packet from the ACTUAL live origin. The baked candidate proves
+        // opening -> outside, but a diagonally offset body could otherwise cut a corner on
+        // its way there. `slide:false` must reach this exact integer endpoint; clipped,
+        // recovered-from-no-floor, or merely-near results are not movement authority.
+        const validation = this.validateFineTarget(target.x, target.y,
+          { slide: false, fall: false });
+        if (validation?.drift) noteGeometryDrift(this, validation.drift);
+        const exact = validation?.target?.x === target.x && validation?.target?.y === target.y;
+        if (!validation?.available || !validation?.moved || !validation?.arrived
+            || validation?.blocked || validation?.reason === 'recovered_from_no_floor' || !exact)
+          return { sent: false, validation: {
+            ...validation, moved: false, blocked: true,
+            reason: validation?.reason ?? 'off_map_path_unproved',
+            note: validation?.note ??
+              'the complete live path through the baked opening did not validate exactly',
+          } };
+        const sentValidation = { ...validation, available: true, moved: true, blocked: false,
+                                 offMap: true, target };
         const eventSeq = c.evSeq;
         c.moveTo(target.x, target.y, speed, roomId);
         return { sent: true, roomId, eventSeq, before, target,
-                 validation: { available: true, moved: true, blocked: false, offMap: true, target } };
+                 validation: sentValidation };
       }, minGap);
     }
 
@@ -4100,25 +4154,22 @@ class Session {
         // PROGRESS IS GROUND GAINED ON THE TARGET, NOT A POSITION COMPARISON THAT RACES
         // PREDICTION.
         //
-        // `r.moved` is `after !== queued.before`, and `queued.before` is read inside the
-        // paced send — by which time our own position has usually advanced, because moves
-        // are dead-reckoned and the previous one is still settling. So a step that really
-        // did carry the character forward comes back `moved: false`, walkFine counts a
-        // stall, halves the stride, and fans wider until it is aiming backwards. Measured
-        // in three different rooms: from 1496,1491 aiming 12 units west, the character
-        // ended at 1507,1493 — further along its way — and it was scored a refusal. Once
-        // the stride is halved below the drift, no step can ever be seen to work, which is
-        // why fine movement failed everywhere while coarse walking was fine.
+        // `r.moved` is only `after !== queued.before`; it says the body changed position,
+        // not that it got nearer this target. In room 578 every blocked northward request
+        // slid sideways, so `moved` stayed true and reset the stall counter for eighteen
+        // minutes while the distance never improved. Conversely, paced dead reckoning can
+        // make a genuinely forward step report `moved: false` when `queued.before` was read
+        // after the prior prediction advanced. Neither boolean answers this question.
         //
         // Distance to the destination cannot be fooled that way: it is measured from the
         // position the server confirmed, against a target that does not move.
         const now = c.self;
         const gained = now ? remaining - Math.hypot(destX - now.x, destY - now.y) : 0;
-        if (r.moved || gained > 1) {
+        if (gained > 1) {
           progressed = true;
           // A step that gained ground gets the full stride back. The halving is for a body
           // wedged in a gap, and this one is not wedged.
-          if (gained > 1) stride = Math.min(stride * 2, stride0);
+          stride = Math.min(stride * 2, stride0);
           if (off !== 0) log.push({ step: i, slid: Number(off.toFixed(2)), to: r.position });
           break;
         }
@@ -5544,10 +5595,13 @@ class Session {
   async recentreInSquare() {
     const geo = this.world?.geometry;
     const me = this.client?.self;
-    if (!geo || !me || typeof geo.standPoint !== 'function'
+    if (!geo || !me || typeof geo.standPointWire !== 'function'
         || typeof this.walkFine !== 'function') return false;
     if (typeof geo.standable === 'function' && !geo.standable(me.row, me.col)) return false;
-    const pt = geo.standPoint(me.row, me.col);
+    // `walkFine` and `client.self` use protocol/wire coordinates. `standPoint` is in
+    // client units (16x finer), so passing it here aims almost sideways at a point far
+    // outside the room instead of back into this square.
+    const pt = geo.standPointWire(me.row, me.col);
     if (!pt) return false;
     const r = await this.walkFine(pt.x, pt.y, { maxSteps: 3, stride: 24 }).catch(() => null);
     return !!(r?.arrived ?? r?.moved);
@@ -5621,13 +5675,16 @@ class Session {
         // (index 26 onward reads walkable=false the whole way).
         //
         // So where the grid does not admit the square, hand the step to the fine mover and
-        // aim at the same stand point in client units. The square is still the handle; the
+        // aim at the same stand point in wire units. The square is still the handle; the
         // walk underneath it is the fine one it always really was.
         const geo = this.world?.geometry;
         const fineOnly = geo && typeof geo.walkable === 'function'
           && !geo.walkable(target.row, target.col);
-        const pt = fineOnly && typeof geo.standPoint === 'function'
-          ? geo.standPoint(target.row, target.col) : null;
+        // `walkFine` consumes protocol/wire coordinates; `standPoint` is client-space.
+        // The wrong unit here turns a diagonal fine-only rail into an almost-horizontal
+        // aim at a point roughly sixteen times farther away.
+        const pt = fineOnly && typeof geo.standPointWire === 'function'
+          ? geo.standPointWire(target.row, target.col) : null;
         const r = (pt && typeof this.walkFine === 'function')
           ? await this.walkFine(pt.x, pt.y, { maxSteps: 6, stride: 40 })
               .then(w => ({ ...w, moved: w?.arrived ?? w?.moved }))
@@ -5818,50 +5875,73 @@ class Session {
         // the line is joined. Beside as well as on, because a shelter detour ends a step or
         // two off the road and walking back to the anchor to recover one square is the
         // behaviour this replaces.
-        let joinAt = -1;
-        for (let n = rail.squares.length - 1; n >= 0; n--) {
+        // NEAREST, NOT FURTHEST. A body beside the first two points of a diagonal line is
+        // closer to the first; scanning backwards chose the second and then skipped it,
+        // turning a one-square join into a two-row jump. Room 578 repeated that jump for
+        // eighteen minutes at the foot of its cliff.
+        let joinAt = -1, joinDistance = Infinity, exactlyOnJoin = false;
+        for (let n = 0; n < rail.squares.length; n++) {
           const sq = rail.squares[n];
-          if (Math.abs(sq.row - me0.row) <= 1 && Math.abs(sq.col - me0.col) <= 1) { joinAt = n; break; }
+          const dr = Math.abs(sq.row - me0.row), dc = Math.abs(sq.col - me0.col);
+          if (dr > 1 || dc > 1) continue;
+          const distance = Math.hypot(dr, dc);
+          if (distance < joinDistance || (distance === joinDistance && n > joinAt)) {
+            joinAt = n;
+            joinDistance = distance;
+            exactlyOnJoin = distance === 0;
+          }
         }
-        if (joinAt >= 0 && joinAt < rail.squares.length - 1) {
-          const ahead = rail.squares.slice(joinAt + 1);
-          const ran = await this.followRail(ahead, { movementGeneration, controlToken })
-            .catch(e => ({ railed: false, reason: e.message }));
-          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
-                         tactic: 'baked_rail', trigger: 'exit_crossing',
-                         worked: !!ran?.railed, ms: 0, hp_lost: 0,
-                         note: `rejoined at ${joinAt} of ${rail.squares.length} — ` +
-                               (ran?.railed ? `followed ${ran.walked} of ${ahead.length} remaining`
-                                            : `${ran?.cancelled ? 'cancelled' : 'slipped'} at ${ran?.at}` +
-                                              (ran?.cancelled_by ? ` by ${ran.cancelled_by}` : '')) });
-          if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked, rejoined: joinAt } };
+        const rejoinAttempted = joinAt >= 0;
+        if (rejoinAttempted) {
+          // Standing ON a waypoint has already earned it; standing BESIDE one has not. In
+          // the latter case it must be the first target, or rejoin skips the very move that
+          // puts the body onto the proved line.
+          const ahead = rail.squares.slice(joinAt + (exactlyOnJoin ? 1 : 0));
+          if (ahead.length) {
+            const ran = await this.followRail(ahead, { movementGeneration, controlToken })
+              .catch(e => ({ railed: false, reason: e.message }));
+            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                           tactic: 'baked_rail', trigger: 'exit_crossing',
+                           worked: !!ran?.railed, ms: 0, hp_lost: 0,
+                           note: `rejoined at ${joinAt} of ${rail.squares.length} — ` +
+                                 (ran?.railed ? `followed ${ran.walked} of ${ahead.length} remaining`
+                                              : `${ran?.cancelled ? 'cancelled' : 'slipped'} at ${ran?.at}` +
+                                                (ran?.cancelled_by ? ` by ${ran.cancelled_by}` : '')) });
+            if (ran?.left_room)
+              return { left: true, via: 'rail', rail: { steps: ran.walked, rejoined: joinAt } };
+          }
         }
-        const onIt = me0.col === rail.from.col && me0.row === rail.from.row;
-        // 1. GET ON — skipped when we are already standing on the entry anchor.
-        const got = onIt ? { arrived: true } : await this.walkTo(rail.from.col, rail.from.row,
-          { maxSteps: budget({ steps_away: Math.hypot(rail.from.col - me0.col, rail.from.row - me0.row) }) })
-          .catch(e => ({ arrived: false, reason: e.message }));
-        if (!got?.arrived) {
-          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
-                         tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
-                         note: `could not get on at ${rail.from.row},${rail.from.col}: ${got?.reason ?? '?'}` });
-        }
-        if (got?.arrived) {
-          // 2. FOLLOW.
-          const ran = await this.followRail(rail.squares, { movementGeneration, controlToken })
-            .catch(e => ({ railed: false, reason: e.message }));
-          if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked } };
-          // 3. COME OFF — at the far anchor, so the ordinary crossing below is a step, not
-          //    a room-crossing. A rail that slipped leaves the body somewhere real and the
-          //    walk below simply carries on from there.
-          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
-                         tactic: 'baked_rail', trigger: 'exit_crossing',
-                         worked: !!ran?.railed, ms: 0, hp_lost: 0,
-                         note: ran?.railed ? `followed ${ran.walked} of ${rail.squares.length} baked square(s), skipped ${ran.skipped ?? 0}`
-                                           : ran?.cancelled
-                                             ? `cancelled at ${ran?.at} of ${rail.squares.length} by ` +
-                                               `${ran?.cancelled_by} (${ran?.cancelled_ms_ago}ms ago)`
-                                             : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason ?? 'unknown'}` });
+        // A failed rejoin leaves the body at a newer, real position. Do not use stale
+        // pre-rail `me0` to walk back to the entrance and replay the same failed line in
+        // this call; the ordinary exit walk below continues from where the body really is.
+        if (!rejoinAttempted) {
+          const onIt = me0.col === rail.from.col && me0.row === rail.from.row;
+          // 1. GET ON — skipped when we are already standing on the entry anchor.
+          const got = onIt ? { arrived: true } : await this.walkTo(rail.from.col, rail.from.row,
+            { maxSteps: budget({ steps_away: Math.hypot(rail.from.col - me0.col, rail.from.row - me0.row) }) })
+            .catch(e => ({ arrived: false, reason: e.message }));
+          if (!got?.arrived) {
+            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                           tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
+                           note: `could not get on at ${rail.from.row},${rail.from.col}: ${got?.reason ?? '?'}` });
+          }
+          if (got?.arrived) {
+            // 2. FOLLOW.
+            const ran = await this.followRail(rail.squares, { movementGeneration, controlToken })
+              .catch(e => ({ railed: false, reason: e.message }));
+            if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked } };
+            // 3. COME OFF — at the far anchor, so the ordinary crossing below is a step, not
+            //    a room-crossing. A rail that slipped leaves the body somewhere real and the
+            //    walk below simply carries on from there.
+            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                           tactic: 'baked_rail', trigger: 'exit_crossing',
+                           worked: !!ran?.railed, ms: 0, hp_lost: 0,
+                           note: ran?.railed ? `followed ${ran.walked} of ${rail.squares.length} baked square(s), skipped ${ran.skipped ?? 0}`
+                                             : ran?.cancelled
+                                               ? `cancelled at ${ran?.at} of ${rail.squares.length} by ` +
+                                                 `${ran?.cancelled_by} (${ran?.cancelled_ms_ago}ms ago)`
+                                               : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason ?? 'unknown'}` });
+          }
         }
       }
     }
@@ -6122,7 +6202,6 @@ class Session {
                  fine_path: here.fine_path,
                  crossed_from_alternate: true };
       }
-      let pressedInWithoutExactFit = null;
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       for (const point of finePath) {
         // A SHORT NUDGE, NOT A SEARCH — AND THIS IS THE WIGGLE AT THE DOOR.
@@ -6154,7 +6233,7 @@ class Session {
                    note: 'crossed the boundary while fine-positioning at its opening' };
         if (isTerminalMovementReason(fine.reason))
           return { left: false, stage: 'walk', ...fine };
-        // NOT ARRIVING EXACTLY IS NOT A REASON NOT TO TRY THE EDGE.
+        // NOT ARRIVING EXACTLY IS NOT YET A REASON TO GIVE UP.
         //
         // `arriveWithin: 1` above asks to land within ONE fine unit — a 64th of a square
         // — and returning here when it does not is the machinery refusing to press into
@@ -6169,25 +6248,54 @@ class Session {
         // ZERO seconds. What has been failing is never the crossing; it is everything
         // this function does before allowing itself to attempt one.
         //
-        // So a fine-positioning miss now falls through to the outward step instead of
-        // returning. If we are somewhere the edge step cannot fire from, that step fails
-        // on its own and reports it — one wasted packet against an errand abandoned at
-        // the door.
-        if (!fine.arrived) {
-          pressedInWithoutExactFit = fine.note ?? 'did not reach the exact opening; pressing into the edge anyway';
-          break;
-        }
+        // A fine-positioning miss falls through to the boundary-position gate below. The
+        // server does not validate player geometry, so the outward packet cannot be used
+        // as the test: sent from inside the room it can cross the intervening wall.
+        if (!fine.arrived) break;
       }
+      // Dead reckoning is appropriate across a room and insufficient at the one packet the
+      // server will accept without any geometry check. Refresh the server's position before
+      // authorizing the edge; the paced callback below still re-proves whatever live position
+      // exists at the exact instant of send.
+      const confirmedEdge = await this.confirmPosition().catch(() => null);
+      if (c.room.id !== edgeStartRoom)
+        return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
+                 note: 'the room changed while confirming the edge position' };
+      if (!confirmedEdge) {
+        this.finePositionUnknown = true;
+        return { left: false, stage: 'walk', reason: 'position_confirmation_timeout',
+                 note: 'the edge position could not be confirmed, so no outward packet was sent' };
+      }
+      // THE OUTWARD PACKET IS AUTHORIZED ONLY FROM THE PROVED OPENING.
+      //
+      // `offMap` selects the separately-authorized boundary branch; it does not bypass
+      // collision. A bot in room 536 failed every fine nudge toward the north opening,
+      // remained on row 2 at (1125,178), and was nevertheless allowed to send the target
+      // (1120,63). The server accepted it and moved the bot to room 535 through geometry
+      // the client had just refused. The server is not a collision oracle, so the queue
+      // rechecks this proximity and replays the exact packet through BSP at send time.
+      //
+      // Permit the ordinary sub-square wiggle along an opening, but require the body to
+      // be on its boundary row/column and within one fine square of this exact candidate.
+      // Along-edge coarse squares may legitimately differ at a square boundary, so do not
+      // require both coarse coordinates to equal the candidate's.
+      const opening = exit.fine_stand_on;
+      const meAtEdge = c.self;
+      if (!atEdgeOpening(meAtEdge, opening, exit.direction))
+        return { left: false, stage: 'walk', reason: 'not_at_edge_opening',
+                 note: 'the outward edge packet was refused because the character did not reach ' +
+                       'the BSP-proved boundary opening' };
       // One more step OUTWARD, past the grid. Nothing else triggers
-      // Room.StandardLeaveDir, and `offMap` is what stops our own collision view
-      // refusing to send it — there is no floor out there and there is not meant to be.
+      // Room.StandardLeaveDir. `offMap` keeps this transition out of the in-room breadcrumb
+      // chain while the queue still requires the baked outside coordinate to validate.
       if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
       const edgeMove = await this.queueValidatedMove(
         exit.edge_target.x, exit.edge_target.y,
         // Stock UserMovePlayer sends speed zero for the one StandardLeaveDir
         // out-of-room request; it is not a run/vigor-bearing in-room step.
         { speed: 0, slide: false, minGap: MOVE_INTERVAL_MS,
-          expectedRoomId: edgeStartRoom, offMap: true });
+          expectedRoomId: edgeStartRoom,
+          offMap: { opening: exit.fine_stand_on, direction: exit.direction } });
       if (!edgeMove.sent && c.room.id !== edgeStartRoom)
         return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                  note: 'the room changed before the final edge packet was needed' };
@@ -6392,7 +6500,8 @@ class Session {
    *
    * Recorded every time, with the square the model believed in beside the square that
    * actually worked — a bypass nobody measures is a bypass that becomes permanent.
-   * `M59_EXIT_FALLBACK=0` turns it off.
+   * This deliberately relaxes collision and is OFF by default. `M59_EXIT_FALLBACK=1`
+   * enables it explicitly for diagnosing a known model gap; normal travel fails closed.
    */
   async leaveViaUnvalidated(exit, { movementGeneration = this.movementGeneration } = {}) {
     const c = this.need();
@@ -6576,7 +6685,13 @@ class Session {
         bodiesInTheWay++;
       const now = c.self;
       const near = now && Math.hypot(now.x - wp.x, now.y - wp.y) <= 48;
-      if (near) reached++; else blocked++;
+      if (near) reached++;
+      else {
+        blocked++;
+        // The next leg was proved from this waypoint, not from wherever the body stopped.
+        // End the replay at the first broken proof boundary and let the normal fallback act.
+        break;
+      }
       // Standing on shelter, and hurt: take it. Only here, because only here is the
       // character on a square something measured as hard to reach.
       if (near && shelter.has(i)) {
@@ -6613,7 +6728,52 @@ class Session {
     // The stitch did not get us out. Try the route that has actually been walked before
     // giving the crossing back to the planner.
     if (sewn) {
-      for (const wp of sewn) {
+      // JOIN THE WALKED ROUTE WHERE THE STITCH LEFT US, NOT BACK AT ITS ENTRANCE.
+      //
+      // The stitched and walked routes have different numbers of stations, so their array
+      // indices do not describe the same progress. Project the CURRENT position onto the
+      // walked polyline instead: an interior projection has already passed that leg's first
+      // station, hence the next station is the earliest non-regressive join. Among viable
+      // stations at or beyond there, take the nearest one.
+      //
+      // This is not just an optimisation. In The King's Way an unproven 587>575 stitch got
+      // most of the way north, missed its final long leg, then spent ten minutes driving
+      // south into a wall because the fallback restarted at walked[0].
+      const now = c.self;
+      const finitePoint = p => Number.isFinite(p?.x) && Number.isFinite(p?.y);
+      const viableStation = i => {
+        const wp = sewn[i];
+        if (!finitePoint(wp)) return false;
+        if (!geo || typeof geo.standable !== 'function') return true;
+        return geo.standable(Math.floor(wp.y / KOD_FINENESS),
+                             Math.floor(wp.x / KOD_FINENESS));
+      };
+      let progressAt = 0;
+      if (finitePoint(now)) {
+        let projectionDist = Infinity;
+        for (let i = 0; i + 1 < sewn.length; i++) {
+          const a = sewn[i], b = sewn[i + 1];
+          if (!finitePoint(a) || !finitePoint(b)) continue;
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const length2 = dx * dx + dy * dy;
+          if (!(length2 > 0)) continue;
+          const t = Math.max(0, Math.min(1,
+            ((now.x - a.x) * dx + (now.y - a.y) * dy) / length2));
+          const d = Math.hypot(now.x - (a.x + t * dx), now.y - (a.y + t * dy));
+          const ahead = t > 0 ? i + 1 : i;
+          if (d < projectionDist || (d === projectionDist && ahead > progressAt)) {
+            projectionDist = d;
+            progressAt = ahead;
+          }
+        }
+      }
+      let fallbackAt = -1, fallbackDist = Infinity;
+      for (let i = progressAt; i < sewn.length; i++) {
+        if (!viableStation(i)) continue;
+        const d = finitePoint(now) ? Math.hypot(sewn[i].x - now.x, sewn[i].y - now.y) : i;
+        if (d < fallbackDist) { fallbackDist = d; fallbackAt = i; }
+      }
+      for (const wp of fallbackAt < 0 ? [] : sewn.slice(fallbackAt)) {
         if (this.movementWasCancelled(movementGeneration, controlToken)) break;
         const r = await this.walkFine(wp.x, wp.y, { maxSteps: 60, movementGeneration, controlToken })
           .catch(() => null);
@@ -6660,7 +6820,8 @@ class Session {
     // the cheaper answer by a wide margin, because `travel`'s stumble already re-reads the
     // room and can pick a different way round entirely. This is a budget on how long to
     // insist, not a claim that the wall is shut: `spreadEdges` still offers every square,
-    // ordering still puts the best first, and the unvalidated fallback below still runs.
+    // ordering still puts the best first, and an explicitly enabled diagnostic fallback can
+    // still be used to investigate a known model gap.
     const budget = Number(process.env.M59_EXIT_CANDIDATES || 3);
     let spent = 0;
     // A NEEDLE WANTS PATIENCE, NOT BREADTH — AND SPENDING BREADTH ON ONE IS HOW A FLEET
@@ -6870,16 +7031,14 @@ class Session {
       }
       tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported' });
     }
-    // EVERY SQUARE REFUSED — so before reporting a wall where players walk, take the one
-    // step the model would not, onto a square it published itself. Only here, only after
-    // the whole ordered list has been tried, and only when nothing terminal stopped us
-    // (a terminal reason returned above; it means the contract itself is broken, and
-    // walking anyway would be walking on geometry we know is wrong).
+    // EVERY SQUARE REFUSED. Normal travel reports the refusal and replans. An operator may
+    // explicitly enable the unvalidated diagnostic below to test a known model gap, but
+    // nothing inferred from an ordinary refusal grants that movement authority.
     // A BODY IS NOT A GAP IN THE MODEL, SO IT DOES NOT EARN THE UNVALIDATED STEP.
     //
-    // The fallback above exists for one situation: our collision model refuses a square that
-    // people demonstrably walk on, so the model is wrong and the door is real. Every word of
-    // that argument is about GEOMETRY.
+    // The explicit diagnostic override exists for one situation: our collision model refuses
+    // a square that people demonstrably walk on, so the model is wrong and the door is real.
+    // Every word of that argument is about GEOMETRY.
     //
     // It said nothing about bodies, and `object_blocked` is not terminal — so a doorway held
     // by players refused every square, fell through here, and forced a crossing anyway. That
@@ -6898,10 +7057,9 @@ class Session {
     if (everyRefusalWasABody)
       return { left: false, tried, blocked_by_bodies: true,
                reason: 'object_blocked',
-               note: 'every square on this boundary had somebody standing on it. Not forcing ' +
-                     'the crossing: the unvalidated step is for geometry we know is wrong, ' +
-                     'and a person is not a hole in the map' };
-    if (tried.length && process.env.M59_EXIT_FALLBACK !== '0') {
+               note: 'every square on this boundary had somebody standing on it. Not using ' +
+                     'the explicit diagnostic override: a person is not a hole in the map' };
+    if (tried.length && process.env.M59_EXIT_FALLBACK === '1') {
       const best = ordered[0] ?? null;
       if (best) {
         const forced = await this.leaveViaUnvalidated(best, { movementGeneration });
