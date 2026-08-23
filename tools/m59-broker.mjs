@@ -2601,53 +2601,24 @@ class Session {
                 && Number(keeper?.tally?.deaths ?? deathsAtStart) > deathsAtStart);
 
           if (diedOnTheWay) {
-            // HOW MANY DEATHS IS THIS OBJECTIVE WORTH? Default nought, which IS the rule —
-            // "a death ends the journey" and "allow zero deaths" are the same sentence, and
-            // saying it as a number means the exception does not need a second mechanism.
+            // ONE COPY OF THE RULE, AND IT IS NOT THIS ONE. `journeyEndedInADeath` applies
+            // `travel_deaths_allowed` and keeps the per-objective tally; it is also called
+            // the moment a character wakes up dead, which is the door a death arrives
+            // through when something OTHER than this job suspended the objective. Writing
+            // it twice is how shadow02 came back from the Cragged Mountains still carrying
+            // a destination a troll had already settled.
             //
-            // PER OBJECTIVE, NOT PER LIFETIME. `tally.deaths` is a keeper counter and
-            // keepers restart about once a minute, so it cannot answer "how much has THIS
-            // trip cost". The count is kept beside the destination and reset the moment the
-            // destination changes, which is also what makes a fresh order from a bot cost
-            // nothing.
-            const allowed = Number(keeper?.policy?.travelDeathsAllowed ?? 0);
-            const book = keeper.journeyDeaths;
-            const spent = (book && Number(book.to) === Number(dest) ? Number(book.count) : 0) + 1;
-            keeper.journeyDeaths = { to: Number(dest), count: spent };
-
-            if (spent <= allowed) {
-              // KEPT, AND THE REST IS NOT OPTIONAL. `passUnderworld`'s recovery hold is the
-              // FIRST rung and the resume is in the LAST, so a retry physically cannot
-              // start until health, mana and vigor are all back. That ordering is what
-              // makes "rest and retry" safe to offer at all.
+            // The objective may not exist yet at this point — a journey that died before
+            // anything suspended it — so hand the destination over first.
+            if (keeper && !keeper.suspendedJourney && dest != null)
               keeper.suspendedJourney = {
                 to: Number(dest), why: `travelling to ${where}`, at: Date.now(),
-                trigger: `died on the way — retry ${spent} of ${allowed}`,
+                trigger: 'died on the way',
                 attempts: (keeper.inert?.attempts ?? 0) + 1,
-                deaths_at: Number(keeper?.tally?.deaths ?? 0),
+                deaths_at: Number.isFinite(deathsAtStart) ? deathsAtStart
+                                                          : (keeper.tally?.deaths ?? 0),
               };
-              keeper.note?.('died on the way, and this road is worth another try', {
-                to: Number(dest), where, deaths_on_this_objective: spent, allowed,
-                what_happens_first: 'out of the Underworld and rest to whole — the recovery ' +
-                                    'hold is upstream of the resume and cannot be skipped',
-              });
-            } else {
-              keeper.suspendedJourney = null;
-              keeper.journeyDeaths = null;
-              keeper.note?.('the journey ended in a death, so it is not resumed', {
-                to: Number(dest), where,
-                ended_in: Number.isFinite(here) ? here : null,
-                deaths_on_this_objective: spent, allowed,
-                still_recovering: keeper?.recoverUntilWhole === true,
-                what_happens_now: 'out of the Underworld, then rest at the inn it lands in',
-                why: allowed === 0
-                  ? 'a death is a failed journey. Whatever killed the character is still on ' +
-                    'that road, everything carried is on the floor where it fell, and max ' +
-                    'health has already been paid for the trip'
-                  : `this objective has now cost ${spent} death(s) against an allowance of ` +
-                    `${allowed}`,
-              });
-            }
+            keeper?.journeyEndedInADeath?.('the travel job ended in a death');
           } else if (!arrived && dest != null && here !== Number(dest)) {
             keeper.suspendedJourney = {
               to: Number(dest), why: `travelling to ${where}`, at: Date.now(),

@@ -510,77 +510,123 @@ console.log('AND THE WALK IS RECORDED, BECAUSE THAT IS WHAT FOUND IT');
 console.log('');
 console.log('A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE');
 {
-  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
-  const job = broker.slice(broker.indexOf('travelJob(dest,'),
-                           broker.indexOf('travelExclusive(dest'));
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const rule = src.slice(src.indexOf('journeyEndedInADeath(where'),
+                         src.indexOf('recordFrame(why = null)'));
 
   // THE OPERATOR'S RULE. Out of the Underworld, to the inn the exit lands in, and rest —
   // and do NOT pick the road back up. Whatever killed the character is still on it,
   // everything carried is on the floor where it fell, and max health has already been paid.
-  ok('a death clears the objective rather than suspending it',
-     /diedOnTheWay[\s\S]{0,2400}suspendedJourney = null/.test(job));
+  //
+  // Refined by the operator into ONE NUMBER rather than a rule plus an exception: nought
+  // deaths allowed IS "a death ends the journey", and a road worth dying for says so.
+  ok('the allowance is a policy with a default of nought',
+     /travelDeathsAllowed \?\? 0/.test(rule));
+  ok('over the allowance the objective is cleared', /this\.suspendedJourney = null/.test(rule));
   ok('and says so, because a journey that vanishes silently is the bug this replaces',
-     /the journey ended in a death, so it is not resumed/.test(job));
-  ok('and names what happens instead', /out of the Underworld, then rest at the inn/.test(job));
+     /the journey ended in a death, so it is not resumed/.test(rule));
+  ok('and names what happens instead', /out of the Underworld, then rest at the inn/.test(rule));
+  ok('under the allowance it is KEPT rather than dropped',
+     /spent <= allowed[\s\S]{0,400}worth another try/.test(rule));
 
-  // THE HOLE THIS CLOSES. `resumeSuspendedJourney` refuses when `tally.deaths !==
-  // j.deaths_at`, but `deaths_at` was stamped in the `finally` — which runs AFTER the
-  // death — so the two numbers agreed and the guard could never fire. Reading it before
-  // the walk is the whole fix, and it is one word of difference in the source.
-  ok('the death count is read BEFORE the walk, not after it',
-     /const deathsAtStart = Number\(keeper\?\.tally\?\.deaths/.test(job));
-  ok('and that is the value a suspension carries',
-     /deaths_at: Number\.isFinite\(deathsAtStart\)/.test(job));
+  // PER OBJECTIVE, NOT PER LIFETIME. `tally.deaths` cannot answer "what has THIS trip cost"
+  // — a keeper restarts about once a minute and takes its counters with it.
+  ok('the count is kept beside the destination it belongs to',
+     /this\.journeyDeaths = \{ to: dest, count: spent \}/.test(rule));
+  ok('and a different destination starts from nought',
+     /Number\(book\.to\) === dest/.test(rule));
 
-  // THREE SIGNALS. Room 1 does not survive the escape, `recoverUntilWhole` does, and the
-  // counter is the weakest — keepers restart about once a minute and a tally is not a rate.
-  ok('room 1 counts as a death', /here === 1/.test(job));
-  ok('and so does still being on the recovery hold, which survives leaving room 1',
-     /keeper\?\.recoverUntilWhole === true/.test(job));
-  ok('and the tally is only ever used as a comparison, never on its own',
-     /> deathsAtStart/.test(job));
-}
+  // THE REST IS GUARANTEED BY THE LADDER, NOT BY THIS CODE, which is the only reason
+  // offering a retry is safe: the recovery hold is the first rung, the resume is the last.
+  ok('and the retry says the resting happens first',
+     /rest to whole/.test(rule));
 
-console.log('');
-console.log('AND "A DEATH ENDS IT" IS JUST AN ALLOWANCE OF NOUGHT');
-{
+  // ONE COPY. This is the assertion that would have caught the bug this refactor fixes.
+  //
+  // Four places suspend an objective — the travel job's `finally`, the watchdog's rescue of
+  // a stalled driver, a guard take-back, and the resume. The rule was first written into
+  // only the first of them, and shadow02 came back from the Cragged Mountains still holding
+  // `{to: 38, trigger: 'the watchdog rescued a stalled driver'}` twelve minutes after a
+  // troll had settled the question, because its death arrived through a different door.
+  ok('and the rule is called the moment a death is DISCOVERED, not from one walk path',
+     /woke up dead[\s\S]{0,400}journeyEndedInADeath/.test(src));
+
   const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
   const job = broker.slice(broker.indexOf('travelJob(dest,'),
                            broker.indexOf('travelExclusive(dest'));
+  ok('the travel job DELEGATES rather than keeping a second copy',
+     /journeyEndedInADeath/.test(job));
+  ok('and the second copy is gone', !/travelDeathsAllowed/.test(job),
+     'the allowance is spelled twice again');
 
-  // The operator's refinement: rather than a hard rule plus a separate exception, one
-  // number. Nought is the rule, and a road worth dying for says so out loud.
-  ok('the allowance is a policy with a default of nought',
-     /travelDeathsAllowed \?\? 0/.test(job));
-  ok('and under the allowance the objective is KEPT rather than dropped',
-     /spent <= allowed[\s\S]{0,1200}suspendedJourney = \{/.test(job));
-  ok('and over it, it is dropped and the tab cleared',
-     /journeyDeaths = null/.test(job));
+  // THREE SIGNALS FOR "did it die", because the obvious one does not survive the escape.
+  ok('room 1 counts as a death', /here === 1/.test(job));
+  ok('and so does still being on the recovery hold, which survives leaving room 1',
+     /keeper\?\.recoverUntilWhole === true/.test(job));
+  ok('the death count is read BEFORE the walk, not after it',
+     /const deathsAtStart = Number\(keeper\?\.tally\?\.deaths/.test(job));
+  ok('and the tally is only ever used as a comparison, never on its own',
+     /> deathsAtStart/.test(job));
 
-  // PER OBJECTIVE, NOT PER LIFETIME. `tally.deaths` cannot answer "what has THIS trip
-  // cost" — a keeper restarts about once a minute and takes its counters with it.
-  ok('the count is kept beside the destination it belongs to',
-     /journeyDeaths = \{ to: Number\(dest\), count: spent \}/.test(job));
-  ok('and a different destination starts from nought',
-     /Number\(book\.to\) === Number\(dest\)/.test(job));
-  ok('and ARRIVING settles the tab, so a paid-for road does not tax the next one',
-     /ARRIVING SETTLES THE TAB/.test(job));
-
-  // THE REST IS NOT OPTIONAL, AND IT IS THE LADDER THAT GUARANTEES IT RATHER THAN THIS CODE.
-  // `passUnderworld`'s recovery hold is the first rung; the resume is in the last. A retry
-  // therefore cannot start before health, mana and vigor are back, which is the only reason
-  // offering a retry at all is safe.
-  ok('and the retry says the resting happens first',
-     /is upstream of the resume and cannot be skipped/.test(job));
-
-  // A SETTING THAT IS NOT IN THE SCHEMA IS A SETTING THAT SILENTLY DOES NOTHING — which is
-  // how `purpose` stayed out of one for a year with every keeper's audit switched off.
+  // A SETTING THAT IS NOT IN THE SCHEMA SILENTLY DOES NOTHING — how `purpose` stayed out of
+  // one for a year with every keeper's audit switched off.
   ok('the knob is declared in the autopilot schema',
      /travel_deaths_allowed: \{ type: 'number'/.test(broker));
   ok('and it is actually read off the arguments',
      /a\.travel_deaths_allowed !== undefined/.test(broker));
   ok('and refused rather than coerced when it is not a whole number of deaths',
      /travel_deaths_allowed must be a whole number/.test(broker));
+}
+
+console.log('');
+console.log('AND THE ALLOWANCE RUN AS CODE, NOT READ AS TEXT');
+{
+  // Everything above greps the source, which is right for pinning an ARGUMENT and wrong for
+  // pinning ARITHMETIC. The bug this section exists for was not a missing sentence: the rule
+  // was spelled correctly and simply never reached, because shadow02's death arrived through
+  // the watchdog rather than through the travel job. So run it.
+
+  // Nought allowed — the default, and the operator's rule.
+  const k = keeper();
+  k.suspendedJourney = { to: 38, why: 'travelling', at: Date.now(),
+                         trigger: 'the watchdog rescued a stalled driver',
+                         attempts: 1, deaths_at: 0 };
+  const out = k.journeyEndedInADeath('a troll');
+  ok('a death drops the objective when nothing is allowed', k.suspendedJourney === null);
+  ok('and reports that it did not keep it', out?.kept === false, JSON.stringify(out));
+  ok('and it does not matter which door the death came through — this one was a watchdog ' +
+     'suspension, which is exactly what shadow02 was still carrying',
+     !said(k, /worth another try/) && said(k, /not resumed/));
+
+  // One allowed: kept the first time, dropped the second.
+  const r = keeper({ policy: { travelDeathsAllowed: 1 } });
+  r.suspendedJourney = { to: 38, why: 'travelling', at: Date.now(), trigger: 't',
+                         attempts: 1, deaths_at: 0 };
+  const first = r.journeyEndedInADeath('a troll');
+  ok('one death allowed keeps the objective the first time', first?.kept === true
+     && r.suspendedJourney !== null, JSON.stringify(first));
+  ok('and says the resting comes first', said(r, /rest to whole/));
+  const second = r.journeyEndedInADeath('another troll');
+  ok('and drops it on the second', second?.kept === false && r.suspendedJourney === null,
+     JSON.stringify(second));
+
+  // PER OBJECTIVE. A different destination starts from nought, or a character that died once
+  // on the way to Tos arrives at the next errand already one strike down.
+  const per = keeper({ policy: { travelDeathsAllowed: 1 } });
+  per.suspendedJourney = { to: 38, why: 'a', at: Date.now(), trigger: 't', attempts: 1, deaths_at: 0 };
+  per.journeyEndedInADeath('x');
+  per.suspendedJourney = { to: 593, why: 'b', at: Date.now(), trigger: 't', attempts: 1, deaths_at: 0 };
+  const other = per.journeyEndedInADeath('x');
+  ok('a death on a DIFFERENT objective starts its own count', other?.spent === 1,
+     JSON.stringify(other));
+  ok('and so that one is kept too', per.suspendedJourney !== null);
+
+  // No objective at all is not an error — a character can die while nothing has been asked
+  // of it, and the tab must not survive to be spent by whatever is asked next.
+  const idle = keeper();
+  idle.journeyDeaths = { to: 38, count: 5 };
+  ok('a death with no objective is a no-op', idle.journeyEndedInADeath('x') === null);
+  ok('and it clears any leftover tab', idle.journeyDeaths === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

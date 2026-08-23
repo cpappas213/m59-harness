@@ -4373,6 +4373,56 @@ export class Autopilot {
     };
   }
 
+  // A DEATH ENDS THE JOURNEY — AND THIS IS THE ONLY COPY OF THAT RULE.
+  //
+  // Four different places suspend an objective: the travel job's `finally`, the watchdog's
+  // rescue of a stalled driver, a guard take-back, and the resume itself. The rule was first
+  // written into ONE of them, and shadow02 duly came back from the Cragged Mountains still
+  // carrying `{to: 38, trigger: 'the watchdog rescued a stalled driver'}` twelve minutes
+  // after being killed by a troll, because the death had arrived through a different door
+  // than the one the rule was nailed to.
+  //
+  // So it lives here, on the keeper, and is called from the moment a death is DISCOVERED
+  // rather than from whichever path happened to end the walk. Everything that suspends a
+  // journey is upstream of waking up dead.
+  //
+  // `travel_deaths_allowed` is the whole policy: nought — the default — is "a death is a
+  // failed journey", and higher is a road worth dying for. Per OBJECTIVE, not per lifetime,
+  // because `tally.deaths` belongs to a keeper and keepers restart about once a minute.
+  journeyEndedInADeath(where = 'a death') {
+    const dest = Number(this.suspendedJourney?.to ?? this.inert?.to ?? NaN);
+    if (!Number.isFinite(dest)) { this.journeyDeaths = null; return null; }
+
+    const allowed = Number(this.policy?.travelDeathsAllowed ?? 0);
+    const book = this.journeyDeaths;
+    const spent = (book && Number(book.to) === dest ? Number(book.count) : 0) + 1;
+    this.journeyDeaths = { to: dest, count: spent };
+
+    if (spent <= allowed) {
+      // The resting is not optional and is not enforced here: `passUnderworld`'s recovery
+      // hold is the FIRST rung and the resume is in the LAST, so a retry physically cannot
+      // start before health, mana and vigor are back.
+      this.note('died on the way, and this road is worth another try', {
+        to: dest, deaths_on_this_objective: spent, allowed, discovered_at: where,
+        what_happens_first: 'out of the Underworld and rest to whole',
+      });
+      return { kept: true, spent, allowed };
+    }
+
+    this.suspendedJourney = null;
+    this.journeyDeaths = null;
+    this.note('the journey ended in a death, so it is not resumed', {
+      to: dest, deaths_on_this_objective: spent, allowed, discovered_at: where,
+      what_happens_now: 'out of the Underworld, then rest at the inn it lands in',
+      why: allowed === 0
+        ? 'a death is a failed journey. Whatever killed the character is still on that road, ' +
+          'everything carried is on the floor where it fell, and max health has already been ' +
+          'paid for the trip'
+        : `this objective has now cost ${spent} death(s) against an allowance of ${allowed}`,
+    });
+    return { kept: false, spent, allowed };
+  }
+
   recordFrame(why = null) {
     const c = this.s.client;
     if (!c?.room) return null;
@@ -8836,6 +8886,9 @@ export class Autopilot {
         this.note('DIED', { ...this.lastDeath, ...(file ? { post_mortem: file } : {}) });
       }
       this.note('woke up dead', { room: room.name, attempt: (this.underworldTries || 0) + 1 });
+      // BEFORE ANY OF THE GETTING-OUT. Whatever suspended the objective — the travel job,
+      // the watchdog, a take-back — this is the one moment every death passes through.
+      this.journeyEndedInADeath('woke up dead in the Underworld');
       // A tell costs nothing and we have no mana for anything else.
       await this.answerWhere().catch(() => {});
 
