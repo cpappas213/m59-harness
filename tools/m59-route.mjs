@@ -517,10 +517,31 @@ export class Router {
       const held = Math.round((t - this.mark.at) / 1000);
       const where = { col: me.col, row: me.row };
       const aim = this.leg?.standOn ?? null;
-      this.leg = null;
-      this.mark = null;
-      return this._say('stuck', { why: `same square (${where.col},${where.row}) for ${held}s` +
-                                       (aim ? `, aiming at (${aim.col},${aim.row})` : '') });
+      // A DOOR. If the standOn we're stuck approaching is FINE-BLOCKED, it is a door in a
+      // walled gap (the Raza Blacksmith exit, the Raza fence alcoves) and the mover's
+      // raw-door-push is the thing that gets us through — it only fires while the mover
+      // still HOLDS that destination. Clearing the leg here (the old behavior) dropped the
+      // destination, so the next tick re-planned the SAME leg and we looped forever with
+      // the character pinned at the door square. Detect that case and KEEP the leg so the
+      // mover's raw-door-push engages; only re-plan (clear the leg) when the standOn is a
+      // normal square and the character is in a genuine dead-end.
+      const geo = this.session?.world?.geometry;
+      const standOnFineBlocked = aim && geo?.fineWalkable
+        ? geo.fineWalkable(aim.row, aim.col) === false
+        : false;
+      if (standOnFineBlocked) {
+        // Reset the stuck timer so we keep pressing (via the raw-door-push) instead of
+        // re-planning the same leg. The mover reports when the push finally lands.
+        this.mark = { col: me.col, row: me.row, at: t };
+        if (process.env.M59_ROUTE_DEBUG === '1')
+          console.error(`[routedbg] t3 stuck AT DOOR (${aim.col},${aim.row}) for ${held}s — keeping leg, letting raw-door-push engage`);
+        // Fall through to the mover below (do NOT return) so it runs the raw-door-push.
+      } else {
+        this.leg = null;
+        this.mark = null;
+        return this._say('stuck', { why: `same square (${where.col},${where.row}) for ${held}s` +
+                                         (aim ? `, aiming at (${aim.col},${aim.row})` : '') });
+      }
     }
 
     // At the staging square: the crossing is triggered by walking PAST the boundary, so

@@ -37,6 +37,90 @@ import { planFor } from './m59-plan.mjs';
 import { pickWeapon } from './m59-act/equip.mjs';
 import { pickFood } from './m59-act/eat.mjs';
 import { knownSpells } from './m59-act/cast.mjs';
+import { affordances } from './m59-parse.mjs';
+
+// BROKEN-WEAPON TRACKING (the fix for the shattered-mace loop).
+//
+// A weapon the server refuses with "You can't use X--it's broken" (player.kod:127)
+// cannot be wielded, ever, on this session. The old behaviour kept the weapon in the
+// candidate list and retried `use` on it every tick (JayB, Raza Inn: `use` at 9.67/s,
+// equipment stuck at [], the `armed` goal never satisfied). The legacy equipBest
+// (m59-skills.mjs) condemned the weapon the moment it read the refusal and stopped
+// offering it. We do the same: the `equip` intent, before sending `use`, scans the
+// client's event ring for a recent "it's broken" refusal and marks the weapon broken.
+// The tick driver is synchronous, so this is a ring scan (cheap, off the wire), not a
+// push listener (the client has no EventEmitter; it keeps an event ring + a single
+// onEvent callback, so `client.on(...)` does not exist).
+const brokenBySession = new WeakMap();  // session -> Set of broken weapon ids
+const BROKEN_TEXT = /can'?t use .*--it'?s broken/i;  // player.kod:127
+
+// The set of broken weapon ids for a session (created on first use).
+function brokenSetFor(session = null, client = null) {
+  const key = session ?? client;
+  let set = brokenBySession.get(key);
+  if (!set) { set = new Set(); brokenBySession.set(key, set); }
+  return set;
+}
+
+// Scan the client's event ring for "it's broken" refusals and add the named weapon's
+// id to the broken set. Called by the `equip` intent before sending `use`, so a
+// weapon the server just refused gets condemned before it's retried. Cheap: a linear
+// scan of the last ~500 events, only on ticks where `armed` is the active goal.
+function scanBrokenFromEvents(client, session = null) {
+  if (!client?.events) return;
+  const set = brokenSetFor(session, client);
+  const inv = client.inventory ?? [];
+  // Build a name -> id map for the current pack (the refusal names the weapon).
+  const nameToId = new Map();
+  for (const o of inv) {
+    const n = String(client.rsc?.get?.(o.nameRsc) ?? o.name ?? '').toLowerCase();
+    if (n && o?.id != null) nameToId.set(n, o.id);
+  }
+  for (const ev of client.events) {
+    if (ev.kind !== 'message') continue;
+    const t = String(ev.text ?? '');
+    if (!BROKEN_TEXT.test(t)) continue;
+    // "You can't use the mace--it's broken" — extract the weapon name (after "use the").
+    const m = t.match(/use (?:the )?(.+?)--it'?s broken/i);
+    if (!m) continue;
+    const name = m[1].trim().toLowerCase();
+    // THE ID IS THE ONE WE JUST TRIED, NOT THE NAME. A pack can hold NINE maces (JayB
+    // accumulated broken ones); the refusal says "the mace" and a name->id map can only
+    // hold one of them, so name-matching condemned the wrong id and the equip retried
+    // the one it was actually refused. The equip intent records the id it just used in
+    // session._lastEquipId — condemn THAT on a fresh broken refusal.
+    if (session && session._lastEquipId != null && !set.has(session._lastEquipId)) {
+      set.add(session._lastEquipId);
+      console.error(`[broken] ${session?.name ?? 'keeper'}: ${name} is broken (id ${session._lastEquipId}) — condemned, will not retry`);
+    }
+    const id = nameToId.get(name);
+    if (id != null && !set.has(id)) {
+      set.add(id);
+      console.error(`[broken] ${session?.name ?? client.me?.name ?? 'keeper'}: ${name} is broken (id ${id}) — condemned, will not retry`);
+    }
+  }
+}
+
+// A weapon in the pack that is NOT known-broken. Returns null when there is no
+// wieldable weapon (the pack is empty, or the only weapon is broken) — the caller
+// then knows to buy, not to retry the broken one.
+function pickWieldableWeapon(client, session = null) {
+  const broken = brokenSetFor(session, client);
+  const inv = client?.inventory ?? [];
+  const eq = client.equipment?.();
+  const held = new Set((eq && eq.known !== false ? eq.equipped || [] : []).map(o => o.id));
+  const WEAPON = /mace|sword|axe|club|hammer|dagger|staff|spear|blade|knife/i;
+  // Reuse pickWeapon's scoring for the first pick, then fall back to a scan if the
+  // best is broken.
+  const best = pickWeapon(client);
+  if (!best) return null;
+  if (!broken.has(best.id)) return best;
+  // Best is broken: find the next-best that isn't.
+  const candidates = inv
+    .filter(o => o?.id != null && !held.has(o.id) && !broken.has(o.id)
+      && WEAPON.test(String(client.rsc?.get?.(o.nameRsc) ?? o.name ?? '')));
+  return candidates.sort((a, b) => String(client.rsc?.get?.(b.nameRsc) ?? b.name ?? '').localeCompare(String(client.rsc?.get?.(a.nameRsc) ?? a.name ?? '')))[0] ?? null;
+}
 import { nearestHuntRoom } from './m59-hunt-room.mjs';
 import { loadSpawns } from './m59-spawns.mjs';
 import { readFileSync } from 'fs';
@@ -70,10 +154,133 @@ export const INTENTS = {
   stand: (f, act) => ({ sent: !!act.stand(), what: 'stand' }),
 
   equip: (f, act, ctx) => {
-    const item = pickWeapon(ctx.client);
-    if (!item) return { sent: false, why: 'no weapon in the pack' };
+    // Scan the event ring for a recent "it's broken" refusal so a shattered weapon
+    // gets condemned BEFORE we retry it (prevents the use-flood on a broken mace).
+    scanBrokenFromEvents(ctx.client, ctx.session);
+    const item = pickWieldableWeapon(ctx.client, ctx.session);
+    if (!item) {
+      // No wieldable weapon in the pack (the only one is broken, or there is none).
+      // The `armed` goal should now plan `buy` instead of retrying the broken weapon.
+      // "no weapon" in the message is what the refusal contract expects (the test
+      // matches /no weapon/) — a refusal, not a success.
+      return { sent: false, why: 'no weapon to equip (broken or absent)' };
+    }
     act.use(item.id);
+    ctx.session._lastEquipId = item.id;  // condemned on the next broken refusal (see scanBrokenFromEvents)
     return { sent: true, what: `equip ${item.name ?? item.id}` };
+  },
+
+  // BUY a weapon (or food) from the nearest merchant. The tick driver is synchronous,
+  // so this KICKS OFF the async buy atomic (m59-act/buy.mjs) — which advances ONE
+  // PHASE PER CALL (approach → open shop → buy → verify), returning after each. The
+  // `armed` goal keeps firing (until the character is armed), so each tick calls the
+  // atomic, advancing the next phase, until the purchase completes and the inventory
+  // updates. A single in-flight guard prevents racing: we don't start a new phase
+  // while the previous one is still resolving.
+  //
+  // This is the fallback when the only weapon in the pack is broken (the shattered-
+  // mace case): the character buys a replacement instead of retrying the broken one
+  // forever.
+  buy: (f, act, ctx) => {
+    const c = ctx.client;
+    const s = ctx.session;
+    // In-flight guard: the atomic is async and multi-phase. If a phase is still
+    // resolving, don't start another (they'd race on the same shop state). The next
+    // tick (100ms later) will try again once this one settles.
+    if (s && s._buyInFlight) {
+      return { sent: false, why: 'buy in flight' };
+    }
+    // Confirm a merchant is present so we don't kick off a pointless buy phase.
+    // Use the `buy` AFFORDANCE (the object's flags), not the name — a shopkeeper like
+    // "Marcus" has no role word in the name, but its flags carry the buy affordance.
+    // This is the same detection the buy atomic (m59-act/buy.mjs) uses.
+    const objects = c.room?.objects;
+    const list = objects instanceof Map ? [...objects.values()]
+               : Array.isArray(objects) ? objects : [];
+    const merchants = list.filter(o => affordances(o.flags ?? 0).includes('buy'));
+    if (!merchants.length) {
+      // No merchant in this room. Route to the main town (the Raza, room 1012) where
+      // the smith sells weapons.
+      if (s?._router) {
+        const dest = 1013;  // Raza Blacksmith — where the smith sells weapons
+        if (s._router.dest !== dest) {
+          s._router.to(dest);
+          return { sent: true, what: `travel to the smith (room ${dest})` };
+        }
+        const r = routeIntent(s._router)(frame, act);
+        return { sent: r.sent, what: r.what ?? `traveling to the smith (room ${dest})` };
+      }
+      return { sent: false, why: 'no merchant in room' };
+    }
+    // A merchant is present. But neither the Raza Inn (1011, innkeeper Marcus, no
+    // weapons) nor the Raza field (1012, no merchant) has a weapon for sale. If we're
+    // in either, route to the Raza Blacksmith (1013) where the smith sells weapons.
+    // Same if a cached list has no weapon.
+    const roomNum = c.room?.num ?? s?.world?.room?.num;
+    const buyList = c.buyList;
+    const listHasWeapon = buyList?.items?.length
+      ? buyList.items.some(i => /mace|sword|axe|club|hammer|dagger|staff|spear|blade|knife/i.test(String(c.rsc?.get?.(i.nameRsc) ?? i.name ?? '')))
+      : null;  // null = list not cached yet
+    if (roomNum === 1011 || roomNum === 1012 || listHasWeapon === false) {
+      // Inn or field (no weapons here) or a cached list with no weapon: go to the smith.
+      if (s?._router) {
+        const dest = 1013;  // Raza Blacksmith
+        if (s) s._buyingRoute = dest;
+        if (s._router.dest !== dest) {
+          s._router.to(dest);
+          // Drive the router on the same tick so the character starts moving
+          // immediately, rather than waiting for the next tick's "already routing"
+          // branch. Without this, the destination is set but nothing moves the
+          // character, and it sits in the inn.
+          const r = routeIntent(s._router)(frame, act);
+          return { sent: r.sent, what: `travel to the smith (room ${dest}) — no weapon here` };
+        }
+        const r = routeIntent(s._router)(frame, act);
+        return { sent: r.sent, what: r.what ?? `traveling to the smith (room ${dest})` };
+      }
+      return { sent: false, why: 'no weapon for sale in this room' };
+    }
+    // APPROACH PHASE (synchronous, one command per tick): opening a shop requires being
+    // near the merchant (within ~2 squares) — the server opens the list only in reach.
+    // JayB sat in the Raza Blacksmith for hours on exactly this: 6 squares from the
+    // smith, the async buy atomic asked `c.buy(tomas.id)` from across the room, got
+    // nothing, and the `armed -> buy` goal (top priority, mace broken) preempted
+    // `hunt -> travel` every tick so he never moved. Do the distance check HERE, on
+    // this tick, and route toward the merchant with the mover. When we are near, the
+    // next pass fires the actual (async) shop-open + purchase.
+    {
+      const me = c.self;
+      const distToNearest = me
+        ? Math.min(...merchants.map(o => Math.hypot((o.col ?? 0) - me.col, (o.row ?? 0) - me.row)))
+        : Infinity;
+      if (distToNearest > 1.5) {
+        const target = [...merchants].sort((a, b) =>
+          Math.hypot((a.col ?? 0) - me.col, (a.row ?? 0) - me.row)
+          - Math.hypot((b.col ?? 0) - me.col, (b.row ?? 0) - me.row))[0];
+        // Mark the buy as active so the hunt goal yields for the whole approach (not just
+        // the async phase). Without this, `hunt -> travel` resets the mover's destination
+        // to the hunt room on its ticks, fighting the approach and leaving JayB bouncing
+        // in place in the blacksmith.
+        if (s) s._buyingActive = true;
+        const mv = s._mover;
+        if (mv) {
+          mv.to(target.col, target.row);
+          // Drive the mover this tick so it actually steps toward the merchant (the
+          // router is not involved — same-room approach, and the tick loop does not
+          // call mover.tick on its own; the intent must).
+          mv.tick({ col: me.col, row: me.row, x: me.x, y: me.y });
+        }
+        return { sent: true, what: `approach ${target.name ?? 'merchant'} at (${target.col},${target.row})` };
+      }
+    }
+    if (s) { s._buyInFlight = true; s._buyingActive = true; }
+    import('./m59-act/buy.mjs').then(({ buy }) => {
+      return buy(c, s, {});   // no itemId/wantName: the atomic picks a weapon if unarmed
+    }).then(res => {
+      console.error(`[buy] ${s?.name ?? 'keeper'}: ${res?.bought ? 'bought ' + res.bought : 'no buy (' + (res?.reason ?? 'unknown') + ')'}`);
+    }).catch(e => console.error(`[buy] ${s?.name ?? 'keeper'} err: ${e.message}`))
+      .finally(() => { if (s) s._buyInFlight = false; });
+    return { sent: true, what: 'buy weapon (one phase)' };
   },
 
   eat: (f, act, ctx) => {
@@ -352,6 +559,19 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
     const ws = evaluate({ client, session, policy, agent: session.name });
     // Expose the raw vigor value for the vigor_low goal.
     ws._vigor = client?.vitals?.()?.vigor?.value ?? null;
+
+    // CLEAR THE BUY-ROUTE FLAG ONCE ARMED. The `armed` goal set _buyingRoute while
+    // routing to the smith to buy a weapon. Once the character is armed (the buy
+    // succeeded, or the mace re-equipped), clear the flag so the hunt goal can grab
+    // the router again and re-route to a hunt room. Without this, _buyingRoute would
+    // stay set and the hunt goal would hold the route to the shop forever.
+    if (ws.armed === true && session._buyingRoute != null) {
+      session._buyingRoute = null;
+    }
+    // Also clear the buy-ACTIVE flag once armed, so the hunt goal resumes.
+    if (ws.armed === true && session._buyingActive) {
+      session._buyingActive = false;
+    }
 
     // DETECT DAMAGE. If our HP just dropped (vs lastSeenHp), we took damage. The
     // attacker is the nearest mob in melee range — the game doesn't send an explicit
@@ -713,17 +933,19 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
     _resting = active?.goal === 'healthy' || active?.goal === 'vigor_low';
     _fighting = active?.goal === '_fight';
 
-    // STAND BEFORE MOVING. Resting sits the character down, and a sitting character
-    // cannot move — the server silently refuses every step, which looks exactly like
-    // "stuck in geometry" (refused_edges: 8, kept ending up somewhere other than the
-    // planned square). When we transition from a rest goal to a movement goal, send
-    // stand() first so the character is upright before the router tries to walk it.
+    // STAND BEFORE MOVING (OR EQUIPPING). Resting sits the character down, and a
+    // sitting character cannot move OR equip — the server silently refuses steps and
+    // `use` while seated. When we transition from a rest goal to a movement goal OR
+    // the `armed` goal (equip), send stand() first so the character is upright.
     // This is the fix for the respawn-at-inn case: JayB died, respawned sitting at Raza
-    // Inn, and could not walk to the Mausoleum because he was still seated from the
-    // rest that ran just before he died.
-    if (_wasResting && !_resting && active && (active.goal === 'hunt' || active.goal === 'flee_danger' || active.goal === 'flee_hurt' || active.goal === 'travel' || active.goal === '_fight')) {
+    // Inn, and could not walk to the Mausoleum because he was still seated. The same
+    // posture trap blocks equip: JayB, Raza Inn, full HP, mace in pack, `armed` goal
+    // firing every tick with `use` at 10/s but equipment stuck at [] because he was
+    // still sitting from the rest. `armed` is in the list so the stand goes out before
+    // the plan/intend path tries to equip.
+    if (_wasResting && !_resting && active && (active.goal === 'hunt' || active.goal === 'flee_danger' || active.goal === 'flee_hurt' || active.goal === 'travel' || active.goal === '_fight' || active.goal === 'armed')) {
       try { act.stand?.(); } catch { /* best effort */ }
-      onDecision?.({ ticks, goal: active.goal, action: 'stand', sent: true, what: 'stand before moving' });
+      onDecision?.({ ticks, goal: active.goal, action: 'stand', sent: true, what: 'stand before ' + (active.goal === 'armed' ? 'equipping' : 'moving') });
       _wasResting = false;
       return;
     }
@@ -914,9 +1136,30 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
     // directional decision, not a world-state transition — it sets
     // the router's destination rather than sending a command.
     if (active?.goal === 'hunt' || (!active && ws.has_target === false)) {
+      // YIELD WHOLESALE WHILE THE BUY IS ACTIVE (approaching the merchant or the async
+      // shop-open/purchase in flight). The buy goal drives the mover itself during the
+      // same-room approach, so the hunt goal must not touch the router or mover at all —
+      // otherwise it resets the destination to the hunt room and the character bounces
+      // in place. `_buyingActive` is set by the buy intent and cleared when the character
+      // becomes armed (or the buy is abandoned).
+      if (session._buyingActive) {
+        return;
+      }
       const router = session._router;
       if (router && router.dest == null) {
-        // No active route: pick a hunt room.
+        // No active route: pick a hunt room. BUT if the character is actively routing
+        // to a shop to buy a weapon (the `armed` goal set _buyingRoute), don't grab the
+        // router — that's how hunt would override the smith-bound route and JayB would
+        // bounce between 1012 (smith) and 1016 (Mausoleum) without buying. The hunt
+        // goal resumes once the buy succeeds (armed=true clears _buyingRoute) or the
+        // route is abandoned.
+        if (session._buyingRoute != null && session._buyingRoute === router.dest) {
+          // Let the armed goal keep driving the route.
+          const r = routeIntent(router)(frame, act);
+          onDecision?.({ ticks, goal: 'hunt', action: 'travel',
+            what: r.what ?? `holding route to shop (room ${session._buyingRoute})`, sent: r.sent });
+          return;
+        }
         try {
           const roomNum = frame?.room?.num ?? frame?.room?.id;
           const roomName = frame?.room?.name ?? null;
@@ -979,9 +1222,30 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
       return; }
 
     // 4. ACT. One command, fired, not awaited.
-    const r = intend(first, frame, act, { client, session, ws });
+    //
+    // BROKEN-WEAPON FALLTHROUGH. If the plan is `equip` but the only weapon in the pack
+    // is broken (pickWieldableWeapon returns null), `equip` would send `use` on the
+    // broken weapon and the server would refuse it every tick (the shattered-mace loop).
+    // Instead, fall through to `buy`: the character is at a shop (the `armed` goal is
+    // only actionable there in practice) and needs a replacement. This is the case the
+    // planner can't see — `equip`'s precondition is empty, so it always looks viable,
+    // and the broken-weapon state is tracked outside the world-state symbols. We check
+    // it here, at the moment of acting, and swap the action.
+    let actionName = first;
+    // BROKEN-WEAPON FALLTHROUGH. If the plan is `equip` but the only weapon in the
+    // pack is broken (pickWeapon finds one, but pickWieldableWeapon — which excludes
+    // the broken set — returns null), `equip` would send `use` on the broken weapon
+    // and the server would refuse it every tick (the shattered-mace loop). Swap to
+    // `buy`: the character needs a replacement. This only fires when there IS a weapon
+    // in the pack and it's broken — with an empty pack, `equip`'s "no weapon" refusal
+    // stands (there's nothing to buy the character into; the refusal is the truth).
+    if (active.goal === 'armed' && first === 'equip'
+        && pickWeapon(client) != null && !pickWieldableWeapon(client, session)) {
+      actionName = 'buy';
+    }
+    const r = intend(actionName, frame, act, { client, session, ws });
     note(active.goal, r.sent);
-    onDecision?.({ ticks, goal: active.goal, action: first, sent: r.sent,
+    onDecision?.({ ticks, goal: active.goal, action: actionName, sent: r.sent,
                    what: r.what ?? null, why: r.why ?? null });
   };
 

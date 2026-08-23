@@ -384,7 +384,15 @@ export class Mover {
       const distToDest0 = Math.hypot(this.destProto.x - myProtoX, this.destProto.y - myProtoY);
       const geoRef = this.session?.world?.geometry;
       const destFineOk = geoRef?.fineWalkable ? geoRef.fineWalkable(destRow, destCol) : undefined;
-      if (distToDest0 < KOD_FINENESS * 4 && destFineOk === false) {
+      // FIRE ON TWO TRIGGERS. (1) The dest square is FINE-BLOCKED — a door in a walled gap
+      // the model can't path to. (2) The dest is fine-walkable as a square but we are near it
+      // and A* found NO PATH (this._noRouteReason is set and this.path is null) — the Raza
+      // Blacksmith door is exactly this: (9,7) is marked walkable, but the only approach from
+      // the room edge (10,5) is walled off, so the path search fails. Both are the same
+      // "walled gap" the raw push exists for; the server is client-authoritative and accepts
+      // a step the fine model refuses.
+      const noPathToNearDest = this.path == null && this._noRouteReason != null;
+      if (distToDest0 < KOD_FINENESS * 4 && (destFineOk === false || noPathToNearDest)) {
         const rx = this.destProto.x - myProtoX, ry = this.destProto.y - myProtoY;
         const rd = Math.hypot(rx, ry) || 1;
         const stepProto = Math.min(rd, KOD_FINENESS);
@@ -458,11 +466,23 @@ export class Mover {
         break;
       }
       if (stepCol == null) {
-        // No valid neighbor: report blocked so the router can react.
+        // No fine-reachable neighbor. Initiate the verified raw-move fan (server-confirmed
+        // escape) before declaring blocked — see the waypoint branch for the rationale.
+        this.stuckTicks++;
+        if (this._fanIndex == null && this._fanTarget == null && this.stuckTicks >= 3) {
+          this._fanIndex = 0;
+          this._fanFrom = { x: myProtoX, y: myProtoY };
+          return { state: 'raw-move', fanIndex: 0, why: 'verified escape fan (no-path fallback)' };
+        }
         return { state: 'blocked', why: 'no walkable neighbor toward dest' };
       }
       const stepProtoX = stepCol * KOD_FINENESS + HALF, stepProtoY = stepRow * KOD_FINENESS + HALF;
-      if (this._movementGateOk(stepProtoX, stepProtoY, myProtoX, myProtoY)) {
+      // The server position is the room object's col/row (what the server last
+      // confirmed). The local position (selfPos.x) leads it. The gate compares the
+      // step against the server position — the step is always ahead of the server.
+      const serverPX = curCol * KOD_FINENESS + HALF;
+      const serverPY = curRow * KOD_FINENESS + HALF;
+      if (this._movementGateOk(stepProtoX, stepProtoY, myProtoX, myProtoY, serverPX, serverPY)) {
         Promise.resolve(s.walkTo(stepCol, stepRow, { steps: 1 })).catch(() => {});
         this._recordReport(stepProtoX, stepProtoY);
       }
@@ -568,11 +588,24 @@ export class Mover {
       stepCol = nc; stepRow = nr; break;              // fine ok, or no data
     }
     if (stepCol == null) {
-      // No fine-reachable neighbor and not close to a fine-unreachable dest: genuinely
-      // stuck. Try blink.
+      // No fine-reachable neighbor: the fine model has walled us in. The server is
+      // CLIENT-AUTHORITATIVE (it does not check geometry), so a fine-wall here may be
+      // a model mismatch, not a real wall (the Raza Blacksmith traps a character exactly
+      // this way: every fine step is blocked, but the server accepts the step the fine
+      // grid calls a wall). Do NOT jump straight to a blind blink. Instead initiate the
+      // VERIFIED raw-move FAN: it fires one raw move per tick in 8 directions, and the
+      // position-change check (FAN PROGRESS above) only commits if the SERVER actually
+      // moved us. If a direction is server-accepted we walk out; if all 8 are refused the
+      // fan itself falls back to blink (handled in the fan-progress block). This tries the
+      // cheaper, safer escape first and only blinks when the server refuses every step.
       this.stuckTicks++;
-      if (this.stuckTicks > 10) {
-        this._tryBlink();
+      if (this._fanIndex == null && this._fanTarget == null && this.stuckTicks >= 3) {
+        this._fanIndex = 0;
+        this._fanFrom = { x: myProtoX, y: myProtoY };
+        return { state: 'raw-move', fanIndex: 0, why: 'verified escape fan: no fine step, trying server-confirmed raw moves' };
+      }
+      if (this._fanIndex == null && this._fanTarget == null) {
+        return { state: 'stuck', why: 'no valid adjacent square' };
       }
       return { state: 'stuck', why: 'no valid adjacent square' };
     }
@@ -583,7 +616,9 @@ export class Mover {
     // moveToSquare cannot.
     // LAZY GATE: only send if the interval + threshold allow it (see the other fallback).
     const enrProtoX = stepCol * KOD_FINENESS + HALF, enrProtoY = stepRow * KOD_FINENESS + HALF;
-    if (this._movementGateOk(enrProtoX, enrProtoY, myProtoX, myProtoY)) {
+    const serverPX2 = curCol * KOD_FINENESS + HALF;
+    const serverPY2 = curRow * KOD_FINENESS + HALF;
+    if (this._movementGateOk(enrProtoX, enrProtoY, myProtoX, myProtoY, serverPX2, serverPY2)) {
       s.walkTo(stepCol, stepRow, { steps: 1 })
         .then(wr => { if (process.env.M59_MOVE_DEBUG !== '0')
           console.error(`[movedbg] t3 gateOK step=(${stepCol},${stepRow}) me=(${me.col},${me.row}) walkTo=>${JSON.stringify(wr)}`); })
@@ -639,32 +674,23 @@ export class Mover {
   // protoX/protoY is kept in the signature for the caller's record step, but the
   // distance check uses myProtoX/myProtoY (the character's ACTUAL position).
   // A stale _lastReport (a gap > 1 square from the current position — a refused
-  // move, a teleport, a respawn) is snapped to the current position so the check
-  // is always against reality, and the interval is re-armed so it doesn't burst.
-  _movementGateOk(protoX, protoY, myProtoX, myProtoY) {
+  // move, a teleport, a respawn) is handled by the mover's re-plan, so no extra snap.
+  _movementGateOk(protoX, protoY, myProtoX, myProtoY, serverX, serverY) {
     const now = Date.now();
-    // STALE-REFERENCE RESET. If _lastReport is more than 1 square from where the
-    // character actually is, it's out of sync. Snap it to the current position.
-    if (myProtoX != null && myProtoY != null && this._lastReportX != null) {
-      const ddx = this._lastReportX - myProtoX;
-      const ddy = this._lastReportY - myProtoY;
-      if (ddx * ddx + ddy * ddy > KOD_FINENESS * KOD_FINENESS) {
-        this._lastReportX = myProtoX;
-        this._lastReportY = myProtoY;
-        this._lastReportAt = now;
-      }
-    }
-    // movedEnough: the CURRENT POSITION is far enough from the last report. This
-    // matches MoveUpdatePosition exactly: the player moved a meaningful distance
-    // past where the server last saw us. Using the current position (not the step
-    // target) means the gate opens whenever the character has actually moved, and
-    // re-closes for one interval so we pace at ~1 packet/s.
-    const refX = this._lastReportX;
-    const refY = this._lastReportY;
-    const curX = myProtoX;
-    const curY = myProtoY;
-    const dx = refX == null ? Infinity : (refX - curX);
-    const dy = refY == null ? Infinity : (refY - curY);
+    // The gate compares the STEP (protoX/protoY — where the character is heading)
+    // against the SERVER POSITION (serverX/serverY — where the server last confirmed
+    // the character is). This is the client's MoveUpdateServer model: report when
+    // you've moved far enough PAST where the server thinks you are. The server
+    // position lags the character, so the step is always "ahead" of it, and the gate
+    // opens every interval. The old deadlock (step == lastReport) is impossible here
+    // because serverX/Y is BEHIND the step (the server hasn't confirmed the character's
+    // latest position yet). This is the version that worked; the current-position
+    // variant deadlocked because at the start of a path the character is AT its
+    // last-reported position (distance 0, gate closed, never moves).
+    const refX = serverX ?? null;
+    const refY = serverY ?? null;
+    const dx = refX == null ? Infinity : (protoX - refX);
+    const dy = refY == null ? Infinity : (protoY - refY);
     const moved2 = refX == null ? Infinity : (dx * dx + dy * dy);
     const movedEnough = moved2 > MOVE_THRESHOLD_PROTO2;
     const intervalOk = (now - this._lastReportAt) >= MOVE_INTERVAL_MS;
@@ -678,7 +704,7 @@ export class Mover {
 
   // Returns true if a position packet was actually sent this tick.
   _maybeReportPosition(protoX, protoY, c, s, serverX, serverY) {
-    if (!this._movementGateOk(protoX, protoY, serverX, serverY)) return false;
+    if (!this._movementGateOk(protoX, protoY, serverX, serverY, serverX, serverY)) return false;
     const px = Math.round(protoX), py = Math.round(protoY);
     Promise.resolve(s.pacer.submit('move', () => c.moveTo(px, py, 18, c.room?.id ?? 0), 100)).catch(() => {});
     this._recordReport(protoX, protoY);

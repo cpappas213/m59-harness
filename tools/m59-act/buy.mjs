@@ -53,6 +53,7 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
   // pass, which is a re-read of the world between every phase rather than a plan made
   // once and executed blind.
   let buyList = c.buyList;
+  let answered = null;  // hoisted: the purchase phase (outside the open-shop block) needs the seller
 
   if (!buyList?.items?.length) {
     const objects = c.room?.objects;
@@ -62,54 +63,90 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
     if (!merchants.length)
       return { sent: false, bought: null, reason: 'no merchant in this room' };
 
-    // THE NEAREST ONE, not each one in turn. Trying every merchant in a room was how
-    // one call became a tour; if the nearest cannot serve us the next pass sees an
-    // unchanged buy list and we are no worse off than after one wasted step.
+    // THE AFFORDANCE IS NOT PROOF THE OBJECT TRADES. A shop room can hold several
+    // `buy`-affordance objects — the merchant NPC, a "buying items" prompt, a bartender
+    // who sells nothing — and only SOME of them actually open a shop list. The legacy
+    // keeper (autopilot.sellerHere) learned this the hard way: a room with two `buy`
+    // objects where the first (Parrin) "opens no shop list at all" made every character
+    // ask the wrong one and file "the merchant never opened a shop list" — 87 times in a
+    // day. The fix is to TRY EACH CANDIDATE IN TURN and take the first that answers with
+    // a non-empty list. That is what we do here: freeze the tick driver (its move/turn
+    // packets would interrupt the shop query), ask each candidate, and keep the first
+    // that returns items.
+    const loop = session._tickLoop;
+    // Nearest-first so we ask the one we're standing at before touring the room.
     const me = c.self;
-    const seller = me
-      ? merchants.reduce((best, o) => {
-          const d = Math.hypot((o.col ?? 0) - me.col, (o.row ?? 0) - me.row);
-          return d < best.d ? { o, d } : best;
-        }, { o: null, d: Infinity }).o
-      : merchants[0];
-    const sName = c.rsc?.get?.(seller.nameRsc) ?? 'merchant';
+    const ranked = me
+      ? [...merchants].sort((a, b) =>
+          Math.hypot((a.col ?? 0) - me.col, (a.row ?? 0) - me.row)
+        - Math.hypot((b.col ?? 0) - me.col, (b.row ?? 0) - me.row))
+      : merchants;
 
-    // PHASE 1 -- get within talking distance. One step, then hand the pass back.
-    if (me) {
-      const d = Math.hypot((seller.col ?? 0) - me.col, (seller.row ?? 0) - me.row);
-      if (d > 2) {
-        const stepped = typeof session.walkTo === 'function'
-          ? await session.walkTo(seller.col, seller.row, { maxSteps: 1 })
-              .catch(() => ({ arrived: false }))
-          : { arrived: false, reason: 'no walker on the session' };
-        const after = c.self;
-        const moved = !!after && (after.col !== me.col || after.row !== me.row);
-        return { sent: true, bought: null, approaching: sName,
-                 reason: moved ? `a step closer to ${sName}`
-                               : (stepped?.reason ?? `could not get closer to ${sName}`) };
-      }
+    if (loop) loop._frozen = true;
+    // WAIT UNTIL SETTLED before asking for the shop. The approach just sent a move to
+    // get us adjacent to the merchant; if a position packet is still draining when we
+    // fire `c.buy`, the server sees us mid-move and replies with movement messages
+    // ("You walk...") instead of a shop list — the atomic then gets 4 messages, no shop,
+    // and files "no reply". The manual /action shop override worked because it was
+    // called while the character was already still. Watch the server-confirmed position
+    // and wait until it has not moved for ~800ms (genuinely stopped), up to 3s.
+    {
+      const posKey = () => { const p = c.self; return p ? `${p.col},${p.row}` : 'none'; };
+      const settledStart = Date.now();
+      let lastKey = posKey(), lastChange = Date.now();
+      const settledAt = await new Promise(resolve => {
+        const iv = setInterval(() => {
+          const k = posKey();
+          if (k !== lastKey) { lastKey = k; lastChange = Date.now(); }
+          const now = Date.now();
+          if (now - lastChange > 800) { clearInterval(iv); resolve('settled'); }
+          else if (now - settledStart > 3000) { clearInterval(iv); resolve('timeout'); }
+        }, 150);
+      });
+      if (process.env.M59_BUY_DEBUG !== '0') console.error(`[buydbg] settled=${settledAt} at ${posKey()}`);
+    }
+    // ONE MERCHANT PER CALL — NOT A LOOP. The no-loop-around-an-await rule (the buy atomic
+    // must be interruptible between iterations, the caller re-invokes each pass) forbids a
+    // `for` over merchants with an await inside. A room can hold several `buy`-affordance
+    // objects (the merchant, a "buying items" prompt, a bartender who sells nothing) and
+    // only SOME open a shop list, so we remember the ids already tried this session in
+    // session._buyTried and skip them; each call asks the next untried candidate, and a
+    // failed one is recorded so the next call moves on. The caller (the buy intent) re-fires
+    // every tick until one answers or the list is exhausted.
+    const tried = (session._buyTried ??= new Set());
+    // Reset the skip list if the character changed rooms (new room, new merchants).
+    const roomNum = c.room?.num ?? c.room?.id ?? null;
+    if (roomNum != null && session && session._buyTriedRoom !== roomNum) {
+      tried.clear();
+      session._buyTriedRoom = roomNum;
+    }
+    const candidate = ranked.find(o => o?.id != null && !tried.has(o.id)) ?? null;
+    if (!candidate) {
+      if (loop) loop._frozen = false;
+      return { sent: true, bought: false, reason: 'no merchant in this room opened a shop list' };
+    }
+    if (process.env.M59_BUY_DEBUG !== '0') console.error(`[buydbg] trying merchant ${candidate.name ?? candidate.id} (id ${candidate.id}) flags=${candidate.flags}`);
+    try {
+      const before = c.evSeq;
+      await session.pacer.submit('buy', () => c.buy(candidate.id), 300).catch(() => {});
+      const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 4000 })
+                        .catch(() => ({ events: [] }));
+      if (process.env.M59_BUY_DEBUG !== '0') console.error(`[buydbg] merchant ${candidate.id}: got ${ev.events?.length ?? 0} events: ${ev.events?.map(e=>e.kind).join(',') || 'none'}`);
+      const shop = ev.events?.find(e => e.kind === 'shop');
+      const items = shop?.items ?? [];
+      if (items.length) answered = { seller: candidate, items };
+      else tried.add(candidate.id);  // this one sold nothing; skip it next call
+    } finally {
+      if (loop) loop._frozen = false;
     }
 
-    // PHASE 2 -- open the shop. One request, one bounded wait.
-    const before = c.evSeq;
-    await session.pacer.submit('buy', () => c.buy(seller.id), 1000).catch(() => {});
-    const ev = await c.waitFor({ since: before, kinds: ['shop', 'message'], timeoutMs: 1500 })
-                      .catch(() => ({ events: [] }));
-    const shop = ev.events?.find(e => e.kind === 'shop');
-    if (!shop?.items?.length)
-      // `bought: FALSE`, not null. Null is "not applicable yet" -- what the approach
-      // phase returns while it is genuinely making progress -- and didAct() reads only
-      // an explicit false as a refusal. Returning null here made a merchant with an
-      // empty counter report acted=true on every pass, so the keeper called progress(),
-      // the goal-skip that stops a hopeless goal after five failures NEVER COUNTED ONE,
-      // and JayB stood in front of Marcus in the Raza Inn opening an empty shop for ever.
-      // Watched from the client, which is the only place it looked like anything at all.
-      //
-      // The wait is 1500ms rather than 4000ms for the same episode: the list arrives at
-      // once or not at all, and burning four seconds per pass to learn nothing is four
-      // seconds of not looking at anything else.
-      return { sent: true, bought: false, reason: `${sName} offered no list` };
-    buyList = { items: shop.items };
+    if (!answered) {
+      // No candidate in the room opened a shop list. `bought: FALSE` (not null) so the
+      // goal-skip counts it as a refusal after repeated failures.
+      return { sent: true, bought: false, reason: 'no merchant in this room opened a shop list' };
+    }
+    buyList = { items: answered.items };
+    c.buyList = buyList;  // cache so later passes skip the re-open
   }
 
   // PHASE 3 -- the purchase.
@@ -148,14 +185,32 @@ export async function buy(client, session, { itemId, waitMs = 1200, name: wantNa
   if (purse < cost)
     return { sent: false, bought: null, reason: `cannot afford: ${name} costs ${cost}, purse has ${purse}` };
 
-  // BUY THE ENTRY WE CHOSE, NOT THE ARGUMENT WE WERE GIVEN. This sent `itemId`, which
-  // is undefined on every planner-initiated buy -- the planner asks for "a buy" and
-  // lets the atomic pick -- so the request went out with no item on it and the reply
-  // never matched /bought/. It reported `sent: true` either way.
-  const before = c.evSeq ?? 0;
-  await session.pacer.submit('buy', () => c.buy(entry.id), waitMs).catch(() => {});
-  const ev = await c.waitFor({ since: before, kinds: ['message', 'inventory'], timeoutMs: waitMs })
+  // BUY THE ENTRY WE CHOSE. The shop must be OPEN when the item request goes out —
+  // the server tracks the "current seller" only briefly after we asked for the list,
+  // and a 1200ms gap let it lapse so `c.buy(itemId)` produced nothing (0 events). Re-open
+  // the seller's list, then buy the item a short beat later, so the purchase lands while
+  // the shop is freshly active.
+  const sellerId = (answered && answered.seller && answered.seller.id)
+    || (c.self ? [...(c.room?.objects?.values?.() ?? [])]
+         .filter(o => affordances(o.flags ?? 0).includes('buy'))
+         .sort((a, b) => Math.hypot((a.col??0)-c.self.col,(a.row??0)-c.self.row) - Math.hypot((b.col??0)-c.self.col,(b.row??0)-c.self.row))[0]?.id : null);
+  if (sellerId) {
+    // Re-open the seller's list so the shop is freshly active, THEN buy the item.
+    // The "bought" message must be read from AFTER this re-open, or the re-open's own
+    // shop event masks it (waitFor returns on the first event, which would be the shop).
+    await session.pacer.submit('buy', () => c.buy(sellerId), 300).catch(() => {});
+    // Give the server a beat to register the (re)opened shop before the item request.
+    await new Promise(r => setTimeout(r, 600));
+  }
+  const before = c.evSeq ?? 0;  // capture AFTER the re-open: the window holds only the item-buy's reply
+  // THE PURCHASE IS A DIFFERENT PACKET FROM OPENING THE SHOP. The legacy client
+  // (clientd3d/buy.c:342) buys with RequestBuyItems(seller_id, [itemId]) = BP_REQ_BUY_ITEMS,
+  // which carries BOTH the seller and the item list. `c.buy(itemId)` (REQ_BUY) only opens
+  // a shop — it does not purchase, which is why the item request produced 0 events.
+  await session.pacer.submit('buy', () => c.buyItems(sellerId, [entry.id]), 300).catch(() => {});
+  const ev = await c.waitFor({ since: before, kinds: ['message', 'inventory'], timeoutMs: waitMs + 1200 })
                 .catch(() => ({ events: [] }));
+  if (process.env.M59_BUY_DEBUG !== '0') console.error(`[buydbg] purchase ${entry.id} (${name}): got ${(ev.events??[]).length} events: ${(ev.events??[]).map(e=>e.kind).join(',') || 'none'}`);
 
   const msgs = (ev.events ?? []).filter(e => e.text).map(e => e.text);
   const success = msgs.some(m => /bought|purchased/i.test(m));

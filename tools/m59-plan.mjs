@@ -66,7 +66,15 @@ import { groundedCasts } from './m59-act/cast.mjs';
 // vanishes when the pack is empty cannot be sequenced after the thing that fills it.
 // What makes an impossible action impossible is its PRECONDITION; that is what `pre`
 // is for.
-const ALWAYS = [rest, stand, buy, equipBest, eatSomething];
+// ORDER MATTERS WHEN TWO ACTIONS ACHIEVE THE SAME SYMBOL AT EQUAL COST. The A*
+// breaks ties by insertion order, so the first matching action in this array wins.
+// `equipBest` is before `buy` on purpose: when a character already has a weapon in
+// its pack (JayB, holding a mace), the `armed` goal's plan should be EQUIP what he
+// has, not BUY another one (which spends gold for a duplicate and, worse, left the
+// character unable to act when there was no buy intent in the tick decider). Buying
+// is only right when the pack is empty; `equipBest` returns {sent:false, no weapon}
+// in that case and the planner falls through to `buy` on the next plan.
+const ALWAYS = [rest, stand, equipBest, buy, eatSomething];
 
 /**
  * actionsFor(client) -> [action]

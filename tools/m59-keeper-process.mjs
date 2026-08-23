@@ -162,6 +162,10 @@ async function join() {
         },
       });
       loop.start();
+      // Expose the loop on the session so the /action cast override can freeze it
+      // (hold the character still) while a spell is casting — movement breaks
+      // concentration and fails the cast.
+      session._tickLoop = loop;
       // The survival floor: watchdog over the tick driver.
       const { safetyFor } = await import('./m59-skills.mjs');
       const wdHost = {
@@ -650,7 +654,7 @@ const server = createServer(async (req, res) => {
         geoReady: !!geo?.collisionReady,
         // Equipment + inventory + spells, for debugging the caster combat.
         equipment: (() => { try { const e = c.equipment?.(); return e ? { known: e.known, equipped: e.equipped.map(o => o.name) } : null; } catch { return 'err'; } })(),
-        inventory: (() => { try { const inv = c.inventory ?? []; return inv.map(o => ({ n: c.rsc?.get?.(o.nameRsc) ?? o.name ?? '', count: o.count ?? 1 })); } catch { return 'err'; } })(),
+        inventory: (() => { try { const inv = c.inventory ?? []; return inv.map(o => ({ n: c.rsc?.get?.(o.nameRsc) ?? o.name ?? '', id: o.id ?? null, count: o.count ?? o.amount ?? 1, flags: o.flags ?? null, rarity: o.rarity ?? null })); } catch { return 'err'; } })(),
         spells: (c.spells ?? []).map(s => ({ name: s.name, id: s.id })),
         // Any active effects / enchantments the client tracks.
         effects: (c.effects && typeof c.effects === 'function') ? c.effects() : (c.activeEffects ?? null),
@@ -900,7 +904,8 @@ const server = createServer(async (req, res) => {
             break;
           }
           case 'cast': {
-            const c = session.need();
+            const c = session.client;
+            if (!c) { result = { error: 'no client' }; break; }
             const spellName = String(args.spell ?? '').toLowerCase();
             const spell = (c.spells ?? []).find(sp => {
               const n = c.rsc?.get?.(sp.nameRsc) ?? sp.name ?? '';
@@ -909,8 +914,30 @@ const server = createServer(async (req, res) => {
             if (!spell) {
               result = { error: `spell not found: ${spellName}` };
             } else {
-              c.cast(spell.id, []);
-              result = { sent: true, spell: spellName };
+              // A cast needs CONCENTRATION: any move or turn packet we send while the
+              // spell is charging interrupts it and the cast fails. The tick driver
+              // sends move/turn at 10Hz, so it would break the cast instantly. Freeze
+              // the loop (hold the character perfectly still) and wait for the cast
+              // to actually resolve — blink takes SEVERAL seconds, not the ~1s a
+              // simple attack does. We wait for the `moved` event (the server confirms
+              // the character relocated) or a max timeout, rather than a fixed short
+              // hold that would unfreeze too early and let the next move packet kill
+              // the cast.
+              const loop = session._tickLoop;
+              if (loop) {
+                const since = c.evSeq;  // events after this are from the cast
+                loop._frozen = true;
+                c.cast(spell.id, []);
+                const maxMs = Number(args.holdMs) || 15000;  // blink can take several s
+                const w = await c.waitFor({ since, kinds: ['moved'], timeoutMs: maxMs });
+                loop._frozen = false;
+                const moved = w.events.filter(e => e.kind === 'moved');
+                result = { sent: true, spell: spellName, frozenMs: Date.now() - since,
+                           relocated: moved.length > 0, timedOut: w.timedOut };
+              } else {
+                c.cast(spell.id, []);
+                result = { sent: true, spell: spellName };
+              }
             }
             break;
           }
@@ -925,6 +952,150 @@ const server = createServer(async (req, res) => {
             await session.pacer.submit('stand', () => session.client?.stand?.()).catch(e => { result = { error: e.message }; });
             result = result ?? { sent: true };
             break;
+          case 'rawmove': {
+            // DEBUG: client-authoritative move, no geometry check. The server does NOT
+            // validate movement against geometry (it's all client-side), so this places
+            // the character directly. Use when the mover's cached geometry is stale
+            // (e.g. the Raza Blacksmith is 50x48 on the live server but 10x10 in the
+            // local map, so the mover thinks the character is out of bounds and won't
+            // path).
+            // Use session.client directly (not need()) — need() throws when
+            // client.state !== 'game', but the client can be fully functional (the
+            // tick driver drives it fine) while the state field lags after a rejoin.
+            const c = session.client;
+            if (!c) { result = { error: 'no client' }; break; }
+            const col = Number(args.col), row = Number(args.row);
+            if (Number.isNaN(col) || Number.isNaN(row)) { result = { error: 'no col/row' }; break; }
+            const { KOD_FINENESS } = await import('./m59-parse.mjs');
+            const half = KOD_FINENESS / 2;
+            await session.pacer.submit('move', () => c.moveTo(col * KOD_FINENESS + half, row * KOD_FINENESS + half, 18, c.room?.id ?? 0), 100).catch(e => { result = { error: e.message }; });
+            result = result ?? { sent: true, col, row };
+            break;
+          }
+          case 'movetest': {
+            // DEBUG: attempt a one-square move and return the SERVER'S REPLY.
+            // Discriminates the stuck-state hypotheses: a blind/held character gets
+            // "You are unable to go anywhere" (user_cant_go); a character wedged in
+            // geometry gets a different reply (or the move just doesn't confirm).
+            // Uses session.client directly (not need()).
+            const c = session.client;
+            if (!c) { result = { error: 'no client' }; break; }
+            const me = c.self;
+            const col = Number(args.col ?? (me ? me.col + 1 : 0));
+            const row = Number(args.row ?? (me ? me.row : 0));
+            const { KOD_FINENESS } = await import('./m59-parse.mjs');
+            const half = KOD_FINENESS / 2;
+            const since = c.evSeq ?? 0;
+            await session.pacer.submit('move', () => c.moveTo(col * KOD_FINENESS + half, row * KOD_FINENESS + half, 18, c.room?.id ?? 0), 100).catch(e => { result = { error: e.message }; });
+            let reply = null, confirmed = null;
+            try {
+              const ev = await c.waitFor({ since, kinds: ['message', 'moved'], timeoutMs: 2500 }).catch(() => null);
+              if (ev?.events) {
+                const m = ev.events.find(e => e.kind === 'message');
+                if (m) reply = m.text ?? m.what;
+                const mv = ev.events.find(e => e.kind === 'moved');
+                if (mv) confirmed = { col: mv.col, row: mv.row };
+              }
+            } catch {}
+            const after = c.self;
+            result = { sent: true, from: { col: me?.col, row: me?.row }, to: { col, row },
+                       reply, confirmed, now: { col: after?.col, row: after?.row } };
+            break;
+          }
+          case 'shop': {
+            // DEBUG: open a shop directly by object id, with the loop frozen so the
+            // tick driver's move/turn packets don't interrupt the shop interaction.
+            // This is the manual override for when the buy atomic's approach can't
+            // position the character (stale geometry).
+            const c = session.client;
+            if (!c) { result = { error: 'no client' }; break; }
+            const targetId = Number(args.id ?? args.object);
+            if (!targetId) { result = { error: 'no object id' }; break; }
+            const obj = c.room?.objects?.get(targetId);
+            if (!obj) { result = { error: `object ${targetId} not in room` }; break; }
+            const loop = session._tickLoop;
+            if (loop) loop._frozen = true;
+            const sinceEv = c.evSeq ?? 0;
+            await session.pacer.submit('buy', () => c.buy(targetId)).catch(e => { result = { error: e.message }; });
+            let shopItems = null, msg = null;
+            try {
+              const ev = await c.waitFor({ since: sinceEv, kinds: ['shop', 'message'], timeoutMs: 2500 }).catch(() => null);
+              if (ev?.events) {
+                const s = ev.events.find(e => e.kind === 'shop');
+                if (s) shopItems = (s.items ?? []).map(i => ({ name: c.rsc?.get?.(i.nameRsc) ?? i.name, id: i.id, cost: i.cost }));
+                const m = ev.events.find(e => e.kind === 'message');
+                if (m) msg = m.text ?? m.what;
+              }
+            } catch {}
+            if (loop) loop._frozen = false;
+            result = { sent: true, targetId, name: c.rsc?.get?.(obj.nameRsc) ?? '', shopItems, msg };
+            break;
+          }
+          case 'buyitem': {
+            // DEBUG: buy an item directly. sellerId + itemId. Opens the shop first (to
+            // activate the seller), then sends the real purchase packet (buyItems).
+            const c = session.client;
+            if (!c) { result = { error: 'no client' }; break; }
+            const sellerId = Number(args.seller ?? args.id);
+            const itemId = Number(args.itemId ?? args.item);
+            if (!sellerId || !itemId) { result = { error: 'need seller and itemId' }; break; }
+            const loop = session._tickLoop;
+            if (loop) loop._frozen = true;
+            const sinceEv = c.evSeq ?? 0;
+            try {
+              // Open the shop to activate the seller.
+              await session.pacer.submit('buy', () => c.buy(sellerId), 300).catch(() => {});
+              await new Promise(r => setTimeout(r, 600));
+              const before = c.evSeq ?? 0;
+              // The real purchase packet.
+              await session.pacer.submit('buy', () => c.buyItems(sellerId, [itemId]), 300).catch(() => {});
+              const ev = await c.waitFor({ since: before, kinds: ['message', 'inventory', 'shop'], timeoutMs: 2500 }).catch(() => null);
+              const msgs = (ev?.events ?? []).filter(e => e.text).map(e => e.text);
+              result = { sent: true, sellerId, itemId, msgs, allEvents: (ev?.events ?? []).map(e => e.kind) };
+            } catch (e) { result = { error: e.message }; }
+            if (loop) loop._frozen = false;
+            break;
+          }
+          case 'use':
+          case 'equip': {
+            const id = args.id ?? args.item;
+            if (!id) { result = { error: 'no item id' }; break; }
+            // Equip/use an item by id. Bypasses the decider so we can test whether
+            // the server accepts the equip at all (diagnose the mace-not-equipping
+            // case: is the item broken, is the character seated, is the id stale?).
+            // Stand first (a seated character cannot equip), then use.
+            await session.pacer.submit('stand', () => session.client?.stand?.()).catch(() => {});
+            await new Promise(r => setTimeout(r, 300));
+            const before = session.client.equipment?.()?.equipped?.map(o => o.id) ?? [];
+            const sinceEv = session.client.evSeq ?? 0;
+            await session.pacer.submit('use', () => session.client?.use?.(id)).catch(e => { result = { error: e.message }; });
+            // Wait for the server's response — a broken weapon says so in prose
+            // (player.kod:127 "You can't use X--it's broken"). Capture any message.
+            let serverSaid = null;
+            try {
+              const ev = await session.client.waitFor({ since: sinceEv, kinds: ['equipment', 'message'], timeoutMs: 2500 }).catch(() => null);
+              if (ev?.events?.length) {
+                serverSaid = ev.events.map(e => e.text ?? e.what ?? e.kind).join(' | ');
+              }
+            } catch {}
+            const after = session.client.equipment?.()?.equipped?.map(o => o.id) ?? [];
+            result = result ?? { sent: true, id, before, after, equipped: after.includes(id), serverSaid };
+            break;
+          }
+          case 'look': {
+            const id = args.id ?? args.item;
+            if (!id) { result = { error: 'no item id' }; break; }
+            // Read the item's description (condition is in the description, weapon.kod:87-92).
+            const sinceEv = session.client.evSeq ?? 0;
+            await session.pacer.submit('look', () => session.client?.look?.(id)).catch(e => { result = { error: e.message }; });
+            let desc = null;
+            try {
+              const ev = await session.client.waitFor({ since: sinceEv, kinds: ['look', 'message'], timeoutMs: 2500 }).catch(() => null);
+              if (ev?.events?.length) desc = ev.events.map(e => e.text ?? e.description ?? e.what ?? e.kind).join('\n');
+            } catch {}
+            result = result ?? { sent: true, id, description: desc };
+            break;
+          }
           default:
             result = { error: `unknown action: ${name}` };
         }

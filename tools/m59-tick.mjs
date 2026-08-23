@@ -330,6 +330,7 @@ export class TickLoop {
     this.onSessionDead = onSessionDead;
     this.timer = null;
     this.busy = false;
+    this._frozen = false;  // set true by the cast override to hold the character still
     this._livenessFlagged = false;
     this.stats = { ticks: 0, skipped: 0, errors: 0, awaited: 0,
                    longest_decide_ms: 0, lastError: null, stale_sessions: 0 };
@@ -383,6 +384,11 @@ export class TickLoop {
     // under the one in progress; running a second against an older frame would build a
     // backlog of decisions about a world that is gone.
     if (this.busy) { this.stats.skipped++; return; }
+    // FROZEN: a cast in progress (blink, zap, ...) needs concentration. Any move or
+    // turn packet we send would interrupt the cast and make it fail. While _frozen is
+    // set (by the /action cast override), the tick loop does NOTHING — no decide,
+    // no actuate — so the character stands perfectly still until the cast resolves.
+    if (this._frozen) { return; }
     this.busy = true;
     const t0 = Date.now();
     // DIAGNOSTIC: a heartbeat so a silent stall is visible. A tick loop that has stopped

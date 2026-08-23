@@ -556,7 +556,7 @@ export const STEP_MASK_DIRS = DIRS;
 //      `_traceMoverStep`, without which the rule is inert: a square can straddle a cliff
 //      face, and the mover was landing on the low half while `walkTo` counted the square
 //      as reached. See `enforceStepHeight`.
-export const STEP_MASK_VERSION = 4;
+export const STEP_MASK_VERSION = 5;
 const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies
@@ -1100,15 +1100,22 @@ export class RoomGeometry {
     }
     const moved = Math.hypot(at.x - x0, at.y - y0) > GEOMETRY_EPSILON;
     const arrived = Math.hypot(at.x - x1, at.y - y1) <= GEOMETRY_EPSILON;
-    // COARSE GRID CHECK: if the destination square is not
-    // standable on the coarse grid, the move is blocked.
-    if (arrived && this.walkable) {
+    // STANDABLE, NOT WALKABLE. The coarse grid is a 1-byte-per-square projection that
+    // lags the BSP on ledge edges and door alcoves — the Raza Blacksmith's door square is
+    // coarse-blocked but fine-standable, and this check (the only coarse veto in the trace)
+    // was the thing pinning a character at the room edge: every fine path to the door
+    // crossed a coarse-walled square, so A* found nothing and the character sat down. The
+    // client is AUTHORITATIVE for movement — nothing server-side consults the coarse grid
+    // for a player move — so a square the BSP says holds somebody must not be vetoed by a
+    // coarse byte that says otherwise. `standable` is exactly "coarse-walkable OR fine-
+    // occupiable", which is what the mover's step predicate already uses.
+    if (arrived && this.standable) {
       const destCol = Math.floor(clientToProtocol(x1) / KOD_FINENESS);
       const destRow = Math.floor(clientToProtocol(y1) / KOD_FINENESS);
-      if (!this.walkable(destRow, destCol)) {
+      if (!this.standable(destRow, destCol)) {
         return { available: true, x: x0, y: y0, moved: false, arrived: false,
                  motionZ: carriedMotionZ,
-                 blocked: true, reason: 'coarse_grid_wall' };
+                 blocked: true, reason: 'standable_wall' };
       }
     }
     const destinationLeaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
@@ -1619,6 +1626,20 @@ export class RoomGeometry {
     }
     raw.reverse();
     if (raw.length && raw[0].r === fromR && raw[0].c === fromC) raw.shift();
+
+    // GUARD: validate every consecutive edge of the reconstructed path with the SAME
+    // predicate the mover uses (moverStepLands). If any edge is blocked, the path is not
+    // actually walkable — return found:false so the caller blacklists the target and picks
+    // the next-reachable one, instead of walking a dead-end that ping-pongs and then
+    // force-pushes through walls. This is the backstop for the case where the search's
+    // edge validation and the mover's step validator disagree (a one-way step-height edge
+    // that the search admitted but the mover refuses): rather than trust the search, the
+    // path must prove itself edge-by-edge before it is called "found".
+    for (let i = 0; i < raw.length - 1; i++) {
+      const a = raw[i], b = raw[i + 1];
+      if (!this.moverStepLands(a.r, a.c, b.r, b.c))
+        return { found: false, reason: 'path edge not walkable', waypoints: [], expanded };
+    }
 
     // Convert square path to protocol waypoints (center of each square).
     const waypoints = raw.map(({ r, c }) => ({
