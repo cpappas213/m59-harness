@@ -2567,6 +2567,11 @@ class Session {
           // tries, stale, too hurt, switched off — so all it needed was to be told.
           const arrived = outcome?.arrived === true;
           const here = Number(this.world?.room?.num ?? NaN);
+          // ARRIVING SETTLES THE TAB. Otherwise a character that reached Castle Victoria at
+          // the cost of one death carries that death into the NEXT objective and is given
+          // one fewer try for a road that has not charged it anything.
+          if (arrived && keeper && Number(keeper.journeyDeaths?.to) === Number(dest))
+            keeper.journeyDeaths = null;
 
           // A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE. THE OPERATOR'S RULE.
           //
@@ -2596,16 +2601,53 @@ class Session {
                 && Number(keeper?.tally?.deaths ?? deathsAtStart) > deathsAtStart);
 
           if (diedOnTheWay) {
-            keeper.suspendedJourney = null;
-            keeper.note?.('the journey ended in a death, so it is not resumed', {
-              to: Number(dest), where,
-              ended_in: Number.isFinite(here) ? here : null,
-              still_recovering: keeper?.recoverUntilWhole === true,
-              what_happens_now: 'out of the Underworld, then rest at the inn it lands in',
-              why: 'a death is a failed journey. Whatever killed the character is still on ' +
-                   'that road, everything carried is on the floor where it fell, and max ' +
-                   'health has already been paid for the trip',
-            });
+            // HOW MANY DEATHS IS THIS OBJECTIVE WORTH? Default nought, which IS the rule —
+            // "a death ends the journey" and "allow zero deaths" are the same sentence, and
+            // saying it as a number means the exception does not need a second mechanism.
+            //
+            // PER OBJECTIVE, NOT PER LIFETIME. `tally.deaths` is a keeper counter and
+            // keepers restart about once a minute, so it cannot answer "how much has THIS
+            // trip cost". The count is kept beside the destination and reset the moment the
+            // destination changes, which is also what makes a fresh order from a bot cost
+            // nothing.
+            const allowed = Number(keeper?.policy?.travelDeathsAllowed ?? 0);
+            const book = keeper.journeyDeaths;
+            const spent = (book && Number(book.to) === Number(dest) ? Number(book.count) : 0) + 1;
+            keeper.journeyDeaths = { to: Number(dest), count: spent };
+
+            if (spent <= allowed) {
+              // KEPT, AND THE REST IS NOT OPTIONAL. `passUnderworld`'s recovery hold is the
+              // FIRST rung and the resume is in the LAST, so a retry physically cannot
+              // start until health, mana and vigor are all back. That ordering is what
+              // makes "rest and retry" safe to offer at all.
+              keeper.suspendedJourney = {
+                to: Number(dest), why: `travelling to ${where}`, at: Date.now(),
+                trigger: `died on the way — retry ${spent} of ${allowed}`,
+                attempts: (keeper.inert?.attempts ?? 0) + 1,
+                deaths_at: Number(keeper?.tally?.deaths ?? 0),
+              };
+              keeper.note?.('died on the way, and this road is worth another try', {
+                to: Number(dest), where, deaths_on_this_objective: spent, allowed,
+                what_happens_first: 'out of the Underworld and rest to whole — the recovery ' +
+                                    'hold is upstream of the resume and cannot be skipped',
+              });
+            } else {
+              keeper.suspendedJourney = null;
+              keeper.journeyDeaths = null;
+              keeper.note?.('the journey ended in a death, so it is not resumed', {
+                to: Number(dest), where,
+                ended_in: Number.isFinite(here) ? here : null,
+                deaths_on_this_objective: spent, allowed,
+                still_recovering: keeper?.recoverUntilWhole === true,
+                what_happens_now: 'out of the Underworld, then rest at the inn it lands in',
+                why: allowed === 0
+                  ? 'a death is a failed journey. Whatever killed the character is still on ' +
+                    'that road, everything carried is on the floor where it fell, and max ' +
+                    'health has already been paid for the trip'
+                  : `this objective has now cost ${spent} death(s) against an allowance of ` +
+                    `${allowed}`,
+              });
+            }
           } else if (!arrived && dest != null && here !== Number(dest)) {
             keeper.suspendedJourney = {
               to: Number(dest), why: `travelling to ${where}`, at: Date.now(),
@@ -12515,6 +12557,15 @@ const TOOLS = [
           'only when a PLAYER is attacking, and every other kind of trouble pauses at a safe ' +
           'wall and carries on, so a road with eight wall-rests along it is a road and not a ' +
           'bug. Set low and this quietly becomes a second abandon rule.' },
+      travel_deaths_allowed: { type: 'number',
+        description: 'how many DEATHS one objective may cost before the journey is given up. ' +
+          'Default 0, which is the rule: a death is a failed journey, not an interrupted one. ' +
+          'Get out of the Underworld, rest at the inn the exit lands in, and do not pick the ' +
+          'road back up — whatever killed the character is still on it, everything carried is ' +
+          'on the floor where it fell, and max health has already been paid for the trip. Set ' +
+          'to 1 or more for a road worth dying for: the character still rests to whole first ' +
+          '(the recovery hold is upstream of the resume and cannot be skipped), then sets off ' +
+          'again, and the count is per OBJECTIVE rather than per lifetime.' },
       resume_travel_within_ms: { type: 'number',
         description: 'how long a suspended objective stays good, in milliseconds. Default 1800000 ' +
           '(thirty minutes — long enough to rest to FULL at a wall and still be resumed; five ' +
@@ -12886,6 +12937,12 @@ const TOOLS = [
         if (!Number.isInteger(n) || n < 0 || n > 50)
           throw new Error('resume_travel_attempts must be a whole number of retries in [0,50]');
         p.policy.resumeTravelAttempts = n;
+      }
+      if (a.travel_deaths_allowed !== undefined) {
+        const n = Number(a.travel_deaths_allowed);
+        if (!Number.isInteger(n) || n < 0 || n > 10)
+          throw new Error('travel_deaths_allowed must be a whole number of deaths in [0,10]');
+        p.policy.travelDeathsAllowed = n;
       }
       if (a.resume_travel_within_ms !== undefined) {
         const n = Number(a.resume_travel_within_ms);

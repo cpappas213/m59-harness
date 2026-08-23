@@ -518,7 +518,7 @@ console.log('A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE');
   // and do NOT pick the road back up. Whatever killed the character is still on it,
   // everything carried is on the floor where it fell, and max health has already been paid.
   ok('a death clears the objective rather than suspending it',
-     /diedOnTheWay[\s\S]{0,400}suspendedJourney = null/.test(job));
+     /diedOnTheWay[\s\S]{0,2400}suspendedJourney = null/.test(job));
   ok('and says so, because a journey that vanishes silently is the bug this replaces',
      /the journey ended in a death, so it is not resumed/.test(job));
   ok('and names what happens instead', /out of the Underworld, then rest at the inn/.test(job));
@@ -539,6 +539,48 @@ console.log('A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE');
      /keeper\?\.recoverUntilWhole === true/.test(job));
   ok('and the tally is only ever used as a comparison, never on its own',
      /> deathsAtStart/.test(job));
+}
+
+console.log('');
+console.log('AND "A DEATH ENDS IT" IS JUST AN ALLOWANCE OF NOUGHT');
+{
+  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+  const job = broker.slice(broker.indexOf('travelJob(dest,'),
+                           broker.indexOf('travelExclusive(dest'));
+
+  // The operator's refinement: rather than a hard rule plus a separate exception, one
+  // number. Nought is the rule, and a road worth dying for says so out loud.
+  ok('the allowance is a policy with a default of nought',
+     /travelDeathsAllowed \?\? 0/.test(job));
+  ok('and under the allowance the objective is KEPT rather than dropped',
+     /spent <= allowed[\s\S]{0,1200}suspendedJourney = \{/.test(job));
+  ok('and over it, it is dropped and the tab cleared',
+     /journeyDeaths = null/.test(job));
+
+  // PER OBJECTIVE, NOT PER LIFETIME. `tally.deaths` cannot answer "what has THIS trip
+  // cost" — a keeper restarts about once a minute and takes its counters with it.
+  ok('the count is kept beside the destination it belongs to',
+     /journeyDeaths = \{ to: Number\(dest\), count: spent \}/.test(job));
+  ok('and a different destination starts from nought',
+     /Number\(book\.to\) === Number\(dest\)/.test(job));
+  ok('and ARRIVING settles the tab, so a paid-for road does not tax the next one',
+     /ARRIVING SETTLES THE TAB/.test(job));
+
+  // THE REST IS NOT OPTIONAL, AND IT IS THE LADDER THAT GUARANTEES IT RATHER THAN THIS CODE.
+  // `passUnderworld`'s recovery hold is the first rung; the resume is in the last. A retry
+  // therefore cannot start before health, mana and vigor are back, which is the only reason
+  // offering a retry at all is safe.
+  ok('and the retry says the resting happens first',
+     /is upstream of the resume and cannot be skipped/.test(job));
+
+  // A SETTING THAT IS NOT IN THE SCHEMA IS A SETTING THAT SILENTLY DOES NOTHING — which is
+  // how `purpose` stayed out of one for a year with every keeper's audit switched off.
+  ok('the knob is declared in the autopilot schema',
+     /travel_deaths_allowed: \{ type: 'number'/.test(broker));
+  ok('and it is actually read off the arguments',
+     /a\.travel_deaths_allowed !== undefined/.test(broker));
+  ok('and refused rather than coerced when it is not a whole number of deaths',
+     /travel_deaths_allowed must be a whole number/.test(broker));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
