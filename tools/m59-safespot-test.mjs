@@ -1166,5 +1166,36 @@ console.log('ONLY GRID-DISAGREEMENT SQUARES ARE CANDIDATES');
      /!geo\.collisionReady[\s\S]{0,80}return \[\]/.test(fn));
 }
 
+// ---------------------------------------------------------------------------
+// LEAVING A REAL WALL MEANS WALKING BACK OUT OF THE POCKET IT PUT YOU IN.
+//
+// docs/m59-routing.md already says it — a safe spot is a pocket the router frequently
+// cannot plan out of, which is what breadcrumbs are for — and it became LIVE the moment
+// safe spots started being real walls. A real wall is a square the COARSE grid refuses;
+// that refusal is the whole mechanism, and it applies to us exactly as much as to the thing
+// that wanted to eat us. The router plans on the coarse grid, so a body left standing there
+// can be refused every exit in the room.
+//
+// Measured, Bbbb, The Twisted Wood: sheltered, rested to full, resumed — and then spent
+// four hundred and twenty-six seconds failing to leave a room it had crossed in twenty-five
+// when it was healthy. Seven attempts, every one "every square for that exit refused".
+console.log('');
+console.log('LEAVING A REAL WALL MEANS WALKING BACK OUT OF THE POCKET IT PUT YOU IN');
+{
+  const src = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  const at = src.indexOf('async stepOutOfThePocket');
+  const fn = src.slice(at, at + 2500);
+  ok('leaving a hold steps out of the pocket first',
+     /const stepped = await this\.stepOutOfThePocket/.test(src));
+  ok('and only from a square the coarse grid refuses',
+     /geo\.walkable\(me\.row, me\.col\) !== false\) return null/.test(fn));
+  ok('by breadcrumbs rather than a coarse-grid escape hatch',
+     /retreatAlongBreadcrumbs/.test(fn));
+  ok('stopping the moment the grid admits the square again, not unwinding the journey',
+     /until: at => at && geo\.walkable\(at\.row, at\.col\) === true/.test(fn));
+  ok('and it says so, including when it is STILL stuck afterwards',
+     /still_stuck/.test(fn) && /stepped back out of the pocket/.test(fn));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -3934,8 +3934,68 @@ export class Autopilot {
       this.holdKeptNoted = false;
     }
     const out = await this.breakOut(why).catch(e => ({ did: false, why: e.message }));
+    const stepped = await this.stepOutOfThePocket(why);
     this.releaseHold(why);
-    return { left: true, reconnected: !!out.did, crowd: out.crowd ?? 0 };
+    return { left: true, reconnected: !!out.did, crowd: out.crowd ?? 0,
+             ...(stepped ? { stepped_out_of_the_pocket: stepped } : {}) };
+  }
+
+  /**
+   * A SAFE SPOT IS A POCKET THE ROUTER CANNOT PLAN OUT OF. WALK OUT THE WAY YOU CAME IN.
+   *
+   * This is written down in docs/m59-routing.md — "a safe spot is a pocket the router
+   * frequently cannot plan out of, which is what breadcrumbs are for" — and it became live
+   * the moment safe spots started being REAL walls. A real wall is a square the coarse grid
+   * refuses; that refusal is the whole mechanism, and it applies to us as much as to the
+   * thing that wanted to eat us. The router plans on the coarse grid, so standing on a
+   * square that grid says does not exist, it cannot plan anything at all.
+   *
+   * Measured, Bbbb, The Twisted Wood, this afternoon. It sheltered, rested to full, resumed
+   * — and then spent four hundred and twenty-six seconds failing to leave a room it had
+   * crossed in twenty-five when it was healthy:
+   *
+   *   18:24:39  to 598  cancelled by a travel guard rung taking the character back
+   *   18:27:09  to 598  every square for that exit refused (4 tried)
+   *   18:28:08  to 598  every square for that exit refused (4 tried)
+   *   ... seven times, fifty to sixty seconds each, until the leg ran out of clock
+   *
+   * Every exit square refused, from a body standing two squares from where it had been
+   * walking perfectly well a minute earlier. Not a routing bug and not a bad exit: the
+   * character was in the pocket its own shelter had put it in.
+   *
+   * BREADCRUMBS RATHER THAN A COARSE-GRID ESCAPE, for the reason `retreatAlongBreadcrumbs`
+   * already argues at length: the grid and the BSP disagree exactly where the walls are, and
+   * relaxing collision there is the failure this repository exists to protect against. The
+   * way in was a sequence of validated steps, so the way out is the same sequence backwards.
+   *
+   * `until` stops the retreat the moment the coarse grid admits the square again — the goal
+   * is to get out of the pocket, not to undo the journey.
+   */
+  async stepOutOfThePocket(why = 'leaving a wall') {
+    const geo = this.s?.world?.geometry;
+    const me = this.s?.client?.self;
+    if (!geo || !me || typeof geo.walkable !== 'function') return null;
+    // Only from a square the coarse grid refuses. On ordinary floor the router is fine and
+    // unwinding a trail would be a detour bought for nothing.
+    if (geo.walkable(me.row, me.col) !== false) return null;
+    if (typeof this.s.retreatAlongBreadcrumbs !== 'function') return null;
+
+    const back = await this.s.retreatAlongBreadcrumbs({
+      maxCrumbs: 8,
+      until: at => at && geo.walkable(at.row, at.col) === true,
+    }).catch(e => ({ moved: 0, reason: e.message }));
+
+    const now = this.s?.client?.self;
+    const outNow = now ? geo.walkable(now.row, now.col) === true : null;
+    this.note('stepped back out of the pocket the wall put us in', {
+      why, from: { col: me.col, row: me.row }, to: now ? { col: now.col, row: now.row } : null,
+      crumbs_walked: back?.moved ?? 0, on_walkable_ground_now: outNow,
+      note: 'a real safe spot is a square the COARSE grid refuses, and the router plans on ' +
+            'the coarse grid — so a body left standing there can be refused every exit in ' +
+            'the room. Bbbb spent 426s in The Twisted Wood exactly that way',
+      ...(outNow === false ? { still_stuck: back?.reason ?? 'the trail ran out' } : {}),
+    });
+    return { crumbs: back?.moved ?? 0, out: outNow };
   }
 
   // HOLD THE SWING AND WATCH.
