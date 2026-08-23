@@ -187,7 +187,17 @@ const maxOf = name => snap.characters.find(c => c.shadow_name === name)?.max_hea
 
 console.log('  character    outcome     s   from -> ended   low  rest  rooms');
 const results = [];
-for (const r of rows) {
+// ONE LEG, AS A FUNCTION, SO IT CAN BE RUN ALONE OR ALONGSIDE OTHERS.
+//
+// Sequential is the honest way to measure a ROAD: twenty-one characters crossing together
+// queue at the same doorway, stand on each other's squares, and share the spawn they walk
+// through, so a fleet run measures contention as much as it measures the route.
+//
+// Staggered is the honest way to measure a FLEET, which is a different question and the one
+// an operator actually has: if I send everybody, how many arrive. `--stagger <seconds>` sets
+// them off that far apart and polls them all, which keeps them from leaving as one crowd
+// without pretending they are alone.
+async function runLeg(r) {
   // Same starting conditions for every one of them, or the run measures who went first.
   await call('autopilot', { agent: r.agent, mode: 'idle', roam: false, confine_rooms: [] });
   await call('autopilot', { agent: r.agent, action: 'unpark' });
@@ -250,9 +260,6 @@ for (const r of rows) {
       // conflating them is what this whole column exists to prevent.
       if (isResting(ap)) restedMs = Math.min(restedMs + 5000, REST_CREDIT_MS);
       for (const e of (st?.ailments ?? [])) if (e?.name) ailments.add(e.name);
-      const doing = String(ap?.activity ?? '').slice(0, 60);
-      if (doing && doing !== activity[activity.length - 1]?.what)
-        activity.push({ what: doing, at: Date.now(), room });
       const room = st?.where?.num ?? null;
       // SECONDS PER ROOM, because a journey that fails is usually a journey that was slow
       // somewhere specific, and a room total hides it. The operator crosses Ukgoth in under a
@@ -262,6 +269,9 @@ for (const r of rows) {
         if (roomNow !== room) roomNow = room;
         perRoom[room] = (perRoom[room] ?? 0) + 5;
       }
+      const doing = String(ap?.activity ?? '').slice(0, 60);
+      if (doing && doing !== activity[activity.length - 1]?.what)
+        activity.push({ what: doing, at: Date.now(), room });
       const hp = st?.vitals?.health?.value ?? null;
       if (room != null) rooms.add(room);
       if (hp != null && (low === null || hp < low)) low = hp;
@@ -305,6 +315,16 @@ for (const r of rows) {
                 spent.map(([num, sec]) => num + '=' + sec + 's').join('  '));
 }
 
+const STAGGER = Number(flag('stagger', 0));
+if (STAGGER > 0) {
+  console.log(`(staggered: one every ${STAGGER}s, all polled together)
+`);
+  await Promise.all(rows.map((r, i) =>
+    new Promise(done => setTimeout(done, i * STAGGER * 1000)).then(() => runLeg(r))));
+} else {
+  for (const r of rows) await runLeg(r);
+}
+
 // AND THE SAME QUESTION ACROSS THE WHOLE RUN. One slow room costs every character, so the
 // total per room is the thing to attack; a single leg's figure is one sample of it.
 const totals = {};
@@ -315,6 +335,27 @@ if (worst.length) {
   console.log('');
   console.log('seconds spent per room, worst first (all legs):');
   for (const [num, sec] of worst) console.log('  ' + String(sec).padStart(5) + 's  room ' + num);
+}
+
+// THE FLEET QUESTION, WHICH IS NOT THE ROAD QUESTION. How many of everybody who set off got
+// there, how long it took the ones that did, and what stopped the rest.
+if (results.length > 2) {
+  const arr = results.filter(r => r.ended === 'arrived');
+  const times = arr.map(r => r.secs).sort((a, b) => a - b);
+  const median = times.length ? times[Math.floor(times.length / 2)] : null;
+  const ail = results.filter(r => (r.ailments ?? []).length).length;
+  console.log('');
+  console.log('FLEET');
+  console.log(`  set off        ${results.length}`);
+  console.log(`  arrived        ${arr.length}  (${Math.round(arr.length / results.length * 100)}%)`);
+  console.log(`  died           ${results.filter(r => r.died).length}`);
+  console.log(`  ailing at all  ${ail}   — those legs are not measurements of the road`);
+  if (times.length)
+    console.log(`  arrival time   fastest ${times[0]}s   median ${median}s   slowest ${times[times.length - 1]}s`);
+  const stopped = {};
+  for (const r of results) if (r.ended !== 'arrived') stopped[r.ended] = (stopped[r.ended] ?? 0) + 1;
+  if (Object.keys(stopped).length)
+    console.log('  and the rest   ' + Object.entries(stopped).map(([k, v]) => `${v} ${k}`).join(', '));
 }
 
 const arrived = results.filter(r => r.ended === 'arrived').length;
