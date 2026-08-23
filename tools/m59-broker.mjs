@@ -8114,8 +8114,23 @@ class Session {
         // The best square the model could offer, so a refusal can be set against the square
         // a character is standing on when the same door works. See m59-exitgap.mjs.
         ...(r.gap?.believed ? { believed: r.gap.believed } : {}),
+        // THE UNDERWORLD IS A DEATH, NOT A DOORWAY — AND THIS ROW DID NOT KNOW THAT.
+        //
+        // The hop loop above already special-cases it, with the argument written out: room 1
+        // is where the game puts the dead, and calling it a wrong doorway "would send the
+        // next person looking at Ukgoth's geometry for a shared edge that does not exist".
+        // The transit row is computed separately and had no such case, so every death
+        // mid-hop has been recorded in the book as
+        //
+        //     crossed into 1 instead of 598 — that boundary carries more than one exit
+        //
+        // which is a sentence about geometry describing a character being killed. Caught by
+        // reading this book for a different reason entirely, one commit after adding the
+        // per-square refusals to it.
         reason: wrongRoom
-          ? `crossed into ${landedNow} instead of ${nextHop.to} — that boundary carries more than one exit`
+          ? (landedNow === 1
+              ? `died on the way to ${nextHop.to} — this is the Underworld, not a wrong doorway`
+              : `crossed into ${landedNow} instead of ${nextHop.to} — that boundary carries more than one exit`)
           : (r.left ? null : why),
         journey: journeyId, hop: hops, destination: toRoomNum,
       });
