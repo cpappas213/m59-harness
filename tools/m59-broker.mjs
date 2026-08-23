@@ -941,7 +941,9 @@ class KeeperProxy {
     return keeperAction(this.name, this._index, 'fight', { target, ...opts });
   }
   async travel(toRoomNum, opts = {}) {
-    return keeperAction(this.name, this._index, 'travel', { toRoomNum, ...opts });
+    // `to` is what the keeper process reads; `toRoomNum` is kept so an older keeper
+    // still understands this. They disagreed once and every journey silently failed.
+    return keeperAction(this.name, this._index, 'travel', { to: toRoomNum, toRoomNum, ...opts });
   }
   async cancelMovement(token) {
     return keeperAction(this.name, this._index, 'cancel', {});

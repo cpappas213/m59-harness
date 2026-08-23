@@ -873,7 +873,20 @@ const server = createServer(async (req, res) => {
             result = await session.walkTo(args.col, args.row, args);
             break;
           case 'travel': {
-            const dest = args.to ?? args.room;
+            // EVERY NAME THE PROXY HAS USED, AND A LOUD REFUSAL WHEN THERE IS NONE.
+            //
+            // The broker's KeeperProxy sent `toRoomNum` and this read `to ?? room`, so
+            // `dest` was undefined and session.travel(undefined) answered "no route from
+            // 586 to undefined in the graph" -- a sentence that looks exactly like a
+            // routing failure and is actually a wiring failure. Every travel through the
+            // broker went nowhere from the day the keeper split landed, and the fleet
+            // reported it as bad terrain.
+            const dest = args.to ?? args.room ?? args.toRoomNum;
+            if (dest == null) {
+              result = { error: 'travel: no destination given (expected to/room/toRoomNum)',
+                         args_seen: Object.keys(args ?? {}) };
+              break;
+            }
             const maxHops = args.maxHops ?? 5;
             result = await session.travel(dest, { maxHops });
             break;
