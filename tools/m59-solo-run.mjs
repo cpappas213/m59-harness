@@ -100,6 +100,49 @@ const REST_CREDIT_MS = Number(flag('rest-credit', 180)) * 1000;
 // So the run claims the fleet, a second one is refused by name, and a run whose output has
 // gone away stops rather than continuing in silence. `--stop` clears a holder; `--force`
 // overrides the refusal for somebody who knows what they are doing.
+// AN UNRECOGNISED FLAG IS NOT A REQUEST TO DO THE DEFAULT THING TO A LIVE FLEET.
+//
+// Measured 2026-08-23, and it was this file's own watcher that did it: a script ran
+//
+//     node tools/m59-solo-run.mjs --help
+//
+// to check the tool was there. There was no `--help`, the flag was ignored, every other
+// setting fell back to its default, and the tool did what it does — took the fleet lock and
+// walked two characters from Tos to Castle Victoria. One of them died in Ukgoth. The real
+// run, started a second later, was then REFUSED because the fleet was already being driven,
+// which is the run lock working exactly as designed and reporting a holder whose command
+// line read `--help`.
+//
+// Two rules, and the second is the general one:
+//
+//   `--help` PRINTS AND EXITS, BEFORE THE LOCK. A tool that drives a live fleet must have a
+//   way to ask what it does that does not do it.
+//
+//   AN UNKNOWN FLAG IS REFUSED. Silently ignoring one turns a typo — `--agent` for
+//   `--agents`, `--stagger 60s` for `--stagger 60` — into a full-fleet run with defaults,
+//   against a shared server, with no error anywhere. This is the same failure this
+//   repository already documents everywhere else: no error has never meant success here.
+const KNOWN = new Set(['port', 'fleet', 'from', 'to', 'tour', 'recovery-wait', 'timeout',
+                       'wall-below', 'hold-below', 'agents', 'dry-run', 'rest-credit',
+                       'stagger', 'stop', 'force', 'help']);
+if (has('help') || argv.includes('-h')) {
+  console.log(readFileSync(new URL(import.meta.url), 'utf8')
+    .split('\n').slice(1).filter(l => l.startsWith('//'))
+    .map(l => l.replace(/^\/\/ ?/, '')).join('\n').split('\n\n').slice(0, 3).join('\n\n'));
+  process.exit(0);
+}
+{
+  const unknown = argv.filter(a => a.startsWith('--')).map(a => a.slice(2).split('=')[0])
+                      .filter(a => !KNOWN.has(a));
+  if (unknown.length) {
+    console.error(`solo-run: unknown option(s): ${unknown.map(u => '--' + u).join(', ')}`);
+    console.error('          Refused rather than ignored: this tool drives a live fleet, and');
+    console.error('          ignoring a flag means running the DEFAULT experiment instead of');
+    console.error('          the one that was asked for. `--help` lists what it takes.');
+    process.exit(2);
+  }
+}
+
 exitWhenOutputIsGone();
 
 const LOOPBACK = new Set(['127.0.0.1', '::1', 'localhost']);
