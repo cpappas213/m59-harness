@@ -23,7 +23,7 @@
 //
 // It should fail the day the trace is left on.
 
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,6 +44,16 @@ const ok = (name, cond, extra = '') => {
   if (cond) { pass++; console.log('  ok   ' + name); }
   else { fail++; console.log('  FAIL ' + name + (extra ? '  ' + extra : '')); }
 };
+let freshImport = 0;
+const enabledTracer = async (traceFile, pendingMax, maxLines = 100) => {
+  process.env.M59_COLLISION_TRACE = '1';
+  process.env.M59_COLLISION_TRACE_FILE = traceFile;
+  process.env.M59_COLLISION_TRACE_MAX = String(maxLines);
+  process.env.M59_COLLISION_TRACE_PENDING_MAX = String(pendingMax);
+  return import(`./m59-collision-trace.mjs?enabled=${process.pid}-${++freshImport}`);
+};
+const readRows = traceFile => readFileSync(traceFile, 'utf8').split('\n')
+  .filter(Boolean).map(line => JSON.parse(line));
 
 const SRC = readFileSync(join(HERE, 'm59-collision-trace.mjs'), 'utf8');
 const BROKER = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
@@ -110,6 +120,154 @@ console.log('the broker calls it, and calls it where it is safe to');
   ok('and every one records the ROOM NUMBER, never the room object id',
      calls.every(c => /room:\s*this\.world\?\.room\?\.num/.test(c)),
      calls.find(c => !/room:\s*this\.world\?\.room\?\.num/.test(c)) ?? '');
+}
+
+console.log('');
+console.log('failed appends recover the original rows, once and in order');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-recovery-'));
+  const traceFile = join(scratch, 'trace.jsonl');
+  const mod = await enabledTracer(traceFile, 8);
+  // The trace pathname itself is a directory, so appendFileSync fails with EISDIR while
+  // mkdirSync(dirname(traceFile)) still succeeds. Create it AFTER initialization proved the
+  // capture absent: an already-existing unreadable path may hide old rows and must fail closed.
+  mkdirSync(traceFile);
+  const realNow = Date.now;
+  const times = [1_001, 1_002, 1_003];
+  try {
+    Date.now = () => times.shift();
+    mod.traceMove({ agent: 'first', kind: 'step', at: 'caller', seq: 91 });
+    mod.traceMove({ agent: 'second', kind: 'step', at: 'caller', seq: 92 });
+    // Replace the failing destination with the file an operator would have repaired.
+    rmSync(traceFile, { recursive: true, force: true });
+    writeFileSync(traceFile, '');
+    mod.traceMove({ agent: 'third', kind: 'step', at: 'caller', seq: 93 });
+  } finally {
+    Date.now = realNow;
+  }
+  const rows = readRows(traceFile);
+  ok('two failed writes and the recovery produce exactly three rows', rows.length === 3,
+     JSON.stringify(rows));
+  ok('recovery preserves attempt order and writes every row exactly once',
+     rows.map(r => r.agent).join(',') === 'first,second,third', JSON.stringify(rows));
+  ok('the sequence is monotonic and cannot be supplied by the caller',
+     rows.map(r => r.seq).join(',') === '1,2,3', JSON.stringify(rows.map(r => r.seq)));
+  ok('queued rows retain their original timestamps rather than recovery time',
+     rows.map(r => r.at).join(',') === '1001,1002,1003', JSON.stringify(rows.map(r => r.at)));
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+console.log('');
+console.log('bounded recovery makes an overflow durably visible');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-overflow-'));
+  const traceFile = join(scratch, 'trace.jsonl');
+  const mod = await enabledTracer(traceFile, 2);
+  mkdirSync(traceFile);
+  const realNow = Date.now;
+  const times = [2_001, 2_002, 2_003, 2_004, 2_005];
+  try {
+    Date.now = () => times.shift();
+    for (const agent of ['one', 'two', 'three', 'four'])
+      mod.traceMove({ agent, kind: 'step', sent: true });
+    rmSync(traceFile, { recursive: true, force: true });
+    writeFileSync(traceFile, '');
+    mod.traceMove({ agent: 'five', kind: 'step', sent: true });
+  } finally {
+    Date.now = realNow;
+  }
+  const rows = readRows(traceFile);
+  const marker = rows[2];
+  ok('the bounded queue retains its two oldest rows and the recovery row once',
+     rows.map(r => r.agent ?? r.kind).join(',') === 'one,two,trace_loss,five',
+     JSON.stringify(rows));
+  ok('the loss marker replaces the first unavailable sequence and exposes the whole gap',
+     marker?.schema === 'm59-collision-trace-loss/1'
+       && marker?.seq === 3 && marker?.at === 2_003 && marker?.lostFromSeq === 3
+       && marker?.lostThroughSeq === 4 && marker?.lostCount === 2
+       && marker?.reason === 'pending_queue_overflow', JSON.stringify(marker));
+  ok('the next durable row leaves the matching monotonic sequence gap',
+     rows.map(r => r.seq).join(',') === '1,2,3,5', JSON.stringify(rows.map(r => r.seq)));
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+console.log('');
+console.log('an unreadable existing capture fails closed');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-unreadable-'));
+  const traceFile = join(scratch, 'trace.jsonl');
+  // A directory at the exact pathname is a portable EISDIR stand-in for existing bytes the
+  // tracer cannot inspect. Repairing it later must not cause a fresh seq 1 append behind the
+  // unknown capture.
+  mkdirSync(traceFile);
+  const mod = await enabledTracer(traceFile, 2);
+  rmSync(traceFile, { recursive: true, force: true });
+  writeFileSync(traceFile, '');
+  mod.traceMove({ agent: 'must-not-append', kind: 'step', sent: true });
+  ok('repairing an unreadable existing path does not start an ambiguous capture',
+     readFileSync(traceFile, 'utf8') === '');
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+console.log('');
+console.log('the physical line cap ends with a durable open loss range');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-cap-'));
+  const traceFile = join(scratch, 'trace.jsonl');
+  writeFileSync(traceFile, '');
+  const mod = await enabledTracer(traceFile, 2, 3);
+  const realNow = Date.now;
+  const times = [3_001, 3_002, 3_003];
+  try {
+    Date.now = () => times.shift();
+    mod.traceMove({ agent: 'one', kind: 'step', sent: true });
+    mod.traceMove({ agent: 'two', kind: 'step', sent: true });
+    mod.traceMove({ agent: 'omitted', kind: 'step', sent: true });
+    // Further attempts retry a failed marker if necessary, but may never duplicate it.
+    mod.traceMove({ agent: 'also-omitted', kind: 'step', sent: true });
+  } finally {
+    Date.now = realNow;
+  }
+  const rows = readRows(traceFile);
+  const marker = rows[2];
+  ok('the configured maximum remains a physical line bound', rows.length === 3,
+     JSON.stringify(rows));
+  ok('the last line explicitly marks every attempt from the cap onward as unavailable',
+     marker?.schema === 'm59-collision-trace-loss/1' && marker?.kind === 'trace_loss'
+       && marker?.reason === 'max_lines_reached' && marker?.seq === 3
+       && marker?.at === 3_003 && marker?.lostFromSeq === 3
+       && marker?.lostThroughSeq === null && marker?.lostCount === null,
+     JSON.stringify(marker));
+  ok('calls beyond the cap cannot duplicate its durable marker',
+     rows.filter(r => r.reason === 'max_lines_reached').length === 1, JSON.stringify(rows));
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+console.log('');
+console.log('a supervised restart resumes one bounded capture');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-restart-'));
+  const traceFile = join(scratch, 'trace.jsonl');
+  writeFileSync(traceFile, '');
+  const first = await enabledTracer(traceFile, 2, 4);
+  first.traceMove({ agent: 'one', kind: 'step', sent: true });
+  first.traceMove({ agent: 'two', kind: 'step', sent: true });
+
+  const restarted = await enabledTracer(traceFile, 2, 4);
+  restarted.traceMove({ agent: 'three', kind: 'step', sent: true });
+  restarted.traceMove({ agent: 'omitted', kind: 'step', sent: true });
+
+  // A later restart sees the durable open-ended marker and cannot append behind it.
+  const afterCap = await enabledTracer(traceFile, 2, 4);
+  afterCap.traceMove({ agent: 'also-omitted', kind: 'step', sent: true });
+  const rows = readRows(traceFile);
+  ok('a restart continues the existing monotonic sequence',
+     rows.map(row => row.seq).join(',') === '1,2,3,4', JSON.stringify(rows));
+  ok('the cap remains a physical bound across process restarts',
+     rows.length === 4 && rows[3]?.reason === 'max_lines_reached', JSON.stringify(rows));
+  ok('nothing is appended after the open-ended cap marker',
+     rows.filter(row => row.agent === 'also-omitted').length === 0, JSON.stringify(rows));
+  rmSync(scratch, { recursive: true, force: true });
 }
 
 console.log('');
