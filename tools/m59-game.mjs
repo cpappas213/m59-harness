@@ -645,6 +645,129 @@ function provedSquares(geo, from, steps) {
 }
 
 
+// ── CONSTANTS THE PORTED SESSION READS ──────────────────────────────────────────
+//
+// Verbatim from m59-broker.mjs, comments and all, because these are tuning decisions with
+// reasoning attached and a re-derived number is a different decision wearing the same
+// name. They were in the broker's module scope, so moving the class left them FREE --
+// and a free CONSTANT is worse than a free function: my first scan looked for identifiers
+// that were CALLED and missed every one of these, so the port loaded, passed every
+// offline suite, and threw `LEAVE_VIA_CLEARANCE is not defined` the moment a live
+// character tried to walk out of a room.
+const BARRED_ON_ENTRY = /guardian angel holds you back/i;
+
+// AND HOW LONG TO GO ON LOOKING AFTER THAT WAIT EXPIRES. Cheap insurance against a
+// crossing that lands a moment late: the alternative to waiting three more seconds is
+// walking the whole room again to try another square. See the confirmation poll in
+// leaveVia's edge branch.
+const EDGE_CONFIRM_MS = Number(process.env.M59_EDGE_CONFIRM_MS || 3000);
+
+const EDGE_NUDGE_MAX_STEPS = Number(process.env.M59_EDGE_NUDGE_MAX_STEPS || 6);
+
+const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
+
+// HOW MANY WAYPOINTS MAY PASS WITH THE BODY NO FURTHER ALONG THE LINE before the follower
+// stops asking for the next square and jumps. Small, because each one is a second or two
+// spent standing in whatever room this is, and the Cragged Mountains is not a room to spend
+// seconds in. The jump is short for the same reason a skip is: the line ahead is still the
+// line, and `walkFine` covers a gap of a few squares perfectly well.
+// HOW MUCH CLEAR GROUND TO PUT BETWEEN THE BODY AND A BOUNDARY AFTER ARRIVING.
+//
+// ONE IS NOT ENOUGH, and the map says why. Entering the Western border of the Twisted Wood
+// from the Main gate to the city of Tos lands the character at row 8, column 66 — and that
+// room is 55 rows by 67 columns, so the east boundary is one square away. That boundary
+// carries TWO exits, split on the crossing row:
+//
+//     east -> 586  Main gate to the city of Tos   when row < 19
+//     east -> 597  The Twisted Wood               when row > 20
+//
+// Row 8 is inside the first band. So the body arrives one slide from the door it just came
+// through, and the tracer shows exactly that: `586->587` followed immediately by `587->586`.
+// Stepping merely OFF the boundary does not help when the arrival square is already off it.
+//
+// Two squares costs one extra step and removes the whole class: a slide has to go wrong
+// twice in the same direction before it crosses anything.
+const INLAND_MARGIN_SQUARES = Number(process.env.M59_INLAND_MARGIN || 2);
+
+const LEAVE_VIA_CLEARANCE = Number(process.env.M59_LEAVE_VIA_CLEARANCE ?? 0);
+
+// How many packets a planned square may cost before the walk is called runaway. One would
+// be right if the mover landed where the router aims it; it does not, and the argument and
+// the measurement are at the `budget` line in walkTo.
+const OFF_PLAN_STEP_BUDGET = Number(process.env.M59_STEP_BUDGET_FACTOR || 3);
+
+// AND HOW FAR ONE MOVE MAY REACH ALONG A LEG THE STRING PULL ALREADY PROVED.
+//
+// Eight is the right cap for ground nobody has traced: a long move that fails costs its
+// whole length. It is the WRONG cap for a leg the pull proved arrives, and chopping one is
+// how the fleet lost the Cragged Mountains. The baked crossing of room 598 — its north
+// doorway to its south — is 64 squares and SEVEN proved legs, of 20, 3, 9, 1, 1, 7 and 23
+// squares. At a cap of eight the walker cannot take the 20 or the 23 in one move; it stops
+// at an intermediate square CENTRE that nothing ever proved, aims at it, slides, and starts
+// the bounce the rest of this file is about. The proof is "the straight line from here to
+// there arrives"; a prefix of it aimed at a different point is not that proof.
+//
+// THIRTEEN, AND THE NUMBER IS THE SERVER'S. user.kod:3049 logs a possible speedhacker when
+// a move covers `iSquaredDistance >= 200` with fewer than three seconds since the last
+// update — 200 is 14.1 squares, so 13 (169) keeps a square of margin. `step` also paces a
+// hop by its OWN duration as well as the one it owes, so a long move is never sent hard on
+// the heels of a short one; without that the distance check is the only thing standing
+// between a proved leg and a cheat log.
+const PROVED_HOP_MAX_SQUARES = Number(process.env.M59_PROVED_HOP_MAX || 13);
+
+// Fine-positioning at a boundary opening before the outward step that actually crosses.
+// Both are deliberately small: this is a nudge onto the opening, and the crossing does
+// not depend on hitting it exactly. See leaveVia's edge branch.
+// HOW HARD `leaveVia` PREFERS OPEN GROUND ON THE WAY TO A BOUNDARY — AND IT IS ZERO NOW.
+//
+// The argument for 0.6 was good and the measurement behind it was of the wrong thing. It
+// counted PLAN-TIME blocked neighbours per step (1.35 -> 0.72 in room 587) on the reasoning
+// that threading a walker along a wall is where a slid step starts the bounce. Measured
+// instead on whether the walker ARRIVES — `m59-walksim.mjs --cycle --clearance 0,0.6`, the
+// same starts, the same twelve walks a room to each room's own baked exit anchors:
+//
+//     clearance 0     218/252   86.5%   36.2 steps per arrival
+//     clearance 0.6   211/252   83.7%   37.9
+//
+// No room is better with it on. Two are much worse, and one of them is the room that was
+// blocking the whole itinerary: THE CRAGGED MOUNTAINS GOES 7/12 TO 2/12. Traced on the one
+// walk a live character kept failing — 598, 30,24 to the Ukgoth doorway at 64,19 — it is
+// 93 steps and arrives flat, and 118 steps and runs out of budget at clearance 0.6, with
+// the off-plan landings going 14 to 26.
+//
+// That is the whole of "598 -> 599: every square for that exit refused (4 tried)", which
+// the transit ledger recorded 49 times in a row: `leaveVia` walks to the boundary with this
+// preference on, the walk never gets there, and the exit is blamed for it.
+//
+// Left as a named constant rather than deleted because the mechanism is real — a wall-hug
+// IS where a slide starts — and somebody may yet find the right weight. The number to beat
+// is 218/252, and `m59-walksim.mjs` is how to beat it.
+// HOW CLOSE TO A DOOR MAKES A RAIL POINTLESS. A rail crosses a ROOM; inside this radius the
+// ordinary walk is a short approach over ground the coarse grid expresses, and getting onto a
+// line that starts somewhere else is strictly worse — sometimes catastrophically, when the
+// line's start is itself a doorway to somewhere we do not want to go.
+const RAIL_SKIP_WITHIN_SQUARES = Number(process.env.M59_RAIL_SKIP_WITHIN || 8);
+
+const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
+
+const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
+
+// A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
+// never got there. `leaveViaAny` has already tried every square the room publishes for
+// that destination, so this is the room saying "not from here", and the answer is another
+// door rather than another attempt at this one.
+const UNREACHABLE_EXIT =
+  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
+
+// HOW MANY STEPS A WALK MAY TAKE WITHOUT EVER GETTING CLOSER. Generous enough to go round a
+// building — the Streets of Tos crossing is 24 squares and its worst legitimate detour is a
+// handful — and far short of the sixty-odd squares of oscillation that prompted it.
+const WALK_STALL_STEPS = Number(process.env.M59_WALK_STALL_STEPS || 24);
+
+const HOST = process.env.M59_HOST || '127.0.0.1';
+
+const PORT = Number(process.env.M59_PORT || 5959);
+
 // TWO BROKER-OWNED HOOKS, STUBBED RATHER THAN MOVED.
 //
 // `drainExitGaps` walks the broker's `sessions` registry and `saveFleetState` writes the
@@ -653,6 +776,18 @@ function provedSquares(geo, from, steps) {
 // are declared inert here and the broker overrides them, exactly as noteGeometryDrift
 // above already does. A keeper process therefore drains nothing and saves nothing, which
 // is correct: it has no registry and no roster.
+// FOUR broker-owned things now, not two. `factionStatuses` is the broker's status cache
+// and `fleetState` is its roster Map -- a keeper process has neither, and creating our own
+// would be two homes for one quantity, which is the shape this repository keeps paying
+// for. So the broker's instances are shared through globalThis when there is a broker, and
+// the defaults are inert: a keeper process reads no faction status and finds no roster
+// entry, which is the truth rather than a guess.
+if (!globalThis.factionStatuses)
+  globalThis.factionStatuses = { read: () => null, observe: () => null,
+                                 reconcileInventory: () => null };
+if (!globalThis.fleetState) globalThis.fleetState = new Map();
+const factionStatuses = globalThis.factionStatuses;
+const fleetState = globalThis.fleetState;
 if (typeof globalThis.drainExitGaps !== 'function') globalThis.drainExitGaps = () => {};
 if (typeof globalThis.saveFleetState !== 'function') globalThis.saveFleetState = () => {};
 const drainExitGaps = (...a) => globalThis.drainExitGaps(...a);
