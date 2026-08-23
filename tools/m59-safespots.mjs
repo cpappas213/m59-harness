@@ -193,6 +193,37 @@ export function gridDisagreementAt(geo, row, col) {
 // affordable when it runs over every square in a room — and anything that cannot reach
 // `minEscape` squares is an island rather than a wall. Real walls in these rooms reach a
 // thousand or more; the trap reached five, so the threshold is not delicate.
+//
+// ============ THIS IS A GUARD, NOT A FIX. THE BUG IT HIDES IS UPSTREAM ============
+//
+// The operator's correction, and it is right: in this game you can leave any square you can
+// enter. A five-square island is not a feature of the map, it is our model being wrong, and
+// this filter only stops us walking into the consequences.
+//
+// Two measurements say where the wrongness is, and they compound:
+//
+//   THE PLANNER SAYS THE SQUARE CANNOT BE ENTERED AT ALL. A flood from the room's entry
+//   square across `moverStepLands` reaches 1,092 squares and 5,35 is not one of them. Yet
+//   the safe-spot book records a character having HELD there. Something walked a body into
+//   a square the step predicate says is unreachable — which means the fine walker and the
+//   step predicate do not agree about what is walkable, and CLAUDE.md's rule is that the
+//   router must plan on the map the mover ENFORCES.
+//
+//   AND THE PREDICATE IS ONE-WAY. On the island's border, 3 of 40 ordered pairs disagree
+//   with themselves:
+//
+//       5,35 -> 5,36   out=false  back=true
+//       4,35 -> 5,36   out=false  back=true
+//       6,35 -> 5,36   out=false  back=true
+//
+//   You may step in and not back out. The game has no such door. A step predicate that is
+//   not symmetric will manufacture islands anywhere the geometry is tight, and this is the
+//   first one anybody has looked at.
+//
+// Neither pocket — in the Twisted Wood or the Western border — is needed for any route this
+// fleet cares about, so refusing them costs nothing today. What it costs later is the memory
+// of why, which is what this comment is for. `node tools/m59-exitgap.mjs` is the instrument
+// aimed at exactly this class of disagreement.
 const ESCAPE_CAP = 40;
 export function escapeRoom(geo, row, col, minEscape = 24) {
   if (!geo || typeof geo.moverStepLands !== 'function') return true;   // cannot tell: allow
