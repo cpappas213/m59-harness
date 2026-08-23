@@ -549,6 +549,14 @@ const KEEP_ACROSS_RESTART = {
   // back down to a ceiling of 6 while it stood in a castle full of level-75 skeletons —
   // still assigned to the right room, still hunting the right word, and earning nothing.
   maxThreatOver: 'max_threat_over',
+  // AND THE CONFINEMENT ITSELF, which was missing and is the one field whose whole purpose
+  // is to survive the moment everything else has gone wrong. A stalled character is
+  // restarted every 90s; without this line the castle fleet came back with confineRooms
+  // cleared, still on the right strategy, still hunting the right word, and free to walk
+  // to room 2 — the front step where Gonzo was murdered — the next time the survival
+  // refuge went looking for somewhere to withdraw to. Same failure as the assigned_room
+  // one above: nothing errors, and the correction simply evaporates.
+  confineRooms: 'confine_rooms',
 };
 
 function carriedPolicy(st) {

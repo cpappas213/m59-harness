@@ -31,6 +31,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import http from 'node:http';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const BOOK = HERE + '/../substrate/circuit-runs.json';
@@ -51,17 +52,80 @@ export const ROUTES = {
                     why: 'Castle Victoria, then Barloque to sell, then the Tos bank' },
   'grand':        { legs: [38, 350, 101, 50], from: 50,
                     why: 'Tos -> Castle Victoria -> Jasper -> Barloque -> Tos, the full lap' },
+  // THE OPERATOR'S CYCLE, and the reason it is not `grand` with one room swapped: it is the
+  // only named route that crosses Ukgoth (599) TWICE, once in each direction, because both
+  // 50 -> 38 and 38 -> 150 route through it. Ukgoth is where the collision view is most
+  // permissive in the wrong direction (m59-clipsweep.mjs) and the only room in the world
+  // with a declared fall-jump (substrate/m59-falljumps.json), so a lap that does not go
+  // through it twice is not testing the thing that has been breaking.
+  'cor-noth-lap': { legs: [38, 150, 101, 50], from: 50,
+                    why: 'Tos -> Castle Victoria -> Cor Noth -> Barloque -> Tos, both ways through Ukgoth' },
 };
 
-export async function broker(name, args, { timeoutMs = 300000 } = {}) {
-  try {
-    const r = await fetch(`http://127.0.0.1:${PORT}/`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }),
-      signal: AbortSignal.timeout(timeoutMs),
+// ONE REQUEST, ONE SOCKET, CLOSED WHEN IT IS DONE — and this is not a style preference,
+// it is what stops this tool crashing on the way out.
+//
+// This used `fetch`, which pools keep-alive sockets on undici's global agent and leaves an
+// un-cancelled `AbortSignal.timeout` timer behind. `process.exit()` then tears those down
+// mid-close and Node aborts:
+//
+//     Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), file src\win\async.c, line 76
+//
+// ...with exit 127, AFTER the run has printed perfectly correct output. Measured on this
+// machine at a sharp, deterministic threshold — THREE or more connections still pooled at
+// exit fails 60 times out of 60, two or fewer never fails:
+//
+//     0 live -> 0/15    1 live -> 0/15    2 live -> 0/15    3 live -> 15/15
+//
+// Which is exactly the shape this file runs in. `probe()` below issues TWO calls at once,
+// and the lap loop wraps that in `Promise.all(bots.map(...))` — so any run with two or
+// more bots is over the line, and every `process.exit()` in this file was a coin flip on
+// whether the exit code meant anything. Found first in `m59-which.mjs`, whose entire
+// contract is its exit code; the same pattern is here and in `m59-hoptest.mjs`, which
+// imports this function.
+//
+// `agent: false` with `connection: close` leaves no pooled socket and needs no abort
+// timer, so there is nothing in a closing state when the process ends. That is what makes
+// the plain `process.exit()` calls further down safe, and it is the probe
+// `m59-fleets.mjs` already documents for the same reason.
+//
+// ONE DIFFERENCE WORTH KNOWING: `timeout` here is a socket INACTIVITY timeout, where
+// `AbortSignal.timeout` was a total deadline. For this caller they coincide — the broker
+// sends nothing at all until the tool call finishes — but a future endpoint that streams
+// progress would keep the socket alive past `timeoutMs` rather than being cut off at it.
+function postJson(port, payload, timeoutMs) {
+  return new Promise((done) => {
+    const body = JSON.stringify(payload);
+    const req = http.request({
+      hostname: '127.0.0.1', port, path: '/', method: 'POST',
+      headers: { 'content-type': 'application/json',
+                 'content-length': Buffer.byteLength(body),
+                 connection: 'close' },
+      agent: false, timeout: timeoutMs,
+    }, (res) => {
+      let text = '';
+      res.setEncoding('utf8');
+      res.on('data', chunk => { text += chunk; });
+      res.on('end', () => done({ status: res.statusCode, text }));
     });
-    if (!r.ok) return { _error: `broker ${r.status}` };
-    const j = await r.json();
+    req.on('timeout', () => { req.destroy(); done({ error: `no reply within ${timeoutMs}ms` }); });
+    req.on('error', e => done({ error: e.message }));
+    req.end(body);
+  });
+}
+
+export async function broker(name, args, { timeoutMs = 300000 } = {}) {
+  {
+    const r = await postJson(PORT, { jsonrpc: '2.0', id: 1, method: 'tools/call',
+                                     params: { name, arguments: args } }, timeoutMs);
+    // Every failure comes back as `{_error}` and nothing throws — `m59-hoptest.mjs`
+    // imports this and turns `_error` into a failed leg, so a rejection here would be a
+    // crash in a caller that has no catch.
+    if (r.error) return { _error: r.error };
+    if (r.status < 200 || r.status >= 300) return { _error: `broker ${r.status}` };
+    let j;
+    try { j = JSON.parse(r.text); }
+    catch { return { _error: `broker sent non-JSON: ${String(r.text).slice(0, 200)}` }; }
     if (j.error) return { _error: j.error.message };
     const text = j.result?.content?.[0]?.text ?? '{}';
     // A REFUSAL COMES BACK AS PROSE, NOT AS JSON, and parsing it blindly turns a perfectly
@@ -72,7 +136,7 @@ export async function broker(name, args, { timeoutMs = 300000 } = {}) {
     if (j.result?.isError) return { _error: String(text).replace(/^error:\s*/, '') };
     try { return JSON.parse(text); }
     catch { return { _error: String(text).slice(0, 200) }; }
-  } catch (e) { return { _error: e.message }; }
+  }
 }
 
 const INCOMING_SWING = /^You\s+\w+\s+.+'s attack\.?$/i;
@@ -94,6 +158,16 @@ export async function probe(agent, mark = 0) {
            swings, seq, last: st?.last_action ?? null, error: st?._error ?? null };
 }
 
+// IS THIS PROBE LOOKING AT A DEAD CHARACTER.
+//
+// By NAME first, with the number as the fallback, which is how `passUnderworld` asks the
+// same question — the room the game names "The Underworld" is what a death puts you in,
+// and matching the string survives a server whose room numbering is not this one's.
+// Room 1 is kept because a probe that timed out mid-name still carries the number.
+export const isDead = p =>
+  /underworld/i.test(p?.name ?? '') || p?.room === 1 ||
+  (p?.health != null && p.health <= 0);
+
 /**
  * One leg: send a character to a room and watch until it arrives or gives up.
  *
@@ -111,6 +185,9 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
   const first = await probe(agent);
   let mark = first.seq, swings = 0, lowest = first.health ?? null, deaths = 0;
   const from = first.room;
+  // Started dead? Then arriving in the Underworld is not news, and counting it would
+  // blame this leg for the previous one's death.
+  let wasDead = isDead(first);
 
   const sent = await broker('travel', { agent, to, background: true, max_hops: 30 }, { timeoutMs: 60000 });
   if (sent?._error) return { agent, to, from, arrived: false, ms: 0, why: 'travel refused: ' + sent._error };
@@ -121,17 +198,39 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
     const p = await probe(agent, mark);
     mark = p.seq;
     swings += p.swings;
-    if (p.health != null) {
-      if (lowest == null || p.health < lowest) lowest = p.health;
-      // A death shows as health at or below zero, or as an unheralded arrival in the
-      // Underworld. Both are worth counting; neither is worth stopping for.
-      if (p.health <= 0) deaths++;
-    }
+    if (p.health != null && (lowest == null || p.health < lowest)) lowest = p.health;
+    // A death shows as health at or below zero, or as an unheralded arrival in the
+    // Underworld. Both are worth counting; neither is worth stopping for.
+    //
+    // ONLY THE FIRST HALF WAS EVER IMPLEMENTED, and the half that was missing is the one
+    // that happens. A 5s poll almost never lands on the frame where health reads zero —
+    // the server moves the body to the Underworld and refills it — so the check that was
+    // here caught almost nothing. Measured: a shuttle run in which NINE of twenty-one
+    // characters died reported `0 death(s)`, with five of them still standing in room 1
+    // when the leg gave up. The comment had described the right rule the whole time.
+    //
+    // COUNTED ON THE EDGE, NEVER ON THE STATE. A corpse stays in the Underworld across
+    // many polls — one leg here spent 903 seconds there — so counting presence would
+    // report a death per poll, and health can read <= 0 on two consecutive samples for
+    // one death. The transition into being dead is the event; being dead is not.
+    const dead = isDead(p);
+    if (dead && !wasDead) deaths++;
+    wasDead = dead;
     if (p.room !== lastRoom) { rooms.push(p.room); lastRoom = p.room; lastSeen = Date.now(); }
     onTick?.({ agent, ...p, elapsed: Date.now() - start });
 
     if (p.room === to && !p.busy)
       return { agent, to, from, arrived: true, ms: Date.now() - start, rooms, swings, lowest, deaths };
+    // A PROBE THAT FAILED IS NOT A CHARACTER THAT STOPPED.
+    //
+    // `probe` reads `status`, and under twenty-one walking characters that call times out —
+    // the broker is one event loop and a busy fleet is exactly when it is slowest. On a
+    // timeout it answered `{ room: null, busy: false }`, which is indistinguishable from
+    // "arrived nowhere and gave up", so the leg was abandoned WHILE EVERY CHARACTER WAS
+    // STILL WALKING: measured, 0/21 arrived after 200s wall, and the very next leg was
+    // refused for all twenty-one with `is busy: walk to North Barloque`. The fleet was
+    // fine; the instrument gave up on it. `STUCK in ?` — a null room — is the tell.
+    if (p.error) continue;
     if (!p.busy && Date.now() - lastSeen > pollMs * 3)
       return { agent, to, from, arrived: p.room === to, ms: Date.now() - start, rooms, swings, lowest,
                deaths, why: 'stopped being busy without arriving',
@@ -165,17 +264,40 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
   }
 
   const routeName = flag('route', 'tos-jasper');
-  const route = ROUTES[routeName];
-  if (!route) { console.error(`unknown route "${routeName}" — try --list`); process.exit(2); }
+  // AN ITINERARY THE TABLE DOES NOT NAME. A named route is what makes two runs comparable
+  // and is the right default, but a cycle can be entered anywhere and the fleet is rarely
+  // standing at a route's `from`. `--legs 150,101,50,38` walks the operator's lap starting
+  // from Cor Noth instead of repositioning twenty-one bodies to Tos first, which is itself
+  // an hour of the thing being measured.
+  const legsArg = flag('legs');
+  const route = legsArg
+    ? { legs: legsArg.split(',').map(Number).filter(Number.isFinite), from: null,
+        why: 'an itinerary given on the command line' }
+    : ROUTES[routeName];
+  if (!route || !route.legs?.length) { console.error(`unknown route "${routeName}" — try --list`); process.exit(2); }
   const laps = Number(flag('laps', 1));
+  // A leg's patience. The 15-minute default was measured with five bots on one boundary;
+  // twenty-one bodies queueing through a one-square aperture legitimately take longer, and
+  // a timeout shorter than the walk reports "stuck" for a character that was still moving.
+  const maxLegMs = Number(flag('max-leg', 900)) * 1000;
   const botArg = flag('bots', 'Alpha,Bravo,Charlie,Delta,Echo');
-  const bots = botArg === 'all' ? Object.keys(AGENTS).filter(n => n !== 'TESTER')
-                                : botArg.split(',').map(s => s.trim()).filter(Boolean);
+  // `all` is the ARENA's six throwaway characters, which is what this tool was written for.
+  // `fleet` is whoever the broker on this port is actually holding — the only form that
+  // works against a roster this file has never heard of, and the shadow fleet is one.
+  // Asked for by name it stays exact: an agent id passes through `agentFor` untouched.
+  const bots = botArg === 'all'   ? Object.keys(AGENTS).filter(n => n !== 'TESTER')
+             : botArg === 'fleet' ? await (async () => {
+                 const f = await broker('fleet', {}, { timeoutMs: 60000 });
+                 const list = (f?.fleet ?? []).map(a => a.agent).filter(Boolean);
+                 if (!list.length) { console.error('the broker is holding nobody — is it up on ' + PORT + '?'); process.exit(2); }
+                 return list;
+               })()
+             : botArg.split(',').map(s => s.trim()).filter(Boolean);
 
   // The baseline the fleet's own history predicts, so the slowdown is stated against
   // something rather than asserted. Its provenance is printed with it.
   let baseline = 0;
-  {
+  if (route.from != null) {
     let at = route.from;
     for (const leg of route.legs) {
       const e = await broker('travel_estimate', { from: at, to: leg }, { timeoutMs: 30000 });
@@ -184,8 +306,9 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
     }
   }
 
-  console.log(`route ${routeName}: ${route.why}`);
-  console.log(`  ${route.from} -> ${route.legs.join(' -> ')}   x${laps} lap(s)   bots: ${bots.join(', ')}`);
+  console.log(`route ${legsArg ? 'given on the command line' : routeName}: ${route.why}`);
+  console.log(`  ${route.from ?? 'wherever they are'} -> ${route.legs.join(' -> ')}   ` +
+              `x${laps} lap(s)   bots: ${bots.join(', ')}`);
   console.log(`  baseline from recorded history: ${Math.round(baseline / 1000)}s per lap`);
   console.log('  NOTE: 85.1% of that history predates collision routing, so it is optimistic;');
   console.log('  a measured slowdown against it is an UPPER BOUND on the real regression.\n');
@@ -198,7 +321,7 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
       // ALL BOTS AT ONCE, because that is how the fleet travels and because bodies
       // blocking bodies is one of the things being measured. Serialising them would
       // measure a world with one character in it.
-      const legs = await Promise.all(bots.map(b => runLeg(agentFor(b), leg)));
+      const legs = await Promise.all(bots.map(b => runLeg(agentFor(b), leg, { maxMs: maxLegMs })));
       const ok = legs.filter(r => r.arrived).length;
       const times = legs.filter(r => r.arrived).map(r => r.ms).sort((a, b) => a - b);
       const med = times.length ? times[Math.floor(times.length / 2)] : 0;
@@ -229,7 +352,7 @@ if (process.argv[1]?.endsWith('m59-circuit.mjs')) {
   }
 
   const b = load();
-  b.runs.push({ at: Date.now(), route: routeName, laps, bots: bots.length,
+  b.runs.push({ at: Date.now(), route: legsArg ? `legs:${route.legs.join('/')}` : routeName, laps, bots: bots.length,
                 attempts: all.length, arrived: arrived.length, median_ms: median,
                 baseline_ms: baseline, swings, deaths,
                 stuck: all.filter(r => !r.arrived).map(r => ({ agent: r.agent, in: r.stuck_in, why: r.why })) });

@@ -200,7 +200,7 @@ async function doctor() {
   const rows = [];
   const add = (name, val, hint) => rows.push({ name, val, hint });
 
-  add('node', have('node'), 'https://nodejs.org — 18 or newer');
+  add('node', have('node'), 'https://nodejs.org — 22 or newer; 24 LTS recommended');
   add('git', have('git'), 'https://git-scm.com');
   add('python', have('python3') || have('python'), 'only for the sprite puller and source analysis');
   // `docker --version` only proves the CLI is on the path. The daemon is a

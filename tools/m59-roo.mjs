@@ -98,6 +98,26 @@ export const heightClientToKod = h => h >> (LOG_CLIENT_FINENESS - LOG_KOD_FINENE
 // for us it does not exist, and we will walk up cliffs.
 export const MAX_STEP_HEIGHT_KOD = 24;
 export const MAX_STEP_HEIGHT = heightKodToClient(MAX_STEP_HEIGHT_KOD);   // 384 client units
+// How far a body may carry across a gap. Three squares is the operator's Cragged Mountains
+// crossing with room to spare; more would start inventing traversals nobody has walked.
+// The declared fall-jump table, read once and cached. Kept here rather than imported from
+// m59-falljump.mjs so this module stays free of a dependency cycle: the tool imports the
+// geometry, not the other way round. An unreadable or absent table declares nothing.
+let DECLARED_FALL_JUMPS;
+function declaredFallJumpTable() {
+  if (DECLARED_FALL_JUMPS !== undefined) return DECLARED_FALL_JUMPS;
+  try {
+    const url = new URL('../substrate/m59-falljumps.json', import.meta.url);
+    DECLARED_FALL_JUMPS = JSON.parse(fs.readFileSync(url, 'utf8'));
+  } catch { DECLARED_FALL_JUMPS = null; }
+  return DECLARED_FALL_JUMPS;
+}
+export const FALL_MAX_SQUARES = Number(process.env.M59_FALL_MAX_SQUARES || 3);
+
+// What a planned step onto ground the COARSE GRID calls solid is charged. The argument,
+// the measurement and why it is a cost rather than a refusal are all at `clipCost` in
+// `path`. Zero restores the behaviour from before it existed.
+export const CLIP_STEP_COST = Number(process.env.M59_CLIP_STEP_COST ?? 2);
 
 // clientd3d/draw3d.c:80 — how far a wading sector sinks you, indexed by the sector's
 // two depth bits. This matters to movement and not just to drawing: standing in water
@@ -572,6 +592,28 @@ export const DEFAULT_ROO_DIRS = [
   'C:/Program Files (x86)/Steam/steamapps/common/Meridian 59/resource',
 ].filter(Boolean);
 
+// THE CLIP SWITCH, AND THE EXPERIMENT THAT SET IT.
+//
+// `M59_CLIP_STEPS=0` requires a step to END on ground the COARSE grid agrees exists.
+// Default ON, and that is a measured result rather than the status quo winning by default.
+//
+// The permission plainly causes harm — see moverStepLands: one character aimed at the
+// grid-solid square 7,15 sixty-one times in seventy seconds while holding a live order to
+// cross the room, and 598 has 187 clip squares over 5.3% of its steps. So it was switched
+// OFF and the offline suite asked what that costs. The answer was decisive and the wrong
+// way round:
+//
+//   the Cragged Mountains' walkable body        2450 squares -> 672, in 1555 REGIONS
+//   the mover vs the strict centre-to-centre    refuses MORE (1323) than strict (1186),
+//                                               inverting the invariant routing depends on
+//   exits reachable from the basin              cut
+//
+// So the fine-only ground in 598 is not a curiosity at its edges; it is most of the room.
+// Requiring the coarse grid does not stop bots wandering into rock, it stops them walking
+// at all. The permission stays until something replaces it with a PATH — see the note in
+// moverStepLands about the rail this was supposed to be.
+const CLIP_STEPS = process.env.M59_CLIP_STEPS !== '0';
+
 export class RoomGeometry {
   constructor({ file, version, security, rows, cols, grid, flags, monsterGrid, walls, sidedefs,
                 sectors, nodes, leaves, bspRoot = 0, clientSize, collisionVersion = null,
@@ -934,6 +976,23 @@ export class RoomGeometry {
     motionZ = null,
     // ON. See the refusal it controls, and STEP_MASK_VERSION 4.
     enforceStepHeight = true,
+    // A BODY IN THE AIR, WHICH IS A DIFFERENT TRAVERSAL FROM A WALK.
+    //
+    // OFF BY DEFAULT AND IT MUST STAY THAT WAY. Everything about walking is pinned by 182
+    // collision assertions and 122 refusals, several of them specifically about the body
+    // keeping its physical z downhill and being blocked by a low overhang. Making this the
+    // default was tried and it moved which WALL refuses a checked-in trace, which is the
+    // one thing m59-impossible-test exists to catch. So a fall is asked for explicitly, by
+    // the only thing that has any business asking: `fallTargets`.
+    //
+    // What it changes is one line of bookkeeping. Walking, the carried z follows the floor
+    // in BOTH directions, so crossing a gully tests the walls at the bottom of it. Falling,
+    // the body keeps the height it left with — that is what being in the air means — so the
+    // walls it sails over are tested against a body above them. The operator's account of
+    // the Cragged Mountains: the ground goes HIGH, LOW, MEDIUM, and a player runs off the
+    // high side and lands on the medium side without ever standing on the low one. "The
+    // player isn't walking from below, it's falling from above."
+    fall = false,
   } = {}) {
     if (!this.collisionReady) return {
       available: false, moved: false, blocked: true, x: x0, y: y0,
@@ -1104,10 +1163,13 @@ export class RoomGeometry {
           break;
         }
       }
-      if (Number.isFinite(floor)) carriedMotionZ = {
-        min: Math.min(carriedMotionZ.min, floor),
-        max: Math.max(carriedMotionZ.max, floor),
-      };
+      if (Number.isFinite(floor)) carriedMotionZ = fall
+        // Airborne: the height only ever RISES to meet higher ground. Ground below the
+        // body is passed over, not stood on, so it may not pull the tested z down with it.
+        ? { min: Math.max(carriedMotionZ.min, Math.min(floor, carriedMotionZ.max)),
+            max: Math.max(carriedMotionZ.max, floor) }
+        : { min: Math.min(carriedMotionZ.min, floor),
+            max: Math.max(carriedMotionZ.max, floor) };
       if (resolved.stop) break;
     }
     const moved = Math.hypot(at.x - x0, at.y - y0) > GEOMETRY_EPSILON;
@@ -1233,11 +1295,15 @@ export class RoomGeometry {
     // AND IT MAY ONLY EVER PREFER — A FILTER MUST NEVER BE THE REASON A DOORWAY
     // DISAPPEARS. This is the same rule the step mask already lives under, and it is not
     // theoretical here: applied as a hard filter world-wide, three of 237 declared edge
-    // directions lost every candidate, and one of them was **Cor Noth west**, which
-    // `m59-exitgap.mjs` documents as "a door that real players walk through every day"
-    // and which once left ten of twenty-one characters unable to reach a bank. Being
-    // wrong about a phantom costs a walk; deleting a real doorway costs the errand,
-    // silently, for ever.
+    // directions lost every candidate. Being wrong about a phantom costs a walk; deleting
+    // a real doorway costs the errand, silently, for ever.
+    //
+    // CORRECTION, 2026-08-18: the example named here used to be **Cor Noth west**, called
+    // "a door that real players walk through every day". **There is no west exit from Cor
+    // Noth** — the operator confirms it and the model was right. So that case argues the
+    // OPPOSITE of what it was cited for, and this fallback is justified by the other two
+    // directions rather than by it. The rule stands on the asymmetry alone, which is the
+    // only part of the argument that was ever load-bearing.
     //
     // So the grid's opinion is applied only when it leaves something behind. The two
     // outcomes are not symmetric and the fallback is the safe one.
@@ -1302,8 +1368,12 @@ export class RoomGeometry {
       // is not a rule.
       //
       // Applied as a PREFERENCE, exactly as it is there: if grounding leaves an edge with
-      // nothing, the unfiltered list stands. Cor Noth west is the case that forces it — a
-      // door real players use daily whose crossings are all ungrounded in this model.
+      // nothing, the unfiltered list stands.
+      //
+      // CORRECTION, 2026-08-18: this used to cite Cor Noth west as the case forcing that
+      // fallback, "a door real players use daily whose crossings are all ungrounded".
+      // There is no west exit from Cor Noth. The fallback is still right — it is the
+      // asymmetry that justifies it, not that example.
       const groundedBake = restored.filter(a => this.walkable(a.row, a.col));
       const keep = Object.freeze(groundedBake.length ? groundedBake : restored);
       this._edgeApproachCache.set(name, keep);
@@ -1426,6 +1496,13 @@ export class RoomGeometry {
       return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= arriveWithin;
     };
     const out = [points[0]];
+    // WHICH legs it proved, not just how many it could not. A caller that walks these
+    // pivots has to know: a PROVED leg is a straight line the mover was shown to arrive
+    // along, so every point on it is safe to aim at without asking again — which is the
+    // whole reason to pull a route offline. An UNPROVED leg is the ordinary single step
+    // that the pull fell back to, and it carries no such promise. Reported as a parallel
+    // array so the existing `points`/`unverified` contract is untouched.
+    const proved = [];
     let at = 0, unverified = 0;
     while (at < points.length - 1) {
       // FURTHEST FIRST, so the common case — a long clear run — costs one trace rather
@@ -1436,11 +1513,12 @@ export class RoomGeometry {
       let next = -1;
       for (let j = limit; j > at; j--)
         if (clear(points[at], points[j])) { next = j; break; }
-      if (next < 0) { next = at + 1; unverified++; }
+      if (next < 0) { next = at + 1; unverified++; proved.push(false); }
+      else proved.push(true);
       out.push(points[next]);
       at = next;
     }
-    return { points: out, unverified, legs: out.length - 1 };
+    return { points: out, unverified, legs: out.length - 1, proved };
   }
 
   // A bounded local A* for sub-square approaches that need to round a corner. This
@@ -2066,13 +2144,158 @@ export class RoomGeometry {
   // character. Prefer the baked mask (`attachStepMask`) where there is one — the cold cost
   // of filling this cache for a whole big room is seconds, which is exactly what stopped
   // the event loop the first time collision-aware routing shipped.
+  /**
+   * Squares this one can be JUMPED to — reached by running off an edge and landing
+   * further on, over ground too low to walk out of.
+   *
+   * THE ROUTER PLANS IN SINGLE SQUARES AND A JUMP IS NOT ONE. Walked square by square the
+   * Cragged Mountains crossing decomposes into HIGH -> LOW (a drop, allowed) and then
+   * LOW -> MEDIUM (a climb of well over `MAX_STEP_HEIGHT`, refused), so the router
+   * concludes the crossing is impossible. It is not: the player never stands on the LOW
+   * square. In the operator's words, "the player isn't walking from below, it's falling
+   * from above". Measured in room 598, 156 such triples exist and the walk refuses every
+   * one of them; that room is the only way in and out of Castle Victoria, and a fleet sent
+   * there stopped at The Twisted Wood and tried the same refused boundary seven times.
+   *
+   * FOUR CONDITIONS, AND EACH ONE IS LOAD-BEARING:
+   *
+   *   * DOWNHILL ONLY. The landing floor may not be above the take-off floor. This is the
+   *     line between a fall, which gravity gives you, and a climb, which it does not — and
+   *     without it this would re-open every cliff `enforceStepHeight` exists to close.
+   *   * OVER A REAL GAP. Some square between the two must be lower than BOTH ends by more
+   *     than `MAX_STEP_HEIGHT`. That is what makes it a jump rather than a slope, and it is
+   *     why this cannot quietly become a way to skip along ordinary ground.
+   *   * NOT ALREADY WALKABLE. If the square-by-square route exists, the walker should take
+   *     it; a jump is strictly a last resort and never a shortcut.
+   *   * AND THE BODY HAS TO ARRIVE. The fall trace has to land IN the target square, which
+   *     is the same question `moverStepLands` asks of a step.
+   *
+   * DIRECTED, and deliberately: falling off a ledge does not give you a way back up. The
+   * regions in the bake are strongly connected components, so a one-way fall shows up as
+   * exactly that — which is what keeps `transitOk` honest about a return leg that does not
+   * exist.
+   */
+  /**
+   * Fall-jumps somebody WALKED and wrote down, starting on this square.
+   *
+   * Read lazily and cached per geometry, because most rooms declare none and the table is
+   * tiny. The room number is the one the geometry was built for; a declaration for another
+   * room is not this room's business.
+   *
+   * VALIDATED THE SAME WAY THE DETECTOR IS. A declared landing still has to be somewhere a
+   * body can be (`standable`) and still has to be DOWNHILL, because the one thing a fall
+   * must never become is a way to gain height — that is the line `enforceStepHeight` and
+   * `fallTargets` both hold, and a hand-written table is exactly where somebody would
+   * cross it by accident. An entry that fails either check is dropped rather than trusted,
+   * and an entry with no landing square yet (`to: null`) is inert by construction.
+   */
+  declaredFallJumps(row, col) {
+    if (!this._declaredJumps) {
+      this._declaredJumps = new Map();
+      let table = null;
+      try { table = declaredFallJumpTable(); } catch { table = null; }
+      const mine = (table?.jumps ?? []).filter(j => Number(j.room) === Number(this.roomNum ?? this.num ?? -1));
+      for (const j of mine) {
+        if (!j?.from || !j?.to) continue;                       // unmeasured: inert
+        if (!this.standable(j.to.row, j.to.col)) continue;       // nowhere to land
+        const a = this.standPoint(j.from.row, j.from.col), b = this.standPoint(j.to.row, j.to.col);
+        if (a && b) {
+          const fa = this.floorBaseAtClient(a.x, a.y), fb = this.floorBaseAtClient(b.x, b.y);
+          if (Number.isFinite(fa) && Number.isFinite(fb) && fb > fa) continue;   // uphill is not a fall
+        }
+        const k = `${j.from.row},${j.from.col}`;
+        const list = this._declaredJumps.get(k) ?? [];
+        list.push({ row: j.to.row, col: j.to.col, dir: 'fall',
+                    distance: Math.max(2, Math.round(Math.hypot(j.to.row - j.from.row, j.to.col - j.from.col))) });
+        this._declaredJumps.set(k, list);
+      }
+    }
+    return this._declaredJumps.get(`${row},${col}`) ?? [];
+  }
+
+  fallTargets(row, col, { maxDistance = FALL_MAX_SQUARES } = {}) {
+    if (!this.collisionReady || !this.standable(row, col)) return [];
+    const cache = (this._fallCache ??= new Map());
+    const ck = `${row},${col}`;
+    const hit = cache.get(ck);
+    if (hit) return hit;
+    const floorAt = (r, c) => {
+      const p = this.standPoint(r, c);
+      if (!p) return null;
+      const f = this.floorBaseAtClient(p.x, p.y, this.leafAtClient(p.x, p.y));
+      return Number.isFinite(f) ? f : null;
+    };
+    const from = this.standPoint(row, col);
+    const startFloor = floorAt(row, col);
+    const out = [];
+    if (from && startFloor != null) {
+      for (const d of DIRS) {
+        for (let dist = 2; dist <= maxDistance; dist++) {
+          const tr = row + d.dr * dist, tc = col + d.dc * dist;
+          if (!this.inBounds(tr, tc) || !this.standable(tr, tc)) continue;
+          const landFloor = floorAt(tr, tc);
+          if (landFloor == null || landFloor > startFloor) continue;      // downhill only
+          // a real gap under the flight path
+          let gap = false;
+          for (let k = 1; k < dist; k++) {
+            const gr = row + d.dr * k, gc = col + d.dc * k;
+            const gf = this.inBounds(gr, gc) ? floorAt(gr, gc) : null;
+            if (gf == null) { gap = true; break; }                        // no floor at all
+            if (startFloor - gf > MAX_STEP_HEIGHT && landFloor - gf > MAX_STEP_HEIGHT) gap = true;
+          }
+          if (!gap) continue;
+          // already walkable, square by square? then this is not a jump.
+          let walkable = true, at = { r: row, c: col };
+          for (let k = 1; k <= dist && walkable; k++) {
+            const nr = row + d.dr * k, nc = col + d.dc * k;
+            if (!this.moverStepLands(at.r, at.c, nr, nc)) walkable = false;
+            at = { r: nr, c: nc };
+          }
+          if (walkable) continue;
+          const to = this.standPoint(tr, tc);
+          if (!to) continue;
+          const t = this.traceFineMoveClient(from.x, from.y, to.x, to.y, { slide: false, fall: true });
+          if (!t?.available || !t.arrived) continue;
+          out.push({ row: tr, col: tc, dir: d.name, distance: dist,
+                     drop: startFloor - landFloor, fall: true });
+          break;                        // the nearest landing in this direction is enough
+        }
+      }
+    }
+    cache.set(ck, out);
+    return out;
+  }
+
   moverStepLands(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
-    // `standable`, not `walkable` — see standable(). The coarse grid is a SERVER artifact
-    // and nothing server-side consults it for a player move, so letting it veto a step the
-    // BSP allows removed ground people demonstrably walk on. The trace below is still the
-    // gate: it has to arrive, and it has to arrive IN this square.
-    if (!this.inBounds(toRow, toCol) || !this.standable(toRow, toCol)) return false;
+    if (!this.inBounds(toRow, toCol)) return false;
+    // ======================= FINE-ONLY TERRAIN: OFF BY DEFAULT =======================
+    //
+    // `standable` returns true for a square the coarse grid calls SOLID whenever any part
+    // of it holds fine floor. Requiring only that let the mover authorise a step INTO rock,
+    // and the argument for it was sound in isolation: the coarse grid is a server artifact,
+    // nothing server-side consults it for a player move, and vetoing on it removes ground
+    // people demonstrably walk on.
+    //
+    // WHAT IT WAS FOR, AND WHAT IT BECAME. The idea was a rail. Precompute the fine walk
+    // across a stretch of fine-only terrain between two reachable exits, and when a bot
+    // reached the edge of the coarse grid it would clip ONTO that precomputed line, follow
+    // it, and come off the far side back into ordinary travel. An alternative navigation
+    // system for ground the coarse grid cannot express.
+    //
+    // No rail was ever consulted here. What survived is the permission without the path —
+    // so instead of "follow the known line across", it means "the edge of the grid is
+    // steppable", and a walker that meets one steps off the grid into rock, slides, and
+    // comes back. Measured in the Cragged Mountains: square 7,15 is grid-solid, this
+    // returned true for the step onto it, and one character aimed at it SIXTY-ONE times in
+    // seventy seconds while holding a live order to cross the room. That room has 187 clip
+    // squares and 334 clip steps, 5.3% of everything in it. It is not a shortcut; it is a
+    // pit that opens wherever the grid ends.
+    //
+    // So the destination must be ground the coarse grid agrees exists. `M59_CLIP_STEPS=1`
+    // restores the old behaviour for anyone who wants to measure it — see clipsweep, which
+    // has always called this disagreement the one that "cannot be explained by coarseness".
+    if (!(CLIP_STEPS ? this.standable(toRow, toCol) : this.walkable(toRow, toCol))) return false;
     const mask = this._stepMask;
     if (mask) {
       const bit = STEP_MASK_BIT.get(`${toRow - fromRow},${toCol - fromCol}`);
@@ -2278,6 +2501,51 @@ export class RoomGeometry {
       if (collision && !isGoal && !this.moverStepLands(row, col, r, c)) continue;
       out.push({ row: r, col: c, dir: d.name, diagonal: d.dr !== 0 && d.dc !== 0 });
     }
+    // AND THE JUMPS. See fallTargets: a crossing the walk decomposes into a drop and then
+    // an impossible climb is one a body makes in the air, in one move, without ever
+    // standing on the low ground between. Offered only in the COLLISION view, because that
+    // is the only view that knows how high anything is — on the coarse grid a fall is
+    // indistinguishable from a walk and needs no help.
+    //
+    // A refused EDGE still refuses. `blockedEdges` is a step we asked for and were told no
+    // about, and that answer is about the two squares, not about how we meant to travel
+    // between them.
+    if (collision && this.collisionReady) {
+      for (const f of this.fallTargets(row, col)) {
+        if (blockedEdges?.size && blockedEdges.has(`${row},${col}>${f.row},${f.col}`)) continue;
+        if (out.some(o => o.row === f.row && o.col === f.col)) continue;
+        out.push({ row: f.row, col: f.col, dir: f.dir, diagonal: false,
+                   fall: true, distance: f.distance });
+      }
+      // AND THE ONES A PERSON HAD TO WALK TO FIND. `fallTargets` detects a jump from the
+      // shape of the ground, and its second condition — some square between must be lower
+      // than BOTH ends by more than MAX_STEP_HEIGHT — is what stops it becoming a way to
+      // skip along ordinary terrain. That condition is right and it is not complete.
+      //
+      // Ukgoth is the counter-example. The operator's route to the ONLY doorway to Castle
+      // Victoria is a run-and-fall from about 36,16 to about 38,10, and the ground under it
+      // steps DOWN rather than opening into a gulley: 5872, 4576, 3712, 3840. The deepest
+      // point is 128 units below the landing, well inside the 384 threshold, so no gap is
+      // detected and `fallTargets` returns nothing at any reach. The jump is real; the
+      // shape test cannot see it.
+      //
+      // The cost of having no way to say so was not a missing route. The router found the
+      // doorway anyway, through ground the coarse grid calls solid, and twenty-one
+      // characters "arrived" at Castle Victoria through rock in 17-23 seconds while the run
+      // was read as proof that routing worked. A model with no word for a mechanic does not
+      // decline to use it — it invents something else and reports success.
+      //
+      // So a declared jump is an OVERRIDE for the detector, never a replacement: it is
+      // additive, it is still charged by distance like any other fall, a refused edge still
+      // refuses it, and an entry with no landing square is inert. Nobody may declare their
+      // way past `blockedEdges`. See substrate/m59-falljumps.json and m59-falljump.mjs.
+      for (const j of this.declaredFallJumps(row, col)) {
+        if (blockedEdges?.size && blockedEdges.has(`${row},${col}>${j.row},${j.col}`)) continue;
+        if (out.some(o => o.row === j.row && o.col === j.col)) continue;
+        out.push({ row: j.row, col: j.col, dir: j.dir ?? 'fall', diagonal: false,
+                   fall: true, declared: true, distance: j.distance });
+      }
+    }
     return out;
   }
 
@@ -2437,7 +2705,75 @@ export class RoomGeometry {
          // aware if this room has a mask, coarse grid exactly as before if it does not" —
          // and a checkout that has never run tools/m59-routebake.mjs behaves precisely as
          // it did, which is the property that makes this safe to ship on.
-         collision = this.hasStepMask } = {}) {
+         collision = this.hasStepMask,
+         // WHAT A STEP ONTO GROUND THE COARSE GRID CALLS SOLID COSTS.
+         //
+         // THE INVARIANT THIS PRICES IS THE ONE THE WHOLE SUBSYSTEM RESTS ON, AND IT RUNS
+         // BACKWARDS IN 211 ROOMS. The collision view is supposed to be STRICTER than the
+         // coarse grid — a safe wall IS the two disagreeing, and the disagreement is meant
+         // to run one way: the grid offers a neighbour and the BSP refuses it. That is why
+         // a bake can only ever cost a walk and never authorise one. `m59-clipsweep.mjs`
+         // counts where it runs the other way: 30,878 steps the mover allows onto squares
+         // the grid calls solid, 1.8% of all steps, and 116 rooms whose baked exit anchor
+         // can only be reached across them.
+         //
+         // Ukgoth is the case that cost an afternoon. Row 1 of room 599 is two patches of
+         // floor with rock between; the mover walks 27 of the 28 squares of it, so the
+         // router planned the crossing and twenty-one characters "arrived" at Castle
+         // Victoria through solid rock in 17-23 seconds, which was read as proof that
+         // routing worked.
+         //
+         // A COST AND NEVER A PROHIBITION, and the reason is measured too: 137 of the 2,164
+         // positions in the operator's own recorded walk logs are squares the coarse grid
+         // calls wall with real BSP floor under every one. Refusing those outright would
+         // refuse the ground a person was standing on — the exact mistake `neighbors` was
+         // changed to stop making. So the grid gets a VOTE, not a veto.
+         //
+         // Two is the number because it is what flips Ukgoth. From the 598 arrival to the
+         // north doorway the clipping route is 110 steps of which 27 are rock, and the
+         // honest route round is 153: at +2 a clip step the cheat prices out at 164 and
+         // loses, at +1.5 it prices at 150 and still wins. Below 2 it does nothing; far
+         // above 2 it starts pushing walks off legitimate tight corridors.
+         //
+         // The GOAL is exempt, for the same reason it is exempt from `clearance`: an exit
+         // anchor and a safe wall are both squares somebody chose deliberately, and taxing
+         // the destination for being tight prices the fleet out of its own doorways.
+         clipCost = CLIP_STEP_COST,
+         // WHETHER THE LAST STEP INTO THE GOAL MAY BE ONE THE MOVER REFUSES.
+         //
+         // `null` means "try without it, and only then with it", which is the default and
+         // the whole point. See the two-pass below.
+         goalExempt = null } = {}) {
+    // TWO PASSES, STRICT FIRST — because the exemption is a FALLBACK, not a preference.
+    //
+    // `neighbors` lets the final step into the goal skip `moverStepLands`, so that a
+    // doorway the model dislikes is never simply deleted from the map. That is right, and
+    // on its own it is also how a walker gets a plan whose LAST step it can never take:
+    // A* sees all eight approaches as equal, takes the cheapest, and hands back a route
+    // ending in a step the mover refuses. `walkTo` then re-sends that step, lands
+    // somewhere else, replans into the same corner, and reports "kept ending up somewhere
+    // other than the planned square" — measured in Deep Forest of Farol, where the goal
+    // 2,30 is reachable from FIVE of its eight neighbours and the planner chose the one
+    // refused diagonal, stalling the character 21 steps from a door it could see.
+    //
+    // Asking strictly first costs nothing when a legal approach exists — same room, same
+    // 12 steps, approached from 3,30 instead of 3,29 — and changes nothing when one does
+    // not, because the second pass is exactly the old behaviour. So this can only ever
+    // turn an unwalkable plan into a walkable one of the same length, never remove a
+    // route: the property that makes it safe to ship against a live fleet.
+    if (goalExempt === null) {
+      const strict = this.path(fromRow, fromCol, toRow, toCol,
+        { fine, maxNodes, avoid, threats, threatCost, blockedEdges, clearance, collision,
+          clipCost, goalExempt: false });
+      if (strict.found) return strict;
+      const relaxed = this.path(fromRow, fromCol, toRow, toCol,
+        { fine, maxNodes, avoid, threats, threatCost, blockedEdges, clearance, collision,
+          clipCost, goalExempt: true });
+      // Saying WHICH pass answered is what lets a caller — and a post-mortem — tell "the
+      // mover will walk every step of this" from "the last step is a model disagreement
+      // and may need a fine-positioned correction", which `leaveVia` already does.
+      return relaxed.found ? { ...relaxed, goal_exempt: true } : relaxed;
+    }
     threatCost = threatCost ?? this.threatField(threats);
     const clearanceCost = this.clearanceField({ weight: clearance });
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
@@ -2543,7 +2879,8 @@ export class RoomGeometry {
         let at = ck, rr = cur.r, cc = cur.c;
         while (came.has(at)) {
           const prev = came.get(at);
-          steps.push({ row: rr, col: cc, dir: prev.dir });
+          steps.push({ row: rr, col: cc, dir: prev.dir,
+                       ...(prev.fall ? { fall: true, distance: prev.distance } : {}) });
           rr = prev.row; cc = prev.col; at = key(rr, cc);
         }
         steps.reverse();
@@ -2553,7 +2890,8 @@ export class RoomGeometry {
                  ...(lead ? { recovered_from: { row: start.row, col: start.col } } : {}) };
       }
       for (const n of this.neighbors(cur.r, cur.c,
-             { fine, collision, blockedEdges, allowInto: { row: toRow, col: toCol } })) {
+             { fine, collision, blockedEdges,
+               allowInto: goalExempt ? { row: toRow, col: toCol } : null })) {
         const nk = key(n.row, n.col);
         if (closed.has(nk)) continue;
         // Never the GOAL, only the way there: if the destination itself is occupied we
@@ -2565,13 +2903,34 @@ export class RoomGeometry {
         // a tight square would price the fleet out of the one move that keeps it alive.
         // It shapes which way we go, never where we may go.
         const atGoal = n.row === toRow && n.col === toCol;
-        const cost = (gScore.get(ck) ?? Infinity) + (n.diagonal ? 1.4142 : 1)
+        // A JUMP COVERS SEVERAL SQUARES AND MUST BE PRICED FOR THEM. Charged as one step it
+        // would be the cheapest move on the board and the router would look for cliffs to
+        // throw itself off; charged by its distance it competes with the walk on honest
+        // terms and wins only where the walk cannot go at all.
+        const cost = (gScore.get(ck) ?? Infinity)
+                   + (n.fall ? (n.distance ?? 2) : n.diagonal ? 1.4142 : 1)
                    + (threatCost ? threatCost(n.row, n.col) : 0)
                    + (clearanceCost && !atGoal ? clearanceCost(n.row, n.col) : 0)
-                   + (extraCost && !atGoal ? extraCost(n.row, n.col) : 0);
+                   // BOTH TERMS, because they are different questions that happened to
+                   // land on the same line. `extraCost` is this checkout's caller-supplied
+                   // penalty; `clipCost` is upstream's charge for a square the coarse grid
+                   // calls unwalkable. Taking either side alone silently drops a cost the
+                   // other half of the merge depends on.
+                   + (extraCost && !atGoal ? extraCost(n.row, n.col) : 0)
+                   + (clipCost && !atGoal && !this.walkable(n.row, n.col) ? clipCost : 0);
         if (cost >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, cost);
-        came.set(nk, { row: cur.r, col: cur.c, dir: n.dir });
+        // AND WHETHER THIS STEP IS A FALL, WHICH THE PLAN USED TO THROW AWAY.
+        //
+        // `neighbors` marks a drop `fall: true` and `fallTargets` proved it with
+        // `traceFineMoveClient(..., { fall: true })` — a different predicate from the walk
+        // trace, and the only one that lets a body leave a ledge. Reconstructing the route
+        // kept `row`, `col` and `dir` and dropped the flag, so every caller downstream saw
+        // an ordinary two-square step, attempted it in walk mode, and was refused by the
+        // cliff face. That is the whole of why the mountain rooms cost two to three times
+        // the theoretical minimum while every flat room on the same road costs exactly 1.00x.
+        came.set(nk, { row: cur.r, col: cur.c, dir: n.dir,
+                       ...(n.fall ? { fall: true, distance: n.distance ?? 2 } : {}) });
         push({ r: n.row, c: n.col, f: cost + h(n.row, n.col) });
       }
     }
@@ -3005,7 +3364,15 @@ export function sharedRoomGeometry(roomOrRoo) {
   const roo = roomOrRoo?.roo ?? roomOrRoo;
   if (!roo || typeof roo !== 'object') return null;
   if (!SHARED_ROOM_GEOMETRY.has(roo)) SHARED_ROOM_GEOMETRY.set(roo, RoomGeometry.fromJSON(roo));
-  return SHARED_ROOM_GEOMETRY.get(roo);
+  const g = SHARED_ROOM_GEOMETRY.get(roo);
+  // WHICH ROOM THIS IS, when the caller happened to know. The geometry is built from a
+  // `.roo` and a `.roo` does not carry its own room number — but `declaredFallJumps` has
+  // to match a table keyed by room, and a table entry applied to the wrong room would be
+  // a jump offered where there is no cliff. Stamped only from a caller that passed the
+  // map's room object; a geometry built from a bare `.roo` keeps `roomNum` null and
+  // declares nothing, which is the safe direction.
+  if (g && g.roomNum == null && Number.isFinite(Number(roomOrRoo?.num))) g.roomNum = Number(roomOrRoo.num);
+  return g;
 }
 
 // EAGERLY PARSE EVERY ROOM'S GEOMETRY. sharedRoomGeometry is lazy — the first access to a

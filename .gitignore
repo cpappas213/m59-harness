@@ -24,6 +24,10 @@ node_modules/
 # runs the very feature that directory exists for.
 /substrate/fleets/
 /substrate/history/
+# Archived stats, moved aside so a run starts from a clean sheet. Same content as the two
+# directories it is made of, and the same reason for keeping it out: it names characters and
+# it is one machine's record of one fleet, not reference anybody cloning this should carry.
+/substrate/archive/
 /substrate/recordings/
 # One JSON per death. Carries the last thirty lines the server sent that character,
 # which is other players' speech as well as combat text, so it is one server's
@@ -59,6 +63,19 @@ node_modules/
 # which is where most of this fleet's deaths happen and where nothing else is looking.
 # One server's characters and their bad afternoons, so not reference data.
 /substrate/hits/
+
+# Every row names a character and says where it was stuck — same rule as the hits ledger.
+/substrate/tactics/
+
+# The fleet's own recorded walks and the doors it learned — both name characters and
+# positions, and both are this machine's history rather than anything a clone should carry.
+/substrate/trips/
+
+# Every body's path through every room, ours and everyone else's. Names characters and
+# real people who happened to be in the room, so it never leaves this machine.
+/substrate/trails/
+/substrate/m59-track-strikes.json
+/substrate/m59-crossings-learned.json
 # One JSON per character: every point of MAXIMUM HEALTH it has earned, and the creature
 # and room that paid for it. Caught from the server's own announcement — "You suddenly
 # feel a little tougher.", player.kod:144 — rather than inferred from a five-minute
@@ -169,17 +186,64 @@ __pycache__/
 # every run — and stays excluded by the rule above.
 /substrate/sheets/checkpoints/
 
-# LOADOUTS ARE COMMITTED, and the .tmp beside them is not.
+# ORDERS LIVE ON THE MACHINE THAT GIVES THEM. THIS RULE REVERSES AN EARLIER DECISION.
 #
-# substrate/loadouts/<character>.json is what a character is SUPPOSED to be carrying — the
-# gear it should get back to, the floors and ceilings for what it holds, what it sheds on
-# sight. It is a plan, not a credential: no account, no password, and the character names
-# in it are already in substrate/sheets/. It is also the only record of a decision somebody
-# made in the planner, so it belongs in the history for exactly the reason the sheets do.
+# It said: loadouts are committed, because a loadout is a plan rather than a credential —
+# no account, no password — and it is the only record of a decision somebody made in the
+# planner. That was true about SECRECY and wrong about OWNERSHIP.
+#
+# A loadout is not a description of a character, it is an INSTRUCTION TO ONE: what to carry,
+# what floor triggers a supply trip, what to shed on sight, what to learn next. Committed,
+# twenty-one of them travel to every clone and every clone's planner edits them back, so two
+# machines running two rosters hand each other conflicting orders through git — and the
+# merge is silent, because a loadout that parses is a loadout the keeper obeys. Nobody's
+# fleet is anybody else's business, and a stranger cloning this repository should get the
+# TOOLS for controlling a fleet and none of the orders for ours.
+#
+# The same argument, unchanged, is why substrate/policy.local.json, substrate/tuning.json
+# and the playbooks below are not here. What is committed instead is the SHAPE:
+# substrate/loadouts.example.json, substrate/tuning.example.json and
+# substrate/guild-plan.example.json — outside the directories the tools enumerate, because
+# an example INSIDE substrate/loadouts/ is a twenty-second character to listLoadouts().
+#
+# As with the sheets above, this line governs untracked files only; the ones already in the
+# index were removed with `git rm --cached` in the commit that added this rule, which leaves
+# every one of them exactly where it is on disk.
 #
 # writeLoadout renames a .tmp into place so a keeper never reads half a file; the .tmp
 # exists for milliseconds and must never be committed.
+/substrate/loadouts/
 /substrate/loadouts/*.tmp
+
+# TACTICS, CHANGED MID-SESSION. substrate/tuning.json is the live overlay read by
+# tools/m59-tuning.mjs — whether to chase a flagged attacker, which weapons a named
+# character prefers, the flee and rest fractions, which rooms it may be in at all. It is
+# per-character ORDERS by definition and it is edited in a hurry, which is exactly the file
+# nobody wants arriving from somebody else's afternoon. The shape is in tuning.example.json.
+/substrate/tuning.json
+
+# WHAT THE GUILD HALL SHOULD HOLD. substrate/guild-plan.json is an end state for chests in
+# a hall this fleet bought on one server, and every character reads it on every town trip
+# and holds items back from vendors to satisfy it. Committed, it withholds goods across
+# fleets to fill a hall the clone does not own. Shape: guild-plan.example.json.
+/substrate/guild-plan.json
+
+# The last run of `node tools/m59-overhead.mjs` — one fleet's seconds of fighting, travel
+# and trade, per agent handle. A report about one afternoon on one roster; regenerated by
+# running the tool.
+/substrate/overhead-last.json
+
+# WHEN THIS OPERATOR LAST SAW THE UNDEAD SHIFT BEGIN. The graveyard cycle is arithmetic,
+# but its PHASE is anchored by a person who looked at the sky on one server — see the
+# header of tools/m59-dayclock.mjs. Inherited by a clone it is a confidently wrong clock,
+# which is worse than none: absent, the tool says it has no anchor and asks for one.
+/substrate/gy-cycle.json
+
+# Anything under substrate/ that starts with a dot is a local before-I-changed-something
+# copy — .loadouts-before-<change>/, .guild-<name>-before-disband.json, .autopilot-*.bak.
+# They exist so a bad afternoon can be undone on THIS machine, and several of them are
+# rosters or orders. .before-restore-*/ above is the same rule stated once already.
+/substrate/.*
 
 # PLAYBOOKS ARE NOT COMMITTED, AND THAT IS THE ONE PLACE THEY DIFFER FROM LOADOUTS.
 #
@@ -319,3 +383,21 @@ m59-nav-learned.json
 # Scratch verification scripts and one-run verification outputs — not reference.
 _verify2.mjs
 /substrate/phase3-health-verification.txt
+
+# The shadow-fleet tool. Dry-runs a prod operation against a local copy of the
+# roster, so it reads live production characters and writes their stats, position
+# and equipment to disk. Not to be shared in the repository.
+/tools/m59-shadow.mjs
+/substrate/shadow-snapshot.json
+
+# WHERE THIS FLEET COMMUTES. Orders to characters rather than a description of them, so it
+# lives on the machine that owns the roster. substrate/commute.example.json carries the shape.
+/substrate/commute.json
+/substrate/shuttle-runs.json
+/substrate/collision-trace.jsonl
+/substrate/cragged-stalls.jsonl
+
+# The fleet-run lock: which process is currently driving a fleet. Runtime state,
+# one per machine, and meaningless in anybody else's checkout.
+/substrate/run-*.lock
+/substrate/keeper-trace.jsonl

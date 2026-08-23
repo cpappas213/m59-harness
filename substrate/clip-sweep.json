@@ -1,0 +1,19 @@
+{
+  "_what": "Squares the collision view will step onto that the coarse grid calls solid — the invariant running backwards. See the header of tools/m59-clipsweep.mjs.",
+  "swept_at": "2026-08-22T00:46:05.801Z",
+  "rooms": [
+    {
+      "room": 598,
+      "name": "The Cragged Mountains",
+      "clip_steps": 334,
+      "legal_steps": 5924,
+      "clip_squares": 187,
+      "pct": 5.337168424416746,
+      "coarse_islands": 44,
+      "coarse_body": 863,
+      "anchors": 2,
+      "anchors_on_solid": 0,
+      "bad": []
+    }
+  ]
+}

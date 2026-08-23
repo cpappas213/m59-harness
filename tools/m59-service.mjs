@@ -30,10 +30,11 @@
 
 import http from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
-import { openSync, readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, statSync } from 'node:fs';
+import { openSync, readFileSync, writeFileSync, existsSync, unlinkSync, mkdirSync, statSync,
+         readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fleetName } from './m59-fleetpath.mjs';
+import { fleetName, lockFileFor } from './m59-fleetpath.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as webui from './m59-webui.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
@@ -134,9 +135,72 @@ const sameFleet = (h) => (h?.fleet || 'default') === LABEL;
 
 // The pid to act on, or a reason not to act. Belt and braces: the pid file is a hint,
 // /health is the authority, and they have to agree about the port at least.
+// THE ROSTER LOCK IS THE AUTHORITY ON WHO HOLDS THE FLEET, AND IT DOES NOT CARE ABOUT PORTS.
+//
+// `health()` asks one port -- 8901 unless told otherwise -- and a broker started by hand on
+// any other port is invisible to it. `start` then concludes nothing is running and starts a
+// SECOND broker on the fleet, which is the failure CLAUDE.md is most emphatic about: the
+// second is refused the lock, comes up healthy and EMPTY, and answers every question about a
+// fleet of nobody while the real one plays on. Measured here, and not hypothetically:
+//
+//     no broker for "shadow" on 8901
+//     starting broker for "shadow" .up   pid 28792   rpc http://127.0.0.1:8901
+//
+// while pid 16216 sat on 8971 holding all 21 characters.
+//
+// The answer was on disk the whole time. `m59-broker.mjs` writes the pid that owns a fleet
+// into a lock named after the roster it guards, so this reads that first and only then goes
+// looking for a port to talk to it on -- the default, then every port a broker pid file
+// names, the way m59-fleets.mjs and m59-which.mjs do. A lock whose pid is dead is a stale
+// lock and means nothing, which is what `alive` is for.
+function lockHolder() {
+  try {
+    const rec = JSON.parse(readFileSync(lockFileFor(FLEET), 'utf8'));
+    const pid = Number(rec?.pid);
+    return Number.isInteger(pid) && pid > 0 && alive(pid) ? pid : null;
+  } catch { return null; }        // no lock, or one we cannot read, is not a claim
+}
+
+function candidatePorts() {
+  const ports = [HTTP_PORT];
+  try {
+    for (const f of readdirSync(SUB)) {
+      if (!/^broker-.+\.pid$/.test(f)) continue;
+      try {
+        const port = Number(JSON.parse(readFileSync(join(SUB, f), 'utf8'))?.http);
+        if (Number.isInteger(port) && port > 0 && port < 65536) ports.push(port);
+      } catch { /* an unreadable pid file is only a lost hint */ }
+    }
+  } catch { /* no substrate directory */ }
+  return [...new Set(ports)];
+}
+
 async function findBroker() {
   const h = await health();
-  if (!h) return { running: false };
+  if (!h) {
+    // Nothing on our port. Before concluding the fleet is free, ask the lock.
+    const held = lockHolder();
+    if (held) {
+      for (const port of candidatePorts()) {
+        if (port === HTTP_PORT) continue;
+        // PATIENT ON PURPOSE. The default probe is 2.5s, and a broker mid-rejoin with
+        // twenty-one characters in game genuinely takes longer than that to answer. One did,
+        // and this path then reported the fleet held by a pid it could not reach and refused
+        // a restart that was perfectly safe. Refusing is the right direction to fail in, but
+        // failing there for a slow answer is a bug rather than caution.
+        const other = await health(port, 15000);
+        if (other && Number(other.pid) === held)
+          return { running: true, pid: held, port, health: other, elsewhere: true };
+      }
+      // Held by a live pid we cannot reach. Refusing is still right: starting a second
+      // broker would take no sessions and answer for a fleet of nobody.
+      return { running: true, foreign: true, pid: held,
+               why: `the roster lock for "${LABEL}" is held by live pid ${held}, which is not `
+                  + `answering on ${candidatePorts().join(', ')}. Stop that broker before `
+                  + `starting another, or delete the lock only if that pid is genuinely gone.` };
+    }
+    return { running: false };
+  }
   if (!sameRepo(h))
     return { running: true, foreign: true, why: `port ${HTTP_PORT} is held by a broker from ${h.root}` };
   if (!sameFleet(h))
@@ -170,7 +234,8 @@ async function cmdStart() {
   const found = await findBroker();
   if (found.foreign) { console.error(c.bad(found.why)); return 1; }
   if (found.running) {
-    console.log(c.ok(`already up — pid ${found.pid}, fleet "${LABEL}", ` +
+    console.log(c.ok(`already up — pid ${found.pid}` +
+                     (found.elsewhere ? ` on ${found.port}` : '') + `, fleet "${LABEL}", ` +
                      `${found.health.sessions?.length ?? 0} session(s)`));
     // AND STILL CHECK THE PAGE. "The broker is up" and "everything is up" are different
     // answers, and returning the first for the second is how `start` becomes a command
@@ -396,6 +461,33 @@ async function cmdStop({ quiet = false, force = false } = {}) {
 async function cmdStatus() {
   const h = await health();
   if (!h) {
+    // DOWN ON THIS PORT IS NOT DOWN. Same trap as `start`, and worse here, because a person
+    // reads this line and decides what to do next: it once said DOWN while pid 16216 sat on
+    // 8971 with all 21 characters in game. The lock names whoever holds the roster.
+    const held = lockHolder();
+    if (held) {
+      for (const port of candidatePorts()) {
+        if (port === HTTP_PORT) continue;
+        // PATIENT ON PURPOSE. The default probe is 2.5s, and a broker mid-rejoin with
+        // twenty-one characters in game genuinely takes longer than that to answer. One did,
+        // and this path then reported the fleet held by a pid it could not reach and refused
+        // a restart that was perfectly safe. Refusing is the right direction to fail in, but
+        // failing there for a slow answer is a bug rather than caution.
+        const other = await health(port, 15000);
+        if (other && Number(other.pid) === held) {
+          console.log(c.ok(`broker "${LABEL}"  UP`) +
+                      c.dim(`  pid ${held} on ${port} — not ${HTTP_PORT}, which is why this said DOWN`));
+          console.log(c.dim(`  ${other.sessions?.length ?? 0} session(s); ask it directly: ` +
+                            `node tools/m59-service.mjs status --fleet ${LABEL} --http ${port}`));
+          return 0;
+        }
+      }
+      console.log(c.bad(`broker "${LABEL}"  HELD`) +
+                  c.dim(`  the roster lock names live pid ${held}, not answering on ` +
+                        `${candidatePorts().join(', ')}`));
+      console.log(c.dim('  that pid owns this fleet; find its port before starting anything'));
+      return 1;
+    }
     console.log(c.bad(`broker "${LABEL}"  DOWN`) + c.dim(`  (nothing answering on ${HTTP_PORT})`));
     if (existsSync(PID_FILE)) {
       const p = JSON.parse(readFileSync(PID_FILE, 'utf8'));

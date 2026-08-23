@@ -19,6 +19,7 @@
 //   blakserv/session.c    GetCRC16BufferList: CRC32, truncated to 16 bits
 
 import net from 'node:net';
+import { recordSeen } from './m59-trails.mjs';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
 import { loadResources } from './m59-rsc.mjs';
@@ -31,6 +32,7 @@ import {
   parseGuildInfo, parseGuildAsk, parseGuildList, parseGuildHalls,
   parseOffer, parseOfferItems, parseInventoryAdd, encodeIdList, describeObject,
   parseUseList, parseObjectId, affordances, STAT_GROUP,
+  parseAddEnchantment, parseRemoveEnchantment,
 } from './m59-parse.mjs';
 
 export { OF, KOD_FINENESS };
@@ -269,6 +271,9 @@ export class M59Client {
     // something to poll, and it is the only clock on the wire.
     this.sky = new Map();                           // object id -> {angle, height, ...}
     this.statsById = new Map();                     // stat number -> value/text
+    // WHAT IS CURRENTLY ON US — poison, disease, a blessing. Keyed by the enchantment
+    // object's id, which is what BP_REMOVE_ENCHANTMENT names. See parseAddEnchantment.
+    this.enchantmentsById = new Map();
     this.events = [];                               // recent world events, newest last
     this.maxEvents = 500;
     this.evSeq = 0;
@@ -572,6 +577,26 @@ export class M59Client {
   // HOW GOOD ARE WE AT <name>. This is the lookup the harness has always wanted and
   // never had: group 3 and 4 stats have no `name` — STAT_NAMES only covers groups 1
   // and 2 — so they were never indexed by name, and every by-name search of
+  /** Everything currently on this character — poison, disease, a blessing. */
+  enchantments() { return [...this.enchantmentsById.values()]; }
+
+  /**
+   * IS SOMETHING DRAINING US THAT IS NOT AN ATTACK?
+   *
+   * Poison takes health with nobody adjacent and CANNOT KILL — it stops short — so it looks
+   * exactly like a safe spot leaking, and that is the reading it was producing: a wall
+   * discredited for good on the strength of damage no wall could have stopped.
+   *
+   * Matched on the resource name because that is what the server sends and the sickness
+   * classes are named for what they are. Returns the list rather than a boolean so a caller
+   * can say WHICH in a note; empty means nothing found, never "we cannot tell".
+   */
+  ailments() {
+    return this.enchantments().filter(e => /poison|disease|sick|plague|venom/i.test(e.name ?? ''));
+  }
+
+  poisoned() { return this.ailments().length > 0; }
+
   // `statsById` for a proficiency returned nothing at all. Ask the ability map.
   abilityOf(name) {
     if (!name) return null;
@@ -867,6 +892,27 @@ export class M59Client {
         || !Number.isInteger(y) || y < 0 || y > 0xffff)
       throw new RangeError(`movement coordinates must be unsigned 16-bit integers, got (${x},${y})`);
     this.send(BP.REQ_MOVE, u16b(y), u16b(x), u8b(speed), u32(objId(room || 0)));
+    // OUR OWN TRAIL, AT THE RATE WE ACTUALLY WALK IT.
+    //
+    // `BP_MOVE` is the server telling us where everyone is, and it arrives about once a
+    // second — measured on this fleet, a median of 1202ms between samples and 69 wire units
+    // of movement, which is roughly one square. That is the best resolution obtainable for
+    // ANOTHER body, and it is far coarser than our own walking: every move we send is a
+    // point we chose, in exact fine coordinates, already proved by `validateFineTarget`
+    // before it reached this line.
+    //
+    // Recording it here rather than at the caller because this is the one place every sent
+    // move passes through — a walk, a fine step, a doorway nudge and a retreat all end up
+    // here, and a recorder attached to any one of them would miss the others.
+    //
+    // Flagged `sent`, because it is where we ASKED to be and the server has not confirmed
+    // it yet. The straightener raycasts every leg it keeps, so an intention that was refused
+    // cannot become a track through a wall — it simply fails to join and is dropped.
+    recordSeen({ at: Date.now(),
+                 room_name_rsc: this.roomNameRsc ?? null, room_rsc: this.roomRsc ?? null,
+                 room: this.room?.id ?? null, id: this.selfId,
+                 name: this.character ?? null, by: this.character ?? null,
+                 player: true, sent: true, x, y });
   }
   // Grid-square convenience: centre of square (col,row).
   moveToSquare(col, row, speed = 18, room = this.room.id) {
@@ -1152,6 +1198,19 @@ export class M59Client {
   requestInventory()    { this.send(BP.REQ_INVENTORY); }
   requestSpells()       { this.send(BP.SEND_SPELLS); }
   requestSkills()       { this.send(BP.SEND_SKILLS); }
+  // WHO ARE WE. The reply is BP_PLAYER, whose handler re-assigns `selfId` and then
+  // re-requests the room contents, so this is the one packet that recovers an identity
+  // the server has renumbered underneath us — which it does on every garbage collection,
+  // and it collects on every save. `self` is `room.objects.get(selfId)`, so a stale
+  // `selfId` reads exactly like "I do not know where I am" and no amount of re-reading
+  // the room can fix it: the new contents are keyed by the NEW id.
+  //
+  // It is a METHOD here rather than a constant the broker sends by hand, because it was
+  // sent by hand — `c.send(BP_SEND_PLAYER)` — against an identifier that does not exist
+  // in that file. That is a ReferenceError at the moment of use, in two places, and both
+  // were the recovery path for a fault nobody could reproduce on purpose. A missing
+  // method fails at load; a missing free variable fails only when the world goes wrong.
+  requestPlayer()       { this.send(BP.SEND_PLAYER); }
   roomContents()        {
     const request = this.roomContentsRequested + 1;
     this.send(BP.SEND_ROOM_CONTENTS);
@@ -1296,6 +1355,36 @@ export class M59Client {
         // is cleared here rather than left to rot — a stale `predicted: true` on a
         // confirmed position would make every later reader distrust a good reading.
         if (o) Object.assign(o, { x: res.x, y: res.y, col: res.col, row: res.row, predicted: false });
+        // WRITE DOWN WHERE EVERY BODY ACTUALLY WENT.
+        //
+        // This packet is the only ground truth about walkable space this repository has, and
+        // until now it updated a map in memory and was thrown away. It covers EVERY object
+        // the room can see — our own characters, a proxied human, a stranger, a monster — so
+        // one character standing in a room is an instrument for everyone in it. That is what
+        // makes the same record serve travel (a trail through a room, straightened, is a
+        // route no planner can be wrong about) and formations (several trails on one clock).
+        //
+        // Buffered, deduplicated against standing still, and unable to throw: this is the
+        // packet path that every session shares.
+        // THE ROOM'S STABLE IDENTITY, NOT ITS OBJECT ID.
+        //
+        // `this.room.id` is the object id, and m59-map.mjs says plainly that objId is NOT
+        // stable — the server renumbers objects on every `save game`, which is every 15
+        // minutes here. A ledger keyed on it silently re-points at different rooms after a
+        // save, which is the worst kind of wrong for a record meant to outlive the session.
+        // It is also ambiguous even within one boot: 30 of the 264 object ids are ALSO a
+        // room number, so room 1's objId of 6 is indistinguishable from room 6.
+        //
+        // `roomNameRsc` and `roomRsc` come from BP_PLAYER, are unique per room across the
+        // world, and survive a save — which is why m59-world identifies rooms by them and
+        // uses the object id only as a last resort. The reader resolves whichever of these
+        // it is given; the id is kept alongside for debugging rather than as the key.
+        recordSeen({ at: Date.now(),
+                     room_name_rsc: this.roomNameRsc ?? null, room_rsc: this.roomRsc ?? null,
+                     room: this.room?.id ?? null,
+                     id: res.id, name: o?.name ?? null, by: this.character ?? null,
+                     player: !!(o && (o.flags & OF.PLAYER)),
+                     x: res.x, y: res.y, col: res.col, row: res.row });
         // Our own moves confirm what the server accepted, which is the only
         // trustworthy position — dead reckoning drifts and illegal moves are
         // simply refused with no reply.
@@ -1798,6 +1887,31 @@ export class M59Client {
       // Stats. The important ones for staying alive are health (1), mana (2) and
       // vigor — vigor gates running and some skill costs, and the server snaps a
       // character back if it tries to run without it.
+      // WHY HEALTH FALLS WHEN NOTHING IS HITTING US. Both of these were declared in the BP
+      // table and never handled, so a sickness was invisible and every reader downstream had
+      // to guess. `restUntil` aborts on falling health and a spot that fails a rest is
+      // discredited for good, so a poisoned character was quietly burning good walls out of
+      // the book on every rest it took.
+      case BP.ADD_ENCHANTMENT: {
+        const res = parseAddEnchantment(body);
+        if (!this.check('ADD_ENCHANTMENT', res)) break;
+        const o = res.object;
+        this.enchantmentsById.set(o.id, {
+          id: o.id, type: res.type, nameRsc: o.nameRsc,
+          name: this.rsc.get(o.nameRsc) ?? null, at: Date.now(),
+        });
+        this.emit('enchantment', { added: this.enchantmentsById.get(o.id) });
+        break;
+      }
+      case BP.REMOVE_ENCHANTMENT: {
+        const res = parseRemoveEnchantment(body);
+        if (!this.check('REMOVE_ENCHANTMENT', res)) break;
+        const gone = this.enchantmentsById.get(res.id) ?? { id: res.id, type: res.type };
+        this.enchantmentsById.delete(res.id);
+        this.emit('enchantment', { removed: gone });
+        break;
+      }
+
       case BP.STAT: {
         const res = parseStat(body, this.lookup);
         if (!this.check('STAT', res)) break;

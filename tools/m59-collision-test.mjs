@@ -3,17 +3,32 @@
 //
 //   node tools/m59-collision-test.mjs
 
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+
+// THE INSTRUMENTS WRITE TO DISK, AND A TEST MUST NEVER WRITE TO THE FLEET'S OWN BOOKS.
+// A live broker reads both of these; a suite that appended to them would be teaching the
+// running fleet doors that only exist in a fixture.
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-'));
+  process.env.M59_TACTICS_DIR = join(scratch, 'tactics');
+  process.env.M59_CROSSINGS_LEARNED = join(scratch, 'crossings-learned.json');
+}
 import { createHash } from 'node:crypto';
 import {
   CLIENT_FINENESS, COLLISION_VERSION, DEFAULT_ROO_DIRS, KOD_FINENESS,
   MAX_STEP_HEIGHT, MIN_SIDE_MOVE, PLAYER_HEIGHT, PLAYER_RADIUS,
-  RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, setWallHeights,
+  RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, clientToProtocol, setWallHeights,
   sharedRoomGeometry,
 } from './m59-roo.mjs';
+import { recordTactic } from './m59-tactics.mjs';
+import { anchorFor } from './m59-routes.mjs';
+import { recordCrossing } from './m59-crossings.mjs';
+import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
+import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { BP, M59Client } from './m59-client.mjs';
-import { MOVEON, blocksMovement, parsePlayer } from './m59-parse.mjs';
+import { MOVEON, blocksMovement, parsePlayer, OF } from './m59-parse.mjs';
 import {
   COND, LEAVE, edgeCandidatesOf, edgeExitsOf, findPath,
   geometryManifest, movementMapReadiness, roomResourceDirs, setGeometryProvenance,
@@ -973,26 +988,54 @@ function compileSessionMethod(source, signature, name, dependencies = {}) {
   }
 }
 
-// THE SESSION MOVED, AND THIS SUITE WENT DARK WITHOUT SAYING SO.
+// SOURCE PATH IS OURS, EVERYTHING ELSE IS UPSTREAM'S.
 //
-// These methods are lifted out of the PRODUCTION source by brace matching and compiled,
-// so the suite tests the real code rather than a copy. That binds it to which FILE the
-// code lives in — and the Phase 3 broker split moved the Session class out of
-// m59-broker.mjs into m59-game.mjs. `validateFineTarget` then compiled to null, the
-// dependency check skipped one group politely, and a later assertion dereferenced the
-// null and took the whole file down.
+// These methods are lifted out of the PRODUCTION source by brace matching, so this
+// suite is bound to which FILE the code lives in. The keeper split moved Session
+// from m59-broker.mjs to m59-game.mjs here; upstream still has it in the broker.
+// When that path was wrong, validateFineTarget compiled to null, one group skipped
+// politely, and a later assertion dereferenced the null and took the file down --
+// 164 collision assertions went quiet at exactly the moment we established that
+// movement is CLIENT-AUTHORITATIVE and this model is the only collision check.
 //
-// So 164 assertions about the collision contract stopped running, at exactly the moment
-// the fleet established that MOVEMENT IS CLIENT-AUTHORITATIVE and this model is therefore
-// the only collision check there is. A suite that goes quiet is worse than one that goes
-// red, and this one did both in the wrong order.
-//
-// If it moves again, the failure to look for is `compileSessionMethod` returning null.
+// If it moves again, the failure to look for is compileSessionMethod returning null.
 const brokerSource = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
+
+// A PLAIN FUNCTION, LIFTED THE SAME WAY THE METHODS ARE. `provedSquares` is what turns a
+// route into the legs the pull has proved, and stubbing it would leave `walkTo` tested on
+// only the path it takes when there is no proof — which is the path this change exists to
+// stop taking. Extracted by brace matching, exactly like the methods above.
+function liftFunction(source, signature, deps = {}) {
+  const start = source.indexOf(signature);
+  if (start < 0) return null;
+  let depth = 0, end = -1;
+  for (let i = source.indexOf('{', start); i < source.length; i++) {
+    if (source[i] === '{') depth++;
+    else if (source[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
+  }
+  if (end < 0) return null;
+  try {
+    return new Function(...Object.keys(deps),
+      source.slice(start, end) + `; return ${signature.replace(/^function\s+/, '').split('(')[0]};`
+    )(...Object.values(deps));
+  } catch { return null; }
+}
+const provedSquares = liftFunction(brokerSource, 'function provedSquares(geo, from, steps)',
+  { KOD_FINENESS, protocolToClient });
+ok('the extracted provedSquares compiled', typeof provedSquares === 'function');
+ok('and with no collision model it declines to prove anything',
+   provedSquares?.({ collisionReady: false }, { row: 1, col: 1 }, [{ row: 1, col: 2 }]) === null);
+const atEdgeOpening = liftFunction(brokerSource,
+  'function atEdgeOpening(position, opening, direction)', { KOD_FINENESS });
+ok('the extracted edge-opening predicate compiled', typeof atEdgeOpening === 'function');
 for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
-  { CLIENT_FINENESS, KOD_FINENESS, blocksMovement });
+  { CLIENT_FINENESS, KOD_FINENESS, blocksMovement,
+    // The declared-mutable list, as the real functions: both are pure lookups over a frozen
+    // table in a module that imports without taking the fleet lock, so stubbing them would
+    // be testing a different rule from the one that ships.
+    isMutableGeometry, mutableBecause });
 // `noteGeometryDrift` is stubbed rather than lifted: this suite is about what the
 // collision contract DECIDES, and where the broker files the resulting drift record is
 // not that question. The decision itself is asserted below, off `validateFineTarget`,
@@ -1000,7 +1043,7 @@ const validateFineTarget = compileSessionMethod(brokerSource,
 const driftRecorded = [];
 const queueValidatedMove = compileSessionMethod(brokerSource,
   'async queueValidatedMove(x, y, {', 'queueValidatedMove',
-  { MOVE_INTERVAL_MS: 0, CLIENT_FINENESS,
+  { MOVE_INTERVAL_MS: 0, CLIENT_FINENESS, atEdgeOpening,
     noteGeometryDrift: (session, drift) => driftRecorded.push(drift) });
 const confirmPosition = compileSessionMethod(brokerSource,
   'async confirmPosition() {', 'confirmPosition', { Pacer: { note() {} } });
@@ -1015,38 +1058,141 @@ const ordinaryStep = compileSessionMethod(brokerSource,
     // testing a different function from the one that ships. The dependency check below
     // is what caught them missing, which is the check earning its keep.
     FACE_EPS: 8, COMBAT_FACE_HOLD_MS: 1500,
+    // The movement tracer, stubbed. It is OFF in every real run unless the environment
+    // turns it on, but `step` names it unconditionally, and a free identifier here throws
+    // ReferenceError in the eval'd copy while working perfectly in the broker — which is
+    // the whole class of failure this dependency map exists to catch. It did catch it.
+    traceMove: () => {},
   });
+// THE AIM, LIFTED LIKE EVERYTHING ELSE. `step` calls `this.aimInto` to decide where in the
+// next square to walk, so a fixture without it is a fixture testing a different method —
+// and this one is load-bearing: it is what stops the two-square bounce.
+const aimInto = compileSessionMethod(brokerSource,
+  'aimInto(from, row, col) {', 'aimInto', { KOD_FINENESS, protocolToClient });
+// `traceMove` again, for the same reason `leaveVia` needs it: the fine walk records now, and
+// a module-scope name a lifted method reaches has to be declared or the branch throws here
+// while working perfectly in the broker. The tracer is off by default, so this is a no-op —
+// which is exactly the property m59-collision-trace-test asserts.
 const walkFine = compileSessionMethod(brokerSource,
-  'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason });
+  'async walkFine(destX, destY, {', 'walkFine', {
+    // Stubbed rather than imported, the same way the other lifted methods take it: this
+    // suite is about what the walk DECIDES, and the tracer is a recorder with its own suite.
+    traceMove: () => {}, isTerminalMovementReason, KOD_FINENESS });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
+    provedSquares,
+    // THE REAL NUMBER, because the branch it guards is a behaviour: a walk that takes this
+    // many steps without ever getting closer is a dither and is handed back to the caller.
+    // Fourteen is generous enough to go round a building and far short of the sixty-odd
+    // squares of oscillation measured crossing The Streets of Tos.
+    WALK_STALL_STEPS: 24,
+    // THE REAL FLAGS, not a stub. `walkTo` asks whether the body in its way is a PLAYER —
+    // a player is also dodging and needs the object-id tie-break, a monster gets the fixed
+    // clockwise-first order — and a fixture that invented its own bit would build a room
+    // whose occupants the code under test cannot classify, then pass every assertion that
+    // expects the monster path.
+    OF,
     isTerminalMovementReason, KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8,
+    // Thirteen, and the number is the server's speedhack check — see the constant.
+    PROVED_HOP_MAX_SQUARES: 13,
     // The coalescer's two, which were free identifiers here for as long as the coalescer
     // existed. No fixture reached that branch — they all have falsy `collisionReady` —
     // so nothing ever threw and nothing ever said so. The value matches the broker's own
     // default; it is duplicated rather than imported because importing the broker takes
     // the fleet lock, which is the reason this whole file lifts methods by text.
     PIVOT_ARRIVE_WITHIN: 64, protocolToClient,
+    // THE FUEL STOP'S PLANNER. `walkTo` works out where the shelters on this crossing are
+    // while it is planning the crossing, so that wanting one later is a change to the route
+    // ahead rather than a stop, a search and a replan from a standstill. Stubbed to nothing
+    // here: no fixture sets `shelterPolicy`, so the branch is never entered, and the point
+    // of declaring it is that the branch would otherwise throw ReferenceError the first time
+    // a real journey did — which is exactly what this check exists to catch.
+    sheltersAlong: () => [],
+    // THE FINE DETOUR'S FOUR, AND THE LEDGER. Half of what the square lattice calls a wall
+    // is a slide that landed next door; these are what thread it. Real functions, because
+    // all five are ordinary exports of modules that import without taking the fleet lock.
+    finePath, pullFine, pointOfSquare, boundsAround, recordTactic,
+    clientToProtocol,
+    // How many packets a planned square may cost. The broker's own default, duplicated
+    // for the same reason PIVOT_ARRIVE_WITHIN is: importing the module takes the fleet
+    // lock. It is not 1 because the mover slides and the router aims at centres.
+    OFF_PLAN_STEP_BUDGET: 3,
   });
+// The follower, lifted like the rest. It is not reached by `leaveVia`'s lifted copy — that
+// one stubs it — so it needs its own.
+const followRail = compileSessionMethod(brokerSource,
+  'async followRail(squares, {', 'followRail', {
+    isTerminalMovementReason,
+    RAIL_STALL_WAYPOINTS: 3, RAIL_STALL_JUMP: 3,
+  });
+const recentreInSquare = compileSessionMethod(brokerSource,
+  'async recentreInSquare() {', 'recentreInSquare', {});
+let rideTrackFixture = null;
+const rideTrack = compileSessionMethod(brokerSource,
+  'async rideTrack(fromRoom, toRoom, {', 'rideTrack', {
+    KOD_FINENESS,
+    recallTrack: () => rideTrackFixture,
+    clearStrikes: () => {},
+    strikeTrack: () => 1,
+  });
+
+let leaveViaRoutesFixture = null;
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
-    isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0,
+    isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0, atEdgeOpening,
+    // The tactics ledger, as the real one. `leaveVia` now writes down whether the baked
+    // rail carried the crossing or slipped, and the ledger is written to be unable to
+    // throw — which is the property worth exercising rather than stubbing. It writes under
+    // M59_TACTICS_DIR, which this file already points at a scratch path.
+    recordTactic,
+    // A MUTABLE ROUTE-TABLE SEAM AND THE REAL DESTINATION LOOKUP. With no table attached,
+    // `anchorFor` answers null and the rail branch falls through to the ordinary walk. The
+    // room-578 regression attaches one hermetic table to reach that otherwise untested path.
+    activeRoutes: () => leaveViaRoutesFixture, anchorFor,
+    // THE REAL VALUE, because the branch it guards is a behaviour rather than a stub point:
+    // a rail whose line starts somewhere else is refused when the door is already close, and
+    // eight squares is the number the broker ships. The measured case is the Western border
+    // of the Twisted Wood, where the nearest OTHER anchor to a character that has just
+    // arrived beside the 597 door is the doorway back into 586.
+    RAIL_SKIP_WITHIN_SQUARES: 8,
     // THE REAL FUNCTIONS, NOT STUBS. Both are ordinary exports of m59-world.mjs — which,
     // unlike the broker, imports without taking the fleet lock — so lifting `leaveVia`
     // and handing it hand-written imitations of the two helpers it drives would be
     // testing the imitations. `DOOR_SETTLE_MS` is zeroed for the same reason
     // MOVE_INTERVAL_MS is: the fake client answers immediately or not at all.
     boundedSilentGo, boundedRegionEntry, DOOR_SETTLE_MS: 0,
+    // Zero, which is the broker's own default and the measured one — see the constant.
+    // Declared rather than inherited so a change to it shows up here as a test to update.
+    LEAVE_VIA_CLEARANCE: 0,
     // Zero here, not the broker's 10s: these tests drive a fake client that answers
     // immediately or not at all, so the real wait would only add ten seconds per
     // never-crossing case. What the constant is FOR is live lag, which is not
     // reproducible in a sandbox.
     EDGE_CROSSING_WAIT_MS: 0,
+    // Zero for the same reason EDGE_CROSSING_WAIT_MS is: the fake client answers at once or
+    // not at all, so a real confirmation poll would only add seconds per never-crossing case.
+    EDGE_CONFIRM_MS: 0,
+    // The boundary nudge before the outward step — see the wiggle-at-the-door note in
+    // m59-broker.mjs. Real values, because what they bound is how many packets the
+    // approach spends, which is exactly what these tests count.
+    EDGE_NUDGE_WITHIN: 16, EDGE_NUDGE_MAX_STEPS: 6,
     Pacer: { note() {} }, forgetInferredExit() {},
   });
+// THE REAL ONE, not the `() => null` stub the fixtures above use. Those stubs are correct
+// where the test is about something else; the blocked-door cases at the end of this file are
+// about the detour itself, and stubbing it there would make them pass by removing it.
+const realSidestepAround = compileSessionMethod(brokerSource,
+  'sidestepAround(was, blocked, {', 'sidestepAround', {});
+
 const leaveViaAny = compileSessionMethod(brokerSource,
   'async leaveViaAny(candidates, {', 'leaveViaAny', {
-    isTerminalMovementReason, spreadEdges, orderExits: exits => exits,
+    isTerminalMovementReason, spreadEdges, orderExits: exits => exits, KOD_FINENESS,
+    // THE TWO INSTRUMENTS, AS THE REAL ONES. Both are ordinary exports of modules that
+    // import without taking the fleet lock, and both are written to be unable to throw —
+    // which is exactly the property worth exercising here rather than stubbing away. They
+    // write under M59_TACTICS_DIR / M59_CROSSINGS_LEARNED, which this file points at a
+    // scratch path below so a test run never edits the fleet's own books.
+    recordTactic, recordCrossing,
   });
 
 function fakeBrokerSession(geometry, {
@@ -1102,6 +1248,7 @@ function fakeBrokerSession(geometry, {
     validateFineTarget,
     queueValidatedMove,
     confirmPosition,
+    aimInto,
   };
   return { session, client, packets, turns };
 }
@@ -1187,6 +1334,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, world: { geometry }, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
       threatsHere() { return []; },
       async step() {
         stepCalls++;
@@ -1198,12 +1352,19 @@ console.log('\nterminal movement propagation and edge packet authority');
        result.reason === 'room_geometry_mismatch' && stepCalls === 1 && result.replans === 0,
        JSON.stringify({ result, stepCalls }));
 
-    let pathCalls = 0;
+    let pathCalls = 0, resyncCalls = 0;
     const unknown = {
       client: { self: null }, world: { geometry: { path() { pathCalls++; } } },
       need() { return this.client; },
+      // walkTo now ASKS the server before giving up — losing our own object out of the
+      // room map is the ordinary state for a moment after a room is rebuilt. This fixture
+      // is the OTHER case: the read is made and still cannot answer, which is the only
+      // situation where the terminal verdict below is the right one.
+      async selfOrResync() { resyncCalls++; return null; },
     };
     const unknownResult = await walkTo.call(unknown, 2, 1, { maxSteps: 5, hardCap: 10 });
+    ok('walkTo asks the server before calling its own position unknown',
+       resyncCalls === 1, JSON.stringify({ resyncCalls }));
     ok('walkTo reports unknown own position as a terminal contract reason',
        unknownResult.reason === 'own_position_unknown' &&
        isTerminalMovementReason(unknownResult.reason) && pathCalls === 0,
@@ -1222,12 +1383,87 @@ console.log('\nterminal movement propagation and edge packet authority');
     ok('walkTo reports a permanently floorless start as terminal',
        floorlessResult.reason === 'start_has_no_floor' &&
        isTerminalMovementReason(floorlessResult.reason), JSON.stringify(floorlessResult));
+
+    // ------------------------------------------------ blocked by a body that is EATING us
+    // WAITING FOR AN ENGAGED MONSTER TO WANDER OFF IS SUICIDE, AND IT WAS THE DEFAULT.
+    //
+    // The retry is built on "monsters wander, so one lap costs a second and often clears
+    // it". True of a monster that has not noticed us; false of the only case that kills
+    // anybody. An engaged monster stays exactly where it is — we are what it is standing
+    // there for — so every patient 500-1000ms lap is a hit taken, and the keeper is inert
+    // by design for the length of an errand.
+    //
+    // Measured on prod: of the 18 deaths in one two-hour window that recorded hits in
+    // their last minute, 5 took EVERY hit on a single square. Kermit stood on one square
+    // in Main gate to Cor Noth for 118 seconds and took 23 hits; Beaker and Statler each
+    // lost 47-51 health in 9 seconds without moving once.
+    //
+    // Being hit does NOT end the trip — doctrine is explicit that a planned journey
+    // completes, and two health-based bail-outs were tried here and reverted. It stops us
+    // WAITING. Both directions are pinned, because the failure is symmetric: lose the
+    // patience and every passing rat costs a reroute, lose the escalation and the fleet
+    // goes back to standing still while it is eaten.
+    const blockedRun = async ({ falling }) => {
+      let hp = 50, sleepMs = 0;
+      const client = {
+        self: { col: 1, row: 1, x: 96, y: 96 },
+        vitals: () => ({ health: { value: hp, max: 50 } }),
+      };
+      const geometry = {
+        walkable: () => true, standable: () => true,
+        path: () => ({ found: true, steps: [{ col: 2, row: 1 }] }),
+      };
+      const session = {
+        client, world: { geometry }, movementGeneration: 0,
+        need() { return this.client; },
+        movementWasCancelled() { return false; },
+        threatsHere() { return []; },
+        // No way round, so the walker must fall through to the occupancy path either way.
+        sidestepAround() { return null; },
+        async step() {
+          if (falling) hp -= 3;                       // it is hitting us every lap
+          return { moved: false, left_room: false, reason: 'object_blocked' };
+        },
+      };
+      const t0 = Date.now();
+      const out = await walkTo.call(session, 2, 1, { maxSteps: 6, hardCap: 12 });
+      return { out, elapsed: Date.now() - t0 };
+    };
+    const patient = await blockedRun({ falling: false });
+    const underFire = await blockedRun({ falling: true });
+
+    ok('a body in the way with no damage still gets the patient retry',
+       patient.elapsed >= 400,
+       `waited only ${patient.elapsed}ms — the retry that lets a wandering monster clear is gone`);
+    ok('but a body that is HITTING us is never waited for',
+       underFire.elapsed < patient.elapsed && underFire.elapsed < 400,
+       `under fire took ${underFire.elapsed}ms against ${patient.elapsed}ms patient`);
+    ok('and the walk reports the health it lost standing there',
+       underFire.out.damage_while_blocked > 0 &&
+       /lost \d+ health/.test(underFire.out.note ?? ''),
+       JSON.stringify({ damage: underFire.out.damage_while_blocked, note: underFire.out.note }));
+    ok('a walk blocked without damage reports no damage figure at all',
+       patient.out.damage_while_blocked === undefined,
+       JSON.stringify(patient.out));
+    ok('both still report the bodies rather than blaming the geometry',
+       (patient.out.monster_blocked ?? 0) > 0 && (underFire.out.monster_blocked ?? 0) > 0,
+       JSON.stringify({ patient: patient.out.monster_blocked, underFire: underFire.out.monster_blocked }));
   }
 
   if (typeof leaveVia !== 'function') {
     skip('leaveVia propagates terminal approach and emits no edge packet',
       'Session.leaveVia did not extract');
     skip('the outward StandardLeaveDir packet uses stock speed zero',
+      'Session.leaveVia did not extract');
+    skip('an edge packet is refused when the fine approach remains behind the boundary',
+      'Session.leaveVia did not extract');
+    skip('an along-edge sub-square offset passes the caller preflight for final proof',
+      'Session.leaveVia did not extract');
+    skip('an unconfirmed edge position emits no outward packet',
+      'Session.leaveVia did not extract');
+    skip('a body beside a rail joins through its nearest onboarding waypoint',
+      'Session.leaveVia did not extract');
+    skip('a failed rail rejoin is not rewound and replayed from stale state',
       'Session.leaveVia did not extract');
     skip('a doorway position-confirmation timeout sends no correction or go',
       'Session.leaveVia did not extract');
@@ -1242,8 +1478,19 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
       async walkTo() { return { arrived: false, reason: 'room_security_unknown' }; },
       async walkFine() { throw new Error('terminal movement must not fall through'); },
+      async confirmPosition() {
+        return this.client?.self
+          ? { col: this.client.self.col, row: this.client.self.row }
+          : null;
+      },
       async queueValidatedMove() { edgePackets++; return { sent: true }; },
       world: { exits: () => [] },
     };
@@ -1270,8 +1517,131 @@ console.log('\nterminal movement propagation and edge packet authority');
     const left = await leaveVia.call(successSession, exit, {});
     ok('the outward StandardLeaveDir packet uses stock speed zero',
        left.left === true && edgeOptions?.speed === 0 && edgeOptions?.slide === false &&
-       edgeOptions?.expectedRoomId === 1,
+       edgeOptions?.expectedRoomId === 1 && edgeOptions?.offMap?.opening === exit.fine_stand_on &&
+       edgeOptions?.offMap?.direction === 'east',
        JSON.stringify({ left, edgeOptions }));
+
+    let unconfirmedEdgePackets = 0;
+    const unconfirmedEdgeSession = {
+      ...successSession,
+      async confirmPosition() { return null; },
+      async queueValidatedMove() {
+        unconfirmedEdgePackets++;
+        return { sent: true };
+      },
+    };
+    const unconfirmedEdge = await leaveVia.call(unconfirmedEdgeSession, exit, {});
+    ok('an unconfirmed edge position emits no outward packet',
+       unconfirmedEdge.left === false &&
+         unconfirmedEdge.reason === 'position_confirmation_timeout' &&
+         unconfirmedEdgePackets === 0,
+       JSON.stringify({ unconfirmedEdge, unconfirmedEdgePackets }));
+
+    let unsafeEdgePackets = 0;
+    const behindBoundarySession = {
+      ...terminalSession,
+      client: {
+        ...client,
+        room: { id: 536 },
+        self: { col: 17, row: 2, x: 1125, y: 178 },
+      },
+      async walkTo() { return { arrived: true }; },
+      async walkFine() { return { arrived: false, reason: 'geometry_blocked' }; },
+      async queueValidatedMove() { unsafeEdgePackets++; return { sent: true }; },
+    };
+    const northExit = {
+      kind: 'edge', direction: 'north', to: 535,
+      stand_on: { col: 17, row: 2 }, fine_stand_on: { x: 1120, y: 96 },
+      edge_target: { x: 1120, y: 63 }, fine_path: [{ x: 1120, y: 96 }],
+    };
+    const refusedEdge = await leaveVia.call(behindBoundarySession, northExit, {});
+    ok('an edge packet is refused when the fine approach remains behind the boundary',
+       refusedEdge.left === false && refusedEdge.stage === 'walk' &&
+       refusedEdge.reason === 'not_at_edge_opening' && unsafeEdgePackets === 0,
+       JSON.stringify({ refusedEdge, unsafeEdgePackets }));
+
+    let offsetEdgePackets = 0;
+    const offsetBoundarySession = {
+      ...terminalSession,
+      client: {
+        ...client,
+        room: { id: 10 },
+        // The fixed north-boundary row matches. The x coordinate is 16 units across an
+        // along-edge coarse-square boundary from the candidate and is still the same gap.
+        self: { col: 1, row: 1, x: 112, y: 96 },
+      },
+      async walkTo() { return { arrived: true }; },
+      async walkFine() { return { arrived: false, reason: 'stalled' }; },
+      async queueValidatedMove(_x, _y, options) {
+        offsetEdgePackets++;
+        return { sent: true, eventSeq: 20, options };
+      },
+    };
+    const offsetExit = {
+      kind: 'edge', direction: 'north', to: 11,
+      stand_on: { col: 1, row: 1 }, fine_stand_on: { x: 128, y: 96 },
+      edge_target: { x: 128, y: 63 }, fine_path: [{ x: 128, y: 96 }],
+    };
+    const offsetEdge = await leaveVia.call(offsetBoundarySession, offsetExit, {});
+    ok('an along-edge sub-square offset passes the caller preflight for final proof',
+       offsetEdge.left === true && offsetEdgePackets === 1,
+       JSON.stringify({ offsetEdge, offsetEdgePackets }));
+
+    // Room 578's west-entry -> north-exit rail starts (36,2),(35,2),(34,3). The body
+    // arrives beside it at (36,3): scanning backwards selected diagonal (35,2), then
+    // skipped that point too, so the first requested square was the two-row jump (34,3).
+    // A failed rejoin then used stale pre-rail state to board and replay the same line.
+    const railCalls = [], railWalks = [];
+    const craggedClient = {
+      room: { id: 578 }, self: { col: 3, row: 36, x: 224, y: 2336 },
+      roomNameRsc: 1, rsc: { get: () => 'The Cragged Mountains' },
+    };
+    const craggedRail = {
+      from: { row: 36, col: 2 },
+      squares: [
+        { row: 36, col: 2 }, { row: 35, col: 2 },
+        { row: 34, col: 3 }, { row: 33, col: 3 }, { row: 1, col: 13 },
+      ],
+    };
+    const craggedSession = {
+      ...terminalSession,
+      client: craggedClient,
+      world: { room: { num: 578 }, exits: () => [] },
+      railAcross() { return craggedRail; },
+      async followRail(squares) {
+        railCalls.push(squares.map(square => `${square.row},${square.col}`));
+        return { railed: false, reason: 'slipped_off_rail', at: 1, walked: 1 };
+      },
+      async walkTo(col, row) {
+        railWalks.push(`${row},${col}`);
+        return { arrived: false, reason: 'room_security_unknown' };
+      },
+      async walkFine() { throw new Error('terminal ordinary walk fell through to fine movement'); },
+    };
+    const craggedExit = {
+      kind: 'edge', direction: 'north', to: 576, steps_away: 35,
+      stand_on: { row: 1, col: 13 }, fine_stand_on: { x: 850, y: 96 },
+      edge_target: { x: 850, y: 63 }, fine_path: [{ x: 850, y: 96 }],
+    };
+    const priorRailSetting = process.env.M59_RAIL;
+    leaveViaRoutesFixture = { rooms: { 578: { anchors: [
+      { to: 576, row: 1, col: 13, from_body: true },
+    ] } } };
+    process.env.M59_RAIL = '1';
+    let cragged;
+    try {
+      cragged = await leaveVia.call(craggedSession, craggedExit, {});
+    } finally {
+      leaveViaRoutesFixture = null;
+      if (priorRailSetting == null) delete process.env.M59_RAIL;
+      else process.env.M59_RAIL = priorRailSetting;
+    }
+    ok('a body beside a rail joins through its nearest onboarding waypoint',
+       railCalls.length === 1 && railCalls[0][0] === '36,2',
+       JSON.stringify({ cragged, railCalls, railWalks }));
+    ok('a failed rail rejoin is not rewound and replayed from stale state',
+       railCalls.length === 1 && !railWalks.includes('36,2') && railWalks.includes('1,13'),
+       JSON.stringify({ cragged, railCalls, railWalks }));
 
     let fineCorrections = 0, goPackets = 0;
     const unknownDoorSession = {
@@ -1279,6 +1649,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       movementGeneration: 0, finePositionUnknown: false,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
       async walkTo() { return { arrived: true }; },
       async confirmPosition() { return null; },
       async stepFine() { fineCorrections++; return { moved: true }; },
@@ -1316,6 +1693,187 @@ console.log('\nterminal movement propagation and edge packet authority');
        result.reason === 'collision_geometry_unavailable' && attempts === 1,
        JSON.stringify({ result, attempts }));
   }
+
+  // A STEP A MONSTER REFUSED IS NOT A STEP THE ROUTE SPENT.
+  //
+  // The budget exists to stop a walk going nowhere; a body in the way is going nowhere for
+  // a different reason, and burning the budget on it reports a wall where there is traffic.
+  // Bounded, so a permanently plugged corridor still ends.
+  if (typeof walkTo !== 'function') {
+    skip('a monster-blocked step does not consume the walk budget', 'walkTo did not extract');
+  } else {
+    let asks = 0;
+    const client = { self: { col: 3, row: 3, x: 3 * 1024, y: 3 * 1024 }, room: { id: 1 } };
+    const geometry = {
+      walkable: () => true, standable: () => true, collisionReady: false,
+      path: (r, c, tr, tc) => ({ found: true, steps: [{ col: c + 1, row: r }] }),
+    };
+    const session = {
+      client, world: { geometry }, movementGeneration: 0,
+      need() { return this.client; },
+      movementWasCancelled() { return false; },
+      // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
+      // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
+      // returned a rail would test the rail instead. Returning null is also the honest state
+      // for a fixture with no routes table behind it.
+      railAcross() { return null; },
+      async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+
+      threatsHere() { return []; },
+      sidestepAround() { return null; },
+      async step() { asks++; return { moved: false, left_room: false, reason: 'object_blocked' }; },
+    };
+    const out = await walkTo.call(session, 12, 12, { maxSteps: 6 });
+    // Without the refund the walk stops after 6 asks; with it, it keeps asking until the
+    // refund allowance is spent too, so the count must exceed the bare budget.
+    ok('a monster-blocked step does not consume the walk budget',
+       out.arrived === false && asks > 6,
+       JSON.stringify({ asks, steps: out.steps, monster_blocked: out.monster_blocked }));
+  }
+
+  // A CYCLING DOOR IS WAITED AT, NOT WALKED AWAY FROM — BUT A REAL GEOMETRY CHANGE STILL
+  // ENDS THE WALK.
+  //
+  // `collision_geometry_changed` is terminal because we cannot mutate our BSP the way the
+  // stock client does. The thing that fires it most, though, is a door, and the Temple of
+  // Qor's sits on the Cragged Mountains -> Ukgoth crossing and cycles faster than the 8s
+  // invalidation window. Abandoning the boundary means walking the whole room again and
+  // arriving at a fresh random phase of the same cycle: measured, that leg completed 0 of 3.
+  if (typeof leaveViaAny !== 'function') {
+    skip('a doorway held by a live animation is waited at, not abandoned', 'did not extract');
+    skip('and a geometry change that never clears still ends the walk', 'ditto');
+  } else {
+    process.env.M59_ANIMATION_WAIT_MS = '1';
+    const door = [{ kind: 'edge', to: 599, stand_on: { col: 22, row: 64 } }];
+    {
+      let attempts = 0;
+      const session = {
+        movementGeneration: 0, world: { room: { num: 598 } },
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          if (attempts >= 3) return { left: true };      // the door came open
+          return { left: false, reason: 'collision_geometry_changed',
+                   animation: { sector: 12, narrowed: true, expires_in_ms: 40 } };
+        },
+        async retreatAlongBreadcrumbs() { return { steps: 0 }; },
+        async leaveViaUnvalidated() { return { left: false }; },
+      };
+      const result = await leaveViaAny.call(session, door, {});
+      ok('a doorway held by a live animation is waited at, not abandoned',
+         result.left === true && attempts === 3,
+         JSON.stringify({ left: result.left, attempts }));
+    }
+    {
+      let attempts = 0;
+      const session = {
+        movementGeneration: 0, world: { room: { num: 598 } },
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          return { left: false, reason: 'collision_geometry_changed',
+                   animation: { sector: null, narrowed: false, expires_in_ms: null } };
+        },
+        async retreatAlongBreadcrumbs() { return { steps: 0 }; },
+        async leaveViaUnvalidated() { return { left: false }; },
+      };
+      const result = await leaveViaAny.call(session, door, {});
+      ok('and a geometry change that never clears still ends the walk',
+         result.left !== true && attempts <= 8,
+         JSON.stringify({ left: result.left, attempts }));
+    }
+    delete process.env.M59_ANIMATION_WAIT_MS;
+  }
+
+  // ONCE IT IS THROUGH, IT STOPS.
+  //
+  // Every recovery below is MOVEMENT, and after a crossing the character stands a step from
+  // the boundary it just came through — so a recovery run at that moment walks it back.
+  // Watched live: a subject wiggled through the entrance to The Flatlands and then zoned
+  // straight back into Main gate to Cor Noth, undoing the only thing that had worked. The
+  // room is the authority here, not the crossing's own report, because a transition that
+  // lands a beat late reads as a refusal while the server has already moved us.
+  if (typeof leaveViaAny !== 'function') {
+    skip('a crossing that reported failure but changed the room is not recovered from', 'did not extract');
+  } else {
+    let retreats = 0, attempts = 0;
+    const session = {
+      movementGeneration: 0,
+      world: { room: { num: 100 } },
+      movementWasCancelled() { return false; },
+      async leaveVia() {
+        attempts++;
+        // The move worked and the server moved us; the report did not catch up.
+        this.world.room.num = 101;
+        return { left: false, reason: 'object_blocked', monster_blocked: 1 };
+      },
+      async retreatAlongBreadcrumbs() { retreats++; return { steps: 4 }; },
+      async leaveViaUnvalidated() { return { left: false }; },
+    };
+    const result = await leaveViaAny.call(session,
+      [{ kind: 'edge', to: 101, stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 335 } },
+       { kind: 'edge', to: 101, stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 352 } }], {});
+    ok('a crossing that reported failure but changed the room is not recovered from',
+       result.left === true && result.late === true && retreats === 0 && attempts === 1,
+       JSON.stringify({ left: result.left, late: result.late, retreats, attempts }));
+  }
+
+  // A ONE-SQUARE DOORWAY GETS PATIENCE, NOT BREADTH.
+  //
+  // 13 of the world's 280 declared exits publish two or fewer distinct staging squares.
+  // At one of those, the candidate budget buys nothing — every "other candidate" is the
+  // same square — so a body standing in the door made the walker ask three times in a
+  // row, instantly, and report the wall shut. These pin the two halves that must not be
+  // confused: a body is worth waiting for, and being HIT while waiting is not.
+  if (typeof leaveViaAny !== 'function') {
+    skip('a one-square doorway held by a body is backed away from, then re-asked', 'did not extract');
+    skip('a one-square doorway does not wait or back off while we are being hit in it', 'ditto');
+  } else {
+    process.env.M59_NARROW_WAIT_MS = '1';
+    const oneSquare = [{ kind: 'edge', stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 335 } },
+                       { kind: 'edge', stand_on: { col: 5, row: 2 }, fine_stand_on: { x: 96, y: 352 } }];
+    {
+      let attempts = 0, backedOff = 0;
+      const session = {
+        movementGeneration: 0,
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          // clears on the fourth ask, which the old budget of 3 could never reach
+          if (attempts >= 4) return { left: true };
+          return { left: false, reason: 'object_blocked', monster_blocked: 1 };
+        },
+        // Backing off is what makes the retry a different question: the blocker follows
+        // and comes out of the gap. Counted, so the assertion can see it happened.
+        async retreatAlongBreadcrumbs() { backedOff++; return { steps: 4 }; },
+      };
+      const result = await leaveViaAny.call(session, oneSquare, {});
+      ok('a one-square doorway held by a body is backed away from, then re-asked',
+         result.left === true && attempts === 4 && backedOff === 3,
+         JSON.stringify({ left: result.left, attempts, backedOff }));
+    }
+    {
+      let attempts = 0, retreats = 0;
+      const session = {
+        movementGeneration: 0,
+        movementWasCancelled() { return false; },
+        async leaveVia() {
+          attempts++;
+          return { left: false, reason: 'object_blocked', monster_blocked: 1, damage_while_blocked: 3 };
+        },
+        // The last-resort forcing path is reached once every candidate is spent; it is not
+        // what is under test here, and a doorway with something hitting us in it is
+        // exactly where forcing would be wrong anyway.
+        async leaveViaUnvalidated() { return { left: false }; },
+        async retreatAlongBreadcrumbs() { retreats++; return { steps: 4 }; },
+      };
+      const result = await leaveViaAny.call(session, oneSquare, {});
+      ok('a one-square doorway does not wait or back off while we are being hit in it',
+         result.left !== true && attempts <= 3 && retreats === 0,
+         JSON.stringify({ left: result.left, attempts, retreats }));
+    }
+    delete process.env.M59_NARROW_WAIT_MS;
+  }
 }
 
 console.log('\nreal broker seam validates before emitting coordinates');
@@ -1347,6 +1905,31 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      oneUnit.target?.x === 65 && oneUnit.target?.y === 64,
      JSON.stringify({ wireCalls, oneUnit }));
 
+  // The queue's atomic proof is the real runtime validator, so pin one actual baked
+  // boundary segment end to end rather than proving only that a stubbed validator is asked.
+  const checkedEdgeMap = JSON.parse(readFileSync(
+    new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
+  const room536 = checkedEdgeMap.rooms['536'];
+  const north536 = edgeExitsOf(room536)
+    .find(edge => edge.leaveName === 'north' && Number(edge.to) === 535);
+  const candidate536 = edgeCandidatesOf(room536, north536)[0];
+  const geometry536 = RoomGeometry.fromJSON(room536.roo);
+  const exactEdge = candidate536 && fakeBrokerSession(geometry536, {
+    x: candidate536.fine_stand_on.x,
+    y: candidate536.fine_stand_on.y,
+    roomId: 536,
+    roomSecurity: geometry536.security,
+  });
+  const exactEdgeResult = exactEdge && await queueValidatedMove.call(exactEdge.session,
+    candidate536.edge_target.x, candidate536.edge_target.y, {
+      speed: 0, slide: false,
+      offMap: { opening: candidate536.fine_stand_on, direction: 'north' },
+    });
+  ok('the atomic queue proof accepts an exact checked-map edge segment',
+     exactEdgeResult?.sent === true && exactEdgeResult.validation?.arrived === true &&
+       exactEdgeResult.validation?.offMap === true && exactEdge.packets.length === 1,
+     JSON.stringify({ candidate536, exactEdgeResult, packets: exactEdge?.packets }));
+
   // A LIVE ANIMATION BLOCKS, AND THE BLOCK EXPIRES. Both halves matter and only the
   // first was ever true: the flag is cleared by BP_PLAYER, which arrives on a ROOM
   // CHANGE, and changing rooms needs the very movement this refuses — so without an
@@ -1367,6 +1950,34 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
   setAnimation({ kind: 'BP_SECTOR_MOVE', at: Date.now() });
   ok('a record with no expiry still blocks, because unknown is not finished',
      tryMove().reason === 'collision_geometry_changed');
+
+  // ...UNLESS THE ROOM IS ONE WE HAVE DECLARED TO BE PERMANENTLY IN MOTION.
+  //
+  // The rule above is the safe reading and the right one for a room that is not supposed to
+  // change. In the Cragged Mountains, the Arena of Kraanan, Castle Brax and North Barloque
+  // it is a cage: those rooms animate constantly, the unnarrowed record is never absent, and
+  // a character can never leave. Reproduced on the only road to Castle Victoria — 7 refusals
+  // in 35s, the leg completing 0 times out of 3. See m59-mutable.mjs for the failure
+  // direction, which is a relaxation and is stated there rather than hidden here.
+  {
+    const mutable = fakeBrokerSession(twoSides(), { roomId: 598 });
+    mutable.session.client.room.collisionInvalidated = { kind: 'BP_SECTOR_MOVE', at: Date.now() };
+    const moved = validateFineTarget.call(mutable.session, clientToWire(3072), clientToWire(2048));
+    ok('a room declared to have moving geometry is not caged by an unnarrowed animation',
+       moved.reason !== 'collision_geometry_changed',
+       JSON.stringify({ reason: moved.reason }));
+
+    // AND THE RELAXATION IS ONLY EVER THE UNNARROWED CASE. A packet that NAMES its sector
+    // still refuses a move through that sector, in these rooms exactly as in every other —
+    // which is the whole of "do not care about the change unless you are travelling it".
+    const named = fakeBrokerSession(twoSides(), { roomId: 598 });
+    named.session.client.room.collisionInvalidated =
+      { kind: 'BP_SECTOR_MOVE', sector: 1, at: Date.now(), until: Date.now() + 10_000 };
+    const stillRefused = validateFineTarget.call(named.session, clientToWire(3072), clientToWire(2048));
+    ok('but a NAMED moving sector still refuses a move through it, mutable room or not',
+       stillRefused.reason === 'collision_geometry_changed',
+       JSON.stringify({ reason: stillRefused.reason }));
+  }
 
   // AND IT BLOCKS THE SECTOR THAT MOVED, NOT THE ROOM. Bounding the refusal in TIME only
   // helps while animations are rare. The Temple of Qor door in room 598 cycles faster than
@@ -1483,6 +2094,36 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
   ok('collision_geometry_changed is fatal to walkFine without fanning more headings',
      fatalWalk.reason === 'collision_geometry_changed' && fatalFineCalls === 1,
      JSON.stringify({ fatalWalk, fatalFineCalls }));
+
+  // A slid packet can move the body without gaining any ground on the requested point.
+  // Room 578 oscillated sideways on every northward attempt, and `r.moved` reset the
+  // stall counter indefinitely even though the measured destination distance was flat.
+  let lateralCalls = 0;
+  const lateralClient = {
+    room: { id: 1 }, self: { x: 128, y: 128, col: 2, row: 2 },
+  };
+  const lateralSession = {
+    client: lateralClient,
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    async stepFine() {
+      lateralCalls++;
+      lateralClient.self = {
+        ...lateralClient.self,
+        // Alternate across the start line without changing x. Both packets moved; neither
+        // buys the >1 wire unit of target-distance progress that walkFine promises.
+        y: lateralCalls % 2 ? 136 : 128,
+      };
+      return { moved: true, left_room: false, position: { ...lateralClient.self } };
+    },
+  };
+  const lateralWalk = await walkFine.call(lateralSession, 256, 128,
+    { maxSteps: 10, stride: 48, arriveWithin: 1 });
+  ok('sideways movement without target-distance gain is bounded as a fine-walk stall',
+     lateralWalk.reason === 'blocked — every heading refused, at every reach tried' &&
+       lateralCalls > 0 && lateralCalls <= 36,
+     JSON.stringify({ lateralWalk, lateralCalls }));
 
   const blocker = {
     id: 7, x: clientToWire(2048), y: clientToWire(2048), flags: MOVEON.NO,
@@ -1609,6 +2250,70 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
   ok('a queued move is discarded when the room changes before send',
      !changedResult.sent && changedResult.validation?.reason === 'room_changed_before_move' &&
      changed.packets.length === 0, JSON.stringify(changedResult));
+
+  const edgeTarget = { x: 63, y: 128 };
+  const edgeAuthorization = {
+    opening: { x: 96, y: 128 }, direction: 'west',
+  };
+  const edgeRace = fakeBrokerSession(open, {
+    x: 96, y: 128,
+    beforePaced(kind, client) {
+      if (kind !== 'move') return;
+      client.self = { ...client.self, x: 160, col: 2 };
+      client.room.objects.set(client.selfId, client.self);
+    },
+  });
+  edgeRace.session.validateFineTarget = () => ({
+    available: true, moved: true, arrived: true, blocked: false, target: edgeTarget,
+  });
+  const racedEdge = await queueValidatedMove.call(edgeRace.session,
+    edgeTarget.x, edgeTarget.y, { speed: 0, slide: false, offMap: edgeAuthorization });
+  ok('an off-map move rechecks the live opening position after pacing',
+     racedEdge.sent === false && racedEdge.validation?.reason === 'not_at_edge_opening' &&
+       edgeRace.packets.length === 0,
+     JSON.stringify({ racedEdge, packets: edgeRace.packets }));
+
+  const hookRace = fakeBrokerSession(open, { x: 96, y: 128 });
+  hookRace.session.validateFineTarget = () => ({
+    available: true, moved: true, arrived: true, blocked: false, target: edgeTarget,
+  });
+  const hookedEdge = await queueValidatedMove.call(hookRace.session,
+    edgeTarget.x, edgeTarget.y, {
+      speed: 0, slide: false, offMap: edgeAuthorization,
+      beforeMutation() {
+        hookRace.client.self = { ...hookRace.client.self, x: 160, col: 2 };
+        hookRace.client.room.objects.set(hookRace.client.selfId, hookRace.client.self);
+      },
+    });
+  ok('off-map authority is evaluated after the synchronous mutation hook',
+     hookedEdge.sent === false && hookedEdge.validation?.reason === 'not_at_edge_opening' &&
+       hookRace.packets.length === 0,
+     JSON.stringify({ hookedEdge, packets: hookRace.packets }));
+
+  const blockedEdge = fakeBrokerSession(open, { x: 96, y: 128 });
+  blockedEdge.session.validateFineTarget = () => ({
+    available: true, moved: false, arrived: false, blocked: true,
+    reason: 'geometry_blocked',
+  });
+  const unprovedEdge = await queueValidatedMove.call(blockedEdge.session,
+    edgeTarget.x, edgeTarget.y, { speed: 0, slide: false, offMap: edgeAuthorization });
+  ok('proximity to an opening cannot authorize an off-map packet the BSP refuses',
+     unprovedEdge.sent === false && unprovedEdge.validation?.reason === 'geometry_blocked' &&
+       blockedEdge.packets.length === 0,
+     JSON.stringify({ unprovedEdge, packets: blockedEdge.packets }));
+
+  const provedEdge = fakeBrokerSession(open, { x: 96, y: 128 });
+  provedEdge.session.validateFineTarget = (_x, _y, options) => ({
+    available: true, moved: true, arrived: true, blocked: false,
+    target: edgeTarget, trace_options: options,
+  });
+  const sentEdge = await queueValidatedMove.call(provedEdge.session,
+    edgeTarget.x, edgeTarget.y, { speed: 0, slide: false, offMap: edgeAuthorization });
+  ok('an atomic exact BSP proof authorizes the stock off-map packet',
+     sentEdge.sent === true && sentEdge.validation?.offMap === true &&
+       sentEdge.validation?.arrived === true && provedEdge.packets.length === 1 &&
+       provedEdge.packets[0].x === edgeTarget.x && provedEdge.packets[0].y === edgeTarget.y,
+     JSON.stringify({ sentEdge, packets: provedEdge.packets }));
 
   const changedDuringTurn = fakeBrokerSession(open, {
     beforePaced(kind, client) { if (kind === 'turn') client.room.id = 2; },
@@ -1742,6 +2447,444 @@ console.log('\na square whose CENTRE has no floor is not a cage');
     ok('and it cannot land on a neighbour that has no floor either',
        intoWall.moved === false || intoWall.available === false, JSON.stringify(intoWall.reason));
   }
+}
+
+// ===================== A DOOR HELD SHUT BY PEOPLE IS SHUT =====================
+//
+// The detour ladder — clockwise, anticlockwise, then back up along breadcrumbs — exists so a
+// character pinned by bodies can get moving again. Every one of those tiers widens what the
+// walker is willing to try, and a widening is exactly the kind of change that quietly buys
+// itself permission it was never meant to have. So these are the NEGATIVE cases: the two
+// situations where the honest answer is "no".
+//
+// The scenario is the operator's. Characters stand shoulder to shoulder across the approach
+// to the north-west door out of the Streets of Tos, so the door cannot be reached at all.
+//
+//   ONE DOOR BLOCKED    the crossing must go round to the OTHER door into the same room.
+//   BOTH DOORS BLOCKED  the order must be REFUSED. Not squeezed through a person, not
+//                       clipped through the wall beside them, not reported as arrived.
+//
+// A body is not a wall and this file spends most of its length on that distinction — but a
+// body is not a door either, and "go round it" must never become "go through it".
+console.log('');
+console.log('a door held shut by people is shut');
+{
+  const doorA = { kind: 'edge', to: 52, stand_on: { col: 4, row: 1 } };
+  const doorB = { kind: 'edge', to: 52, stand_on: { col: 26, row: 1 } };
+
+  // A refusal shaped exactly like the one a wall of people produces: the square could not be
+  // reached because bodies were standing on it. `object_blocked` is OUR pass, which is why
+  // the server never sees these attempts at all.
+  const heldByPeople = { left: false, reason: 'object_blocked', monster_blocked: 4 };
+
+  if (typeof leaveViaAny !== 'function') {
+    skip('a door blocked by people sends the crossing to the other door', 'leaveViaAny did not extract');
+    skip('and the character leaves by it', 'ditto');
+    skip('both doors blocked refuses the crossing', 'ditto');
+    skip('and it does not claim to have left', 'ditto');
+    skip('and it blames the bodies rather than the wall', 'ditto');
+  } else {
+    // ---- ONE DOOR BLOCKED. The other one is still a door.
+    const asked = [];
+    const oneShut = {
+      movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
+      movementWasCancelled() { return false; },
+      async leaveVia(door) {
+        asked.push(door.stand_on.col);
+        return door.stand_on.col === doorA.stand_on.col ? heldByPeople : { left: true };
+      },
+    };
+    const wentRound = await leaveViaAny.call(oneShut, [doorA, doorB], {});
+    ok('a door blocked by people sends the crossing to the other door',
+       asked.includes(doorB.stand_on.col), JSON.stringify(asked));
+    ok('and the character leaves by it', wentRound?.left === true, JSON.stringify(wentRound));
+
+    // ---- BOTH DOORS BLOCKED. There is no third answer.
+    const bothAsked = [];
+    let forcedThrough = 0;
+    const bothShut = {
+      movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
+      movementWasCancelled() { return false; },
+      async leaveVia(door) { bothAsked.push(door.stand_on.col); return heldByPeople; },
+      // THE CHEAT, MADE VISIBLE. `leaveViaAny` has an unvalidated last resort for the case
+      // where our model refuses a square people demonstrably walk on. Wiring it to SUCCEED
+      // here is what makes this a real negative test: if the gate above it ever stops
+      // distinguishing a body from a wall, this fixture crosses the doorway and the
+      // assertions below fail. A stub that refused would hide exactly the bug being hunted.
+      async leaveViaUnvalidated() { forcedThrough++; return { left: true, forced: true }; },
+    };
+    const refused = await leaveViaAny.call(bothShut, [doorA, doorB], {});
+    ok('both doors blocked refuses the crossing', bothAsked.length >= 2, JSON.stringify(bothAsked));
+    // THE ONE THAT MATTERS. Anything truthy here is the walker reporting a crossing it did
+    // not make, which is worse than failing: the journey then carries on from a room the
+    // character is not standing in.
+    ok('and it does not claim to have left', refused?.left !== true, JSON.stringify(refused));
+    ok('and it blames the bodies rather than the wall',
+       !/wall|geometry/i.test(String(refused?.reason ?? '')), JSON.stringify(refused?.reason));
+    // THE POINT OF THE WHOLE BLOCK. The unvalidated step is admission that our GEOMETRY is
+    // wrong; a person standing in a doorway is not a hole in the map, and forcing past one
+    // is walking through them.
+    ok('and it never forces the unvalidated crossing past a person', forcedThrough === 0,
+       `leaveViaUnvalidated called ${forcedThrough}x`);
+
+    // ---- GEOMETRY REFUSED. Unsafe movement is a diagnostic override, never the default.
+    const previousFallback = process.env.M59_EXIT_FALLBACK;
+    delete process.env.M59_EXIT_FALLBACK;
+    let geometryForced = 0;
+    try {
+      const geometryShut = {
+        movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
+        movementWasCancelled() { return false; },
+        async leaveVia() { return { left: false, reason: 'geometry_blocked' }; },
+        async leaveViaUnvalidated() {
+          geometryForced++;
+          return { left: true, forced: true };
+        },
+      };
+      const failedClosed = await leaveViaAny.call(geometryShut, [doorA, doorB], {});
+      ok('geometry refusals do not enable the unvalidated exit fallback by default',
+         geometryForced === 0 && failedClosed?.left !== true,
+         JSON.stringify({ geometryForced, failedClosed }));
+    } finally {
+      if (previousFallback === undefined) delete process.env.M59_EXIT_FALLBACK;
+      else process.env.M59_EXIT_FALLBACK = previousFallback;
+    }
+  }
+}
+
+// AND THE WALKER ITSELF NEVER WALKS THROUGH SOMEBODY.
+//
+// The block above is about which door. This is about the ground: with the whole approach
+// occupied, the detour must exhaust itself and report failure rather than find a way through
+// a person. The REAL `sidestepAround` runs here — the `() => null` stub used elsewhere in
+// this file would make it pass by deleting the thing under test.
+console.log('');
+console.log('and the ground under a person is not walkable');
+if (typeof walkTo !== 'function' || typeof realSidestepAround !== 'function') {
+  skip('a walk hemmed in by bodies never moves onto one', 'walkTo/sidestepAround did not extract');
+  skip('and it gives up rather than passing through', 'ditto');
+} else {
+  // Shoulder to shoulder across the approach and around us: the situation the trace recorded
+  // as seventy-five refusals in ten seconds with zero packets sent.
+  const bodies = new Set(['2,3', '2,4', '2,5', '3,3', '3,5', '4,3', '4,4', '4,5']);
+  const movedOnto = [];
+  const geometry = {
+    walkable: () => true, standable: () => true, collisionReady: true,
+    moverStepLands: () => true,
+    path: (r, c) => ({ found: true, steps: [{ row: r - 1, col: c }] }),
+  };
+  const client = { self: { id: 9, col: 4, row: 3, x: 4 * 1024, y: 3 * 1024 },
+                   selfId: 9, room: { id: 1, objects: new Map() } };
+  const session = {
+    client, world: { geometry, room: { num: 50 } }, movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    threatsHere() { return []; },
+    sidestepAround: realSidestepAround,
+    async retreatAlongBreadcrumbs() { return { steps: 0 }; },
+    async step(col, row) {
+      // The mover's own answer, and the only one it can give: something is standing there.
+      if (bodies.has(`${row},${col}`)) return { moved: false, left_room: false, reason: 'object_blocked' };
+      movedOnto.push(`${row},${col}`);
+      client.self.col = col; client.self.row = row;
+      return { moved: true, left_room: false, position: { col, row } };
+    },
+  };
+  const out = await walkTo.call(session, 4, 1, { maxSteps: 8 });
+  // ATTEMPTS ARE FINE; ARRIVALS ARE NOT. The walker is allowed to try an occupied square and
+  // be refused — that is how it learns one is taken. What it may never do is END UP on one.
+  ok('a walk hemmed in by bodies never moves onto one',
+     movedOnto.every(sq => !bodies.has(sq)), JSON.stringify(movedOnto.slice(0, 8)));
+  ok('and it gives up rather than passing through', out?.arrived !== true, JSON.stringify(out));
+}
+
+
+console.log('');
+console.log('A RAIL NEVER GIVES BACK GROUND IT HAS ALREADY MADE');
+{
+  // A rail is an ordered line, so "how far along are we" is a NUMBER — and the follower never
+  // consulted it. Measured in the Cragged Mountains: the body reached waypoint 24 at col 23
+  // row 26, slid back to col 22 row 26 (not on the line at all) and ping-ponged between the
+  // two while trolls hit it. Fifty seconds in that room, nine squares of net progress, against
+  // a human who crosses it at about five squares a second.
+  //
+  // The slide is ordinary and unavoidable — a step lands where the geometry puts it. What
+  // turned a slide into a dither is that the next aim was taken from wherever the body ended
+  // up, with no memory that it had already been further on.
+  const line = [ {row:1,col:1}, {row:2,col:1}, {row:3,col:1}, {row:4,col:1}, {row:5,col:1} ];
+
+  // A body that SLIDES FORWARD past the cursor must not be walked back to collect the
+  // waypoint it skipped: it is already past it.
+  const aimed = [];
+  const jumper = {
+    client: { self: { row: 1, col: 1 } },
+    movementWasCancelled: () => false,
+    world: { geometry: null },
+    async step(col, row) {
+      aimed.push(`${row},${col}`);
+      // Every step overshoots to the end of the line, exactly as a slide can.
+      this.client.self = { row: 5, col: 1 };
+      return { moved: true, left_room: false };
+    },
+  };
+  const ran = await followRail.call(jumper, line, {});
+  ok('a slide that lands further along the line is credited, not re-walked',
+     aimed.length <= 2, JSON.stringify(aimed));
+  ok('and the follow reports success rather than grinding to the skip budget',
+     ran?.railed === true, JSON.stringify(ran));
+
+  // A body that cannot advance at all must JUMP rather than ask for the same neighbour for
+  // ever — the line ahead is still the line, and every retry is a second in the room.
+  const stuckAims = [];
+  const stuck = {
+    client: { self: { row: 1, col: 1 } },
+    movementWasCancelled: () => false,
+    world: { geometry: null },
+    async step(col, row) { stuckAims.push(`${row},${col}`); return { moved: false, reason: 'object_blocked' }; },
+  };
+  const out = await followRail.call(stuck, line, { maxSlips: 1, maxSkips: 2 });
+  ok('a line that yields nothing gives up rather than dithering for ever',
+     out?.railed === false, JSON.stringify(out));
+  ok('and it says the body never got further along', /no forward progress|slipped_off_rail/.test(out?.reason ?? ''),
+     JSON.stringify(out?.reason));
+}
+
+console.log('');
+console.log('A MISSED LEARNED STATION ENDS THE TRACK REPLAY');
+{
+  // Every straightened leg is proved only from the waypoint before it. Once a station is
+  // missed, attempting later legs from the off-track body asks questions the track never
+  // answered and can amplify one refusal across the whole learned route.
+  rideTrackFixture = {
+    ms: 100,
+    shelter: [],
+    waypoints: [
+      { x: 128, y: 128 },
+      { x: 256, y: 128 },
+      { x: 384, y: 128 },
+    ],
+  };
+  const client = { self: { x: 128, y: 128 } };
+  const stepTargets = [];
+  const fineTargets = [];
+  const trackSession = {
+    client,
+    world: { room: { num: 576 }, geometry: { walkable: () => true } },
+    movementGeneration: 0,
+    need: () => client,
+    movementWasCancelled: () => false,
+    async walkTo() { throw new Error('a rider already on the first station tried to board'); },
+    async stepFine(x) {
+      stepTargets.push(x);
+      return { moved: false, left_room: false,
+               reason: x === 128 ? undefined : 'geometry_blocked' };
+    },
+    async walkFine(x, y, options) {
+      fineTargets.push({ x, y, maxSteps: options?.maxSteps });
+      return { arrived: false, left_room: false, reason: 'geometry_blocked' };
+    },
+  };
+  const ridden = await rideTrack.call(trackSession, 575, 587, {});
+  ok('a missed station stops before any later proof-dependent leg',
+     JSON.stringify(stepTargets) === JSON.stringify([128, 256]),
+     JSON.stringify(stepTargets));
+  ok('the missed station gets exactly one bounded fine fallback',
+     JSON.stringify(fineTargets) === JSON.stringify([
+       { x: 256, y: 128, maxSteps: 40 },
+     ]), JSON.stringify(fineTargets));
+  ok('the bounded miss is counted once and strikes the bad track once',
+     ridden?.left_room === false && ridden?.reached === 1 && ridden?.blocked === 1 &&
+       ridden?.strikes === 1,
+     JSON.stringify(ridden));
+}
+
+console.log('');
+console.log('A FAILED STITCH JOINS THE WALKED ROUTE AHEAD OF ITS PROGRESS');
+{
+  // The stitched and walked forms need not have matching waypoint counts. End the stitch
+  // inside a long walked leg, closer to the station behind than the station ahead: a nearest
+  // waypoint restart would reverse, while projecting onto the walked leg must choose its
+  // downstream endpoint and replay only the bounded suffix.
+  rideTrackFixture = {
+    proven: false,
+    ms: 100,
+    shelter: [],
+    waypoints: [{ x: 128, y: 128 }, { x: 500, y: 128 }],
+    walked: [
+      { x: 128, y: 128 }, { x: 320, y: 128 },
+      { x: 800, y: 128 }, { x: 960, y: 128 },
+    ],
+  };
+  const client = { self: { x: 128, y: 128 } };
+  const fallbackCalls = [];
+  const standableCalls = [];
+  const trackSession = {
+    client,
+    world: { room: { num: 576 }, geometry: {
+      walkable: () => true,
+      standable(row, col) {
+        standableCalls.push({ row, col });
+        return true;
+      },
+    } },
+    movementGeneration: 0,
+    need: () => client,
+    movementWasCancelled: () => false,
+    async walkTo() { throw new Error('a rider already on the first station tried to board'); },
+    async stepFine(x, y) {
+      client.self = { ...client.self, x, y };
+      return { moved: true, left_room: false };
+    },
+    async walkFine(x, y, options) {
+      fallbackCalls.push({ x, y, maxSteps: options?.maxSteps });
+      client.self = { ...client.self, x, y };
+      return x === 960 ? { left_room: true } : { arrived: true, left_room: false };
+    },
+  };
+  const ridden = await rideTrack.call(trackSession, 587, 575, {});
+  ok('the walked fallback starts at the station ahead of stitched progress',
+     JSON.stringify(fallbackCalls.map(p => p.x)) === JSON.stringify([800, 960]),
+     JSON.stringify(fallbackCalls));
+  ok('the walked fallback remains bounded to its unvisited suffix',
+     fallbackCalls.length === 2 && fallbackCalls.every(p => p.maxSteps === 60),
+     JSON.stringify(fallbackCalls));
+  ok('walked wire positions are checked in their actual protocol row and column',
+     JSON.stringify(standableCalls) === JSON.stringify([
+       { row: 2, col: 12 }, { row: 2, col: 15 },
+     ]), JSON.stringify(standableCalls));
+  ok('the joined fallback can still complete the crossing',
+     ridden?.left_room === true && ridden?.fell_back_to_walked === true,
+     JSON.stringify(ridden));
+}
+
+console.log('');
+console.log('FINE RAIL TARGETS STAY IN WIRE COORDINATES');
+{
+  // Room 537 exposed this distinction live. Its north-to-east rail reached square 5,38,
+  // then handed `walkFine` a CLIENT-space stand point for the next fine-only square.
+  // `walkFine` compares its target to `client.self`, which is WIRE-space, so the 16x larger
+  // x coordinate produced 908 clipped moves almost straight east and no southward progress.
+  // Deliberately unrelated values make either unit leak unmistakable here.
+  const clientPoint = { x: 39_424, y: 5_632 };
+  const wirePoint = { x: 2_528, y: 416 };
+  const fineCalls = [];
+  const geometry = {
+    walkable: () => false,
+    standable: () => true,
+    standPoint: () => clientPoint,
+    standPointWire: () => wirePoint,
+  };
+  const railSession = {
+    client: { self: { row: 1, col: 1 } },
+    world: { geometry },
+    movementWasCancelled: () => false,
+    async walkFine(x, y) {
+      fineCalls.push({ x, y });
+      this.client.self = { row: 2, col: 2 };
+      return { arrived: true };
+    },
+    async step() { throw new Error('fine-only rail fell through to the square walker'); },
+  };
+  const railed = await followRail.call(railSession,
+    [{ row: 1, col: 1 }, { row: 2, col: 2 }], {});
+  ok('a fine-only rail gives walkFine the wire stand point',
+     fineCalls.length === 1 && fineCalls[0].x === wirePoint.x && fineCalls[0].y === wirePoint.y,
+     JSON.stringify({ fineCalls, clientPoint, wirePoint, railed }));
+  ok('and that wire-space rail reaches the next square', railed?.railed === true,
+     JSON.stringify(railed));
+
+  const recentreCalls = [];
+  const recentreSession = {
+    client: { self: { row: 7, col: 8 } },
+    world: { geometry },
+    async walkFine(x, y) { recentreCalls.push({ x, y }); return { arrived: true }; },
+  };
+  const recentred = await recentreInSquare.call(recentreSession);
+  ok('recentering also gives walkFine the wire stand point',
+     recentred === true && recentreCalls.length === 1 &&
+       recentreCalls[0].x === wirePoint.x && recentreCalls[0].y === wirePoint.y,
+     JSON.stringify({ recentreCalls, clientPoint, wirePoint, recentred }));
+}
+
+console.log('');
+console.log('AN EDGE THE MOVER CANNOT WALK IS REMEMBERED PAST THE WALK THAT FOUND IT');
+{
+  // Room 50, measured: the single step 54,40 -> 53,40 was refused ONE HUNDRED AND THIRTY-FIVE
+  // times in one two-character run — 135 of that room's 145 refusals. `moverStepLands` says
+  // that step is false: both squares are walkable and the step between them is not, so the
+  // mover was right every time and the walker asked anyway. Nothing reached the wire; the
+  // local validator refuses first, so it was pure thrash against the step budget and the
+  // clock, while every instrument reported a healthy character with somewhere to be.
+  //
+  // `blockedEdges` DID learn it — and is rebuilt empty on the next call, so the lesson died
+  // with the walk and the next blind replan asked the identical question. A body in the way
+  // deserves that amnesia, because it will have moved. Geometry does not.
+  //
+  // WHAT IS ASSERTED IS WHAT THE PLANNER WAS TOLD. The fixture's pathfinder is a stub and
+  // will hand back whatever it likes; the property that matters is that the SECOND walk
+  // starts with the edge already in the set handed to `geo.path`, where the first could not.
+  const IMPOSSIBLE = '1,1>1,2';
+  const mkGeo = told => ({
+    num: 50, rows: 8, cols: 8,
+    collisionReady: true,
+    walkable: () => true,
+    standable: () => true,
+    nearestWalkable: (r, c) => ({ row: r, col: c }),
+    // The one edge the mover refuses, asked centre to centre — the same question the
+    // validator answers when it refuses the step for real.
+    moverStepLands: (fr, fc, tr, tc) => !(fr === 1 && fc === 1 && tr === 1 && tc === 2),
+    path: (_r, _c, _tr, _tc, opts) => {
+      told.push(new Set(opts?.blockedEdges ?? []));
+      return { found: true, steps: [{ col: 2, row: 1 }] };
+    },
+  });
+  const mkSession = (geo, reason = 'geometry_blocked') => ({
+    client: { self: { id: 1, col: 1, row: 1 }, room: { objects: new Map() },
+              async roomContents() { return null; }, async waitFor() { return null; } },
+    world: { geometry: geo, room: { num: 50 } },
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    railAcross() { return null; },
+    async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+    sidestepAround() { return null; },
+    threatsHere() { return []; },
+    async selfOrResync() { return this.client.self; },
+    async step() { return { moved: false, left_room: false, reason }; },
+  });
+
+  const memory = new Map();
+  const toldFirst = [], toldSecond = [];
+  const s1 = mkSession(mkGeo(toldFirst)); s1.impossibleEdges = memory;
+  await walkTo.call(s1, 2, 1, { maxSteps: 6, hardCap: 12 });
+  ok('the refused edge is remembered for the room it happened in',
+     memory.get(50)?.has(IMPOSSIBLE) === true, JSON.stringify([...(memory.get(50) ?? [])]));
+  ok('and the first walk could not have known it up front',
+     toldFirst.length > 0 && !toldFirst[0].has(IMPOSSIBLE));
+
+  const s2 = mkSession(mkGeo(toldSecond)); s2.impossibleEdges = memory;
+  await walkTo.call(s2, 2, 1, { maxSteps: 6, hardCap: 12 });
+  // THE POINT. The next walk plans around it from its very first question.
+  ok('a later walk hands the planner that edge from the first call — that is the 135 refusals',
+     toldSecond.length > 0 && toldSecond[0].has(IMPOSSIBLE),
+     JSON.stringify(toldSecond[0] ? [...toldSecond[0]] : null));
+
+  // A TROLL MOVES AND A WALL DOES NOT. Persisting a body would carve permanent holes in a
+  // room over a long session, so only provable geometry is kept.
+  const memory2 = new Map();
+  const s3 = mkSession(mkGeo([]), 'object_blocked'); s3.impossibleEdges = memory2;
+  await walkTo.call(s3, 2, 1, { maxSteps: 6, hardCap: 12 });
+  ok('a body in the way is never remembered — it will have moved',
+     (memory2.get(50)?.size ?? 0) === 0, JSON.stringify([...(memory2.get(50) ?? [])]));
+
+  // A refusal the geometry will not corroborate stays local, exactly as before.
+  const memory3 = new Map();
+  const openGeo = mkGeo([]);
+  openGeo.moverStepLands = () => true;      // says every step is fine; the step still fails
+  const s4 = mkSession(openGeo); s4.impossibleEdges = memory3;
+  await walkTo.call(s4, 2, 1, { maxSteps: 6, hardCap: 12 });
+  ok('a refusal the geometry will not corroborate is NOT promoted to a map fact',
+     (memory3.get(50)?.size ?? 0) === 0, JSON.stringify([...(memory3.get(50) ?? [])]));
 }
 
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);

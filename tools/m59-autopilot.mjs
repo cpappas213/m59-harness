@@ -32,12 +32,14 @@ import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
-import { nearestSafeSpot, safeSpotBook } from './m59-safespots.mjs';
+import { nearestSafeSpot, safeSpotBook, shelterAhead } from './m59-safespots.mjs';
+import { heardOrder, dropCrumb, nextStep, behindBy, exitTakenFrom } from './m59-follow.mjs';
 import { inboxIfAny, unwrapSpeech } from './m59-inbox.mjs';
 import { arenaCall } from './m59-chatter.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
 import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
+import { traceLadder, traceDecision } from './m59-keeper-trace.mjs';
 import { detailSettings, recordStrategyStat, saveVaultSnapshot }
   from './m59-strategy-stats.mjs';
 import { routeTravelKind } from './m59-travel-kind.mjs';
@@ -251,11 +253,38 @@ const SETTLE_GRACE_MS = 250;
 // to a square with "0 adjacent" — a contradiction that was written into the book as
 // fact.
 const REACH = 3;
+// HOW LONG A SQUARE STAYS "COULD NOT GET THERE". Long enough that a hurt character stops
+// re-choosing it for the rest of the fight that is stopping it, short enough that a wall
+// blocked by one wandering monster is not written off for the session.
+// HOW MANY PASSES OF LEVEL HEALTH MEAN THE WALL HAS STOPPED PAYING. The keeper passes about
+// once a second, so this is a handful of seconds of no improvement — long enough not to fire
+// between two ticks of a rest that is working, short enough that a character stalled where it
+// cannot heal sets off again instead of resting out the clock.
+// HOW FAR AN AILING CHARACTER MAY FALL BEFORE IT STOPS AND MENDS. Poison takes a character
+// to 1 health and then makes it rest to full once the enchantment ends, so the rest is coming
+// either way — the only question is whether it happens behind a wall on the route or in the
+// open where the fall started.
+const AILING_SHELTER_BELOW = Number(process.env.M59_AILING_SHELTER_BELOW || 0.75);
+
+const RESUME_FLAT_SAMPLES = Number(process.env.M59_RESUME_FLAT_SAMPLES || 8);
+
+const UNREACHABLE_SPOT_MS = Number(process.env.M59_UNREACHABLE_SPOT_MS || 5 * 60 * 1000);
 const CROWD_RADIUS = 4;
 // Where resting alone runs out. RestTimer stops awarding vigor at its threshold of 80
 // out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
+// A TRAVELLER IS NOT MADE TO SIT FOR VIGOR IT CANNOT AFFORD TO EARN.
+//
+// Resting recovers vigor towards REST_VIGOR_CAP (80 of 200) and everything above that has to
+// be EATEN — but the climb is slow from the bottom, and a mid-journey rest that waits for it
+// is a journey that stops for minutes to buy a number that only matters for RUNNING. Health
+// is what the stop is for.
+//
+// So below this, a rest asks for health only and takes whatever vigor arrives with it. Above
+// it, the top-up is close enough to the cap to be worth finishing. It gates the TARGET, never
+// whether the rest happens: refuge is never refused for vigor — see travelHoldCandidate.
+const REST_VIGOR_WORTH_WAITING = Number(process.env.M59_VIGOR_WORTH_WAITING ?? 50) / 200;
 
 // HOW LONG A POST-DEATH RECOVERY IS ALLOWED TO TAKE before the character goes back out
 // anyway. recovered() waits on health, mana AND vigor, and each of the three is a way to
@@ -318,16 +347,173 @@ const HOLD_WHILE_HURT_MAX_MS = 3 * 60_000;
 
 // RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
 //
-//   ab       half the journeys hold, half walk on, decided per journey. The experiment.
+// Two questions share this ring and they want different windows. "Has it moved since last
+// time, and the time before that" is answered by three samples and a fourth would only
+// delay the alert — so `pennedIn` and `stillHere` still take the newest three and are
+// unchanged by this.
+//
+// "How fast is it losing health" cannot be asked of three. Damage lands about once a
+// second and a two-second window is one hit wide, so the rate it computes is either zero
+// or enormous depending on which second you look at. Cccc died in West Merchant Way losing
+// 7 health over 22 seconds — half a point a second, perfectly steady, and invisible to
+// every two-second window in it. Six samples is five seconds of history, which is enough
+// to see a rate and short enough to still be about NOW.
+const PULSE_SAMPLES = 6;
+// The newest few, for the two questions that are about the body having moved rather than
+// about how much time is left. Kept as its own constant so widening the ring above can
+// never quietly widen these — `pennedIn` gets STRICTER as the ring grows, so a careless
+// change there would switch off the rescue it feeds rather than loosening it.
+const PULSE_MOVEMENT_SAMPLES = 3;
+// HOW LONG A STATIONARY, BLEEDING, INERT CHARACTER WAITS FOR ITS DRIVER BEFORE THE KEEPER
+// TAKES IT BACK. See `pulsePosition`'s inert branch and the rescue in `watchdogTick`. Four
+// seconds is four pulses: long enough that a driver pausing to turn or open a door is not
+// treated as an abandonment, short enough that these characters — 20 to 56 max health
+// against four ants at about half a point a second — are still alive at the end of it.
+const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
+
+// ==================== TRAVELLING: STOOD DOWN WITHOUT STANDING THERE ====================
+//
+// `goInert` is the right state for an ERRAND — a shopping trip, a supply exchange, a
+// pilot claim — because those take the character somewhere the keeper has no opinion
+// about and the keeper genuinely should not interfere. It is the WRONG state for a
+// JOURNEY, and the difference cost Cccc on 2026-08-21.
+//
+// The record, second by second. A commute driver re-sent `travel` to a character that was
+// in the Underworld at 2 of 37 health. `travelJob` made the keeper inert. The keeper — the
+// Underworld escape is above the inert gate, which is the one exemption — walked it out to
+// the Limping Toad Inn, a sanctuary, at 11 of 37. The journey, already running, then walked
+// it straight back out of the inn and into West Merchant Way, where six things ate it over
+// twenty-two seconds. The keeper watched all of it. Its flee threshold was 70%; the
+// character was at 27% when it entered the room and never went above it.
+//
+// Nothing there was a bug in the survival ladder. The ladder was switched off, by design,
+// by a state that means "somebody else is driving" and was being used for a driver that
+// only steers.
+//
+// SO TRAVELLING IS A THIRD STATE. Not `running` — the keeper does not get to hunt, roam,
+// shop or pick a room while a journey owns the route. Not `inert` — the survival ladder
+// stays armed and reads real numbers every pass. What it may do is enumerated, per
+// character, and every entry can be switched off from the `autopilot` tool.
+//
+// TWO CLOCKS, AND THIS IS THE PART THAT MAKES IT SAFE. Only ONE thing may drive a body.
+//
+//   at a HOP BOUNDARY the mover is not stepping, so the journey's own `onHop` hook can
+//   sit the character down without contending for it. `rest` and `safe_spot` live here.
+//
+//   MID-HOP the mover is walking, and the keeper cannot act without taking the character
+//   back first. So the mid-hop entries do exactly what the watchdog rescue already does:
+//   cancel the movement, leave the travelling state, and let the ORDINARY ladder decide
+//   on the next breath with real numbers. They decide nothing themselves. `flee`,
+//   `fight_back`, `play_dead` and `arm` live here.
+//
+// That split is not a nicety. Two loops driving one character is the failure `goInert`
+// was introduced to prevent, and it is still prevented — the keeper never moves a
+// character a journey is moving; it ends the journey and then moves it.
+export const TRAVEL_GUARD_DEFAULTS = Object.freeze({
+  // ---- mid-hop: each one CANCELS the journey and hands back to the ordinary ladder
+  flee: true,        // below flee_below with something adjacent
+  fight_back: true,  // pinned and taking hits — standing still under attack is not a plan
+  arm: true,         // the weapon is gone, and unarmed is why the fight is going badly
+  // `play_dead` WAS HERE AND IS GONE — removed 2026-08-21, deliberately and not by tidying.
+  //
+  // It cancelled a journey so the ordinary ladder could freeze. Freezing is now refused
+  // anywhere but a proven safe spot (see playDead), because it recovers vigor and NEVER
+  // health: in the open the character comes back with the health it went down with, in
+  // reach of everything that put it there. Measured in the Twisted Wood — three froze at
+  // 4, 10 and 13 health in rooms of twelve to fifteen monsters, and all three died.
+  //
+  // So the guard entry had nothing left to permit, and a switch that silently does
+  // nothing is how `purpose` stayed out of a schema for a year. Removing it from the key
+  // list makes `travel_guard: {play_dead:false}` a LOUD error naming the real faculties,
+  // which is the behaviour this repository wants from a setting that no longer exists.
+  // Rung 4 (flee) catches every character that rung used to, and hands over to moving.
+  // ---- at a hop boundary: the journey pauses and nothing is contended
+  rest: true,        // sit in a sanctuary until health AND vigor are as high as sitting takes them
+  safe_spot: true,   // hold a defensible wall part-way through — see travelHold
+});
+export const TRAVEL_GUARD_KEYS = Object.freeze(Object.keys(TRAVEL_GUARD_DEFAULTS));
+// Which clock each one is on. Reported by `travel_guard` so an operator turning one off
+// knows whether they have disabled an interruption or a pause.
+export const TRAVEL_GUARD_CLOCK = Object.freeze({
+  flee: 'mid-hop', fight_back: 'mid-hop', arm: 'mid-hop',
+  rest: 'hop boundary',
+  // BOTH CLOCKS, and it had to be. At a boundary the journey pauses and the character rests
+  // at a wall to full. MID-HOP it hands back so the ordinary ladder can take one, because a
+  // big room kills a character long before it offers a boundary to be asked at: seven of
+  // eleven deaths in one window were inside the Cragged Mountains, which is 2,450 squares,
+  // with no refuge taken there at all.
+  // HOP BOUNDARY ONLY, AGAIN, AND THIS TIME BECAUSE MID-HOP COULD NOT PAUSE.
+  //
+  // It was 'both' on a real argument: the Cragged Mountains is 2,450 squares and kills a
+  // character long before it offers a boundary to be asked at, seven of eleven deaths in one
+  // window. What that argument missed is what mid-hop COSTS, because the only thing a
+  // mid-hop trigger can do is CANCEL — the mover has the body, and the keeper cannot take a
+  // wall without taking the body off it first.
+  //
+  // So every scratch in a zone that outranks the character tore down the crossing, and
+  // `travelShelterBelow` returns 1 there, meaning any scratch at all. Measured, repeatedly:
+  //
+  //   586  cancelled at 0 of 40 by a travel guard rung taking the character back
+  //   587  cancelled at 6 of 65 by a travel guard rung taking the character back
+  //
+  // Step zero of forty. The room could not be crossed because the crossing could not begin,
+  // and a shelter that prevents arrival is not shelter.
+  //
+  // At a hop boundary nothing is contended: the mover is between rooms, the keeper can sit
+  // the character down without fighting it for the body, and the journey PAUSES rather than
+  // ending. That is the whole distinction this table exists to record, and it is why the
+  // wall belongs on this clock and not on both.
+  safe_spot: 'hop boundary',
+});
+
+// HOW SOON THE DAMAGE WOULD KILL US BEFORE A JOURNEY IS WORTH INTERRUPTING OVER.
+//
+// The rescue this replaces required the character to be STATIONARY for four seconds, and
+// that requirement is what let Cccc die. His last pulses read 23,3 / 25,5 / 26,5 / 25,5 —
+// a two-square shuffle against a wall, which is not moving in any sense that matters and
+// resets a stillness timer on every sample. The wedge only aged past four seconds once the
+// shuffle stopped, 5.1 seconds before the end.
+//
+// So the trigger is DAMAGE, and it does not care whether the body is moving. A character
+// walking a road while something eats it is in exactly as much trouble as one standing in
+// the same place while something eats it, and the walking one is harder to see.
+const TRAVEL_RESCUE_TTL_MS = Number(process.env.M59_TRAVEL_RESCUE_TTL_MS || 10_000);
+
+// RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'on' | 'observe' | 'off'.
+//
+//   on       always hold when the conditions are met. THE DEFAULT, and the answer.
 //   observe  decide and write down what would have happened; change nothing.
 //   off      the behaviour that existed before any of this.
 //
-// It defaults to the experiment because the fleet is where the question is: 61% of the
-// damage it takes and eight of thirteen deaths in a day happen while travelling, and
-// nothing offline can say whether stopping at a wall helps. Settable live per character
-// over the `autopilot` tool (`travel_hold`), which is the kill switch — it needs no
-// restart, and a restart is the one thing that costs a fleet more deaths.
-const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'ab';
+// ============================ THE EXPERIMENT IS CLOSED ============================
+//
+// This defaulted to `ab` — half the journeys holding, half walking on, a coin per journey —
+// because nothing offline could say whether stopping at a wall helped. Retired 2026-08-21
+// by the operator, and the reason it did not need another week of denominators is that the
+// question stopped being about the wall.
+//
+// The A/B was built to compare TWO WAYS OF TRAVELLING WELL. What the fleet actually does is
+// neither: it gets stuck, lost or unresponsive, and then something eats it where it stands.
+// Cccc's death is the whole argument in one record — walked out of a sanctuary at 27%
+// health against a 70% flee threshold, into a room with six things in it, and killed over
+// twenty-two seconds during which nothing was driving at all. No arm of this experiment
+// addresses that, and half of every journey was being spent in a control arm that
+// deliberately walked hurt characters on past the only free healing on the road.
+//
+// So: holding is the behaviour, not a treatment. `ab`/`half` are still ACCEPTED, because
+// rosters and policy files on disk carry them and a value that throws would take a fleet
+// down on restart — but they are mapped to `on` and REPORTED every time, rather than
+// silently honoured. A setting that quietly does something other than what it says is the
+// exact failure this file spends the most words on.
+//
+// `m59-travel-ab.mjs` still reads the historical rows; it now prints the verdict rather
+// than a power calculation. Settable live per character over the `autopilot` tool
+// (`travel_hold`) — no restart, and a restart is the one thing that costs a fleet more
+// deaths.
+const TRAVEL_HOLD_MODE = process.env.M59_TRAVEL_HOLD || 'on';
+// The one arm that is left. Written down rather than inlined, so the ledger rows, the
+// keeper's `travelArm` and anything joining the two cannot drift apart.
+const TRAVEL_HOLD_ARM = 'hold';
 
 // HOW LONG A KEEPER STAYS INERT WITHOUT ANYBODY SAYING SO AGAIN.
 //
@@ -467,6 +653,10 @@ export const PASS_STAGES = [
   'passArm',
   'passPlaybook',
   'passFleeAndRest',
+  // FOLLOWING A PERSON SITS HERE ON PURPOSE. Below survival, because being led somewhere is
+  // never worth dying on the way to; above everything directional, because the entire point
+  // is that a person walking in front knows something the router does not.
+  'passFollow',
   'passOutside',
   'passErrand',
   'passFarm',
@@ -1674,6 +1864,45 @@ export class Autopilot {
                  ?? (floor ? 0 : (p.eatToAtLeast ?? EAT_TO_AT_LEAST));
     if (!floor && !ceiling) return false;              // only if someone set it to zero on purpose
 
+    // RECOVERING IN THE OPEN IS NOT AN OPTION, AND EATING IS RECOVERING.
+    //
+    // Raising vigor means standing still and not looking, exactly as resting does — the
+    // ladder has always refused a REST in a room that can reach us, and this path walked
+    // straight past that rule because it is filed under provisioning rather than survival.
+    // It is the same act with the same cost.
+    //
+    // AT THE TOP OF THE METHOD, because the first version of this guard sat lower down, just
+    // before the climb, and `provision` can return 'ate' before it ever gets there: an empty
+    // larder falls into `cookSomething()`, and cooking is standing still too. Bbbb's last two
+    // decisions, one second before a troll killed it in a room holding SIXTEEN monsters, were
+    // "ate while stocking up" and "ate rather than reporting myself trapped". The guard was
+    // live; it was simply downstream of the branch that fired.
+    //
+    // Deferred rather than abandoned: nothing here is unset, so the moment the character is
+    // somewhere it can afford to stand still — behind a wall, in a sanctuary, or one room on
+    // — it eats.
+    if (!this.hold && !this.sanctuary?.()) {
+      const cc = this.s?.client;
+      const hostiles = cc?.room?.objects
+        ? [...cc.room.objects.values()].filter(o =>
+            o.id !== cc.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER))
+        : [];
+      if (hostiles.length) {
+        if (!this.notedNoEatingHere) {
+          this.notedNoEatingHere = true;
+          this.note('not eating here — something in this room can reach us', {
+            vigor, floor, ceiling, monsters_in_room: hostiles.length,
+            why: 'raising vigor is standing still and not looking, which is the same act as ' +
+                 'resting and costs the same. The ladder refuses a rest in a room that can ' +
+                 'reach us; this is that rule, applied to the larder — and to the cooking pot.',
+            next: 'still hungry — it will eat behind a wall, in a sanctuary, or one room on',
+          });
+        }
+        return false;
+      }
+    }
+    this.notedNoEatingHere = false;
+
     const s = this.s;
     const vigor = v.vigor?.value ?? 0;
     const larder = this.larder(s.client);
@@ -1718,6 +1947,7 @@ export class Autopilot {
     // With no floor set there is nothing to fall through, so the latch also trips on the
     // ceiling — otherwise the implicit target above would be computed and never used.
     if (vigor < floor || (!floor && vigor < ceiling)) this.climbing = true;
+
 
     if (this.climbing) {
       this.doing = 'recovering';
@@ -2078,6 +2308,46 @@ export class Autopilot {
       if (stillness && company > 0 && settled) {
         this.hold.mostAttackers = Math.max(this.hold.mostAttackers, company);
         if (lost > 0) {
+          // POISON IS NOT THE WALL FAILING, AND IT USED TO BE RECORDED AS ONE.
+          //
+          // The caveat below this used to end "poison and archers look the same from here,
+          // so this reading can be wrong — but it is still permanent, and deliberately so".
+          // Both halves of that have moved. Archers — Avars, mostly — do not shoot into a
+          // working spot either, so a stray one is not the explanation it was standing in
+          // for; and poison is no longer invisible: BP_ADD_ENCHANTMENT (147) was declared and
+          // never handled, so a sickness reached the client and was dropped on the floor.
+          //
+          // THAT DOES NOT MAKE POISON THE ONLY ANSWER, and this guard does not claim it is.
+          // A PLAYER can reach a square a monster cannot, and area spells (heat, earthquake)
+          // may not care about walls at all — though whether monsters cast either is not
+          // established here. What the guard actually says is narrower and survives all of
+          // them: nothing is adjacent AND something is draining us AND we are carrying a
+          // sickness that explains it. A player hitting us at a wall is not the wall failing
+          // either, so declining to discredit on that reading is right for that case too.
+          //
+          // Poison takes health with nobody adjacent and CANNOT KILL, which is exactly what a
+          // leaking wall is supposed to look like and exactly what a working one produces
+          // while a character is poisoned. So a poisoned character was quietly discrediting a
+          // good square on every rest it took, permanently, with no way back into the
+          // recommendations — and the book is shared, so it did it for everybody.
+          //
+          // The one-failure rule is untouched and still right: being wrong about a bad spot
+          // costs a character and being wrong about a good one costs a walk to the next
+          // corner. This does not soften it. It removes a reading that was never evidence.
+          const ailing = this.s.client?.ailments?.() ?? [];
+          if (ailing.length && !company) {
+            this.hold.quietMs = 0;
+            this.note('losing health at a wall, and it is poison rather than the wall', {
+              where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+              lost_health: lost, attackers: company,
+              ailments: ailing.map(e => e.name).filter(Boolean),
+              why: 'nothing is adjacent and something is draining us — poison cannot kill and ' +
+                   'does not care what square we are on, so this says nothing about the wall',
+              what_happens: 'the spot keeps its record and is NOT discredited; the rest ends ' +
+                            'because it is not winning, not because the square failed',
+            });
+            return;
+          }
           // It does not work. Say so loudly, forget the proof, and write it down so
           // that the geometry cannot talk us back onto this square in ten minutes.
           this.idleDamage = lost;
@@ -2096,10 +2366,11 @@ export class Autopilot {
             settled_ms: Math.max(0, settledMs),
             why: 'we were hit while standing still and not swinging, which is the one thing ' +
                  'that cannot happen in a working spot',
-            caveat: 'poison and archers look the same from here, so this reading can be wrong — ' +
-                    'but it is still permanent, and deliberately so. See discredited() in ' +
-                    'm59-safespots.mjs: the two-failure rule this used to describe is what left ' +
-                    'a square recommended after it killed somebody' });
+            caveat: 'poison is checked for above and is not this — an ailing character with ' +
+                    'nothing adjacent returns before here. This is permanent and deliberately ' +
+                    'so: see discredited() in m59-safespots.mjs, where the two-failure rule ' +
+                    'this used to describe is what left a square recommended after it killed ' +
+                    'somebody' });
           // Settle the reading BEFORE letting the hold go, or the record loses the
           // very state it is a record of.
           settle(`HIT for ${lost} while standing still with ${company} adjacent — this square does not work`, true);
@@ -2528,9 +2799,18 @@ export class Autopilot {
       this.movedAt = Date.now();
       if (!arrival.arrived) {
         releaseSpot(this.s.name);      // hand the reservation back
+        // REMEMBERED, so the next pass picks a different one — or none, and gets on with
+        // whatever it was doing. This is the line whose absence killed two characters.
+        this.noteUnreachableSpot(room?.num ?? null, spot.col, spot.row);
         this.note('could not reach the safe spot', {
-          spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason });
-        return { took: false, why: arrival.why || arrival.reason || 'could not get there' };
+          spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason,
+          ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) });
+        // `fine_tried` says what the sliding-fan approach answered once the square walk had
+        // already failed. Without it "could not walk back to the square" cannot distinguish
+        // a fallback that ran and lost from one that never ran at all, and that is the whole
+        // question about the last mile into a wall.
+        return { took: false, why: arrival.why || arrival.reason || 'could not get there',
+                 ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) };
       }
     }
 
@@ -2975,17 +3255,43 @@ export class Autopilot {
   nearestSanctuary({ maxHops = 3 } = {}) {
     const s = this.s;
     const here = s.world?.room?.num;
+
+    // THE CONFINEMENT IS CHECKED HERE TOO, AND THAT IS THE POINT OF CHECKING IT TWICE.
+    //
+    // `retreatToSafety` was patched first and it was not enough: this is a SECOND chooser,
+    // reached by the post-death recovery walk, and on 2026-08-19 it took Camilla out of
+    // Castle Victoria through room 2 and on toward an inn ten legs away — through Ukgoth —
+    // minutes after the first patch went in. A confinement enforced at one of two doors is
+    // not a confinement, and the reason it reads as one is that both doors are survival
+    // code and neither announces itself as travel.
+    //
+    // `allowed` is a predicate rather than a filter on the list, because `preferred` below
+    // is returned before the list is ever built.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    const allowed = confine?.length
+      ? (n) => confine.map(Number).includes(Number(n))
+      : () => true;
+
     // A deliberately named exception before the generic search. Outside Castle
     // Victoria has no spawn-index row at all (because it spawns nothing), so it cannot
     // emerge from `quiet` below. It is the right short retreat from either floor of the
     // castle, but not a true player-safe inn; the returned metadata preserves that fact.
+    //
+    // AND IT IS THE FIRST THING THE CONFINEMENT HAS TO REFUSE: `PREFERRED_QUIET_RETREATS`
+    // maps BOTH 38 and 39 to room 2, so a character confined to the castle would be handed
+    // the one adjacent room a player can kill it in, by the code that exists to save it.
     const preferred = preferredQuietRetreat(s.world, { maxHops });
-    if (preferred) return preferred;
+    if (preferred && allowed(preferred.room)) return preferred;
+    if (preferred)
+      this.note('the preferred quiet retreat is outside the confinement', {
+        room: preferred.room, name: preferred.name, confined_to: confine,
+        why: 'monster-free is not player-safe, and this is the room the operator named' });
     const spawns = loadSpawns(SPAWN_FILE)?.rooms || {};
-    const inns = Object.values(CITY_INNS).map(x => x.inn).filter(n => n !== here);
+    const inns = Object.values(CITY_INNS).map(x => x.inn)
+      .filter(n => n !== here && allowed(n));
     const quiet = Object.keys(spawns)
       .filter(n => !(spawns[n] || []).some(x => x.huntable))
-      .map(Number).filter(n => n !== here && !inns.includes(n));
+      .map(Number).filter(n => n !== here && !inns.includes(n) && allowed(n));
     let best = null;
     for (const room of [...inns, ...quiet]) {
       const r = s.world?.route?.(room);
@@ -3917,6 +4223,11 @@ export class Autopilot {
       // the same monster.
       within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
       book: this.book, room: room.num, quarryReach, strictQuarryReach, los,
+      // Only offer walls the router agrees we can walk to — see reachTest.
+      reach: this.reachTest(),
+      // The same exclusion the other three selectors apply — a wall we have just failed
+      // to walk to is not a candidate, whichever rung is asking for one.
+      unreachable: this.unreachableIn(room.num),
       stats,
       toward: quarry ? { col: quarry.col, row: quarry.row } : null,
       // Skip squares already at the share cap, and squares nothing can be fetched to.
@@ -3951,6 +4262,93 @@ export class Autopilot {
   // `why` is kept on the frame so the trail says what it is: a frame written because we
   // arrived somewhere is a different observation from the pass's regular sample, and a
   // reader that cannot tell them apart will read a travel trail as a stall.
+  // WHAT THE BODY HAS DONE SINCE IT WAS LAST WHOLE.
+  //
+  // Health falling is the easy half and every instrument here already has it. The question
+  // that matters while it falls is what the character is DOING about it, and the honest
+  // answer is not a position or a heading — it is whether the moving is going anywhere.
+  //
+  // So the number this exists for is PATH against NET. A character that walked forty squares
+  // and ended two from where it started is not travelling, it is dithering — and that is
+  // indistinguishable from good progress in every other reading we have, because both show
+  // movement, both reset a stillness timer, and both burn the same seconds. The 22<->23
+  // oscillation, the drag along a wall back out the entrance, the two-square shuffle that
+  // reset every stall detector it met: all of them are a low ratio here and nothing else.
+  //
+  // Reset by being FULL rather than on a timer, because the interesting window is exactly
+  // one bleed. Once whole there is nothing to review.
+  trackSinceFull(at, hp) {
+    const value = hp?.value ?? null, max = hp?.max ?? null;
+    if (value === null || max === null || !(max > 0)) return;
+    if (value >= max) { this.sinceFull = null; return; }
+
+    const f = this.sinceFull;
+    if (!f || f.room == null) {
+      this.sinceFull = {
+        at: at.at, room: at.room, col: at.col, row: at.row,
+        anchorCol: at.col, anchorRow: at.row,
+        healthFrom: value, max, path: 0, roomChanges: 0,
+        rooms: [at.room], lastCol: at.col, lastRow: at.row,
+        low: value, safeSpotAt: null, doing: at.doing ?? null,
+      };
+      return;
+    }
+
+    // ACROSS A ROOM BOUNDARY, DISTANCE IN SQUARES IS MEANINGLESS — the coordinate system
+    // starts again. A room change is progress of a different kind and is counted as its own
+    // thing, and the net anchor restarts so the ratio describes THIS room's walking.
+    if (at.room !== f.lastRoom && at.room !== f.rooms[f.rooms.length - 1]) {
+      f.rooms.push(at.room);
+      if (f.rooms.length > 24) f.rooms.shift();
+      f.roomChanges++;
+      f.anchorCol = at.col; f.anchorRow = at.row;
+    } else if (Number.isFinite(at.col) && Number.isFinite(f.lastCol)) {
+      const d = Math.hypot(at.col - f.lastCol, at.row - f.lastRow);
+      // A sample that did not move adds nothing; a teleport is not walking either.
+      if (d > 0 && d < 12) f.path += d;
+    }
+    f.lastRoom = at.room; f.lastCol = at.col; f.lastRow = at.row; f.lastAt = at.at;
+    f.low = Math.min(f.low ?? value, value);
+    f.doing = at.doing ?? f.doing;
+    // WHETHER IT GOT WHERE IT WAS TRYING TO GO. On a journey while taking damage, reaching a
+    // wall IS the correct outcome, so the time from the first drop to the shelter is the
+    // number worth having — and a null here after a long bleed is its own finding.
+    if (f.safeSpotAt === null && /safe spot|shelter|resting/i.test(String(at.doing ?? '')))
+      f.safeSpotAt = at.at;
+  }
+
+  /** The reviewable summary, for `status` and for the ladder trace. Null while whole. */
+  sinceFullHealth() {
+    const f = this.sinceFull;
+    if (!f) return null;
+    // MEASURED BETWEEN OBSERVATIONS, NOT AGAINST THE WALL CLOCK. The window is first drop to
+    // last sample, and every number derived from it — the rate above all — has to divide by
+    // the time actually watched. `Date.now()` would keep the denominator growing through any
+    // gap in sampling, so a keeper that stopped pulsing would report a bleed slowing down at
+    // exactly the moment it stopped being able to see one.
+    const now = f.lastAt ?? f.at;
+    const secs = Math.max(0, Math.round((now - f.at) / 1000));
+    const net = Number.isFinite(f.lastCol) && Number.isFinite(f.anchorCol)
+      ? Math.hypot(f.lastCol - f.anchorCol, f.lastRow - f.anchorRow) : null;
+    const lost = f.healthFrom - (f.low ?? f.healthFrom);
+    return {
+      for_s: secs,
+      health_from: f.healthFrom, health_low: f.low, of_max: f.max,
+      losing_per_s: secs > 0 ? Math.round((lost / secs) * 100) / 100 : null,
+      rooms: [...f.rooms],
+      room_changes: f.roomChanges,
+      squares_walked: Math.round(f.path * 10) / 10,
+      net_from_start_of_this_room: net === null ? null : Math.round(net * 10) / 10,
+      // THE ONE TO READ. 1.0 is a straight line; near 0 is a body moving and getting
+      // nowhere, which is what every dithering bug in this repository has looked like.
+      // Null rather than a fabricated 0 when nothing has been walked yet.
+      progress_ratio: f.path > 0 && net !== null ? Math.round((net / f.path) * 100) / 100 : null,
+      reached_shelter_after_s: f.safeSpotAt === null ? null
+        : Math.max(0, Math.round((f.safeSpotAt - f.at) / 1000)),
+      doing: f.doing ?? null,
+    };
+  }
+
   recordFrame(why = null) {
     const c = this.s.client;
     if (!c?.room) return null;
@@ -4075,6 +4473,11 @@ export class Autopilot {
   //
   // So: avalanche the accumulator before taking a bit (fmix32, the MurmurHash3 finaliser),
   // which makes every input bit reach every output bit.
+  // RETIRED 2026-08-21 AND KEPT ON PURPOSE. Nothing in the live path calls this any more —
+  // see TRAVEL_HOLD_MODE for why the experiment is closed — but the historical
+  // `travel_journey` rows were assigned by it, so `m59-travel-ab.mjs` still needs it to
+  // read them back, and `m59-travel-ab-test.mjs` still pins the avalanche bug below.
+  // Deleting it would delete the only explanation of what those old rows mean.
   travelArmFor(seed) {
     let h = 2166136261;
     for (let i = 0; i < seed.length; i++) { h ^= seed.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -4082,6 +4485,29 @@ export class Autopilot {
     h ^= h >>> 13; h = Math.imul(h, 3266489909);
     h ^= h >>> 16;
     return ((h >>> 0) & 1) ? 'hold' : 'walk';
+  }
+
+  // THE MODE, NORMALISED, AND THE RETIREMENT SAID OUT LOUD ONCE PER KEEPER.
+  //
+  // Two places read this — the arm choice at the top of a journey and the hook at every hop
+  // boundary — and they must not be able to disagree about what `ab` means. That is the
+  // same shape as the bug the block above `travel()` describes, where one of them honoured
+  // the enum and the other left the coin in charge.
+  travelHoldMode() {
+    const m = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
+    if (m !== 'ab' && m !== 'half') return m;
+    if (!this._saidAbRetired) {
+      this._saidAbRetired = true;
+      this.note('travel_hold: the A/B is retired — treating this as "on"', {
+        was: m,
+        why: 'holding at a wall to heal is the behaviour now, not a treatment. The control ' +
+             'arm walked hurt characters straight past the only free healing on the road, ' +
+             'and the deaths this fleet actually suffers are stuck-and-eaten rather than ' +
+             'travelled-badly — which no arm of the experiment addressed',
+        what_to_do: 'set travel_hold to on/observe/off; ab and half will keep meaning on',
+      });
+    }
+    return 'on';
   }
 
   // Is this a moment where a hold is even the question? Cheap, and asked at every hop
@@ -4098,27 +4524,154 @@ export class Autopilot {
     // a reason to be there. Only the rooms in the MIDDLE are ours to stop in.
     if (!(at.remaining > 0)) return { candidate: false, why: 'last room of the journey' };
     if (frac >= below) return { candidate: false, why: `healthy enough (${Math.round(frac * 100)}%)`, frac };
-    // VIGOR GATES IT, and this is the part that is easy to leave out. Health comes back at
-    // a rate set by vigor (player.kod:5611): at 80 it is ~6s a point and a useful top-up
-    // costs longer than the whole journey, so holding at the resting cap buys almost
-    // nothing and pays full price in exposure.
-    const minVigor = this.policy.travelHoldVigor ?? 100;
-    if (vig != null && vig < minVigor)
-      return { candidate: false, why: `vigor ${vig} — too tired for the points to come`, frac, vigor: vig };
+    // VIGOR DOES NOT GATE REFUGE, AND IT NEVER SHOULD HAVE.
+    //
+    // This gate has now been wrong three times and the third time is the interesting one,
+    // because the first two were about the NUMBER and the number was never the problem.
+    //
+    //   100  above anything an unfed fleet can present, so the hold never fired at all
+    //    80  REST_VIGOR_CAP itself — the most resting can give you — so a character even
+    //        slightly under was refused while vigor drains as it walks. Measured: 8 of 18
+    //        deaths were characters down to 1 or 2 health refused at 74, 76, 78.
+    //   none this
+    //
+    // The argument for having one was exposure: health returns at a rate set by vigor, so a
+    // top-up at low vigor costs more standing still than it buys. THAT ARGUMENT DOES NOT
+    // APPLY HERE, because the place being stood in is a safe spot — a square the coarse grid
+    // offers and the mover refuses, which is exactly why a creature cannot path to it. The
+    // whole mechanism is that standing there is not exposure. And where the square turns out
+    // to be wrong, `restUntil` aborts the moment health falls rather than sitting out the
+    // leash, so a bad wall costs one interrupted rest and not a death.
+    //
+    // It was also a deadlock in its own right: resting is how vigor comes back, and the gate
+    // on resting was vigor. A character at 2 health and 74 vigor was refused the only thing
+    // that would have fixed either number.
+    //
+    // So a traveller that is hurt and has a wall rests, and rests to FULL health and at least
+    // the resting cap of vigor — see the restUntil call below, which asks for both. The knob
+    // survives for anyone who wants the old behaviour (`travel_hold_vigor: 80`), and nothing
+    // is the default.
+    const minVigor = this.policy.travelHoldVigor ?? 0;
+    if (minVigor > 0 && vig != null && vig < minVigor)
+      return { candidate: false, why: `vigor ${vig} — under the floor this fleet set at ${minVigor}`,
+               frac, vigor: vig };
     // Something already swinging at us is a fight or a flight, and the ordinary pass
     // decides both far better than a hold does.
     const inReach = this.inReachOfUs();
     if (inReach.length)
       return { candidate: false, why: `${inReach.length} already in reach — this is a fight, not a pause`, frac };
+
+    // AND A WALL STOPS MONSTERS, NOT PEOPLE. THIS IS THE ONE THING THAT OUTRANKS BEING HURT.
+    //
+    // A safe spot works because a creature cannot path to it — that is the whole mechanism,
+    // and it says nothing whatever about a player, who can walk to the same square, swing
+    // first, and take the pack. `PREFERRED_QUIET_RETREATS` learned this the expensive way:
+    // "no monsters spawn here" is TRUE of room 2 and is not the same fact as player-safe,
+    // and Gonzo was killed there twice in one evening.
+    //
+    // So the trade a hold makes is different when there are people about. Standing still
+    // for eighty-seven seconds with a full pack is the best target this game offers.
+    // Running for the next room is worse against the troll and better against the person:
+    // dying to the troll costs the walk back, dying to the player costs everything carried.
+    //
+    //   'refuse' (the default) — no hold while a player who is not ours is in the room, or
+    //                            while the FLEET-WIDE grudge book has a live entry. A grudge
+    //                            is somebody who attacked one of us within the hour, which
+    //                            is the closest thing to "PvP is anticipated" that exists.
+    //   'room'                 — only the player standing here counts; a grudge elsewhere
+    //                            does not stop a hold on a quiet road.
+    //   'ignore'               — the behaviour from before this existed.
+    //
+    // `party.isFleetmate` is how one of ours is told from a stranger, and a keeper that has
+    // not had a pass yet is absent from that roster — so this can call a fleetmate a
+    // stranger for a few seconds after a restart. Being wrong that way costs a pause we
+    // would have taken, which is the cheap direction.
+    const pvp = this.policy.travelHoldPvp ?? 'refuse';
+    if (pvp !== 'ignore') {
+      // A ROOM WE CANNOT READ REPORTS NOBODY, which is the pre-existing behaviour and the
+      // honest one: this gate can only ever say "somebody is here", never "nobody is".
+      const here = c?.room?.objects ? [...c.room.objects.values()] : [];
+      const strangers = here.filter(o =>
+        o.id !== c.selfId && (o.flags & OF.PLAYER) &&
+        !party.isFleetmate(c.rsc?.get(o.nameRsc)));
+      if (strangers.length)
+        return { candidate: false, frac, players: strangers.length,
+                 why: `${strangers.length} player(s) here who are not ours — a wall stops ` +
+                      `monsters, not people` };
+      if (pvp === 'refuse') {
+        const live = grudge.activeGrudges();
+        if (live.length)
+          return { candidate: false, frac, grudges: live.length,
+                   why: `${live.length} live grudge(s) — PvP is anticipated, and a stationary ` +
+                        `character with a full pack is the best target in the game` };
+      }
+    }
     return { candidate: true, frac, vigor: vig, health: hp.value, max: hp.max };
   }
 
   // The hook body. Runs at every interior hop boundary of every journey.
   async travelHold(at, arm) {
-    const mode = this.policy.travelHold ?? TRAVEL_HOLD_MODE;
+    // THE HOP BOUNDARY IS THE SAFE PLACE TO ACT, and both halves of it live here.
+    //
+    // The mover is not stepping between rooms, so nothing is contended: the keeper can sit
+    // the character down without fighting the journey for it. That is why `rest` and
+    // `safe_spot` are on this clock and `flee`/`fight_back`/`play_dead`/`arm` are not —
+    // see TRAVEL_GUARD_DEFAULTS.
+    //
+    // SANCTUARY FIRST, BECAUSE IT IS FREE. If this hop landed us in an inn, healing costs
+    // nothing at all: nothing spawns there and nothing can reach us. A wall in the open is
+    // the SECOND-best answer to the same question and every second of it is exposed.
+    //
+    // This is the gap Cccc fell through. `restBeforeSettingOut` runs once, at the top of a
+    // journey, and his journey started in the Underworld — "not somewhere safe to sit
+    // down". He then passed THROUGH the Limping Toad Inn nineteen seconds later at 11 of
+    // 37 and walked straight out the far door, because nothing asked the question a second
+    // time. It is asked at every boundary now.
+    await this.travelRestAtSanctuary(at, arm).catch(e =>
+      this.note('mid-journey sanctuary rest failed', { why: e.message }));
+
+    const mode = this.travelHoldMode();
     if (mode === 'off') return;
+    // The switch, and it is deliberately AFTER the sanctuary rest: they are two different
+    // faculties and turning the wall hold off is not a statement about inns.
+    if (!this.travelAllows('safe_spot')) {
+      this.ledgerEvent('travel_pause', {
+        journey: at.journey, arm, room: at.room?.num ?? null, room_name: at.room?.name ?? null,
+        hops_done: at.hops_done, remaining: at.remaining,
+        spot: null, did: 'did not consider a wall',
+        why: 'travel_guard.safe_spot is off for this character',
+      });
+      return;
+    }
     const look = this.travelHoldCandidate(at);
-    if (!look.candidate) return;
+    if (!look.candidate) {
+      // A REFUSAL THAT LEAVES NO TRACE CANNOT BE ARGUED WITH.
+      //
+      // This used to `return` here and write nothing, and the cost of that was exact: across
+      // one window of 1,599 travel-journey events and 13 deaths, the ledger held FOUR hold
+      // decisions. Asked "of the characters that died, how many tried to shelter at a wall",
+      // the honest answer was that the record could not say -- 7 of the 10 had the question
+      // refused silently, and which of the six gates did it was unknowable after the fact.
+      // That is the same shape as `purpose` sitting outside a schema for a year with every
+      // keeper's audit switched off: a decision that does nothing and says nothing.
+      //
+      // Not every refusal is worth a line. Two of them are the system working -- a healthy
+      // character has no business stopping, and the last room of a journey is the caller's
+      // to arrive hurt in -- and writing those would put a record on every hop of every
+      // journey and drown the ones that matter. So the ones recorded are exactly the ones
+      // where the character WANTED to stop and something else refused it: hurt, mid-journey,
+      // and turned away by vigor, by a fight, or by people about.
+      if (look.frac != null && look.frac < (this.policy.travelHoldBelow ?? 0.75) && at.remaining > 0)
+        this.ledgerEvent('travel_pause', {
+          journey: at.journey, arm, room: at.room?.num ?? null, room_name: at.room?.name ?? null,
+          hops_done: at.hops_done, remaining: at.remaining,
+          health: look.health ?? null, max: look.max ?? null, vigor: look.vigor ?? null,
+          spot: null, did: 'did not consider a wall', why: look.why,
+          note: 'hurt and mid-journey, so this is a refusal worth counting rather than the ' +
+                'ordinary case of a character that did not need to stop',
+        });
+      return;
+    }
 
     // A spot is looked for in BOTH arms. Whether one exists is a fact about the room, not
     // about the arm, and the control arm's record is worth nothing without it: "we would
@@ -4138,6 +4691,8 @@ export class Autopilot {
         // next corner. The verdict is tagged `failed_by.travel` so the travel-only
         // rejections can be fished back out. See docs/m59-safe-travel-plan.md.
         spot = nearestSafeSpot(geo, me, { book: this.book, room: at.room?.num ?? null,
+                                          unreachable: this.unreachableIn(at.room?.num ?? null),
+                                          reach: this.reachTest(),
                                           within: this.policy.travelHoldWithin ?? 10 });
       } catch { spot = null; }
     }
@@ -4148,17 +4703,19 @@ export class Autopilot {
                    spot: spot ? { col: spot.col, row: spot.row, steps: spot.steps_away,
                                   proven: !!spot.proven, back_cover: spot.back_cover ?? null } : null };
 
-    // THE CONTROL ARM STOPS HERE, having written down exactly what the other arm would
-    // have done. That record is the whole comparison.
+    // WALKING ON, AND THERE ARE ONLY TWO REASONS LEFT TO. `arm === 'walk'` now means
+    // `travel_hold: off` and nothing else — the coin that used to produce it is retired
+    // (see TRAVEL_HOLD_MODE) — so a `walked on` row is somebody's setting or an empty
+    // room, never an experiment spending half its journeys on the worse answer.
     if (arm === 'walk' || mode === 'observe' || !spot) {
       this.ledgerEvent('travel_pause', { ...base, did: spot ? 'walked on' : 'walked on — no spot here',
         why: !spot ? 'nothing in this room scored as a wall'
            : mode === 'observe' ? 'observing only'
-           : 'control arm — walked on to measure against holding' });
+           : 'travel_hold is off for this character' });
       return;
     }
 
-    // ---- the treatment arm
+    // ---- holding
     const budget = this.policy.travelHoldBudgetMs ?? 180_000;
     this.travelHeldMs ??= 0;
     if (this.travelHeldMs >= budget) {
@@ -4174,15 +4731,35 @@ export class Autopilot {
                                           { source: 'travel' })
       .catch(e => ({ took: false, why: e.message }));
     if (!took?.took) {
-      this.ledgerEvent('travel_pause', { ...base, did: 'could not take the spot', why: took?.why ?? 'unknown' });
+      // `fine_tried` is what the fine approach said when the square walk had already failed.
+      // Carried through because "could not walk back to the square" is the commonest refusal
+      // here and on its own it does not say whether the fallback ran, let alone why it lost.
+      this.ledgerEvent('travel_pause', { ...base, did: 'could not take the spot',
+                                         why: took?.why ?? 'unknown',
+                                         ...(took?.fine_tried ? { fine_tried: took.fine_tried } : {}) });
       return;
     }
     // restUntil polls every 3s and aborts on damage, which is exactly the behaviour wanted
     // here: a wall that is being hit is not a wall, and walking on is the better of two
     // bad options once that is known.
+    // FULL, NOT NINE TENTHS, AND NOT A SIP EITHER.
+    //
+    // The last tenth costs as long as the first half and every second of it is a second
+    // something can find you — true on open ground, and NOT true on a square a creature
+    // cannot path to, which is the whole mechanism of a safe spot. A traveller that has gone
+    // to the trouble of reaching a wall should leave it healed, and `restUntil` aborts on
+    // damage if the wall turned out to be wrong.
+    //
+    // I shortened this to a sip and it was the wrong lesson from the right measurement. A
+    // leg that spends 180 seconds resting is not a slow road — it is a character getting
+    // well, and the harness already counts that separately for exactly this reason. What must not
+    // happen is the stop DIVERTING the journey: the pause belongs to the hop boundary, the
+    // objective is kept, and the crossing afterwards resumes the same line it was walking.
     const rest = await skills.restUntil(this.s, {
-      health: this.policy.travelHoldTo ?? 0.9,
-      vigor: REST_VIGOR_CAP,
+      health: this.policy.travelHoldTo ?? 1,
+      // Vigor comes along if it is close; it does not hold the journey up from the bottom.
+      vigor: (vigorPct(this.s.client?.vitals?.()) ?? 0) >= REST_VIGOR_WORTH_WAITING
+             ? REST_VIGOR_CAP : 0,
       maxSeconds: Math.round(Math.min(90_000, budget - this.travelHeldMs) / 1000),
     }).catch(e => ({ error: e.message }));
     const heldMs = Date.now() - t0;
@@ -4214,7 +4791,225 @@ export class Autopilot {
     });
   }
 
+  // DO NOT SET OUT HURT FROM A PLACE THAT IS FREE TO HEAL IN.
+  //
+  // A character standing in an inn is in the one situation where resting costs nothing at
+  // all: nothing spawns there, nothing can reach it, and the recovery that would take
+  // eighty-seven exposed seconds at a wall in the Cragged Mountains takes the same eighty-
+  // seven safe ones here. Walking out at 40% and topping up later is strictly worse — the
+  // topping up happens on a road with trolls on it, if it happens.
+  //
+  // It is also the commonest way the fleet is hurt at all. A character that has just come
+  // out of the Underworld arrives in an inn at a fraction of its health, and the next thing
+  // anything asks it to do is cross the world; on the arena fleet that is a death cascade,
+  // one death putting a character on a long road it is in no state to walk.
+  //
+  // VIGOR CANNOT REACH 100% BY RESTING AND THE DEFAULT SAYS SO. `REST_VIGOR_CAP` is 80 of
+  // 200 — everything above it has to be EATEN (`create food` is 2 elderberry AND 2 herbs) —
+  // so "rest to full vigor" means the resting cap, which is the highest an unfed character
+  // can present. Asking for more would be a gate nothing could ever pass, which is the
+  // failure mode this repository keeps paying for.
+  //
+  // Only from a SANCTUARY, and that is the whole safety argument: `sanctuary()` reads the
+  // spawn index rather than the room name, so it is true of inns, banks, shops and quiet
+  // stretches of road, and false of anywhere that generates monsters. Somewhere hostile,
+  // the ordinary survival ladder decides — sitting down there is how characters die.
+  // SIT DOWN IF THIS HOP LANDED US SOMEWHERE HEALING IS FREE.
+  //
+  // Called at every hop boundary of every journey, and it is the answer to the question
+  // `restBeforeSettingOut` can only ask once. A journey crosses inns; a journey that
+  // STARTS somewhere it cannot rest (the Underworld, a corridor, a field) and then walks
+  // through one is the ordinary case after a death, and it is exactly the case that was
+  // getting characters killed a room later.
+  //
+  // BOTH BARS, TO THE HIGHEST SITTING CAN TAKE THEM. Health to full and vigor to the
+  // resting cap — 80 of 200, because everything above it has to be EATEN and `restUntil`
+  // would otherwise sit for its whole budget waiting for a number that cannot arrive.
+  //
+  // Full health rather than `travel_hold_to`, and the difference is the room. That setting
+  // stops at 0.9 for a good reason — at a wall in the open the last tenth costs as long as
+  // the first half and every second of it is a second something can find you. In a
+  // sanctuary that argument does not apply at all: the exposure is zero, so the only thing
+  // the last tenth costs is time, and arriving at 100 rather than 90 is worth it.
+  //
+  // VIGOR IS NOT A DETAIL HERE. It sets the rate health comes back at, so a character that
+  // leaves an inn at full health and 11 vigor is a character that will not heal again for
+  // the rest of the road. Cccc left the Limping Toad at 11 of 200 and never rose above it.
+  async travelRestAtSanctuary(at, arm) {
+    if (!this.travelAllows('rest')) return;
+    const room = this.s.world?.room;
+    if (!this.sanctuary(room)) return;
+    const v = this.s.client?.vitals?.();
+    const hp = v?.health;
+    if (!hp?.max) return;
+    const frac = hp.value / hp.max;
+    const wantHealth = this.policy.travelStartHealth ?? 1;
+    if (!(wantHealth > 0)) return;
+    const vig = vigorPct(v);
+    // Same rule as the wall: a traveller too tired for the climb to be worth it rests for
+    // health and moves on, rather than sitting out a slow number it can only eat its way past.
+    const wantVigor = (vig ?? 0) >= REST_VIGOR_WORTH_WAITING
+      ? Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP) : 0;
+    if (frac >= wantHealth && (vig == null || vig >= wantVigor)) return;
+    // An inn is player-safe, not fleetmate-free, and something swinging makes this a fight
+    // rather than a pause — the same gate the mid-journey hold and the pre-departure rest
+    // both use.
+    const near = this.inReachOfUs();
+    if (near?.length) {
+      this.ledgerEvent('travel_pause', {
+        journey: at.journey, arm, room: room?.num ?? null, room_name: room?.name ?? null,
+        hops_done: at.hops_done, remaining: at.remaining,
+        health: hp.value, max: hp.max, vigor: v?.vigor?.value ?? null,
+        spot: null, did: 'walked on — a sanctuary with something in reach',
+        why: `${near.length} in reach — not a moment to sit`,
+      });
+      return;
+    }
+    const t0 = Date.now();
+    const before = { health: hp.value, vigor: v?.vigor?.value ?? null };
+    // Restored in the `finally` below. Left as 'recovering' it would tell the position
+    // pulse that this character is not going anywhere for the rest of the journey — which
+    // is the excuse that stops the wedge instrument looking, on a character that is about
+    // to walk back out onto a road.
+    const wasDoing = this.doing;
+    this.doing = 'recovering';
+    try {
+      // PFLAG_MOVED_SINCE_ENTRY has to be set or a rest recovers nothing however long it
+      // sits — the commonest reason a rest in an inn does nothing at all.
+      await this.settle('resting part-way through a journey').catch(() => {});
+      const budget = this.policy.travelSanctuaryBudgetMs ?? 240_000;
+      const rest = await skills.restUntil(this.s, {
+        health: wantHealth, vigor: wantVigor,
+        maxSeconds: Math.round(budget / 1000),
+      }).catch(e => ({ error: e.message }));
+      const after = this.s.client?.vitals?.();
+      const heldMs = Date.now() - t0;
+      this.travelHeldMs = (this.travelHeldMs ?? 0) + heldMs;
+      this.travelSafeStops = (this.travelSafeStops ?? 0) + 1;
+      this.ledgerEvent('travel_hold', {
+        journey: at.journey, arm, room: room?.num ?? null, room_name: room?.name ?? null,
+        hops_done: at.hops_done, remaining: at.remaining,
+        health: before.health, max: hp.max, vigor: before.vigor,
+        spot: null, kind: 'sanctuary',
+        did: 'rested in a sanctuary part-way through a journey',
+        held_ms: heldMs,
+        health_after: after?.health?.value ?? null,
+        vigor_after: after?.vigor?.value ?? null,
+        gained: after?.health?.value != null ? after.health.value - before.health : null,
+        rested: rest?.reason ?? rest?.why ?? rest?.error ?? null,
+        hit_while_held: rest?.interrupted_by_damage ?? null,
+        why: 'this hop landed somewhere nothing spawns and nothing can reach us, so the ' +
+             'points that cost exposure at a wall cost nothing at all here',
+      });
+      this.note('rested in a sanctuary mid-journey', {
+        room: room?.name ?? null, held_s: Math.round(heldMs / 1000),
+        health: `${before.health} -> ${after?.health?.value ?? '?'}/${hp.max}`,
+        vigor: `${before.vigor} -> ${after?.vigor?.value ?? '?'} of ${skills.VIGOR_MAX} ` +
+               `(sitting caps at ${Math.round(REST_VIGOR_CAP * skills.VIGOR_MAX)})`,
+        remaining_hops: at.remaining,
+        note: 'vigor as well as health — it sets the rate health comes back at, so leaving ' +
+              'an inn full but exhausted is leaving with no recovery for the rest of the road',
+      });
+    } finally { this.doing = wasDoing; }
+  }
+
+  async restBeforeSettingOut() {
+    const target = this.policy.travelStartHealth ?? 1;
+    if (!(target > 0)) return { rested: false, why: 'travel_start_health is off' };
+    // The same faculty as the mid-journey sanctuary rest, so the same switch. An operator
+    // turning `rest` off means "do not stop this character to heal", and a version of that
+    // which still stopped it at the start of every journey would be a setting that half
+    // works — which is the failure mode this repository keeps a whole document about.
+    if (!this.travelAllows('rest'))
+      return { rested: false, why: 'travel_guard.rest is off for this character' };
+    const room = this.s.world?.room;
+    if (!this.sanctuary(room)) return { rested: false, why: 'not somewhere safe to sit down' };
+    const v = this.s.client?.vitals?.();
+    const hp = v?.health;
+    if (!hp?.max) return { rested: false, why: 'health unreadable' };
+    const frac = hp.value / hp.max;
+    // A FRACTION, LIKE EVERYTHING ELSE HERE. `REST_VIGOR_CAP` is 0.4 — 80 of the 200 the
+    // bar is drawn against — and `restUntil` takes fractions too. Comparing it against the
+    // raw vigor value would make the gate `80 >= 0.4`, always true, and the whole thing
+    // would be off while reading on.
+    const vig = vigorPct(v);
+    const wantVigor = Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP);
+    if (frac >= target && (vig == null || vig >= wantVigor))
+      return { rested: false, why: 'already fit to set out' };
+    // Anything swinging at us makes this a fight rather than a pause, exactly as it does
+    // for the mid-journey hold.
+    const near = this.inReachOfUs();
+    if (near?.length) return { rested: false, why: `${near.length} in reach — not a moment to sit` };
+
+    this.doing = 'recovering';
+    this.note('resting before setting out', {
+      health: `${hp.value}/${hp.max}`, vigor: v?.vigor?.value ?? null,
+      want: Math.round(target * 100) + '%',
+      want_vigor: Math.round(wantVigor * 200) + ' of 200 (the resting cap)',
+      room: room?.name ?? null,
+      why: 'this is the one place healing is free — nothing spawns here and nothing can ' +
+           'reach us, so the points that would cost exposure on the road cost nothing at all',
+      note: 'vigor stops at the resting cap because everything above it has to be eaten' });
+    // PFLAG_MOVED_SINCE_ENTRY has to be set or the character recovers nothing however long
+    // it sits, which is what `settle` is for. Cheap, and the commonest reason a rest in an
+    // inn does nothing at all.
+    await this.settle('about to set out, and resting only works after moving').catch(() => {});
+    const rest = await skills.restUntil(this.s, {
+      health: target, vigor: wantVigor,
+      maxSeconds: Math.round((this.policy.travelStartBudgetMs ?? 240_000) / 1000),
+    }).catch(e => ({ error: e.message }));
+    const after = this.s.client?.vitals?.();
+    this.note('set out after resting', {
+      health: after?.health ? `${after.health.value}/${after.health.max}` : null,
+      vigor: after?.vigor?.value ?? null,
+      gained: after?.health && hp ? after.health.value - hp.value : null,
+      stopped_because: rest?.reason ?? rest?.why ?? rest?.error ?? 'reached the target' });
+    return { rested: true, health_after: after?.health?.value ?? null };
+  }
+
   async travel(room, opts) {
+    const { holdBetweenRooms = true, onHop, ...sessionOpts } = opts ?? {};
+    // ONE GATE, BECAUSE THERE IS MORE THAN ONE DOOR AND I KEPT FINDING NEW ONES.
+    //
+    // `confineRooms` was enforced first in `retreatToSafety`, and a character left anyway —
+    // through `nearestSanctuary`, a second chooser reached by the post-death recovery walk.
+    // Gating choosers one at a time is a losing game: each is survival code, none of them
+    // announces itself as travel, and the operator's rule is not about choosers at all. It
+    // is "a bot does not change maps outside the region it was confined to", full stop.
+    //
+    // So it is enforced HERE, at the single call every keeper-initiated journey passes
+    // through, and it is a REFUSAL rather than a re-plan: there is nowhere else to send a
+    // confined character, and the ordinary pass already knows how to hold a wall.
+    //
+    // Measured cost of not having this, prod 2026-08-19: Gonzo walked to room 2 twice and
+    // was killed there; Camilla was walked out of Castle Victoria through room 2 and on
+    // toward an inn TEN legs away, through Ukgoth, minutes after the first gate went in.
+    //
+    // Silence is the old behaviour: with no `confineRooms` this costs one array check.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    if (confine?.length && !confine.map(Number).includes(Number(room))) {
+      this.note('refused to leave the confinement', {
+        wanted: Number(room), confined_to: confine.map(Number),
+        here: this.s.world?.room?.num ?? null, doing: this.doing,
+        why: 'the operator confined this character to these rooms. A journey out of them is ' +
+             'the thing that has been killing it, and no destination is worth the road',
+        note: 'this refuses the JOURNEY, not the reason for it — the pass falls through to ' +
+              'whatever it does when it cannot travel, which is normally to hold a wall',
+      });
+      recordEvent(this.who(), 'confinement_refused_travel', {
+        wanted: Number(room), confined_to: confine.map(Number),
+        room: this.s.world?.room?.num ?? null,
+      });
+      return { arrived: false, refused: true, confined: true,
+               why: `room ${room} is outside the confinement ${confine.join('/')}` };
+    }
+
+    // AND SET OUT FIT, IF THIS IS SOMEWHERE FIT CAN BE HAD FOR FREE. Above the journey
+    // rather than inside it, because the question is about LEAVING: once the first boundary
+    // is crossed the character is on the road and the mid-journey hold owns the decision.
+    await this.restBeforeSettingOut().catch(e => this.note('rest before setting out failed',
+                                                           { why: e.message }));
+
     // The same primitive crosses a nearby room boundary and undertakes a journey. Those
     // are different activities: upstairs-to-downstairs patrol movement is zoning, while
     // a route with intermediate rooms is travel. Decide from the route before the await
@@ -4227,7 +5022,30 @@ export class Autopilot {
     if (travelKind === 'zoning') this.doing = 'zoning';
     this.recordFrame('setting off');
     // One arm per journey, fixed before the first step so it cannot drift mid-route.
-    const arm = this.travelArmFor(`${this.s.name}-${this.passes}-${Date.now()}`);
+    // THE MODE DECIDES THE ARM, AND FOR "ON" IT DID NOT.
+    //
+    // `travelHold` checks `mode` for 'off' and 'observe' and then honours `arm === 'walk'`
+    // whatever the mode says — so `travel_hold: "on"` was accepted, stored, reported back
+    // by `autopilot status`, and SILENTLY LEFT THE COIN IN CHARGE. Half of every journey
+    // walked on hurt with the setting reading "on".
+    //
+    // Found by counting: the shadow fleet ran a whole evening with `travelHold: 'on'` on
+    // all twenty-one characters and the ledger holds THREE travel-hold events for the day,
+    // two of them `arm: "walk"` — the control arm of an experiment nobody meant to be
+    // running. `'on'` was not even in the tool's own enum; the broker stores the string it
+    // is given, so a value the schema never allowed became a value the code half-honoured.
+    //
+    // The enum is the contract: `on` always holds, `observe` writes down what it would have
+    // done, `off` is the behaviour from before it existed.
+    //
+    // AND THERE IS NO COIN LEFT TO LEAVE IN CHARGE. `ab`/`half` were the experiment and the
+    // experiment is closed (see TRAVEL_HOLD_MODE). They are accepted so that a roster on
+    // disk carrying one does not throw on restart, and they are SAID OUT LOUD rather than
+    // quietly honoured — the bug this whole comment block is about was a setting that
+    // reported one thing and did another, and mapping a value silently is how you get a
+    // second one.
+    const holdMode = this.travelHoldMode();
+    const arm = holdMode === 'off' ? 'walk' : TRAVEL_HOLD_ARM;
     this.travelHeldMs = 0;
     this.travelSafeStops = 0;
     const startedAt = Date.now();
@@ -4270,11 +5088,12 @@ export class Autopilot {
       // Zoning is not part of the travel-safety experiment. There is no intermediate
       // room in which its treatment can fire, and including it only inflates the
       // denominator with crossings that can never receive a hold.
-      this.travelArm = travelKind === 'travel'
+      const participatesInTravelHold = travelKind === 'travel' && holdBetweenRooms;
+      this.travelArm = participatesInTravelHold
         ? { arm, since: Date.now(), to: room, planned_legs: plannedLegs }
         : null;
       outcome = await this.s.travel(room, {
-        ...opts,
+        ...sessionOpts,
         onHop: async (at) => {
           legs++;
           if (detailed) {
@@ -4284,8 +5103,9 @@ export class Autopilot {
               started_at: Date.now(), damage_at_start: this.hitDamageTotal(), health_start: hp };
           }
           this.recordFrame(`travelling — ${at.hops_done + 1} room(s) in, ${at.remaining} to go`);
-          await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
-          if (opts?.onHop) await opts.onHop(at);
+          if (holdBetweenRooms)
+            await this.travelHold(at, arm).catch(e => this.note('travel hold failed', { why: e.message }));
+          if (onHop) await onHop(at);
         },
       });
       return outcome;
@@ -4302,7 +5122,8 @@ export class Autopilot {
       // exactly the intervention worth having. It is here as a mechanism check: if the
       // treatment arm is not taking more damage, the holds are not doing anything.
       this.ledgerEvent(travelKind === 'travel' ? 'travel_journey' : 'zone_change', {
-        ...(travelKind === 'travel' ? { arm } : {}), to: room, legs, planned_legs: plannedLegs,
+        ...(travelKind === 'travel' && holdBetweenRooms ? { arm } : {}),
+        to: room, legs, planned_legs: plannedLegs,
         ms: Date.now() - startedAt,
         held_ms: this.travelHeldMs ?? 0,
         hp_start: hpStart, hp_end: v1?.value ?? null, hp_max: hpMax ?? v1?.max ?? null,
@@ -4690,10 +5511,28 @@ export class Autopilot {
     const c = this.s?.client, me = c?.self;
     if (!me || !c?.room) return null;
 
-    // Everything in reach that the grudge book and the live flags both agree on.
+    // EVERYWHERE IN THIS ROOM, NOT JUST WITHIN REACH — the same argument `pull` makes.
+    //
+    // This used to filter to `<= REACH`, which meant a character only ever swung back at
+    // somebody who had already closed to melee. Against an organised group that is not a
+    // defence: they pick the range, hit, and step back out of a 3-square disc, and every
+    // one of our characters stands there reporting itself safe. Measured on prod
+    // 2026-08-19: Morpheus landed 19 hits across 9 characters and was engaged twice.
+    //
+    // REACH itself is NOT the knob and must not be widened — it is the SERVER's melee
+    // reach (`SquaredDistanceTo <= GetAttackRange^2`, a disc of 2-3 squares) and a fact
+    // about the game rather than a policy. What changes is how far we will WALK to put
+    // ourselves inside it, which is the same distinction `pull` draws for monsters.
+    // AND IT IS A SETTING, BECAUSE TACTICS CHANGE FASTER THAN CODE DOES. `defendChase`
+    // off (the default, and the behaviour before any of this) engages only what has
+    // already closed to melee. On, it searches the room and walks to them. This shipped
+    // hardcoded for one afternoon and that was wrong: the operator reversed the decision
+    // within the hour, and reversing it meant editing this file and restarting a broker
+    // that holds twenty-one irreplaceable sessions.
+    const chase = this.policy.defendChase === true;
     const candidates = [...c.room.objects.values()]
       .filter(o => o.id !== c.selfId &&
-                   Math.hypot(o.col - me.col, o.row - me.row) <= REACH)
+                   (chase || Math.hypot(o.col - me.col, o.row - me.row) <= REACH))
       .map(o => {
         const name = c.rsc.get(o.nameRsc) || null;
         return { o, name, verdict: grudge.mayReturnFire({ name, flags: o.flags },
@@ -4739,10 +5578,39 @@ export class Autopilot {
       declareConflict(c.me?.name ?? this.who(), pick.name,
                       this.s.world?.room?.num ?? null);
     } catch { /* the record is never worth the swing */ }
-    await this.s.faceToward(pick.o).catch(() => {});
-    await this.s.pacer.submit('attack', () => c.attack(pick.o.id), 1050).catch(() => {});
+    // CLOSE THE DISTANCE FIRST. An attack outside the server's melee reach is refused
+    // silently, so without this the widened search above would only produce a character
+    // swinging at the air. Bounded the way `pull` bounds it — relative to the trip —
+    // so it stays in this room and walks no further than the exit.
+    const away = Math.hypot(pick.o.col - me.col, pick.o.row - me.row);
+    if (away > REACH) {
+      const approach = this.s.world?.approachSquare?.(pick.o.col, pick.o.row);
+      if (!approach) {
+        this.note('cannot reach a flagged attacker', {
+          who: pick.name, squares_away: Math.round(away),
+          why: 'no square beside them this room can route us to' });
+        return { engaged: null, why: 'no route to them' };
+      }
+      this.doing = 'fighting';
+      const out = await this.s.walkTo(approach.col, approach.row,
+                                      { maxSteps: approach.steps + 8 })
+                            .catch(e => ({ arrived: false, reason: e.message }));
+      this.movedAt = Date.now();
+      if (!out.arrived) {
+        this.note('could not close on a flagged attacker', {
+          who: pick.name, squares_away: Math.round(away), why: out.reason ?? 'walk refused' });
+        return { engaged: null, why: 'could not close' };
+      }
+    }
+    // NEVER TRUST A CAPTURED OBJECT'S COORDINATES ACROSS A WALK. BP_ROOM_CONTENTS
+    // replaces the whole object map, so the instance we picked may be stale or gone —
+    // they are a player and players move, which is the entire reason we just walked.
+    const still = c.room.objects.get(pick.o.id);
+    if (!still) return { engaged: null, why: 'they left the room' };
+    await this.s.faceToward(still).catch(() => {});
+    await this.s.pacer.submit('attack', () => c.attack(still.id), 1050).catch(() => {});
     this.swungAt = Date.now();
-    this.foeId = pick.o.id;
+    this.foeId = still.id;
     return { engaged: pick.name, why: pick.verdict.why };
   }
 
@@ -4791,6 +5659,176 @@ export class Autopilot {
     // Defaulting open is the one direction that kills a character.
     if (!Number.isFinite(value) || value < 0) return Math.round(level * 1.5);
     return cfg?.mode === 'flat' ? level + Math.round(value) : Math.round(level * (value / 100));
+  }
+
+  // IS THE GROUND WE ARE STANDING ON ABOVE WHAT WE WOULD FIGHT?
+  //
+  // `threatCeiling` already answers that about ONE creature, and the ordinary ladder uses it
+  // to decide what to swing at. Nothing asked it about a room a character is merely WALKING
+  // THROUGH — and walking through is exactly when it matters most, because the character has
+  // no intention of fighting and therefore no rung that consults the ceiling at all.
+  //
+  // A traveller in a zone it would never choose to fight is not in an ordinary amount of
+  // danger and must not use the ordinary shelter threshold. Measured: a level-33 character
+  // rested at a wall in the Cragged Mountains back to 33 of 33, walked on, and was dead
+  // twenty seconds later — it lost twenty-two health in the time it takes to cross two
+  // squares. Waiting for it to fall through 80% before looking for a wall spends most of the
+  // margin it had.
+  //
+  // TRUE means "any damage at all is a reason to take a wall". That is the operator's rule
+  // and it is only defensible BECAUSE it is conditional: in a zone the character would
+  // happily fight in, the ordinary threshold still applies and a journey is not stopped by a
+  // scratch.
+  //
+  // CACHED FOR A SECOND, because this is asked once per walk leg and the answer cannot
+  // change faster than the room does. `loadSpawns` memoises the table, so the cost is the
+  // room scan rather than the file.
+  roomOutranksUs(ttlMs = 1000) {
+    const now = Date.now();
+    if (this._outranksAt && now - this._outranksAt < ttlMs) return this._outranks;
+    this._outranksAt = now;
+    this._outranks = false;
+    const c = this.s?.client;
+    if (!c?.room?.objects) return false;
+    for (const o of c.room.objects.values()) {
+      if (o.id === c.selfId) continue;
+      if (!(o.flags & OF.ATTACKABLE) || (o.flags & OF.PLAYER)) continue;
+      const name = c.rsc?.get?.(o.nameRsc);
+      if (!name) continue;
+      // `refuseEngagement` returns a refusal object when the creature is over the ceiling,
+      // and null when it is fair game. One over-ranked thing in the room is enough: it is
+      // the one that will do the killing.
+      if (this.refuseEngagement(name)) { this._outranks = true; break; }
+    }
+    return this._outranks;
+  }
+
+  // The shelter threshold in force RIGHT HERE, which is not a constant. See roomOutranksUs.
+  travelShelterBelow() {
+    return this.roomOutranksUs() ? 1 : (this.policy.travelWallBelow ?? 0.8);
+  }
+
+  /**
+   * TAKE A WALL THAT IS FORWARD ON THE ROUTE, AND MEND THERE BEFORE GOING ON.
+   *
+   * The recovery stop a journey needs, as opposed to the brief pause a hop boundary takes.
+   * Two things ask for it and both were losing characters without it:
+   *
+   *   - the watchdog rescuing a stalled driver, which used to hand the body to the ordinary
+   *     ladder and leave it IDLE in whatever room it was dying in. Aaaa: journey ended at two
+   *     legs, idle at +81s, dead at 201s.
+   *   - poison, which drains a character below any threshold it can fight at and then makes
+   *     it rest to full anyway once the enchantment ends. Bbbb reached the Cragged Mountains
+   *     at 13 of 20, poisoned, and died there.
+   *
+   * FORWARD, because the room is what is dangerous: a wall behind us pays the exposure twice
+   * and a wall ahead is shelter and a hop of progress at once. `sheltersAlong` worked these
+   * out when the crossing was planned and `shelterAhead` returns the next one still in front.
+   *
+   * The objective is KEPT. Resting here is part of the journey, not the end of it, and the
+   * resume already waits while health is climbing and goes when it stops.
+   */
+  async shelterForwardAndMend(why) {
+    const planned = this.s.activeShelter;
+    if (!planned?.spots?.length) return false;
+    let ahead = null;
+    try {
+      ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
+                           { maxDetour: planned.maxDetour ?? 4,
+                             unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
+    } catch { ahead = null; }
+    if (!ahead) return false;
+    this.note('taking the next wall on the route and mending there', {
+      to: { col: ahead.col, row: ahead.row }, detour: ahead.detour, why,
+      keeps: 'the destination — this is a stop on the journey, not the end of one',
+    });
+    const took = await this.takeSafeSpot(why, null, { source: 'travel' })
+                           .catch(() => ({ took: false }));
+    return !!took?.took;
+  }
+
+  // A WALL WE CANNOT PATH TO IS NOT A CANDIDATE, AND THE SELECTOR CAN BE TOLD SO.
+  //
+  // `nearestSafeSpot` takes a `reach` predicate and NOBODY PASSED ONE, so every wall it
+  // scored read as reachable and the first anyone discovered otherwise was when the walk
+  // failed — one square per attempt, at a wall, in whatever room this is.
+  //
+  // Ukgoth has no shortage of walls: 1,136 of its 4,686 standable squares are places the two
+  // grids disagree, and the selector finds one within 7 to 11 steps of every door. The book
+  // is not hiding them either — sixteen squares recorded there, and the same spot comes back
+  // with the book and without it. What was failing was the WALK, every time, and nothing
+  // asked beforehand.
+  //
+  // NO OPINION MEANS CARRY ON. A room with no geometry, or a pathfinder that throws, answers
+  // reachable — the same rule the step mask follows, because a bake must never be the thing
+  // that makes a wall disappear.
+  reachTest() {
+    const geo = this.s?.world?.geometry;
+    const me = this.s?.client?.self;
+    if (!geo || !me || typeof geo.path !== 'function') return null;
+    return (col, row) => {
+      try {
+        const p = geo.path(me.row, me.col, row, col);
+        return { reachable: !!p?.found, steps: p?.steps?.length ?? null };
+      } catch { return { reachable: true, steps: null }; }
+    };
+  }
+
+  // A WALL WE COULD NOT WALK TO IS NOT SHELTER, AND OFFERING IT AGAIN IS A LOOP.
+  //
+  // Distinct from the safe-spot BOOK, which records squares that failed to HOLD — that is a
+  // fact about the wall and it is permanent. This is a fact about the WALK, and it is
+  // usually temporary: something was standing in the doorway, or the body was on the wrong
+  // side of a ledge. So it lives on the keeper for a few minutes rather than in the book for
+  // ever, and a square gets another chance once the reason has had time to move.
+  //
+  // Measured in the Western border of the Twisted Wood, from a dead character's own decision
+  // trail: "could not reach the safe spot" / "will not rest in the open here" / "leaving the
+  // room to recover safely" / "could not leave" — then it died. Nothing recorded the failure,
+  // so every pass made the identical choice, and the crossing was never allowed to proceed.
+  noteUnreachableSpot(room, col, row) {
+    if (room == null) return;
+    const per = (this.unreachableSpots ??= new Map());
+    const forRoom = per.get(room) ?? per.set(room, new Map()).get(room);
+    // Bounded, because a long session in a bad room must not grow this without limit.
+    if (forRoom.size > 256) forRoom.clear();
+    forRoom.set(`${col},${row}`, Date.now());
+  }
+
+  /** The squares in this room we have failed to reach recently, as the selectors want them. */
+  unreachableIn(room) {
+    const forRoom = this.unreachableSpots?.get(room);
+    if (!forRoom?.size) return null;
+    const ttl = this.policy.unreachableSpotMs ?? UNREACHABLE_SPOT_MS;
+    const now = Date.now();
+    const live = new Set();
+    for (const [k, at] of forRoom) {
+      if (now - at <= ttl) live.add(k);
+      else forRoom.delete(k);
+    }
+    return live.size ? live : null;
+  }
+
+  // WHO IN THIS ROOM IS A PERSON AND NOT ONE OF OURS.
+  //
+  // The same filter was written out by hand in three places before this — the travel guard,
+  // the PvP detector and the hold rung — and they must not be allowed to drift, because the
+  // whole survival ladder now turns on the difference between a creature and a person.
+  //
+  // BOTH FLAGS. The room filter asks for PLAYER and ATTACKABLE together: `PF_*` is an ENUM
+  // rather than a bitmask, and a Dungeon Master carries flags that make a naive test true.
+  // `party.isFleetmate` tells one of ours from a stranger, and a keeper that has not had a
+  // pass yet is ABSENT from that roster — so this can call a fleetmate a stranger for a few
+  // seconds after a restart. Being wrong that way costs a walk, never a fight, which is the
+  // cheap direction and the reason the answers built on it are withdrawals.
+  strangersInReach(reach = REACH) {
+    const c = this.s?.client;
+    const me = c?.self;
+    if (!me || !c?.room?.objects) return [];
+    return [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+      !party.isFleetmate(c.rsc?.get(o.nameRsc)) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= reach);
   }
 
   refuseEngagement(name) {
@@ -5754,6 +6792,12 @@ export class Autopilot {
       // `inert` set is the normal shape of an errand in progress — the loop is watching
       // and recording, and it is not the thing moving the character.
       inert: this.inertStatus(),
+      // ALWAYS PRESENT, EVEN WHEN NOTHING IS TRAVELLING, because the question an operator
+      // asks is "what WILL this character do if a journey takes it", and an answer that
+      // only exists while one already has is an answer arriving too late to act on. The
+      // effective guard: the defaults, with this character's policy over the top.
+      travel_guard: Object.fromEntries(TRAVEL_GUARD_KEYS.map(k =>
+        [k, { allowed: this.travelGuard()[k], clock: TRAVEL_GUARD_CLOCK[k] }])),
       // WHO OWNS WHICH HALF OF THIS CHARACTER. Always present, never undefined: a reader
       // has to be able to tell "the keeper owns everything" from "this broker does not
       // answer that question", and undefined reads as the second. With nothing attached
@@ -5823,6 +6867,22 @@ export class Autopilot {
       // The second invisible failure, alongside `stalled`: working perfectly and earning
       // nothing. Null when there is no opinion to give — never a quiet "fine".
       yield_check: this.yieldCheck(),
+      // THE OBJECTIVE A STOPPED JOURNEY IS STILL CARRYING, or null if it carries none.
+      //
+      // Every leg of a twenty-one character run went `idle` between +170s and +400s, several
+      // of them at 45 to 56 health — not hurt, just stopped. Whether the destination survived
+      // is the obvious next question and it could not be asked: nothing reported this, so a
+      // reader got `undefined` and read it as "no journey". That is the same mistake as
+      // reading a missing ailments field as "nothing was on us", and I made it twice in a day.
+      //
+      // A record that cannot answer a question is worse than one that says "I do not know",
+      // because it answers anyway.
+      suspended_journey: this.suspendedJourney
+        ? { to: this.suspendedJourney.to,
+            trigger: this.suspendedJourney.trigger ?? null,
+            attempts: this.suspendedJourney.attempts ?? 0,
+            age_s: Math.round((Date.now() - (this.suspendedJourney.at ?? Date.now())) / 1000) }
+        : null,
       stalled: this.stalledSince
         ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
             idle_passes: this.idlePasses, why: this.stalledWhy }
@@ -5963,6 +7023,14 @@ export class Autopilot {
         until: 'health >= 95% and vigor >= the resting cap',
         why: 'came back from the dead; not going out again until whole',
       } : null,
+      // WHAT THE BODY HAS DONE SINCE IT WAS LAST WHOLE, and null while it is whole.
+      //
+      // Health falling is already in every reading here. What none of them could answer is
+      // whether the moving that happens while it falls is going anywhere — and on a journey
+      // under attack, "forward, or to a wall" is the entire job. `progress_ratio` is the
+      // number: 1.0 is a straight line, near 0 is a body moving and getting nowhere, and
+      // `reached_shelter_after_s` reading null after a long bleed is its own finding.
+      since_full_health: this.sinceFullHealth?.() ?? null,
       recent: this.journal.slice(-12),
       // THE MEASUREMENT, NOT THE CONCLUSION. Every window observe() looked at, with
       // the readings it was looking at, so that someone standing in the room can
@@ -6046,13 +7114,150 @@ export class Autopilot {
   }
 
   revive(why = null) {
+    // The journey is over, so the route it was diverting along is too. Left set, this would
+    // offer a stop on somebody else's walk — an errand, a fight, a shopping trip — none of
+    // which have a route ahead to fold one into.
+    this.s.shelterPolicy = null;
+    // And the stops that were worked out for it. A finished journey's fuel plan describes a
+    // route nobody is on any more; left set, the mid-hop wall rung would offer a stop from
+    // the last crossing on the next one.
+    this.s.activeShelter = null;
     if (!this.inert) return null;
     const held = Date.now() - this.inert.at;
+    const wasTravelling = !!this.inert.travelling;
     uptime.record(this.s.name, 'revive', { why, held_ms: held });
     this.inert = null;
-    this.note('no longer inert', { why, was_inert_for_s: Math.round(held / 1000) });
+    this.note(wasTravelling ? 'no longer travelling' : 'no longer inert',
+              { why, was_inert_for_s: Math.round(held / 1000) });
     return null;
   }
+
+  // ---------------------------------------------------------------- travelling
+  //
+  // The journey's stand-down. See TRAVEL_GUARD_DEFAULTS for the whole argument; the short
+  // version is that `goInert` means "stop looking at the survival question" and a journey
+  // has no business asking for that. This means "stop CHOOSING WHERE TO GO — I am steering
+  // — and keep every defensive faculty the roster still allows you".
+  //
+  // It reuses `this.inert` as its storage ON PURPOSE. Fourteen places in this file and the
+  // broker read `keeper.inert` to mean "something else holds this character", and every one
+  // of them is still right: the fleet board, the stall detector, the busy register, the
+  // faculty ledger and the deadline all want the same answer they wanted before. Only the
+  // two places that decide whether the keeper may ACT — the pass gate and the watchdog
+  // rescue — look at the `travelling` marker, and that is the whole diff in behaviour.
+  // `to` IS THE OBJECTIVE, AND IT IS NOT THE SAME THING AS `why`.
+  //
+  // `why` is prose for the record — "travelling to Castle Victoria". Until this argument
+  // existed that string was the ONLY trace of where the character was going, which meant a
+  // journey taken back mid-hop could not be resumed even in principle: the destination had
+  // never been stored anywhere a later pass could read. `takeBack` even reported it as
+  // `was_travelling_to: <the why string>`, which reads like a destination and is not one.
+  goTravelling(why = null, { maxMs = INERT_MAX_MS, guard = null, to = null, attempts = 0 } = {}) {
+    // Already travelling for this reason: refresh nothing, the deadline is the caller's.
+    if (this.inert?.travelling) return this.inertStatus();
+    // An ERRAND already holds this character. An errand outranks a journey — it asked for
+    // silence and got it — so the journey does not get to quietly upgrade itself.
+    if (this.inert) return this.inertStatus();
+    const allow = this.travelGuard(guard);
+    // THE FUEL-STOP POLICY, HANDED TO THE MOVER FOR THE LENGTH OF THE JOURNEY.
+    //
+    // Without this the planner in `walkTo` is dead code — it checks `shelterPolicy` and
+    // finds nothing, so no crossing ever carries its shelters and the whole point is lost.
+    // Set here rather than per walk because it is a property of BEING ON A JOURNEY: an
+    // errand, a fight or a shopping trip has no route ahead to divert along.
+    //
+    // `need()` is read by the walker between legs, so it must be cheap and must answer about
+    // NOW rather than about when the journey started.
+    if (allow.safe_spot) {
+      this.s.shelterPolicy = {
+        book: this.book,
+        within: this.policy.travelHoldWithin ?? 10,
+        // Four squares off the road. A wall further than that is not shelter when a full bar
+        // is nine and a half seconds; it is a longer way to die.
+        maxDetour: this.policy.travelShelterDetour ?? 4,
+        need: () => {
+          const v = this.s.client?.vitals?.();
+          const hp = v?.health?.max ? v.health.value / v.health.max : null;
+          // Below 100% in a zone above our ceiling; below the ordinary threshold anywhere
+          // else. Asked fresh each leg because the room changes under a journey.
+          return hp !== null && hp < this.travelShelterBelow();
+        },
+        onDivert: (stop, at) => this.note('taking a wall on the way past', {
+          where: { col: stop.col, row: stop.row }, proven: stop.proven,
+          off_the_road: stop.detour, at_step: at.atStep,
+          why: 'hurt, and this was already on the route — no stop, no replan, one more ' +
+               'waypoint than the crossing had a moment ago',
+        }),
+      };
+    }
+    // `attempts` RIDES ON THE JOURNEY, and it has to. The counter cannot live only on the
+    // suspended note, because resuming clears that note — so a resumed journey taken back
+    // again would start counting from zero and resume for ever, which is precisely the
+    // "trip that cannot fix the thing that opened it" this repository already has a rule
+    // about. Carried in, incremented on take-back, carried back in on resume.
+    this.inert = { why, at: Date.now(), maxMs, travelling: true, guard: allow,
+                   // `Number(null)` is 0 and 0 is finite, so a plain isFinite check turns
+                   // "no destination given" into "the destination is room 0" — which then
+                   // suspends and tries to RESUME a journey to a room that does not exist.
+                   // Room numbers are positive; anything else is absence.
+                   to: (to != null && Number.isFinite(Number(to)) && Number(to) > 0)
+                       ? Number(to) : null,
+                   attempts: Number(attempts) || 0 };
+    // A NEW JOURNEY RETIRES ANY SUSPENDED ONE. Whoever issued this said where the character
+    // should be going now, and an older objective coming back to life underneath a live
+    // instruction is two directions on one body — the thing this whole boundary exists to
+    // prevent. Cleared here rather than at the resume site so it is true for every caller,
+    // including the ones that never resume anything.
+    this.suspendedJourney = null;
+    this.book.save();
+    uptime.record(this.s.name, 'travelling',
+                  { why, room: this.s.world?.room?.num ?? null, guard: allow });
+    this.note('travelling — standing down from choosing, not from surviving', {
+      why,
+      what_happens: 'the keeper keeps looking, keeps recording, and KEEPS ITS SURVIVAL ' +
+        'LADDER ARMED. It will not hunt, roam, shop or pick a room while the journey ' +
+        'owns the route',
+      may_still: TRAVEL_GUARD_KEYS.filter(k => allow[k]),
+      switched_off: TRAVEL_GUARD_KEYS.filter(k => !allow[k]),
+      mid_hop_entries_cancel_the_journey:
+        'flee, fight_back, play_dead and arm take the character back rather than fighting ' +
+        'the mover for it — only one thing may ever drive a body',
+      until: 'revive(), start(), or ' + Math.round(maxMs / 60_000) + ' minutes, whichever is first',
+    });
+    return this.inertStatus();
+  }
+
+  // THE GUARD IN FORCE, most explicit first: what this call asked for, then what the
+  // character's policy says, then the defaults.
+  //
+  // AN UNRECOGNISED KEY IS NEVER SILENTLY DROPPED — see docs/m59-policy.md. It is refused
+  // by the tool that sets it and ignored here rather than being merged into a shape the
+  // rest of the file would then read as a real faculty.
+  travelGuard(override = null) {
+    const from = source => {
+      if (!source || typeof source !== 'object') return {};
+      const out = {};
+      for (const k of TRAVEL_GUARD_KEYS)
+        if (source[k] !== undefined) out[k] = !!source[k];
+      return out;
+    };
+    return { ...TRAVEL_GUARD_DEFAULTS, ...from(this.policy?.travelGuard), ...from(override) };
+  }
+
+  // MAY THE KEEPER DO THIS RIGHT NOW.
+  //
+  // True when nothing is holding the character — the ordinary case, and the reason every
+  // call site can be a plain `&&` without a second branch for "not travelling". While a
+  // journey holds it, the answer is that entry's switch. While an ERRAND holds it, the
+  // answer is no: an errand asked for silence, which is the state it still gets.
+  travelAllows(faculty) {
+    if (!this.inert) return true;
+    if (!this.inert.travelling) return false;
+    return this.inert.guard?.[faculty] !== false;
+  }
+
+  // Is a journey — rather than an errand — what is holding this character.
+  get travelling() { return this.inert?.travelling ? this.inert : null; }
 
   // The name the world knows this character by, falling back to the agent name before
   // login has answered. Everything keyed per character — the feed, the gains, the hits
@@ -6270,9 +7475,20 @@ export class Autopilot {
 
   inertStatus() {
     if (!this.inert) return null;
+    // `inert: true` stays true for BOTH states, because everything reading this asks the
+    // same question — is somebody else holding this character — and for that the answer is
+    // yes either way. What the travelling state adds is what it is still allowed to do,
+    // which is the thing an operator wants when a character dies on a road.
     return { inert: true, why: this.inert.why,
              for_s: Math.round((Date.now() - this.inert.at) / 1000),
-             gives_up_after_s: Math.round(this.inert.maxMs / 1000) };
+             gives_up_after_s: Math.round(this.inert.maxMs / 1000),
+             ...(this.inert.travelling ? {
+               state: 'travelling',
+               guard: this.inert.guard,
+               may_still: TRAVEL_GUARD_KEYS.filter(k => this.inert.guard?.[k]),
+               note: 'the survival ladder is still armed — this is a journey steering, not ' +
+                     'an errand holding. See TRAVEL_GUARD_DEFAULTS',
+             } : { state: 'inert' }) };
   }
 
   // ------------------------------------------------------------------------- faculties
@@ -6403,8 +7619,26 @@ export class Autopilot {
     }
     if (this.running && this.stopping) {
       this.stopping = false;
+      // hard stop turns both of these off immediately, before the current pass
+      // has actually yielded. Cancelling that stop must restore the independent
+      // eye and close the uptime outage as well as clearing the boolean; otherwise
+      // the loop keeps acting while post-mortems call it unattended and no watchdog
+      // can interrupt the pass that is still winding down.
+      this.startWatchdog();
+      // hard stop also erased the timestamp the watchdog uses to decide that
+      // the current await is blind. The pass did not actually end, so start a
+      // fresh bounded observation window instead of leaving the revived eye
+      // unable to pull the handbrake until some later pass.
+      this.passStartedAt = Date.now();
+      uptime.record(this.s.name, 'start', {
+        mode: this.mode, hunt: this.policy?.hunt ?? null,
+        resumed_pending_stop: true,
+      });
       this.note('start cancelled a stop that had not taken effect yet', {
-        why: 'the previous loop was still finishing a pass; it now carries on with the new orders' });
+        why: 'the previous loop was still finishing a pass; it now carries on with the new orders',
+        watchdog_restarted: true,
+        uptime_resumed: true,
+        pass_watch_restored: true });
       return this.status();
     }
     if (this.running) return this.status();
@@ -6993,7 +8227,13 @@ export class Autopilot {
   //
   // Returns the stage that ended the tick, or null if every one of them passed.
   async runPassLadder(ctx) {
+    // THE ONLY PLACE THAT KNOWS WHICH RUNGS GOT A TURN. Everything else reports the result
+    // of this walk; `M59_KEEPER_TRACE=1` reports the walk. Free when off — `traceLadder`
+    // returns on its first line — and run-length collapsed when on, so a character stuck
+    // for six minutes is one row saying so rather than four hundred saying nothing.
+    const ran = [];
     for (const stage of PASS_STAGES) {
+      ran.push(stage);
       const verdict = await this[stage](ctx);
       if (verdict === CONTINUE) continue;
       if (verdict !== HANDLED) {
@@ -7009,9 +8249,34 @@ export class Autopilot {
                'neither, and used to be read as "carry on to the next stage"',
         });
       }
+      this.traceThisPass(ctx, ran, stage);
       return stage;
     }
+    this.traceThisPass(ctx, ran, null);
     return null;
+  }
+
+  // The shape of one walk, for the ladder tracer. Kept out of `runPassLadder` so the ladder
+  // reads as the ladder, and wrapped so a diagnostic can never end a tick.
+  traceThisPass(ctx, ran, decidedBy) {
+    try {
+      traceLadder({
+        who: this.who?.() ?? this.character ?? '?',
+        pass: this.passes ?? 0,
+        decided_by: decidedBy,
+        ran,
+        room: Number(ctx?.room?.num ?? this.s?.world?.room?.num ?? NaN) || null,
+        mode: this.mode ?? null,
+        doing: this.doing ?? null,
+        health: ctx?.hp ?? null,
+        vigor: vigorPct(ctx?.v) ?? null,
+        // THE FIELD THIS WAS BUILT FOR. A character carrying an objective while some other
+        // rung ends every tick is the exact shape that cost this session three rounds.
+        suspended_to: this.suspendedJourney?.to ?? null,
+        holding: !!this.hold,
+        since_full: this.sinceFullHealth?.() ?? null,
+      });
+    } catch { /* never break the keeper */ }
   }
 
   // ── passUnderworld: extracted from pass() ────────────────────────────────
@@ -7105,6 +8370,22 @@ export class Autopilot {
               // death is one it was never allowed to act on. Recorded rather than
               // inferred from `during_keeper_outage`, which means something else.
               stood_down_for: this.inert ? (this.inert.why ?? 'inert') : null,
+              // WHICH STAND-DOWN, AND WHAT IT STILL ALLOWED. `stood_down_for` alone reads
+              // the same for an errand that switched the survival ladder off and a journey
+              // that left it armed, and those are opposite readings of the same death. The
+              // post-mortems that motivated the travelling state all say
+              // `stood_down_for: "travelling to ..."` and could not say more than that.
+              stand_down_state: this.inert ? (this.inert.travelling ? 'travelling' : 'inert') : null,
+              travel_guard: this.inert?.travelling ? this.inert.guard : null,
+              // HOW FAST IT WAS LOSING, on the character's own clock. The trigger the
+              // travelling guard acts on, recorded whether or not it fired — "it was
+              // dying at half a point a second and nothing took it back" and "it died to
+              // one burst" are different failures and used to look identical.
+              losing_per_s: (() => {
+                const r = this.damageRate();
+                return r === null ? null : Math.round(r * 100) / 100;
+              })(),
+              take_backs: this.tally?.travel_takebacks ?? 0,
               // Was the BODY moving in the seconds before this death, sampled on its own
               // clock. `pass_blocked_ms` says the keeper stopped looking; this says
               // whether the character was going anywhere while it did.
@@ -7335,16 +8616,20 @@ export class Autopilot {
       return HANDLED;
     }
 
-    // ============================ INERT STOPS HERE ============================
+    // ====================== INERT STOPS HERE. TRAVELLING DOES NOT. ======================
     //
     // Everything above this line is looking: where we are, what we need, what our partner
     // should know, the observation, the frame, and — if it came to it — the death record
-    // and the walk out of the Underworld. Everything below is DOING, and while something
-    // else is driving this character we must not.
+    // and the walk out of the Underworld. Everything below is DOING, and while an ERRAND
+    // is driving this character we must not.
     //
     // Placed here rather than at the top of the pass because that is the whole point of
     // the state. A keeper stopped for an errand went blind, and the deaths that happened
     // in those windows are the ones nothing can explain afterwards.
+    //
+    // A JOURNEY IS NOT AN ERRAND. It steers; it does not take the body away from the
+    // keeper's opinion about staying alive. `passTravelling` is that distinction — see
+    // TRAVEL_GUARD_DEFAULTS for why the state exists and what killed Cccc without it.
     if (this.inert) {
       // The deadline. An errand that crashed between the hold and the restore would
       // otherwise leave a character watching itself until the next broker restart.
@@ -7360,6 +8645,14 @@ export class Autopilot {
                'symptom worth seeing' });
         // Fall through and act on this pass: the character has been standing still long
         // enough already.
+      } else if (this.inert.travelling) {
+        // A JOURNEY IS STEERING. Ask the restricted ladder whether anything about staying
+        // alive is worth interrupting it for. It returns CONTINUE when it has taken the
+        // character back — and then the ORDINARY stages below run on this same pass, with
+        // real numbers, because the twenty-two seconds this is here to prevent were spent
+        // waiting for exactly that.
+        const verdict = await this.passTravelling(ctx);
+        if (verdict !== CONTINUE) return HANDLED;
       } else {
         // NOT A STALL. The supervisor restarts keepers that report no progress, and an
         // inert keeper is doing exactly what it was asked to do.
@@ -7467,6 +8760,461 @@ export class Autopilot {
             'be declared busy or every stall detector in the fleet will restart it',
     });
     return this.wantsWeapon;
+  }
+
+  // ── passTravelling: the restricted ladder a journey leaves running ────────────
+  //
+  // Reached only from the gate in `passUnderworld`, and only while a JOURNEY holds the
+  // character. It answers one question — is anything about staying alive worth ending this
+  // journey for — and it answers it with the same numbers the ordinary ladder uses.
+  //
+  // IT NEVER MOVES ANYBODY. Every branch below cancels the movement, leaves the travelling
+  // state, and returns CONTINUE so the ordinary stages decide on this same pass. That is
+  // the watchdog rescue's contract and it is what keeps "only one thing drives a body"
+  // true: the keeper does not fight the mover for the character, it ends the mover.
+  //
+  // Returns CONTINUE when it has taken the character back, HANDLED to let the journey run.
+  async passTravelling(ctx) {
+    const { s, c, v, hp } = ctx;
+    const held = this.inert;
+    // Hand back, once, with a reason the post-mortem can read.
+    // ABANDONING A JOURNEY AND PAUSING ONE ARE DIFFERENT ACTS, AND ONLY ONE OF THEM IS
+    // ALLOWED FOR A MONSTER.
+    //
+    // `abandon` defaults to FALSE on purpose: the rule is "never give up a journey unless a
+    // PLAYER is attacking", so the safe default has to be the one that keeps the objective.
+    // A new rung added without thinking about this pauses, which is recoverable; a rung
+    // that abandons has to say so in writing.
+    //
+    // WHY A WALL BEATS RUNNING, which is the whole reason pausing is enough. Being attacked
+    // on the road is the ordinary condition of travel here — there is no safe route, and a
+    // trip that turns back every time something bites just accumulates the same damage in
+    // both directions. A safe spot is a square a creature CANNOT PATH TO, and there is
+    // almost always one closer than the next town: reaching one ENDS the fight instead of
+    // gambling on outrunning it, and the character rests there to full and walks on.
+    //
+    // A player is the exception, and it is not a matter of degree. A wall stops monsters and
+    // says nothing whatever about a person, who can walk to the same square, swing first and
+    // take the pack — dying to the troll costs the walk back, dying to the player costs
+    // everything carried. That asymmetry is why `travel_hold_pvp` refuses a rest with people
+    // about, and it is the same argument here.
+    const takeBack = (what, why, detail = {}, { abandon = false } = {}) => {
+      const stopped = (() => {
+        try { return s.cancelMovement(null, 'a travel guard rung taking the character back'); } catch (e) { return { cancelled: false, why: e.message }; }
+      })();
+      const was = held.why ?? 'travelling';
+      this.tally.travel_takebacks = (this.tally.travel_takebacks || 0) + 1;
+      // SUSPEND THE OBJECTIVE RATHER THAN LOSING IT.
+      //
+      // Every branch here cancels the journey because the character is in trouble, and that
+      // is right — but it used to cancel the ERRAND as well as the movement, so a character
+      // pulled off the road at 30% health healed up and then went back to farming with no
+      // memory that it had been going anywhere. That is what a shuttle test sees as a
+      // journey that "stopped being busy without arriving", and what an operator sees as
+      // travel quietly not working.
+      //
+      // Kept on the keeper, deliberately NOT in `this.inert`: inert means something holds
+      // this character, and a suspended journey holds nothing. It is a note about the past.
+      // `attempts` carries across suspensions of the SAME destination so a corridor that
+      // keeps taking the character back cannot resume for ever — see resumeSuspendedJourney.
+      if (abandon) this.suspendedJourney = null;
+      else if (held.to != null) {
+        this.suspendedJourney = {
+          to: held.to, why: was, at: Date.now(), trigger: what,
+          attempts: (held.attempts ?? 0) + 1,
+          // The death count AT SUSPENSION. Resuming a journey the character died on is the
+          // Cccc failure with extra steps, so the resume compares this against the live
+          // count rather than trusting that a death would have cleared the note.
+          deaths_at: this.tally?.deaths ?? 0,
+        };
+      }
+      this.revive(`${what} while ${was}`);
+      this.recordFrame(`! took the character back — ${what}`);
+      this.note(abandon ? 'ABANDONED THE JOURNEY — A PLAYER IS ON US'
+                        : 'PAUSED THE JOURNEY — TAKING A WALL, THEN CARRYING ON', {
+        trigger: what, why, was_travelling_to: was,
+        health: v?.health ? `${v.health.value}/${v.health.max}` : null,
+        at_fraction: hp !== null ? Math.round(hp * 100) + '%' : null,
+        flee_at: Math.round(this.safety().fleeAt * 100) + '%',
+        interrupted: stopped.interrupted ?? null,
+        ...detail,
+        abandoned: abandon,
+        note: abandon
+          ? 'the objective is GONE. Only a player gets this: a wall does not stop a person, ' +
+            'and what is carried is worth more than the destination'
+          : 'the movement is cancelled and the objective is KEPT. The ordinary ladder runs ' +
+            'on this same pass and its answer to being hurt on a road is a safe wall; the ' +
+            'journey resumes from there once health and vigor are back up',
+      });
+      recordEvent(this.who(), abandon ? 'travel_abandoned' : 'travel_paused_for_wall', {
+        trigger: what, was_travelling_to: was, abandoned: abandon,
+        health: v?.health?.value ?? null, max: v?.health?.max ?? null,
+        room: s.world?.room?.num ?? null,
+      });
+      return CONTINUE;
+    };
+
+    // ---- 1. THE WEAPON IS GONE.
+    //
+    // Ahead of the damage tests for the same reason `passArm` is ahead of them in the
+    // ordinary ladder: being unarmed is WHY the fight is going badly. A character that
+    // shattered its weapon two rooms ago is walking the rest of the road unable to answer
+    // anything that finds it, and no amount of continuing helps that.
+    if (this.travelAllows('arm') && !this.armed())
+      return takeBack('unarmed', 'the weapon is gone, and walking on with an empty hand is ' +
+                                 'how the next room becomes the last one');
+
+    // What is close enough to be swinging at us. Same test as passFleeAndRest's `near`,
+    // and PLAYERS ARE DELIBERATELY EXCLUDED for the same reason: every character is
+    // ATTACKABLE, and the fleet walks the same roads, so a fleetmate on the same square
+    // would otherwise read as a monster. See the long note there.
+    const me = c?.self;
+    const near = me && c?.room ? [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
+
+    // WHAT IS WORTH ABANDONING A JOURNEY FOR, AND MONSTERS ARE NOT IT BY DEFAULT.
+    //
+    // Being attacked on the road is the ordinary condition of travel in this game, not an
+    // emergency: there is no safe route, and a trip that turns back every time something
+    // bites is a trip that never arrives — it just accumulates the same damage in both
+    // directions. The way out of an attack during travel is THROUGH, and where it is not,
+    // the rung above this one takes a wall.
+    //
+    // A PLAYER IS A DIFFERENT ANIMAL. A wall stops monsters and says nothing whatever about
+    // a person, who can walk to the same square, swing first, and take the pack — so dying
+    // to the troll costs the walk back and dying to the player costs everything carried.
+    // That asymmetry is already why `travel_hold_pvp` refuses a rest with people about, and
+    // it is the same argument here.
+    //
+    //   'players'  (default) only a stranger ends a journey; monsters are expected
+    //   'anything'           the behaviour before this — any attacker ends it
+    //   'never'              nothing does; the road is walked whatever happens
+    //
+    // `party.isFleetmate` tells one of ours from a stranger, and a keeper that has not had a
+    // pass yet is absent from that roster — so this can briefly call a fleetmate a stranger
+    // after a restart. Being wrong that way ends a journey that could have continued, which
+    // is the cheap direction.
+    const fleeFrom = this.policy.travelFleeFrom ?? 'players';
+    const strangers = me && c?.room ? [...c.room.objects.values()].filter(o =>
+      o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
+      !party.isFleetmate(c.rsc?.get(o.nameRsc)) &&
+      Math.hypot(o.col - me.col, o.row - me.row) <= 2) : [];
+    const worthEnding = fleeFrom === 'never' ? []
+                      : fleeFrom === 'anything' ? [...near, ...strangers]
+                      : strangers;
+
+    // ---- 2. A WALL IS NEARER THAN THE NEXT ROOM.
+    //
+    // THE RUNG THAT WAS MISSING, AND THE ROOM THAT PROVED IT. Everything below this fires
+    // LATE by construction: the flee line, two hits from death, an emptying bar. That is the
+    // right shape when the only choices are run or stand — but it is the wrong shape when
+    // there is a square nearby that a creature CANNOT PATH TO, because reaching one ends the
+    // fight rather than gambling on it.
+    //
+    // Measured on the arena fleet, one clean window: eleven deaths, SEVEN of them in the
+    // Cragged Mountains, at 1/45, 2/22, 4/49, 5/49, 5/52 and 2/53 health — and not one
+    // refuge taken in that room. The refuge question was only ever asked at a hop BOUNDARY
+    // (see TRAVEL_GUARD_CLOCK), and 578 is 2,450 squares: a body is found, fought and killed
+    // deep inside it without ever reaching a boundary to be asked at.
+    //
+    // So it is asked here too, and it is asked EARLIER than the emergencies — at
+    // `travel_hold_below` rather than at the flee line — because a wall is only worth
+    // detouring to while there is still enough health to walk to it. It costs nothing when
+    // there is no wall: `nearestSafeSpot` answers null and the ladder carries on to the
+    // rungs that were already here.
+    //
+    // Handing back rather than steering from here is deliberate and is the same rule the
+    // rungs around it obey: mid-hop the mover is walking, and only one thing may ever drive
+    // a body. The ordinary ladder takes the wall on this same pass, with real numbers.
+    // ITS OWN THRESHOLD, AND HIGH, BECAUSE THE ARITHMETIC IS TIGHT. The deaths this rung
+    // exists for happened at 1, 2 and 5 health, by which point no detour is walkable. And a
+    // full bar does not last: measured over 237 deaths, health leaves at a MEDIAN OF 4.7 A
+    // SECOND once something starts on a character, and the average maximum on this fleet is
+    // 45 — nine and a half seconds from full to dead. Sixty per cent bought 5.7 seconds to
+    // notice, stop, replan and walk; eighty buys nine, which is the difference between a
+    // detour and an epitaph.
+    //
+    // It is separate from `travel_hold_below` (0.75) rather than sharing it because the two
+    // stops cost different things. At a hop boundary the journey is already paused and a rest
+    // is nearly free, so it is worth taking early. Mid-hop the mover has to be stopped and
+    // the hop replanned, so it waits a little longer — but nothing like as long as dying.
+    //
+    // AND IT HAD TO MOVE ABOVE PLAYING DEAD, BECAUSE BELOW IT IT WAS DEAD CODE. `play_dead`
+    // fires at `worstHit * 2`, and for a fleet whose maxima run 22 to 56 that is 67% to 73%
+    // of the bar -- ABOVE this rung's 60%, so it always won and the wall was never reached.
+    // Measured over 26 minutes: fifteen journeys taken back, every one of them "two hits
+    // from death", against six refuges and all six of those in towns where nothing was
+    // attacking. Fourteen deaths.
+    //
+    // So it is asked first, and it is asked at its own threshold OR wherever playing dead
+    // would have fired, whichever comes sooner. That second clause is the point: playing
+    // dead is a gamble on what the room does next, and a wall is geometry. Where both are
+    // available the wall is strictly better, and where there is no wall this falls straight
+    // through to the gamble, which is what it is for.
+    // The same fraction the ordinary ladder uses, borrowed rather than reinvented — see
+    // `doomedAt` there. At 0.4 it now sits BELOW this rung's 0.6, so the wall is reached
+    // first on the way down and this clause is a backstop rather than the usual trigger.
+    const wouldPlayDead = near.length && hp !== null
+      && hp < (this.policy.doomedInOpenBelow ?? 0.3);
+    // A WALL MUST NOT BE ABLE TO STOP A JOURNEY FOR EVER, AND IT WAS.
+    //
+    // Measured in room 587: the body walked the first six squares of a 65-square baked
+    // rail, was taken back for a wall, was returned to the entry anchor, and started the
+    // line again. THIRTY times in one leg — the trace shows moves sent from exactly seven
+    // squares, thirty each, with six refusals in two hundred and thirty attempts. Nothing
+    // was blocked. It was being interrupted.
+    //
+    // The cause is this rung agreeing with itself. `travelShelterBelow` returns 1 — ANY
+    // damage — when the zone outranks the character, which the Twisted Wood does for every
+    // character this fleet has. So a scratch cancels the crossing, the character rests, and
+    // the next scratch cancels it again. A room that cannot be crossed without being bitten
+    // cannot be crossed at all, and this fleet's road runs through two of them.
+    //
+    // So the wall keeps absolute priority while the character is in REAL trouble — below
+    // the flee line, or inside two hits of death — and is bounded otherwise. Above the flee
+    // line, a character that has already taken shelter twice in this room has had the
+    // benefit; a third detour is not survival, it is a loop. `travel_shelter_per_room` is
+    // the knob and the counter resets on entering a new room, because the argument is about
+    // one crossing rather than one journey.
+    const shelterRoom = this.s.world?.room?.num ?? null;
+    if (this.shelterStops?.room !== shelterRoom) this.shelterStops = { room: shelterRoom, taken: 0 };
+    // WHAT "REAL TROUBLE" MEANS, NOW THAT THE FLEE LINE NO LONGER MEANS RUN.
+    //
+    // This bypass — shelter without limit, budget or no budget — used to key on the flee
+    // line. That was coherent while the flee line was the point at which a character
+    // abandoned what it was doing; it is not coherent now that only a person makes a
+    // character run. A threshold that no longer triggers flight was still granting unlimited
+    // interruptions, and in a zone that outranks the character `travelShelterBelow` returns
+    // 1 — ANY damage — so the two together made a crossing impossible to even begin:
+    //
+    //   586  cancelled at 0 of 40 by a travel guard rung taking the character back
+    //
+    // Step zero, before the first square. The Twisted Wood cannot be crossed without being
+    // bitten, so the bypass was permanently open and the budget never applied to anything.
+    //
+    // The doomed line is the one that still means an emergency: inside two of the biggest
+    // hits this game lands, which is where a wall is worth any number of interruptions. Above
+    // it the budget applies and the character crosses the room it was sent to cross.
+    // `travel_shelter_unlimited_below` restores the old behaviour for anyone who wants it.
+    const emergencyBelow = this.policy.travelShelterUnlimitedBelow
+      ?? (this.policy.doomedInOpenBelow ?? 0.3);
+    const inRealTrouble = wouldPlayDead || (hp !== null && hp < emergencyBelow);
+    const shelterBudget = this.policy.travelShelterPerRoom ?? 2;
+    const shelterSpent = !inRealTrouble && this.shelterStops.taken >= shelterBudget;
+    // SAID ONCE PER ROOM, because a decision that does nothing and says nothing is how a
+    // switched-off faculty hides. The character is hurt, there is something on it, and it is
+    // walking on anyway — that is worth a line even though it is the right answer.
+    if (!wouldPlayDead && this.travelAllows('safe_spot') && hp !== null && near.length
+        && hp < this.travelShelterBelow() && !this.shelterStops.noted) {
+      this.shelterStops.noted = true;
+      this.note('walking on — the wall for this is at the end of the hop', {
+        room: shelterRoom, health: Math.round(hp * 100) + '%',
+        adjacent: near.length,
+        doomed_below: emergencyBelow,
+        why: 'mid-hop the only thing this rung can do is cancel the crossing, and a shelter ' +
+             'that prevents arrival is not shelter. The hop boundary is a few seconds away ' +
+             'and can PAUSE instead. Two hits from death still stops us here.',
+      });
+    }
+    // MID-HOP THIS RUNG IS RETIRED, AND `wouldPlayDead` IS ALL THAT IS LEFT OF IT.
+    //
+    // The only thing a mid-hop trigger can do is CANCEL the crossing: the mover has the
+    // body, and the keeper cannot walk to a wall without taking the body off the line
+    // first. That is affordable for a rung that fires rarely. This one fires on ANY damage
+    // in a zone that outranks the character — `travelShelterBelow` returns 1 there — which
+    // in the Twisted Wood is continuous, so the crossing was torn down at step 0 of 40 and
+    // rebuilt and torn down again until the leg ran out of clock.
+    //
+    // A shelter that prevents arrival is not shelter. The wall now belongs to the HOP
+    // BOUNDARY, where nothing is contended: the mover is between rooms, the keeper can sit
+    // the character down without fighting it for the body, and the journey PAUSES instead
+    // of ending. See TRAVEL_GUARD_CLOCK.
+    //
+    // WHAT STAYS. Two hits from death is not "a bad room", it is about to be a death, and
+    // waiting for a boundary that is 2,450 squares away is how the Cragged Mountains killed
+    // seven of eleven. So the rung still fires for `wouldPlayDead` — and only for that.
+    // The budget does not gate it, because there is no budget on dying.
+    if (wouldPlayDead && this.travelAllows('safe_spot') && hp !== null && near.length) {
+      const geo = this.s.world?.geometry;
+      let spot = null;
+      // THE STOP COMES FROM THE ROUTE, NOT FROM A SEARCH AROUND THE BODY.
+      //
+      // `sheltersAlong` already worked these out when the crossing was planned, and the
+      // walker splices the next one ahead into the route without stopping. This rung used
+      // to ignore all of that and call `nearestSafeSpot` from wherever the character was
+      // standing — a radius search in any direction, including BACK through whatever had
+      // just bitten it, and paid for at exactly the moment there is no time to think.
+      //
+      // `shelterAhead` refuses anything already passed and anything more than `maxDetour`
+      // off the road, and since 2026-08-21 it ranks by the two grids DISAGREEING rather
+      // than by whether this fleet has stood there before — the disagreement is what stops
+      // a monster reaching us, and it is computable for a square nobody has ever visited.
+      const planned = this.s.activeShelter;
+      if (planned?.spots?.length) {
+        try {
+          const stop = shelterAhead(planned.spots, planned.atStep ?? 0,
+                                    { maxDetour: planned.maxDetour ?? 4,
+                                      unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
+          if (stop) spot = { col: stop.col, row: stop.row, steps_away: stop.detour,
+                             proven: stop.proven, from_route: true,
+                             refused_approaches: stop.refused_approaches ?? null };
+        } catch { spot = null; }
+      }
+      // Only when there is no plan to be ahead ON — a hop that was never routed, or a
+      // journey whose walk has already finished. Then a search is the only thing left.
+      if (!spot && geo && me) {
+        try {
+          spot = nearestSafeSpot(geo, me, { book: this.book,
+                                            unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
+                                            reach: this.reachTest(),
+                                            room: this.s.world?.room?.num ?? null,
+                                            within: this.policy.travelHoldWithin ?? 10 });
+        } catch { spot = null; }
+      }
+      if (spot) this.shelterStops.taken = (this.shelterStops.taken ?? 0) + 1;
+      if (spot)
+        return takeBack('a wall is nearer than the next room',
+                        `${Math.round(hp * 100)}% health with ${near.length} on us, and a ` +
+                        `defensible square ${spot.steps_away ?? '?'} step(s) away. A creature ` +
+                        'cannot path to it, so reaching it ends this rather than outrunning it',
+                        { adjacent: near.length,
+                          spot: { col: spot.col, row: spot.row, steps: spot.steps_away ?? null,
+                                  proven: !!spot.proven } });
+    }
+
+
+    // ---- 3. INSIDE TWO HITS OF DEATH, AND NO WALL TO PUT AT OUR BACK.
+    //
+    // The ordinary ladder's own test, borrowed rather than reinvented: below two of the
+    // biggest hits this game lands, with something adjacent. Out on a road there is no
+    // safe spot to make the sheltered case apply, so this is always the open-ground
+    // version. `worstHit` is computed by the wall rung above, which asks the same
+    // question first.
+    //
+    // WHAT THE LADDER DOES WITH IT CHANGED ON 2026-08-21, and this take-back is still
+    // right afterwards. It used to hand over to a choice between running for a town and
+    // PLAYING DEAD; playing dead off a proven wall is now refused outright, because in the
+    // open it recovers vigor and never health and three characters were measured freezing
+    // at 4, 10 and 13 health in a fifteen-monster room and dying there. So the choice this
+    // hands to is now between a town trip and a withdrawal — and both of them MOVE, which
+    // is the whole reason ending the journey here is not the same as standing still.
+    // If that ever stops being true, this rung becomes a way of stopping a character in a
+    // corridor, which is what kills them.
+    // IT STILL TAKES THE CHARACTER BACK. WHAT CHANGED IS WHAT THAT HANDS OVER TO.
+    //
+    // This rung used to be gated on `play_dead` and existed so the ordinary ladder could
+    // freeze. Freezing off a proven safe spot is now refused outright (see playDead), so
+    // the hand-over is a town trip or a withdrawal — and both of them MOVE, which is the
+    // whole reason ending the journey here is not the same as standing still.
+    //
+    // I NEARLY DELETED THIS RUNG, AND THE SUITE CAUGHT IT. The argument for deleting it was
+    // that rung 4 below takes the character back whenever `hp < fleeAt`, so anything this
+    // caught that one would catch too. THAT IS FALSE, and the reason is worth keeping:
+    // rung 4 tests `worthEnding`, which under the default `travel_flee_from: 'players'` is
+    // the STRANGERS list — players only. A character two hits from death with six monsters
+    // on it and no player in sight has `worthEnding.length === 0` and gets nothing from
+    // rung 4. That is Cccc's exact situation, the case this whole suite is built from.
+    //
+    // So the gate moves from `play_dead` to `flee`: it is a flee decision taken at a lower
+    // threshold than the flee line, for the case where the flee line cannot see the danger
+    // because the danger is not a person.
+    if (this.travelAllows('flee') && wouldPlayDead)
+      return takeBack('two hits from death',
+                      `${v.health.value} health with ${near.length} adjacent, and no wall ` +
+                      `within reach to put at our back`,
+                      { adjacent: near.length,
+                        doomed_below: this.policy.doomedInOpenBelow ?? 0.3,
+                        hands_over_to: 'a town trip or a withdrawal — never a freeze, which ' +
+                                       'off a proven spot recovers vigor and never health' });
+
+    // ---- 4. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
+    //
+    // THIS IS THE ONE THAT WOULD HAVE SAVED CCCC, and it is worth being exact about why
+    // it is not the rescue that already existed. He entered West Merchant Way at 10 of 37
+    // — 27%, against a flee threshold of 70% — with six things in the room, and walked
+    // around at that fraction for twenty-two seconds. The old rescue could not fire
+    // because it also demanded that he be STATIONARY for four seconds, and a two-square
+    // shuffle against a wall resets that timer on every sample.
+    //
+    // Movement is not consulted here at all. Below the flee line with something adjacent
+    // is a fight the keeper has already decided it does not take, and a journey is not a
+    // reason to take it.
+    if (this.travelAllows('flee') && hp !== null && worthEnding.length
+        && hp < this.safety().fleeAt)
+      return takeBack('below the flee line with someone adjacent',
+                      'the keeper flees at this fraction when it is driving, and a journey ' +
+                      'is not a reason to stand and take it',
+                      { adjacent: worthEnding.length, monsters_near: near.length,
+                        players_near: strangers.length, flee_from: fleeFrom },
+                      // THE ONLY KIND OF TROUBLE THAT ENDS A JOURNEY. `worthEnding` is the
+                      // STRANGERS list under the default `travel_flee_from: 'players'`, so
+                      // this rung cannot fire for monsters unless somebody sets 'anything'
+                      // — and if they have, they have asked for the old behaviour.
+                      { abandon: true });
+
+    // ---- 5. LOSING HEALTH FAST ENOUGH THAT THE ROAD WILL NOT END FIRST.
+    //
+    // The rate, not the position. A character being eaten while it walks is in exactly as
+    // much trouble as one being eaten while it stands, and it is harder to see — every
+    // stall instrument in this file reads it as healthy. `damageRate` reads the position
+    // pulse ring, which is on the CHARACTER's clock rather than the keeper's, so it keeps
+    // measuring through a travel await that nothing else can see into.
+    // Gated the same way: an emptying bar with only monsters on it is the road doing what
+    // the road does, and the wall rung above is the answer to it. A stranger emptying it is
+    // somebody choosing to, which is worth ending a journey over.
+    if (this.travelAllows('fight_back') && (fleeFrom === 'anything' || worthEnding.length)) {
+      const ttl = this.timeToDeath();
+      if (ttl !== null && ttl <= TRAVEL_RESCUE_TTL_MS)
+        return takeBack('dying faster than this journey can finish',
+                        'health is falling at a rate that empties the bar inside ' +
+                        Math.round(TRAVEL_RESCUE_TTL_MS / 1000) + ' seconds. Whether the body ' +
+                        'is moving is not the question — the arithmetic is',
+                        { seconds_left: Math.round(ttl / 100) / 10,
+                          losing_per_s: Math.round(this.damageRate() * 100) / 100,
+                          adjacent: near.length },
+                        // Gated on `worthEnding` above, so this is a PERSON emptying the
+                        // bar. A monster doing the same is the road doing what the road
+                        // does, and the wall rung is the answer to it.
+                        { abandon: true });
+    }
+
+    // ---- 6. NOTHING WORTH STOPPING FOR. The journey keeps the character.
+    //
+    // NOT A STALL, for the same reason inert is not: the supervisor restarts keepers that
+    // report no progress, and this one is doing what it was asked to do.
+    this.progress('travelling — ' + (held.why ?? 'a journey is steering'));
+    return HANDLED;
+  }
+
+  // HOW FAST HEALTH IS LEAVING, IN POINTS PER SECOND, OVER THE POSITION PULSE RING.
+  //
+  // The ring is the only instrument that reads the CHARACTER rather than the keeper — it
+  // is written by a 500ms watchdog that keeps running through a travel await — so it is
+  // the only place a rate can come from while something else is driving. Six samples is
+  // about five seconds, which is wide enough that a single hit does not read as a cliff
+  // and narrow enough to still be about now.
+  //
+  // Returns 0 when health is steady or climbing, and null when there is not enough ring
+  // to say. Never negative: a rest that is working is not a rate anybody wants here.
+  damageRate() {
+    const ring = this.watch?.pulses;
+    if (!ring || ring.length < 3) return null;
+    const first = ring.find(p => Number.isFinite(p.health));
+    const last = [...ring].reverse().find(p => Number.isFinite(p.health));
+    if (!first || !last || first === last) return null;
+    const seconds = (last.at - first.at) / 1000;
+    if (!(seconds > 0)) return null;
+    return Math.max(0, (first.health - last.health) / seconds);
+  }
+
+  // HOW LONG THE CHARACTER HAS AT THE CURRENT RATE, in ms. null when it is not losing.
+  timeToDeath() {
+    const rate = this.damageRate();
+    if (rate === null || rate <= 0) return null;
+    const now = this.s?.client?.vitals?.()?.health?.value;
+    if (!Number.isFinite(now) || now <= 0) return null;
+    return (now / rate) * 1000;
   }
 
   // ── passArm: extracted from pass() ────────────────────────────────
@@ -7898,9 +9646,17 @@ export class Autopilot {
     // from and we choose which one we swing at. Cedric logged off three times in five
     // minutes at 71%, and each of those minutes was a minute of not healing and not
     // killing anything. Below a third of health it is still worth it.
-    const doomedAt = this.hold
-      ? Math.round((v.health?.max ?? 0) * (this.policy.doomedInSpotBelow ?? 0.35))
-      : worstHit * 2;
+    // AND IN THE OPEN IT IS A FRACTION NOW TOO, FOR THE SAME REASON. `worstHit * 2` is a
+    // real arithmetic about this game's biggest single hit, and on this fleet it lands at
+    // 67% to 73% of the bar — the note above already calls 70% absurd behind a wall, and it
+    // is not much better in the open. Playing dead is a MONSTER-FIGHTING move, not a
+    // response to being two thirds healthy: freezing at 70% spends a minute of not healing
+    // and not killing anything, and it pre-empts every rung that would have done something
+    // useful. Measured over 26 minutes of commuting: fifteen journeys taken back, every one
+    // of them "two hits from death", six refuges, fourteen deaths.
+    const doomedAt = Math.round((v.health?.max ?? 0) * (this.hold
+      ? (this.policy.doomedInSpotBelow ?? 0.3)
+      : (this.policy.doomedInOpenBelow ?? 0.3)));
     const doomed = hp !== null && near.length && v.health?.value != null &&
                    v.health.value <= doomedAt;
     // PLAY DEAD ONLY WHERE STANDING STILL IS ALREADY SAFE. FLEE EVERYWHERE ELSE.
@@ -7932,8 +9688,34 @@ export class Autopilot {
                'of everything that put us here. Only distance changes this fight' });
         this.doing = 'travelling';
         if (await this.townTripIfCornered().catch(() => false)) return HANDLED;
-        // Could not reach one. Fall through to the withdraw/rest branches below rather
-        // than freezing, which is the thing we just decided does not work here.
+
+        // AND WHEN THERE IS NO TOWN TO RUN TO, IT STILL DOES NOT FREEZE. REVERSED
+        // 2026-08-21, by measurement, and the history is kept because it is the argument.
+        //
+        // This line used to call playDead() as a last resort. The reasoning was that
+        // across a whole prod session playDead fired ZERO times while five of seven deaths
+        // happened in the open — `sheltered` is holdWorks(), which wants a wall the book
+        // has CONFIRMED, so the gate above was false at the moment of every death and the
+        // verb could not run. Kermit sat at 5 of 36 for three pulses and died there. The
+        // conclusion drawn was that a freeze which sometimes works beats a fall-through
+        // that demonstrably did not.
+        //
+        // The freeze does not sometimes work. Once it could fire, it was measured firing:
+        // shadow fleet, Twisted Wood corridor, three characters froze in the open at 4, 10
+        // and 13 health with twelve to fifteen monsters in the room, and all three died.
+        // A freeze recovers vigor and never health, so in the open it is not a worse
+        // option among good ones — it is a way of standing still for thirteen seconds
+        // somewhere that kills you for standing still. Kermit's death was evidence that
+        // falling through here is bad; it was never evidence that freezing here is good.
+        //
+        // So the answer to "no wall and no town" is the thing below that MOVES. playDead()
+        // now refuses off a proven spot on its own account, so this is belt and braces:
+        // the call is gone AND the verb would have said no.
+        this.note('no wall and no town — withdrawing rather than freezing', {
+          health: v.health.value, adjacent: near.length,
+          why: 'freezing off a proven spot recovers vigor and never health; it spends the ' +
+               'seconds we have and leaves us where we were. Moving is the only thing left.',
+        });
       }
     }
 
@@ -7943,25 +9725,34 @@ export class Autopilot {
     // camped monster its attacks back, and spends several seconds being hit to reach
     // a square that is no safer than the one it left. Staying put and not swinging
     // stops the damage immediately and for free.
-    if (hp !== null && hp < this.policy.fleeBelow && near.length && !sheltered) {
-      this.tally.withdrawals++;
-      // ALL THE WAY, NOT FOUR SQUARES. This called withdraw(), a move to a wall a few
-      // squares off, and the town trip above only engages after THREE flees in a row
-      // (townTripIfCornered) — so the first two flees from a losing fight in the open
-      // were a shuffle that nothing was fooled by. Monster vision is 4 + difficulty/2
-      // (monster.kod:1676): four squares is inside every creature in the game.
-      this.note('running for safety', {
-        health: Math.round(hp * 100) + '%', from: near.map(o => c.rsc.get(o.nameRsc)),
-        why: 'below the flee threshold in the open — distance is the only thing that ' +
-             'stops this, and a wall four squares away is not distance' });
-      await this.retreatToSafety({
-        because: 'below the flee threshold in the open',
-        from: near.map(o => c.rsc.get(o.nameRsc)),
-      });
-      return HANDLED;
-    }
+    // THERE IS NO FLEE RUNG AT ALL ANY MORE.
+    //
+    // It went in two steps and the second is the operator's call rather than a measurement.
+    // First for monsters, because running does not work on one: vision is 4 + difficulty/2
+    // squares (monster.kod:1676) and they follow, so a withdrawal spends several seconds
+    // being hit to reach a square no safer than the one it left. Then for people too.
+    //
+    // What is left is the set of answers that actually change a situation: a wall a creature
+    // cannot path to, resting behind it, breaking off without moving when already sheltered,
+    // and carrying on to where we were going. Walking away was never one of them — it buys
+    // seconds and spends them going nowhere, and in a room that is the danger it spends them
+    // going AWAY FROM THE DOOR.
+    //
+    // The threshold itself is untouched and still does the things that are not flight: when
+    // to stop swinging (`disengageAt`), when a wall outranks a journey, and when the watchdog
+    // interrupts a blind walk so the ladder can think with fresh numbers.
+    //
+    // A JOURNEY IS SEPARATE, and deliberately so. `passTravelling` still ends one when a
+    // PLAYER is emptying the bar, because dying to a troll costs the walk back and dying to a
+    // person costs everything carried — see rung 5 there. That is about abandoning an
+    // objective, not about running away from a room.
     if (hp !== null && hp < this.policy.fleeBelow && near.length && sheltered) {
-      this.tally.mulligans = (this.tally.mulligans || 0) + 1;
+      // NOT a mulligan. This counter used to be shared with the play-dead reconnect, which
+      // made it useless for the only question anybody asks it: DID PLAYING DEAD FIRE. A
+      // character showing mulligans=3 logoffs=0 had never played dead once — it had broken
+      // off in place three times, which is a different move with a different cost and does
+      // not drop the connection at all. Two events, two counters.
+      this.tally.breakoffs = (this.tally.breakoffs || 0) + 1;
       this.note('breaking off without moving', {
         health: Math.round(hp * 100) + '%', crowd: near.length,
         where: { col: this.hold.col, row: this.hold.row },
@@ -8101,6 +9892,48 @@ export class Autopilot {
     // widens WHEN A WALL IS FETCHED; the rest gate below is untouched, so nothing that
     // could rest before is forbidden from resting now — it just sits down behind
     // something first.
+    // A WALL THAT HAS FINISHED ITS WORK IS RELEASED HERE, NOT FOUR STAGES LATER.
+    //
+    // `releaseRestedHold` lives at the top of `resumeSuspendedJourney`, which lives in
+    // `passFarm` — the LAST stage. A character holding a wall never reaches it, because this
+    // stage handles the pass and returns first. So the release could only ever run for a
+    // character that was not holding anything, which is the one case it is not for.
+    //
+    // Watched live, one sample every fifteen seconds:
+    //
+    //   holding a proven safe spot | 587 | hp 30/46 | suspended to 38  age  21s
+    //   holding a proven safe spot | 587 | hp 46/46 | suspended to 38  age 106s
+    //   holding a proven safe spot | 587 | hp 46/46 | suspended to 38  age 206s
+    //
+    // Everything worked: the watchdog kept the journey, the character took a proven wall, it
+    // healed thirty to forty-six. Then it sat at FULL HEALTH for another hundred seconds
+    // carrying a destination, with health at 100% and vigor at the resting cap — both release
+    // conditions satisfied, and nothing asking.
+    //
+    // Called here so the wall is given up on the pass that finishes it. The release itself is
+    // unchanged and still refuses a hurt character; all that changes is that it is asked.
+    if (this.hold && this.suspendedJourney) this.releaseRestedHold();
+
+    // THE RECOVERY STOP A JOURNEY ASKED FOR, and the one poison always needs.
+    //
+    // Two triggers, one answer — a wall FORWARD on the route, mended at, objective kept:
+    //
+    //   the watchdog rescue, which used to leave the body idle in the room it was dying in
+    //   poison below three quarters, which drains past any line the character can fight at
+    //     and then makes it rest to full anyway once the enchantment ends
+    //
+    // Cleared the moment it is taken or there is nothing ahead to take, so this can never
+    // become a standing instruction that outlives the trouble that set it.
+    const ailingNow = (this.s.client?.ailments?.() ?? []).length > 0;
+    const poisonedAndFading = ailingNow && hp !== null
+      && hp < (this.policy.ailingShelterBelow ?? AILING_SHELTER_BELOW);
+    if ((this.wantsForwardShelter || poisonedAndFading) && !sheltered && !this.hold) {
+      const why = this.wantsForwardShelter
+        || `ailing and down to ${Math.round(hp * 100)}% — mending before going on`;
+      this.wantsForwardShelter = null;
+      if (await this.shelterForwardAndMend(why).catch(() => false)) return HANDLED;
+    }
+
     const spawnsHere = !this.sanctuary();
     if (hurt && (combatZone || spawnsHere) && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
         && (!this.wallTriedAt || Date.now() - this.wallTriedAt > 30_000)) {
@@ -8208,7 +10041,40 @@ export class Autopilot {
     const mustLeaveForHealth = belowRoomRetreatHealth(hp, this.policy.restBelow);
     if (mustLeaveForHealth && combatZone && !sheltered && !testing && !this.hold) {
       this.doing = 'travelling';
-      const ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
+      let ways = (s.world?.exits() || []).filter(e => e.to != null && e.reachable !== false);
+
+      // THE THIRD DOOR, AND THE ONE THAT PROVES A CHOKE POINT HAS TO BE FOUND RATHER THAN
+      // ASSUMED. `confineRooms` was enforced at `retreatToSafety`, then at
+      // `nearestSanctuary`, then at `Autopilot.travel` — which I claimed was the single
+      // call every keeper journey passes through. It is not. This branch takes a room EXIT
+      // directly, so it never calls travel(), never recorded a refusal, and walked Rizzo
+      // out of Castle Victoria into room 2 with the gate showing zero refusals and his
+      // policy still reading confine [38,39].
+      //
+      // The trigger is worth reading before changing it: it fires when health is below the
+      // recovery line AND there is no reachable proven wall. Rizzo's room had TEN monsters
+      // and his safe spot was unreachable, so the honest state is "this room cannot be
+      // rested in" — and the confinement's answer is still no. That is the operator's
+      // instruction and it is not free: it trades a walk-out for a fight in place.
+      const confineOut = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+      if (confineOut?.length) {
+        const allowedOut = confineOut.map(Number);
+        const blocked = ways.filter(e => !allowedOut.includes(Number(e.to)));
+        ways = ways.filter(e => allowedOut.includes(Number(e.to)));
+        if (blocked.length)
+          this.note('exits refused by the confinement', {
+            confined_to: allowedOut, refused: blocked.map(e => ({ to: e.to, name: e.to_name })),
+            still_open: ways.map(e => e.to),
+            why: 'leaving to recover is still leaving. The operator confined this character ' +
+                 'to these rooms, and a walk out of them is what has been getting it killed',
+            cost: ways.length ? 'a permitted exit is still available'
+                              : 'no permitted exit — it stays and recovers where it stands, ' +
+                                'which is the trade the confinement makes' });
+        if (!ways.length) recordEvent(this.who(), 'confinement_refused_travel', {
+          wanted: blocked.map(e => Number(e.to)), confined_to: allowedOut,
+          room: s.world?.room?.num ?? null, via: 'leave-to-recover',
+        });
+      }
       const out = ways.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
       this.note('leaving the room to recover safely', {
         health: hp === null ? null : Math.round(hp * 100) + '%', vigor: vigorNow2,
@@ -8238,8 +10104,39 @@ export class Autopilot {
       //   so we come back with about one of them aware of us instead of twelve. It was
       //   only ever wired to stepping off a safe spot, which is the same problem in a
       //   politer setting.
+      // A CONFINED CHARACTER WITH NO PERMITTED EXIT TAKES A WALL, IT DOES NOT STAND THERE.
+      //
+      // The operator's rule, and it is a better one than "leave the room": a genuine safe
+      // spot cannot be reached by a monster at all, so a single room WITH safe spots and
+      // without players in it is safe — the wall is the answer to being surrounded, and
+      // walking is only the answer when there is no wall to be had. So when the
+      // confinement closes every exit, the fallback is the spot, not the bleeding.
+      //
+      // This is also where my own first patch was wrong and would have leaked: `tryOut`
+      // below falls back to `s.world.exits()` — EVERY exit — whenever `ways` is empty, so
+      // filtering the list down to nothing did not close the door, it opened all of them.
+      // Both the primary list and that fallback have to be filtered, which is why the
+      // confinement is applied inside `tryOut` rather than only to `ways`.
+      if (confineOut?.length && !ways.length) {
+        const took = await this.takeSafeSpot(
+          'confined to this room and hurt — a wall is the way to rest here', null,
+          { source: 'confinement' }).catch(() => null);
+        this.note(took?.took ? 'took a wall instead of leaving' : 'confined, hurt, and no wall yet', {
+          confined_to: confineOut.map(Number), spot: took?.spot ?? null,
+          why_not: took?.took ? undefined : (took?.why ?? 'no reason given'),
+          why: 'a genuine safe spot cannot be reached by a monster, so a room with one is a ' +
+               'place a confined character can recover without taking a door',
+          note: took?.took ? undefined
+            : 'no reachable spot this pass — the ordinary ladder keeps trying rather than ' +
+              'walking out, which is what the confinement is for' });
+        return;
+      }
+
       const tryOut = async () => {
-        const cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
+        let cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
+        // The fallback above is the whole-room exit list, so re-apply the confinement to it.
+        if (confineOut?.length)
+          cands = cands.filter(e => confineOut.map(Number).includes(Number(e.to)));
         if (!cands.length) return { left: false, reason: 'no exit from this room at all' };
         return await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
       };
@@ -8503,6 +10400,127 @@ export class Autopilot {
   }
 
   // ── passOutside: extracted from pass() ────────────────────────────────
+  // ── passFollow: walk where a person walked ───────────────────────────────────────────
+  //
+  // Say "follow me" while piloting one of your own and every fleet member in the room walks
+  // your trail until you say stop. It is for leading a group through doors the router keeps
+  // getting wrong -- the Cragged Mountains pocket whose only exit has failed 21 crossings,
+  // the Ukgoth wedge where a body can step four ways and none is the one it wants. A person
+  // threading that solves it by knowing where to put their feet; this copies the feet.
+  //
+  // ONLY OUR OWN PEOPLE MAY GIVE THE ORDER. `prod` is a shared server and this moves twenty
+  // bodies at once, so `heardOrder` checks the speaker against the ROSTER, not against the
+  // text. See m59-follow.mjs and the assertions in m59-follow-test.mjs.
+  async passFollow(ctx) {
+    const { s, c } = ctx;
+    // A separate cursor from the social responder's: both read `said` and consuming the
+    // stream out from under the other would make each one intermittently deaf.
+    const evs = c.eventsSince(this.followCursor || 0).filter(e => e.kind === 'said');
+    this.followCursor = c.evSeq;
+    const order = heardOrder(evs, {
+      isOurs: name => party.isFleetmate(name),
+      self: c.selfId,
+    });
+    if (order?.order === 'stop' && this.follow) {
+      this.note('told to hold', { by: order.leaderName, walked_behind_for_s:
+        Math.round((Date.now() - this.follow.since) / 1000) });
+      this.follow = null;
+    } else if (order?.order === 'follow') {
+      this.follow = { leaderId: order.leaderId, leaderName: order.leaderName,
+                      trail: [], since: Date.now(), missing: 0 };
+      this.note('following', { leader: order.leaderName,
+        how: 'walking the squares they stood on, oldest first, rather than walking at them' });
+    }
+    if (!this.follow) return CONTINUE;
+
+    const me = c.self;
+    if (!me) return CONTINUE;
+    // Where is the leader? Absent is not the same as gone: a leader who has stepped through a
+    // door leaves a trail whose last crumbs ARE the approach to it, so walking them takes us
+    // through. That is why this keeps going for a while rather than giving up at once.
+    const leader = c.room?.objects?.get?.(this.follow.leaderId) ?? null;
+    if (leader) {
+      this.follow.missing = 0;
+      // WHERE THEY WERE LAST SEEN, kept separately from the trail. The trail is consumed as
+      // it is walked, so by the time a follower needs to ask "which door did they take" the
+      // crumb that would have answered is gone.
+      this.follow.lastSeen = { row: leader.row, col: leader.col };
+      dropCrumb(this.follow.trail, { row: leader.row, col: leader.col, at: Date.now() });
+    } else {
+      this.follow.missing++;
+    }
+
+    const aim = nextStep(this.follow.trail, me);
+    if (!aim) {
+      // Caught up. Standing still next to the leader is the correct behaviour for a follower,
+      // and it is also how a group stays together while the leader picks a door.
+      if (leader) { this.progress('following ' + this.follow.leaderName + ' — caught up'); return HANDLED; }
+
+      // THE TRAIL IS WALKED OUT AND THE LEADER IS NOT HERE, so they left the map. Take the
+      // door nearest to where they were last seen: they are still online, they did not
+      // evaporate, and people leave a room through the exit they were standing next to.
+      //
+      // `exitTakenFrom` refuses when the last sighting was nowhere near a door, which is the
+      // half that matters — that is not somebody who walked out, it is somebody who died or
+      // logged out, and marching after them puts the group a zone away from where it belongs.
+      const room = this.s.world?.room;
+      const exits = [...(room?.edgeExits ?? []), ...(room?.goExits ?? [])]
+        .filter(e => e && !e.locked && e.to != null && Number(e.to) !== Number(room?.num));
+      // ROOM BOUNDS, because most exits out here are EDGES rather than doorways -- the
+      // Cragged Mountains has five and every one is a wall you walk off. Without the bounds
+      // an edge cannot be measured against a sighting at all, and `exitTakenFrom` correctly
+      // refuses rather than guessing, which is exactly the "walked to the wall and stopped"
+      // this fixes.
+      const door = exitTakenFrom(exits, this.follow.lastSeen,
+                                 { rows: Number(room?.rows), cols: Number(room?.cols) });
+      if (door && !this.follow.tookDoor) {
+        this.follow.tookDoor = true;      // one attempt per vanishing, not a loop at a wall
+        this.note('they left the map — taking the door they were standing next to', {
+          leader: this.follow.leaderName, to: door.to,
+          door: { row: door.row, col: door.col },
+          last_seen: this.follow.lastSeen,
+          squares_from_last_sighting: door.squares_from_last_sighting,
+        });
+        // Walk onto the crossing point first when we know it. For an edge that is our own
+        // column on that wall, and stepping onto it is what actually leaves the room --
+        // walking off an edge and using a door are different actions and the wrong one
+        // produces silence.
+        if (door.at && Number.isFinite(door.at.row) && Number.isFinite(door.at.col))
+          await this.s.walkTo(door.at.col, door.at.row, { maxSteps: 12 }).catch(() => null);
+        const went = await this.s.travel(door.to, { maxHops: 1 })
+          .catch(e => ({ arrived: false, why: e.message }));
+        if (went?.arrived || this.s.client?.room?.id !== undefined) {
+          // Through, or at least moved. Start a fresh trail on the far side: the leader is
+          // over there and the crumbs from the last room are no longer about this one.
+          this.follow.trail = [];
+          this.follow.tookDoor = false;
+          this.follow.missing = 0;
+          return HANDLED;
+        }
+        this.note('could not take the door they used', { to: door.to, why: went?.why ?? 'unknown' });
+      }
+      if (this.follow.missing > 20) {
+        this.note('lost the lead', { leader: this.follow.leaderName,
+          why: door ? 'could not follow them through the door they used'
+                    : 'out of the room, out of trail, and no door near where they vanished' });
+        this.follow = null;
+        return CONTINUE;
+      }
+      this.progress('following ' + this.follow.leaderName + ' — looking for the door they used');
+      return HANDLED;
+    }
+
+    const w = await s.walkTo(aim.col, aim.row, { maxSteps: 8 })
+      .catch(e => ({ arrived: false, reason: e.message }));
+    this.movedAt = Date.now();
+    this.progress(`following ${this.follow.leaderName} — ${behindBy(this.follow.trail)} crumb(s) behind`);
+    if (!w.arrived && w.left_room) {
+      // Through the door after them, which is the whole trick and needs no special case.
+      this.note('followed them through', { leader: this.follow.leaderName });
+    }
+    return HANDLED;
+  }
+
   async passOutside(ctx) {
     // AN OUTSIDE OPERATION OWNS EVERYTHING DIRECTIONAL FROM HERE DOWN.
     //
@@ -8610,6 +10628,33 @@ export class Autopilot {
     // regeneration rate and it is what swinging spends. Standing about at 30 of 200
     // because nobody gave us a task is throwing away the one thing idle time is for.
     if (this.mode === 'idle') {
+      // A SUSPENDED JOURNEY IS A JOB, AND "no job to do" WAS ASSERTED WITHOUT LOOKING.
+      //
+      // This branch claims the tick for ANY idle character, and `passFarm` — which is where
+      // `resumeSuspendedJourney` lives — is the very next rung. A journey that ends short
+      // sets the character idle, so from the instant an objective was suspended it could
+      // never be picked back up: the rung that would have done it never ran again.
+      //
+      // That is the whole of a failure this session spent a day inside. Three separate
+      // fixes went into the resume's own gates — the health floor, the vigor cap, the trend
+      // test — and every one of them was inside a stage that was not being reached. The
+      // measured shape, on the ladder tracer's first run:
+      //
+      //   ran: passUnderworld -> passArm -> passPlaybook -> passFleeAndRest
+      //        -> passFollow -> passOutside -> passErrand          [28 passes, 33s, room 596]
+      //
+      // Seven rungs, and the eighth never got a turn.
+      //
+      // ASKED HERE RATHER THAN BY REORDERING THE LADDER. The resume belongs in `passFarm`:
+      // it is a directional decision, and the ladder's order is load-bearing and asserted by
+      // `m59-passorder-test.mjs`. What was wrong is not where the resume lives, it is that
+      // an idle catch-all declared there was nothing to do without asking. So it asks, and
+      // the answer is the same object either way — a resume that fires returns HANDLED here,
+      // and one that declines falls through to the hibernate below, which is exactly what a
+      // character that is still mending should be doing anyway.
+      if (this.suspendedJourney
+          && await this.resumeSuspendedJourney(ctx).catch(() => CONTINUE) === HANDLED)
+        return HANDLED;
       if (await this.hibernate('idle: no job to do').catch(() => false)) return HANDLED;
       return HANDLED;
     }
@@ -8617,8 +10662,213 @@ export class Autopilot {
   }
 
   // ── passFarm: extracted from pass() ────────────────────────────────
+  // FINISH WHAT YOU WERE DOING, ONCE YOU ARE WELL ENOUGH TO.
+  //
+  // The counterpart to the suspend in `passTravelling.takeBack`. A journey interrupted by
+  // the survival ladder is not abandoned any more: the objective is kept, and picked up
+  // again from here — which is the LAST stage, so by construction nothing more urgent
+  // wanted this tick. That ordering is the whole gate and it is free: while the character
+  // is in the Underworld, unarmed, fleeing or resting, an earlier stage returns HANDLED and
+  // this is never reached. It runs on the first tick where the character is simply fine.
+  //
+  // FIVE REFUSALS, each of which is a way this could become the failure it is fixing:
+  //
+  //   died since      resuming the road that killed you is the Cccc post-mortem with extra
+  //                   steps. Compared against the death count AT SUSPENSION rather than
+  //                   trusting that dying would have cleared the note.
+  //   too many tries  a corridor that keeps taking the character back will keep taking it
+  //                   back. Two resumes, then the objective is dropped and said so.
+  //   stale           an objective older than the window is somebody's earlier plan. A bot
+  //                   or an operator has had time to want something else by now.
+  //   too hurt        `travel_start_health` is the same floor a fresh journey honours. A
+  //                   resume that sets out at 40% is a take-back waiting to happen.
+  //   switched off    `resume_travel: false`, per character, live, like every other
+  //                   faculty on this boundary.
+  //
+  // It returns CONTINUE on every refusal, so refusing to resume never costs the tick — the
+  // character farms, which is what it would have done before any of this existed.
+  // A REST STOP ENDS WHEN THERE IS NOTHING LEFT TO GAIN BY STANDING THERE.
+  //
+  // `leaveHold` only ever REFUSES a departure, and only while hurt. Nothing ever asked a
+  // healed character to go — so a traveller that reached a proven wall, healed to full, and
+  // topped its vigor out simply stayed. Measured: a character at 54 of 54 health and 80 of
+  // 200 vigor, which the server itself reports as `rested: true`, still reading "holding a
+  // proven safe spot" with `hold_resume_above` of 0.9 long since satisfied. Sixteen of
+  // eighteen legs across the Twisted Wood ended in a timeout rather than a death, and this
+  // is why: they were not stuck, they were parked.
+  //
+  // FULL IS FULL, AND VIGOR'S FULL IS 80 OF 200. Resting stops awarding vigor at the resting
+  // cap and everything above it has to be EATEN, so waiting for more is waiting for the
+  // timeout. Both ceilings met means the wall has given all it has.
+  //
+  // Forced, because the ordinary refusal is about being hurt and this character is not.
+  releaseRestedHold() {
+    if (!this.hold) return false;
+    const v = this.s.client?.vitals?.();
+    const hp = v?.health?.max ? v.health.value / v.health.max : null;
+    const vig = vigorPct(v);
+    if (hp === null || hp < (this.policy.holdResumeAbove ?? 0.9)) return false;
+    if (vig !== null && vig < REST_VIGOR_CAP) return false;
+    this.note('leaving the wall — full health and all the vigor resting can give', {
+      health: `${v?.health?.value}/${v?.health?.max}`,
+      vigor: `${v?.vigor?.value}/${v?.vigor?.scale_max ?? 200}`,
+      why: 'a rest stop is for getting well, and this character is as well as sitting down ' +
+           'can make it. Staying is how a journey times out without ever being in danger.',
+    });
+    this.leaveHold('rested to the ceiling — back on the road', { force: true })
+      .catch(e => this.note('could not leave the rested hold', { why: e.message }));
+    return true;
+  }
+
+  // WHY THE RESUME SAID NO, ONCE PER REASON. A refusal that returns CONTINUE and writes
+  // nothing is how this stayed unexplained through three fixes: the journey was kept, the
+  // wall was released, the character stood there anyway, and every instrument said "idle".
+  // Once per reason rather than once per pass, because this runs about once a second.
+  resumeDeclined(why, detail = {}) {
+    // Keyed on the reason AND the numbers, so a gate that is stuck at one reading says so
+    // once and a gate that is genuinely working prints its progress. Keyed on the reason
+    // alone, the note scrolled out of `recent` long before anybody looked and the refusal
+    // was invisible again — which is the whole failure this was added to end.
+    const key = why + '|' + JSON.stringify(detail);
+    traceDecision(this.who?.() ?? '?', 'resume declined', { why, ...detail });
+    if (this.resumeSaid === key) return CONTINUE;
+    this.resumeSaid = key;
+    this.note('not resuming the journey yet', { why, ...detail });
+    return CONTINUE;
+  }
+
+  async resumeSuspendedJourney(ctx) {
+    // Asked FIRST, and unconditionally: a held character that is whole should be moving
+    // whether or not it has an objective to resume. Releasing costs nothing when there is
+    // no hold, and the stage below decides where to go.
+    this.releaseRestedHold();
+    const j = this.suspendedJourney;
+    if (!j) { this.resumeBest = null; this.resumeFlat = 0; this.resumeSaid = null; return CONTINUE; }
+    if (this.policy.resumeTravel === false)
+      return this.resumeDeclined('resume_travel is switched off for this character');
+
+    const drop = (why, detail = {}) => {
+      this.suspendedJourney = null;
+      this.note('gave up on a suspended journey', { to: j.to, why, ...detail, attempts: j.attempts });
+      recordEvent(this.who(), 'travel_resume_dropped', { to: j.to, why, attempts: j.attempts });
+      return CONTINUE;
+    };
+
+    if ((this.tally?.deaths ?? 0) !== j.deaths_at)
+      return drop('died since it was suspended — the road is not worth a second body');
+    // THESE TWO ARE RUNAWAY BACKSTOPS, NOT THE ABANDON POLICY. The rule is that a journey
+    // is only given up when a PLAYER is on us; everything else pauses at a wall and carries
+    // on. A tight cap here would quietly become a second abandon rule and undo that — so it
+    // is set where a genuinely stuck loop trips it and an ordinary corridor crossing with
+    // several wall-rests in it does not. A road with eight walls on it is a road, not a bug.
+    const maxAttempts = this.policy.resumeTravelAttempts ?? 12;
+    if (j.attempts > maxAttempts)
+      return drop(`paused ${j.attempts} time(s) for the same destination — that is a loop, ` +
+                  `not a road. Dropped as a runaway guard rather than as a decision about the trip`);
+    // Long enough to rest to FULL at a wall and still be resumed. The old five minutes was
+    // shorter than a bad rest, so an objective could expire while the character was doing
+    // exactly what it had been taken off the road to do.
+    const within = this.policy.resumeTravelWithinMs ?? 1_800_000;
+    if (Date.now() - j.at > within)
+      return drop('stale — somebody else has had time to want something different');
+
+    // NOT A DROP: WAIT UNTIL THE CHARACTER IS ACTUALLY FIT TO GO BACK OUT.
+    //
+    // Full health AND at least the vigor a rest can reach. Both, because the road is what
+    // hurt it and setting out again half-mended is how the same take-back happens twice —
+    // and `attempts` only allows that twice before the objective is dropped, so a resume
+    // that leaves early spends the budget for nothing.
+    //
+    // Vigor is not a nicety here. It is what sets how fast health comes back between
+    // fights and what pays for RUNNING, which is the one thing that works in the open.
+    // REST_VIGOR_CAP is 80 of 200 — the ceiling of what sitting down can ever buy, since
+    // everything above it has to be eaten — so this asks for what resting can actually
+    // deliver rather than a number that would sit for ever waiting on food.
+    // ...AND "FIT" MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUMBER.
+    //
+    // Full health is the right bar for a character resting somewhere safe. It is the wrong
+    // bar for one stalled mid-journey, because a stalled character is usually stalled
+    // SOMEWHERE IT CANNOT HEAL — and then the gate can never open and the journey never
+    // resumes. Measured, both characters, the same shape:
+    //
+    //     +237s  room 597  idle
+    //     +258s  room 597  holding a proven safe spot
+    //
+    // Aaaa rested out its whole clock at 21 of 33; Bbbb wandered back to the Western border
+    // and spent three hundred and sixty seconds there at 9 of 20. Neither ever set off again,
+    // because neither ever reached full.
+    //
+    // This is the same argument `releaseRestedHold` already makes about a rest stop: standing
+    // there is worth it while it is buying something, and the moment it stops buying, staying
+    // is just a slower way to run out of clock. So the gate is the TREND rather than the
+    // level. Health still climbing behind a wall — wait, that is what the wall is for. Health
+    // level for a few samples — go, at whatever it is, because waiting will not raise it.
+    //
+    // `travel_start_health` still sets an absolute floor for anyone who wants one; it is
+    // simply no longer the only way through.
+    const floor = this.policy.travelStartHealth ?? 1;
+    const { hp, v } = ctx;
+    // AGAINST THE BEST SEEN, NOT AGAINST THE LAST SAMPLE. This compared each reading to the
+    // previous one, so ANY upward tick counted as still climbing and reset the counter. A
+    // character at 19 of 20 regenerates to 20, gets scratched back to 19, regenerates again
+    // — and every one of those ticks reset it, so `resumeFlat` never reached
+    // RESUME_FLAT_SAMPLES and the journey never resumed. Measured on shadow02: whole,
+    // unhurt, out of recovery, `mode idle` for six minutes holding a live objective, with
+    // the trend gate refusing on the grounds that it was still getting better.
+    //
+    // The wall has stopped paying when health stops reaching a NEW high. An oscillation
+    // between the same two points is not progress, and the default floor here is FULL
+    // health, so without this the gate can only open on a character that hits its maximum
+    // exactly and holds it.
+    const nowHp = v?.health?.value ?? null;
+    if (nowHp !== null) {
+      const better = this.resumeBest == null || nowHp > this.resumeBest;
+      this.resumeBest = better ? nowHp : this.resumeBest;
+      this.resumeWatch = nowHp;
+      this.resumeFlat = better ? 0 : (this.resumeFlat ?? 0) + 1;
+    }
+    // The wall is still working: let it.
+    const stillMending = (this.resumeFlat ?? 0) < RESUME_FLAT_SAMPLES;
+    if (hp !== null && hp < floor && stillMending)
+      return this.resumeDeclined('still mending — health is below the start floor and climbing',
+                                 { health: Math.round(hp * 100) + '%', floor, flat: this.resumeFlat ?? 0 });
+    const vig = vigorPct(v);
+    if (vig !== null && vig < REST_VIGOR_CAP && stillMending)
+      return this.resumeDeclined('still mending — vigor is under the resting cap and climbing',
+                                 { vigor: vig, cap: REST_VIGOR_CAP, flat: this.resumeFlat ?? 0 });
+    // Already there. Nothing to resume, and reporting it as a resume would put a journey in
+    // the ledger that never moved.
+    if (ctx.room?.num === j.to) { this.suspendedJourney = null; return CONTINUE; }
+
+    this.suspendedJourney = null;
+    this.note('RESUMING THE JOURNEY IT WAS TAKEN OFF', {
+      to: j.to, interrupted_by: j.trigger, attempt: j.attempts,
+      waited_s: Math.round((Date.now() - j.at) / 1000),
+      why: 'the survival ladder ended the movement, not the objective',
+    });
+    recordEvent(this.who(), 'travel_resumed', { to: j.to, trigger: j.trigger, attempts: j.attempts });
+    this.goTravelling(`travelling to ${j.to} (resumed)`, { to: j.to, attempts: j.attempts });
+    try {
+      await this.travel(j.to, { maxHops: 30 });
+    } catch (e) {
+      this.note('resumed journey failed', { to: j.to, why: e.message });
+    } finally {
+      // Only ours. A take-back during the resume has already revived and may have started
+      // something else; reviving that would be the two-drivers bug wearing a third hat.
+      if (this.inert?.travelling && this.inert.to === j.to) this.revive('resumed journey ended');
+    }
+    return HANDLED;
+  }
+
   async passFarm(ctx) {
     const { s, c, room, v, hp } = ctx;
+    // Before any work is chosen: is there an unfinished journey to pick back up? Ahead of
+    // the `work` claim check on purpose — resuming restores a decision that was ALREADY
+    // made and interrupted, it does not make a new directional one, so it is not the
+    // claimant's to own. A bot that has changed its mind issues a travel, and that clears
+    // the note (see goTravelling).
+    const resumed = await this.resumeSuspendedJourney(ctx);
+    if (resumed === HANDLED) return HANDLED;
     // 4. Work. Only in farm mode, and only on what we were told to hunt.
     //
     // AND ONLY IF NOBODY ELSE OWNS IT. This is the seam the carve-out is cut along: every
@@ -11843,6 +14093,62 @@ export class Autopilot {
   // fight we get to have again.
   async playDead(why) {
     const s = this.s;
+
+    // A FREEZE IS ONLY A TACTIC ON A SAFE SPOT. ANYWHERE ELSE IT IS A WAY OF DYING.
+    //
+    // Enforced HERE, in the verb, rather than only at the call site that used to decide
+    // it — because this rule has already been got wrong twice in opposite directions, and
+    // a rule that lives in one branch of one caller is a rule the next caller does not
+    // have. The refusal is the safe direction: the worst case is a character that walks
+    // when it could have frozen.
+    //
+    // WHAT A FREEZE ACTUALLY BUYS. Logging off keeps the monsters off by not acting, and
+    // the same flag keeps HealthTimer off with it — so it recovers VIGOR and never health.
+    // On a proven wall that is fine: nothing can reach the square, the character turns in
+    // place to re-arm regeneration and heals to full while the room mills about outside
+    // its reach. In the open it is inert: the character comes back with the health it went
+    // down with, in reach of everything that put it there, having spent the only seconds
+    // it had.
+    //
+    // MEASURED, 2026-08-21, shadow fleet in the Twisted Wood corridor: three characters
+    // froze at 4, 10 and 13 health in rooms holding twelve to fifteen monsters, each for
+    // about thirteen seconds, and all three died. Their own journal line said it —
+    // "recovering vigor; health needs us to move again first".
+    if (!this.holdWorks()) {
+      this.note('refusing to play dead — not on a spot that holds', {
+        health: s.client?.vitals?.()?.health?.value ?? null,
+        room: s.world?.room?.num ?? null,
+        hold: this.hold ? { col: this.hold.col, row: this.hold.row, proven: !!this.hold.proven } : null,
+        asked_because: why,
+        why: 'a freeze recovers vigor and NEVER health, so off a proven wall it hands the ' +
+             'room several free seconds and changes nothing. Only distance or a wall does.',
+      });
+      recordEvent(this.who(), 'play_dead_refused_no_spot',
+                  { room: s.world?.room?.num ?? null, proven: !!this.hold?.proven });
+      return false;      // the caller falls through to withdrawing, which at least moves
+    }
+
+    // WE ARE ALREADY BEHIND THE WALL WITH THE CLOCK RUNNING. DO NOT STOP IT.
+    //
+    // A reconnect clears PFLAG_MOVED_SINCE_ENTRY, so freezing again from a spot we have
+    // already come back to and turned on would UNDO the one thing that made the last
+    // freeze worth anything — we would go back to unreachable-and-healing-at-zero, which
+    // is the state this whole branch exists to get out of.
+    //
+    // The livelock guard below catches this eventually, but only on the third attempt and
+    // only by counting failures. This catches it on the first, and for the right reason:
+    // there is nothing left for a freeze to buy here. Nothing can reach the square, and
+    // the health timer is armed. Resting is strictly better, because it actually heals.
+    if (this.hold?.reclaimed && this.turnedAt && this.turnedAt >= this.hold.takenAt) {
+      this.note('not freezing again — we are on the spot and already healing', {
+        health: s.client?.vitals?.()?.health?.value ?? null,
+        where: { col: this.hold.col, row: this.hold.row },
+        armed_ms_ago: Date.now() - this.turnedAt,
+        why: 'logging off would clear the moved-since-entry flag this spot was reclaimed to ' +
+             'set, and playing dead recovers vigor and never health. Rest here instead.' });
+      return false;      // the caller falls through to resting, which is what we want
+    }
+
     // A FREEZE THAT CHANGED NOTHING MUST NOT BE REPEATED.
     //
     // Freezing buys safety by not acting, and the same flag that keeps the monsters
@@ -11927,16 +14233,53 @@ export class Autopilot {
       const me = s.client?.self;
       const back = me && me.col === spot.col && me.row === spot.row;
       if (back) {
-        // Not frozen: the walls are doing the work, so the grace period is ours to
-        // spend. The ordinary rest branch takes it from here — it turns to arm the
-        // timer, rests to full, and observe() keeps checking that nothing lands.
         this.hold = { ...spot, takenAt: Date.now(), quietMs: 0, reclaimed: true };
         this.tally.mulligans = (this.tally.mulligans || 0) + 1;
+
+        // TURN. NOW. THIS IS THE WHOLE REASON A SAFE SPOT IS WORTH ANYTHING.
+        //
+        // A reconnect is a fresh entry into the room, so PFLAG_MOVED_SINCE_ENTRY comes
+        // back CLEAR and HealthTimer awards nothing until something sets it again
+        // (player.kod:5613). That is the same trade playing dead already made — safety
+        // bought by not acting — and out in the open there is no way out of it, because
+        // the only thing that arms the timer is moving and moving is what gets you hit.
+        //
+        // On a safe spot there is a way out, and it is the entire point of the spot: a
+        // TURN sets the flag and gives up no ground. Nothing can reach this square, so
+        // waking the room costs exactly nothing and buys the health timer. Standing here
+        // unarmed is being unreachable and healing at zero — which looks identical to
+        // working, and is how a character sits behind a wall that holds perfectly at four
+        // health until something eventually changes around it.
+        //
+        // It happens HERE rather than being left to the rest branch on some later pass,
+        // because there is no later pass at this health: playing dead recovers vigor and
+        // never health, so the next round is still doomed and still sheltered and logs
+        // off again. The turn only ever arrived on the third attempt, after
+        // freezesWithoutGain tripped — two wasted logoffs at the health that could least
+        // afford them.
+        //
+        // verify:false on purpose. The verifying path sleeps 300ms and then round-trips
+        // room-contents, and comparing a position across up to 2.3 seconds of live combat
+        // is what once reported a turn had "moved us off the square" and cost Animal a
+        // proven spot he was standing on. We do not need the answer: REQ_TURN carries no
+        // coordinates, and the next observe() reads the position anyway.
+        const armed = await skills.turnInPlace(this.s, { verify: false })
+                                  .catch(e => ({ turned: false, why: e.message }));
+        if (armed.turned) this.turnedAt = Date.now();
+
         this.note('back on the safe spot', {
           where: { col: spot.col, row: spot.row }, proven: spot.proven,
-          plan: 'turn to wake the room and arm health regeneration, then rest to full here',
-          why: 'a reconnect puts us back exactly where we were, and nothing about the walls ' +
-               'changed while we were gone' });
+          turned: armed.turned, facing: armed.to ?? null,
+          plan: armed.turned
+            ? 'health regeneration is armed and nothing can reach this square — rest to full here'
+            : 'REST WILL PAY NOTHING until something sets the moved-since-entry flag',
+          why: armed.turned
+            ? 'a reconnect clears PFLAG_MOVED_SINCE_ENTRY, and a turn is the only thing that ' +
+              'sets it again without giving up the square the walls are protecting'
+            : 'the turn did not go through: ' + (armed.why || 'unknown') });
+        // A turn that did not go through leaves us unreachable and healing at zero, which
+        // is not a state to sit in quietly. Say so, and let the rest branch try again.
+        if (!armed.turned) this.noProgress('back on the safe spot but could not turn to arm healing');
         return true;
       }
       // We came back somewhere else. Say so rather than carry on believing in a
@@ -12802,6 +15145,62 @@ export class Autopilot {
   // A configured quiet retreat wins for its own rooms, then the nearest CITY_INNS entry
   // the router will accept. If travel cannot get us there we fall back to the local
   // withdraw, because a wall we can reach beats a refuge we cannot.
+  async guardedRetreatTravel(room) {
+    // A route that has stopped changing room or square is not an escape. The ordinary
+    // pass watchdog cannot safely solve this by firing repeatedly: the first interrupt
+    // is what gets us INTO the retreat branch, and cancelling every walk merely because
+    // health is already below fleeAt would also cancel a healthy escape. Guard this
+    // specific journey on actual movement progress instead.
+    const s = this.s;
+    const noProgressMs = this.retreatNoProgressMs ?? 3_000;
+    const guardMs = this.retreatGuardMs ?? 250;
+    const position = () => {
+      const me = s.client?.self;
+      return `${s.world?.room?.num ?? '?'}:${me?.col ?? '?'}:${me?.row ?? '?'}`;
+    };
+    let lastPosition = position();
+    let lastProgressAt = Date.now();
+    let guard = null;
+    const timer = setInterval(() => {
+      const now = Date.now();
+      const currentPosition = position();
+      if (currentPosition !== lastPosition) {
+        lastPosition = currentPosition;
+        lastProgressAt = now;
+        return;
+      }
+      if (now - lastProgressAt < noProgressMs || guard) return;
+      const hp = s.client?.vitals?.()?.health;
+      // This guard is itself the last-resort escape path, so diagnostic
+      // enrichment must never prevent it from cancelling a stuck route.
+      let maxHit = null;
+      try { maxHit = this.safety()?.maxHit ?? null; } catch { /* optional telemetry */ }
+      guard = {
+        why: 'retreat route made no room or square progress',
+        stalled_ms: now - lastProgressAt,
+        room: s.world?.room?.num ?? null,
+        col: s.client?.self?.col ?? null,
+        row: s.client?.self?.row ?? null,
+        health: hp?.value ?? null,
+        max_health: hp?.max ?? null,
+        one_hit_reserve: maxHit != null && hp?.value != null
+          ? hp.value <= maxHit : null,
+      };
+      try { s.cancelMovement?.(); } catch { /* the failed result below is enough */ }
+    }, guardMs);
+    try {
+      // An emergency retreat must keep moving toward the sanctuary. Ordinary journeys
+      // may deliberately hold an intermediate wall for up to 90 seconds, but the retreat
+      // guard would correctly see that as no route progress and cancel it. Keep those
+      // experimental holds out of this last-resort path rather than teaching the guard
+      // to ignore a long period in which a genuinely blocked exit could kill us.
+      const result = await this.travel(room, { reason: 'retreat', holdBetweenRooms: false });
+      return { ...(result ?? {}), retreat_guard: guard };
+    } finally {
+      clearInterval(timer);
+    }
+  }
+
   async retreatToSafety(why = {}) {
     const s = this.s, c = s.client;
     const here = s.world?.room?.num ?? null;
@@ -12860,10 +15259,42 @@ export class Autopilot {
     // This explicit exception wins over a farther inn. From upstairs the route is
     // 39 -> 38 -> 2; from base Castle Victoria it is the door straight to room 2.
     const quiet = preferredQuietRetreat(s.world, { maxHops: 6 });
-    const ranked = [
+    let ranked = [
       ...(quiet ? [{ city: null, inn: quiet.room, innName: quiet.name, ...quiet }] : []),
       ...rankedInns.filter(i => i.inn !== quiet?.room),
     ];
+
+    // A CONFINEMENT THE REFUGE DOES NOT KNOW ABOUT IS NOT A CONFINEMENT.
+    //
+    // `confineRooms` is the operator saying "these rooms and nowhere else, whatever
+    // happens". Without it this function is the largest hole in any such arrangement,
+    // because it is SURVIVAL code and therefore runs exactly when everything else has
+    // already agreed the character should stay put.
+    //
+    // Measured on prod 2026-08-19, twice in one evening: Gonzo was farming room 39 with a
+    // flagged player in the room, crossed the flee line, and this walked him to room 2 —
+    // `PREFERRED_QUIET_RETREATS` maps BOTH 38 and 39 there. He died in room 2 at 6:57 PM
+    // (`killed_by: null`, no monster broadcast, which is what a player kill looks like from
+    // in here) and was walked to the same room again at 7:34, losing 19 of 26 health on the
+    // way. That table's "safety: no monsters spawn here" is TRUE and is not the same fact
+    // as player-safe, and the difference is the whole of this bug.
+    //
+    // The fallback is deliberately the local wall rather than the nearest permitted refuge:
+    // this function's own argument is that "a wall we can reach beats a refuge we cannot",
+    // and a refuge outside the confinement is one we have been told we cannot take.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    if (confine?.length) {
+      const allowed = new Set(confine.map(Number));
+      const refused = ranked.filter(r => !allowed.has(Number(r.inn)));
+      ranked = ranked.filter(r => allowed.has(Number(r.inn)));
+      if (refused.length)
+        this.note('refuge refused by the confinement', {
+          confined_to: [...allowed], refused: refused.map(r => ({ room: r.inn, name: r.innName })),
+          why: 'the operator confined this character to these rooms; a refuge outside them ' +
+               'is a journey, and the journey is what has been killing it',
+          falling_back_to: ranked.length ? 'a permitted refuge' : 'the local wall' });
+    }
+
     if (!ranked.length) {
       this.note('no refuge is routable from here — falling back to a local wall', why);
       await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
@@ -12885,12 +15316,21 @@ export class Autopilot {
                          ? 'crossing the Castle Victoria door leaves every monster behind'
                          : 'an inn is a sanctuary and ends the fight'),
       });
-      const r = await this.travel(dest.inn, { reason: 'retreat' }).catch(e => ({ arrived: false, error: String(e) }));
+      const r = await this.guardedRetreatTravel(dest.inn)
+        .catch(e => ({ arrived: false, error: String(e) }));
       if (r?.arrived) {
         this.progress(`reached ${dest.preferred ? 'monster-free retreat' : 'safety'} at ${dest.innName}`);
         this.fledInARow = 0;
         return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops,
                  preferred: dest.preferred, player_safe: dest.playerSafe };
+      }
+      if (r?.retreat_guard) {
+        this.note('aborted a retreat route that was not moving', {
+          to: dest.innName,
+          ...r.retreat_guard,
+          consequence: 'do not spend the remaining health retrying another route through the same blocked exit',
+        });
+        break;
       }
     }
     // Nothing reachable. A wall here is better than nothing, so fall through to the
@@ -12932,40 +15372,82 @@ export class Autopilot {
       return;
     }
 
-    // No corner in this room. Fall back to distance, and say plainly that this is the
-    // weak version — it is the branch that precedes most of the deaths.
-    this.note('no wall to withdraw to', {
-      why: spot.why, threats: threats.length,
-      consequence: 'falling back to walking away, which buys seconds rather than safety',
-      hint: 'this room cannot be fought in safely at this level; somewhere with a corner is' });
-    // Only now is leaving the hold right — we have nowhere better, so the siege has to
-    // be broken before the walk.
-    // FORCED: this is the survival case, not a discretionary one. A hurt character is
-    // exactly who is withdrawing, so the hurt refusal would block the one departure
-    // that must always be allowed.
-    await this.leaveHold('withdrawing from a fight we are losing', { force: true });
-    const me = c.self, geo = s.world?.geometry;
-    if (!me || !geo) { this.note('cannot withdraw', { why: 'no geometry' }); return; }
-    const away = (r, col) => Math.min(...threats.map(t => Math.hypot(col - t.col, r - t.row)));
-
-    let best = null;
-    for (let r = 1; r <= geo.rows; r++) {
-      for (let col = 1; col <= geo.cols; col++) {
-        if (!geo.walkable(r, col)) continue;
-        const d = away(r, col);
-        if (d < 6) continue;                       // not far enough to be worth it
-        const p = geo.path(me.row, me.col, r, col);
-        if (!p.found) continue;
-        // Prefer close-to-reach among the far-enough, so we spend the fewest seconds
-        // being hit on the way out.
-        if (!best || p.steps.length < best.steps) best = { row: r, col, steps: p.steps.length, dist: d };
+    // NO CORNER, AND NO PERSON — SO THERE IS NOTHING HERE WORTH WALKING AWAY FOR.
+    //
+    // This branch's own comment has always said it "precedes most of the deaths", and the
+    // record finally says why. Bbbb, crossing the Cragged Mountains: the wall rung fired at
+    // 2 health, the wall could not be reached, and this fallback picked a square six away
+    // from the nearest troll WITH NO REGARD FOR WHERE THE JOURNEY WAS GOING. It walked east
+    // to 38,25 — twenty squares off a rail that runs down column 18 — and died there.
+    //
+    // Distance does not work on a monster. Vision is 4 + difficulty/2 squares
+    // (monster.kod:1676) and they follow, so this buys seconds and spends them walking
+    // AWAY from the door. Fifty seconds in that room, nine squares of net progress, against
+    // a human who crosses it in about ten. The exposure is the thing that kills, and this
+    // branch is what makes the exposure long.
+    //
+    // A person is the exception, exactly as in the flee rung: a wall says nothing about
+    // somebody who can walk to the same square, and distance is the only answer to them.
+    // So for monsters this declines and the character carries on to where it was going —
+    // which is also the only direction that ends the exposure.
+    // DURING A JOURNEY, "WITHDRAW" MEANS THE NEXT WALL FORWARD.
+    //
+    // The route already knows where the walls are: `sheltersAlong` worked them out when the
+    // crossing was planned, and `shelterAhead` returns the next one that is still IN FRONT
+    // and within a short detour. Going to that is a withdrawal and a hop of progress at the
+    // same time, which is the only kind of withdrawal that ends the exposure — the room is
+    // what is dangerous, and every square toward the exit is a square closer to leaving it.
+    //
+    // Bbbb died proving the alternative: sent six squares from the nearest troll with no
+    // regard for direction, it went east to 38,25, twenty squares off a rail running down
+    // column 18.
+    const journey = this.travelling;
+    const planned = this.s.activeShelter;
+    if (journey && planned?.spots?.length && !this.strangersInReach().length) {
+      let ahead = null;
+      try {
+        ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
+                             { maxDetour: planned.maxDetour ?? 4,
+                               unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
+      } catch { ahead = null; }
+      if (ahead) {
+        this.note('withdrawing FORWARD — the next wall on the route', {
+          to: { col: ahead.col, row: ahead.row }, detour: ahead.detour,
+          threats: threats.length,
+          why: 'the room is what is dangerous, so a withdrawal that goes backwards pays the ' +
+               'exposure twice. This one is a wall AND a hop of progress.',
+        });
+        const took = await this.takeSafeSpot('withdrawing forward to the next wall on the route',
+                                             threats[0] ?? null, { source: 'travel' })
+                               .catch(() => ({ took: false }));
+        if (took?.took) return { withdrawn: true, forward: true };
+        // Falling through is deliberate: an unreachable wall is already remembered by
+        // `takeSafeSpot`, so the next pass picks a different one or none at all.
       }
     }
-    if (!best) { this.note('nowhere to withdraw to', { why: 'no reachable square far enough away' }); return; }
-    const walk = await s.walkTo(best.col, best.row, { maxSteps: Math.max(30, best.steps + 10) });
-    const terminal = this.terminalMovement(walk, 'withdrawal movement');
-    if (terminal) return { withdrawn: false, ...terminal };
-    this.note('withdrew', { to: { col: best.col, row: best.row }, steps: walk.steps, arrived: walk.arrived });
+
+    // AND THERE IS NO WALKING AWAY LEFT. A WITHDRAWAL IS A WALL, OR IT IS FORWARD.
+    //
+    // This branch used to pick any square six from the nearest threat and walk to it. Its own
+    // comment always said it "precedes most of the deaths", and the record says why: Bbbb,
+    // crossing the Cragged Mountains at 2 health with no reachable wall, was sent EAST to
+    // 38,25 — twenty squares off a rail running down column 18 — and died there.
+    //
+    // Distance does not work on a monster, which follows; and against a person a wall says
+    // nothing anyway, which is why the answer to somebody hostile is to end the JOURNEY (see
+    // passTravelling) rather than to shuffle across the room. Either way this branch was
+    // spending the seconds that kill, in the direction that helps least.
+    //
+    // So: a wall if there is one, the next wall on the route if we are travelling, and
+    // otherwise carry on. The room is what is dangerous; the exit is the only square that
+    // ends it.
+    this.note('not walking away — nowhere here is safer than here', {
+      threats: threats.length,
+      why: 'a monster follows, so distance buys seconds and spends them going nowhere. There ' +
+           'is no wall to be had here, so the way out is ON.',
+      instead: 'carrying on to the objective',
+    });
+    return { withdrawn: false, declined: 'no wall here, and walking away is not an answer' };
   }
 }
 

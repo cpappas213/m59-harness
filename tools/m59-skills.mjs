@@ -17,7 +17,7 @@
 // caller did not ask for. A skill that gives up says why, at which stage, and what
 // the state was when it stopped.
 
-import { OF, isTeleporter, describeObject, dropSpec } from './m59-parse.mjs';
+import { OF, isTeleporter, describeObject, dropSpec, KOD_FINENESS } from './m59-parse.mjs';
 // The Underworld's exits, and which city is nearest to any room. As a namespace,
 // because escapeUnderworld re-exports most of it and a bare import would shadow.
 import * as UW from './m59-underworld.mjs';
@@ -1491,6 +1491,13 @@ export async function turnInPlace(s, { degrees = null, verify = true } = {}) {
 // is not the same request as "stand where I was standing", and the difference is the
 // difference between a wall at your back and a wall nearby. Fine movement is the only
 // way to say the second one.
+// HOW CLOSE COUNTS AS "IN THE POCKET", where the fine mover owns the approach and the
+// square walker becomes the fallback. Three squares: a safe wall's disagreement with the
+// coarse grid is a local thing — it is the ring of neighbours around the square — so the
+// handover wants to happen at about the radius of that ring rather than at some fraction
+// of the whole trip, which would move with how far away the character happened to start.
+const FINE_HANDOVER_SQUARES = Number(process.env.M59_FINE_HANDOVER_SQUARES || 3);
+
 export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = {}) {
   const c = s.need();
   if (!spot) return { arrived: false, why: 'no spot given' };
@@ -1526,9 +1533,68 @@ export async function returnToSpot(s, spot, { maxSteps = 20, tolerance = 12 } = 
 
   // Get onto the right square first through the geometry, then close the last few
   // fine units directly — the square router cannot express the last bit.
+  //
+  // AND WHEN IT CANNOT EXPRESS THE FIRST BIT EITHER, ASK THE FINE GRID FOR THE WHOLE
+  // APPROACH. A safe wall IS the coarse grid and the BSP disagreeing; that is what makes
+  // it safe and it is also what makes the square router bad at reaching it. This used to
+  // give up here — `could not walk back to the square` — with the fine tools sitting
+  // unused two lines below, because they only ever ran once `walkTo` had already
+  // succeeded. Measured live: a proved wall ten squares away in the Cragged Mountains,
+  // abandoned at exactly this line, twice in one evening.
+  //
+  // WHICH FINE TOOL IS NOT THE ONE YOU WOULD PICK. Measured over 107 approaches in the
+  // eleven rooms this fleet uses: the square walker reaches the wall 85% of the time, the
+  // greedy sliding fan 69%, and A* on the quarter-square lattice 23%. The square walker is
+  // the BEST of the three. `finePath` is worst because `moveLands` refuses any move whose
+  // slide ends more than ARRIVE_WITHIN off its aim, and a pocket the BSP hems in is a place
+  // where EVERY move slides — so the fine lattice has no edges at all in exactly the squares
+  // that make a safe spot safe.
+  //
+  // So `Session.approachFine` is the sliding fan, and it is worth having only as a SECOND
+  // attempt: it is worse on average and it reaches two walls in the Cragged Mountains that
+  // the square walker loses, which is the room the whole road turns on. Free when the square
+  // walk works, because it does not run.
+  // THE LAST FEW SQUARES BELONG TO THE FINE GRID, AND THE HANDOVER USED TO COME TOO LATE.
+  //
+  // The order above is right for the HAUL — the square walker reaches the wall 85% of the
+  // time against the sliding fan's 69% — and it is wrong for the ARRIVAL. A safe wall IS
+  // the coarse grid and the BSP disagreeing about which neighbours exist; that is the whole
+  // reason the square is worth standing on, and it is also the reason the square router is
+  // at its worst in exactly the last two or three steps. Running it all the way in and only
+  // reaching for the fine tools once it had failed the WHOLE approach meant the coarse
+  // walker got to fail at the one part of the trip it cannot do, and `could not reach the
+  // safe spot` was the commonest thing in the death records — 12 of 21 postmortems in one
+  // window, with `fine approach did not arrive` under it.
+  //
+  // So the handover is by DISTANCE now. Far away, the square walker does what it is good
+  // at. Once we are inside the pocket, the fine mover owns the approach and the square
+  // walker is the fallback rather than the opener. The 85/69 measurement is not contradicted
+  // by this — it compared whole approaches, and this changes which tool owns which part.
   if (c.self && (c.self.col !== spot.col || c.self.row !== spot.row)) {
-    const w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
-    if (!w.arrived) return { arrived: false, why: w.reason || 'could not walk back to the square' };
+    const away = Math.max(Math.abs(c.self.col - spot.col), Math.abs(c.self.row - spot.row));
+    const fineOwnsIt = away <= FINE_HANDOVER_SQUARES && typeof s.approachFine === 'function';
+    let w;
+    if (fineOwnsIt) {
+      w = await s.approachFine(spot.col, spot.row, { toX: spot.x, toY: spot.y })
+                 .catch(e => ({ arrived: false, reason: e.message }));
+      if (!w.arrived) {
+        const square = await s.walkTo(spot.col, spot.row, { maxSteps })
+                              .catch(e => ({ arrived: false, reason: e.message }));
+        if (square.arrived) w = square;
+        else w = { ...square, fine_tried: w.reason ?? 'fine approach did not arrive' };
+      }
+    } else {
+      w = await s.walkTo(spot.col, spot.row, { maxSteps }).catch(e => ({ arrived: false, reason: e.message }));
+      if (!w.arrived && typeof s.approachFine === 'function') {
+        const fine = await s.approachFine(spot.col, spot.row, { toX: spot.x, toY: spot.y })
+                            .catch(e => ({ arrived: false, reason: e.message }));
+        if (fine.arrived) w = fine;
+        else w = { ...w, fine_tried: fine.reason ?? 'fine approach did not arrive' };
+      }
+    }
+    if (!w.arrived)
+      return { arrived: false, why: w.reason || 'could not walk back to the square',
+               ...(w.fine_tried ? { fine_tried: w.fine_tried } : {}) };
     await confirmPrediction();
   }
   if (spot.x != null && s.walkFine) {
@@ -1590,6 +1656,9 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
   // that climbs 12 -> 16 and is then hit back to 14 is being interrupted, and
   // comparing against the starting 12 would call that progress and sit through it.
   let peak = v?.health?.value ?? null;
+  // How much poison has taken during this rest. Reported rather than acted on: a rest that
+  // is not winning still ends on its own leash, and the caller deserves to know which.
+  let poisonDrain = 0;
   try {
     while (Date.now() - t0 < maxSeconds * 1000 &&
            !(typeof shouldCancel === 'function' && shouldCancel())) {
@@ -1602,6 +1671,17 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
           // Health only falls while resting if something is hitting us. Whatever the
           // caller believed about this square, it is wrong NOW — hand that back rather
           // than sitting out the remaining leash.
+          // POISON IS NOT SOMETHING HITTING US. It drains with nobody adjacent and cannot
+          // kill, so the inference this line rests on — "health only falls while resting if
+          // something is hitting us" — is false for exactly as long as a character is
+          // poisoned. Aborting there ends a rest that was never in danger, and upstream the
+          // same reading discredits the square for good.
+          const ailing = c.ailments?.() ?? [];
+          if (ailing.length) {
+            poisonDrain += peak - hp;
+            peak = hp;                 // measure the next fall from here, not from before it
+            continue;
+          }
           interrupted = `took ${peak - hp} damage while resting — something is hitting us`;
           break;
         }
@@ -1648,6 +1728,10 @@ export async function restUntil(s, { health = DEFAULT_REST_UNTIL, vigor = DEFAUL
     // Set when the rest was cut short by incoming damage. Callers should treat this
     // as "the square you trusted is not working", not as an ordinary short rest.
     interrupted,
+    ...(poisonDrain ? { poison_drain: poisonDrain,
+                        note: 'poison took health during this rest and was not treated as an ' +
+                              'attack — it drains with nobody adjacent and cannot kill, so it ' +
+                              'says nothing about the square' } : {}),
     note: interrupted ? interrupted
       : done() ? undefined
       : (stalled >= 3 ? 'nothing recovered for several checks — something may be preventing rest, or you are already at your ceiling'
@@ -2170,11 +2254,56 @@ async function identifyPortals(s, found, { want = null, maxLooks = 6 } = {}) {
 // bookkeeping wrong here is what produced the two oldest wrong diagnoses in this file:
 // a portal that fires on the LAST STEP of the walk reports arrived:false, and a cursor
 // taken after the walk looks past the very event it is waiting for.
+// WHAT AN ESCAPE WALK MAY SPEND, AND WHY IT IS SO MUCH MORE THAN THE ROUTE.
+//
+// Everywhere else in this repository a walk budget is "the route plus a little", because
+// overspending costs an errand. Here the alternative is a character parked for ever in the
+// one room with no graph exits, so the trade runs the other way entirely.
+//
+// And the route length is not the step count. The Underworld climbs hundreds of units over
+// broken ground, every off-plan landing costs a replan and the replan walks again from
+// somewhere else — measured, a 43-step route spent 83 steps and still had not arrived.
+// Three times the route plus sixty is generous on purpose; it is bounded, and the walk
+// still stops the moment it gets there.
+const escapeBudget = steps => Math.max(150, (steps ?? 0) * 3 + 60);
+
+// WHEN COARSE PATHING CANNOT PUT US ON A PORTAL, TRY FINE BEFORE BELIEVING IT.
+//
+// `leaveVia` has made this argument for `go` exits since the Marion crypt trapped six
+// characters for half an hour: the square grid is one byte per square and the world under
+// it is BSP at 64 fine units, so anything narrower than a square — or, here, anything
+// whose height profile the offline predicate models differently from the live validator —
+// reads as unreachable while stepping there in fine units works first time.
+//
+// The Underworld is where that matters most, because it is the ONE room in the world with
+// no graph exits: a character that cannot reach a teleporter is not delayed, it is parked
+// there until a human notices. Measured on the arena fleet, a keeper made ten consecutive
+// escape attempts, every portal reporting "never got onto its square (kept ending up
+// somewhere other than the planned square)" — while the offline router planned clean
+// 50- and 65-step routes to two of them in which every step was one the mover accepts.
+// The plan was right and the walk diverged, which is exactly the case fine movement
+// exists to rescue.
+//
+// One extra attempt against a permanent trap.
+async function walkOntoSquare(s, col, row, { maxSteps = 80 } = {}) {
+  const walk = await s.walkTo(col, row, { maxSteps });
+  if (walk.arrived || isTerminalMovementReason(walk.reason)) return walk;
+  // A session that cannot walk in fine units simply reports what the coarse walk said —
+  // this is a rescue, never a requirement.
+  if (typeof s.walkFine !== 'function') return walk;
+  const half = KOD_FINENESS >> 1;
+  const fine = await s.walkFine(col * KOD_FINENESS + half, row * KOD_FINENESS + half,
+                                { maxSteps }).catch(() => null);
+  if (fine?.arrived) return { ...fine, via: 'fine movement after coarse pathing failed' };
+  return walk;
+}
+
 async function stepOnto(s, o) {
   const c = s.need();
   const before = c.evSeq;
   const wasIn = c.room.id;
-  const walk = await s.walkTo(o.col, o.row, { maxSteps: 80 });
+  const walk = await walkOntoSquare(s, o.col, o.row,
+                                    { maxSteps: escapeBudget(s.world?.reach?.(o.col, o.row)?.steps) });
   const arr = await c.waitFor({ since: before, kinds: ['room-entered'],
                                 timeoutMs: walk.arrived ? 3000 : 500 });
   const entered = arr.events.find(e => e.kind === 'room-entered');
@@ -2189,6 +2318,57 @@ async function stepOnto(s, o) {
              ? 'stood on it and nothing happened — it is unlit; one or two of the five ' +
                'are, at random, and its brazier needs activating'
              : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` };
+}
+
+// THE RIP IS THE ONE DOOR THAT IS NEVER UNLIT, SO IT IS THE ONE TO FALL BACK ON.
+//
+// `ResetPuzzle` (uworld.kod:460) lights all five pentagram portals and then turns one or
+// two off at random. The rip is not in that rotation at all — it is a sixth teleporter
+// that re-rolls its DESTINATION every 5-10s (hellport.kod:57,70) and is always open. So
+// when every fixed portal has been tried and the character is still down here, the rip is
+// not one more thing to try: it is the thing that works.
+//
+// ANY DESTINATION WILL DO, and that is the whole point of this path. Reading the rip
+// matters only when a particular city was asked for; when the alternative is another
+// spell in the Underworld, all five inns are the same answer — out. So this never looks,
+// it steps.
+//
+// AND IT RETRIES, because a single step is not evidence. The rip re-rolls every 5-10
+// seconds and a step that lands mid-roll does nothing at all — which the fallback loop
+// below reports as "probably unlit; its brazier needs activating", a diagnosis that is
+// simply never true of this object and sends the caller hunting for a brazier that does
+// not exist.
+async function ripOut(s, rip, { maxSeconds = 60 } = {}) {
+  const c = s.need();
+  // Stand next to it first. Stepping onto it IS the teleport, so the approach has to be
+  // its own walk or a failure to arrive reads as a portal that did not fire.
+  const spot = s.world.approachSquare(rip.col, rip.row);
+  if (spot && spot.steps > 0) {
+    const walk = await walkOntoSquare(s, spot.col, spot.row, { maxSteps: escapeBudget(spot.steps) });
+    if (isTerminalMovementReason(walk.reason))
+      return { left: false, terminal: true, reason: walk.reason, note: walk.note };
+    if (!walk.arrived)
+      return { left: false, why: 'could not get next to the rip in space (' +
+                                 (walk.reason || walk.note || 'the walk did not arrive') + ')' };
+  }
+  const t0 = Date.now();
+  let attempts = 0;
+  while (Date.now() - t0 < maxSeconds * 1000) {
+    attempts++;
+    const before = c.evSeq;
+    const wasIn = c.room.id;
+    const move = await s.stepFine(rip.x, rip.y);
+    if (isTerminalMovementReason(move.reason))
+      return { left: false, terminal: true, reason: move.reason, note: move.note, attempts };
+    const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: 3000 });
+    const entered = arr.events.find(e => e.kind === 'room-entered');
+    const now = { id: c.room.id, name: c.roomNameRsc ? c.rsc.get(c.roomNameRsc) : null };
+    if (entered || now.id !== wasIn)
+      return { left: true, arrived_in: entered?.roomName ?? now.name, room: now.id, attempts };
+    await sleep(1200);
+  }
+  return { left: false, attempts,
+           why: `stepped onto the rip ${attempts} time(s) over ${maxSeconds}s and stayed put` };
 }
 
 export async function escapeUnderworld(s, { city = null, nearestTo = null,
@@ -2258,22 +2438,49 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
   if (wanted && String(wanted).toLowerCase().startsWith("ko") && !UW.portalFor(wanted))
     cityAttempts.push({ portal: "fixed Ko'catan", why: UW.KOCATAN_IS_DEATH_ONLY });
 
+  let ripUnreachable = false;
   if (wanted && rip && allowRip) {
     // Stand next to it FIRST. The window is 5-10 seconds and walking is a second a
     // square, so polling from across the room means reading a destination you can no
     // longer reach in time.
     const spot = s.world.approachSquare(rip.col, rip.row);
     if (spot && spot.steps > 0) {
-      const walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.max(30, spot.steps + 10) });
+      const walk = await walkOntoSquare(s, spot.col, spot.row,
+                                        { maxSteps: escapeBudget(spot.steps) });
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stood_up: true, reason: walk.reason, note: walk.note };
-      if (!walk.arrived)
-        return { left: false, stood_up: true, reason: 'could not get next to the shifting portal', walk,
-                 note: 'we stood up first, so this is not resting — something is in the way' };
+      // ONE PORTAL WE CANNOT WALK TO IS NOT A ROOM WE CANNOT LEAVE.
+      //
+      // This used to RETURN here, and that single line is why characters sat in the
+      // Underworld indefinitely. There are SIX teleporters; failing to reach the one that
+      // happens to be shifting says nothing about the other five, and the loop below tries
+      // every reachable one in order for exactly that reason. Measured on the arena fleet:
+      // a keeper made ten consecutive attempts, each one ending here with "could not get
+      // next to the shifting portal", while three fixed portals stood reachable — it never
+      // reached the code that would have walked to them.
+      //
+      // The Underworld is the one room in the world with NO graph exits, so an escape that
+      // gives up is a character parked there until somebody notices. Fall through, and let
+      // the ordered attempt on every reachable teleporter have its turn.
+      if (!walk.arrived) {
+        cityAttempts.push({ portal: 'rip in space',
+                            why: `could not get next to it (${walk.reason || walk.note ||
+                                  'the walk did not arrive'}) — trying the fixed portals` });
+        ripUnreachable = true;
+      }
     }
+    // DECLARED OUTSIDE THE BLOCK BECAUSE THE FALL-THROUGH BELOW REPORTS IT. Scoping it to
+    // the polling block made `seen` a ReferenceError on the path where the rip could not be
+    // reached — which is the exact path this change exists to open, so every escape attempt
+    // died with "pass failed: seen is not defined" instead of trying the fixed portals.
     const seen = [];
     const t0 = Date.now();
-    while (Date.now() - t0 < maxSeconds * 1000) {
+    // The condition lives on the loop rather than in a wrapper block, so that everything
+    // below stays in one scope: `seen` is reported by the fall-through after it, and
+    // scoping it into a block made it a ReferenceError on exactly the path this change
+    // exists to open — every escape attempt died "pass failed: seen is not defined"
+    // instead of going on to try the fixed portals.
+    while (!ripUnreachable && Date.now() - t0 < maxSeconds * 1000) {
       const b = c.evSeq;
       await s.pacer.submit('look', () => c.look(rip.id));
       const ev = await c.waitFor({ since: b, kinds: ['look'], timeoutMs: 3000 });
@@ -2316,14 +2523,21 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
     .filter(x => x.r.reachable)
     .sort((a, b) => a.r.steps - b.r.steps);
   const tried = [];
-  for (const { o } of reachable) {
+  for (const { o, r: reach } of reachable) {
     const name = c.rsc.get(o.nameRsc);
     // Both markers go up BEFORE the walk. Stepping onto a live portal is itself the
     // last step of the walk, so the room packet can arrive while walkTo is still in
     // its loop — and a cursor taken afterwards looks past the very event it is for.
     const before = c.evSeq;
     const wasIn = c.room.id;
-    const walk = await s.walkTo(o.col, o.row, { maxSteps: 80 });
+    // BUDGET BY THE ROUTE, NEVER BY A FIXED CAP — `leaveVia` learned this and the
+    // Underworld is where it bites hardest. Its portals are 50 and 65 planned steps from
+    // the lower floor, so a flat 80 is spent by the first handful of off-plan landings and
+    // the walk reports "stopped after 80 steps" about a portal it was walking straight at.
+    // Measured: with the cap, every attempt failed that way while the router had a clean
+    // route to two of them.
+    const walk = await walkOntoSquare(s, o.col, o.row,
+                                      { maxSteps: escapeBudget(reach?.steps) });
     const arr = await c.waitFor({ since: before, kinds: ['room-entered'], timeoutMs: walk.arrived ? 3000 : 500 });
     const entered = arr.events.find(e => e.kind === 'room-entered');
     const now = whereAmI();
@@ -2355,6 +2569,37 @@ export async function escapeUnderworld(s, { city = null, nearestTo = null,
       ? 'stood on it and nothing happened — probably unlit; its brazier needs activating'
       : `never got onto its square (${walk.reason || walk.note || 'the walk did not arrive'})` });
   }
+  // NOT OUT YET — TAKE THE RIP, WHEREVER IT HAPPENS TO GO.
+  //
+  // Everything above either wanted a particular city or trusted the pentagram, and the
+  // pentagram is exactly what is unreliable: one or two are unlit at random and an unlit
+  // one is silent. Measured on the arena fleet, a character sat in the Underworld
+  // reporting "none of the teleporters here worked" while the rip stood open the whole
+  // time, because the rip is only polled when a city was ASKED for.
+  //
+  // A city nobody chose beats another hour down here, and the caller is told plainly
+  // which one it got so the walk back is not a surprise. This runs LAST so it can never
+  // take a character somewhere arbitrary while a portal to the right place was available.
+  if (rip && allowRip) {
+    const out = await ripOut(s, rip, { maxSeconds: Math.max(20, Math.min(60, maxSeconds)) });
+    if (out.left) {
+      const landed = Object.entries(UW.CITY_INNS)
+        .find(([, v]) => v.inn === out.room || (out.arrived_in && v.innName === out.arrived_in))?.[0] ?? null;
+      return { left: true, stood_up: true, arrived_in: out.arrived_in, room: out.room,
+               via: 'the rip in space', attempts: out.attempts, tried,
+               ...(landed ? { city: landed } : {}),
+               ...(wanted ? { wanted, chosen_because: chosenBecause,
+                              got_what_was_wanted: landed === wanted,
+                              ...(cityAttempts.length ? { could_not_use: cityAttempts } : {}) } : {}),
+               note: 'the pentagram would not answer, so this took the shifting portal to ' +
+                     (landed ?? 'whichever inn it was pointing at') + '. Out is out; the corpse ' +
+                     'and everything it was carrying is still where it died.' };
+    }
+    if (out.terminal)
+      return { left: false, stood_up: true, reason: out.reason, note: out.note, tried };
+    tried.push({ name: 'the rip in space', why: out.why });
+  }
+
   return { left: false, stood_up: true, reason: 'none of the teleporters here worked', tried,
            ...(wanted ? { wanted, could_not_use: cityAttempts } : {}),
            note: tried.some(t => /never got onto/.test(t.why))

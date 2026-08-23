@@ -39,6 +39,25 @@ export const WALKS_DIR = process.env.M59_WALKS_DIR || join(HERE, '..', 'substrat
 export const CROSSINGS_FILE = process.env.M59_CROSSINGS ||
   join(HERE, '..', 'substrate', 'm59-crossings.json');
 
+// THE DOOR HAS NOT MOVED, SO STOP RE-DERIVING IT EVERY TIME.
+//
+// The book above is the OPERATOR's evidence — squares a real client was watched crossing —
+// and it outranks every derived candidate because a record of somebody actually arriving
+// beats a guess from the same .roo the guesses came from. The fleet crosses these same
+// boundaries hundreds of times a day and learned nothing from any of it: every trip
+// re-derived the crossing, re-ranked the candidates, and re-discovered the same square by
+// walking at the wrong ones first. Watched from inside the game that is a character
+// spending "dozens of seconds if not minutes" wiggling at an entrance that has been in the
+// same place since the map was built, having just walked the whole room correctly.
+//
+// So a crossing that WORKS is written down, and it is written down as the same kind of
+// fact: a square somebody actually crossed at. Two files rather than one, because
+// provenance is the whole argument for ranking these first — the operator's file is
+// committed evidence about a human playing, and this one is the fleet's own history, and
+// merging them on disk would make it impossible to tell which claim came from where.
+export const LEARNED_CROSSINGS_FILE = process.env.M59_CROSSINGS_LEARNED ||
+  join(HERE, '..', 'substrate', 'm59-crossings-learned.json');
+
 /**
  * Pull an observed off-map position back to the square inside the room it was left from.
  *
@@ -96,11 +115,72 @@ export function harvest({ walksDir = WALKS_DIR, mapFile = movementMapFile() } = 
 let bookCache = null;
 export function crossingBook(file = CROSSINGS_FILE) {
   if (bookCache) return bookCache;
-  try { bookCache = JSON.parse(readFileSync(file, 'utf8')).pairs ?? {}; }
-  catch { bookCache = {}; }                        // no book is "nothing observed"
+  let pairs = {};
+  try { pairs = JSON.parse(readFileSync(file, 'utf8')).pairs ?? {}; }
+  catch { pairs = {}; }                            // no book is "nothing observed"
+  // The fleet's own successes, merged on READ so the two files stay separable on disk.
+  // Counts add: a square the operator crossed at once and the fleet has crossed at forty
+  // times is better evidence than either alone, and `witness` only ever compares counts.
+  let learned = {};
+  try { learned = JSON.parse(readFileSync(LEARNED_CROSSINGS_FILE, 'utf8')).pairs ?? {}; }
+  catch { learned = {}; }
+  for (const [key, squares] of Object.entries(learned)) {
+    const merged = new Map((pairs[key] ?? []).map(o => [o.row + ',' + o.col, o.seen ?? 1]));
+    for (const o of squares)
+      merged.set(o.row + ',' + o.col, (merged.get(o.row + ',' + o.col) ?? 0) + (o.seen ?? 1));
+    pairs[key] = [...merged].sort((a, b) => b[1] - a[1])
+      .map(([sq, seen]) => { const [row, col] = sq.split(',').map(Number); return { row, col, seen }; });
+  }
+  bookCache = pairs;
   return bookCache;
 }
 export const observedCrossings = (from, to) => crossingBook()[from + '>' + to] ?? [];
+
+/**
+ * Write down a crossing that actually worked.
+ *
+ * MUST NOT THROW AND MUST NOT BLOCK THE WALK. It is called from the broker the moment a
+ * character changes room, on the one event loop twenty-one sessions share, so the write is
+ * debounced and every failure is swallowed — a book that cannot be written is a fleet that
+ * re-derives, which is exactly how it behaved before this existed.
+ *
+ * The square is the one a character STANDS on to cross, matching the pull-back the
+ * harvester applies to the operator's logs, so both files mean the same thing.
+ */
+let learnedPending = null, learnedTimer = null;
+export function recordCrossing(from, to, square, { file = LEARNED_CROSSINGS_FILE } = {}) {
+  try {
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return false;
+    if (!Number.isFinite(square?.row) || !Number.isFinite(square?.col)) return false;
+    if (!learnedPending) {
+      try { learnedPending = JSON.parse(readFileSync(file, 'utf8')).pairs ?? {}; }
+      catch { learnedPending = {}; }
+    }
+    const key = from + '>' + to;
+    const list = learnedPending[key] ?? (learnedPending[key] = []);
+    const hit = list.find(o => o.row === square.row && o.col === square.col);
+    if (hit) hit.seen = (hit.seen ?? 1) + 1;
+    else list.push({ row: square.row, col: square.col, seen: 1 });
+    bookCache = null;                              // the merged view is now stale
+    if (!learnedTimer) {
+      learnedTimer = setTimeout(() => {
+        learnedTimer = null;
+        try {
+          mkdirSync(dirname(file), { recursive: true });
+          writeFileSync(file, JSON.stringify({
+            note: 'Squares THIS FLEET actually crossed a boundary from, written by the ' +
+                  'broker when a leaveVia succeeded. Same meaning as m59-crossings.json ' +
+                  'and kept apart from it so the provenance of each claim stays legible.',
+            written: new Date().toISOString(),
+            pairs: learnedPending,
+          }, null, 1) + String.fromCharCode(10));
+        } catch { /* a fleet that cannot write its book simply re-derives */ }
+      }, 10000);
+      if (typeof learnedTimer.unref === 'function') learnedTimer.unref();
+    }
+    return true;
+  } catch { return false; }
+}
 
 // --------------------------------------------------------------------------- cli
 if (process.argv[1]?.endsWith('m59-crossings.mjs')) {

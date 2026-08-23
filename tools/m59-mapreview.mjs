@@ -90,8 +90,9 @@ export const KNOWN = {
      + 'was tried',
   615: 'The Badlands — the only room in the world the fleet can walk into and never walk '
      + 'out of, by the room graph rather than by geometry',
-  150: 'Cor Noth — west publishes six boundary crossings and zero grounded approaches, so '
-     + 'the model believes there is nowhere to stand at a door real players use daily',
+  150: 'Cor Noth — west publishes six boundary crossings and zero grounded approaches. '
+     + 'Correct: there is NO west exit from Cor Noth (operator, 2026-08-18). The declared '
+     + 'edge is spurious and is already dropped for having no validated approach',
 };
 
 export function review({ file = ROUTES_FILE() } = {}) {

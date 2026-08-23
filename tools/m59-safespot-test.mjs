@@ -16,7 +16,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import { unlinkSync } from 'node:fs';
 import { Autopilot, farmRoomDenials,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
-import { SafeSpotBook } from './m59-safespots.mjs';
+import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
@@ -600,10 +600,15 @@ console.log('\n--- stopping is not instant, and starting has to know that ---');
   p.stop('code is being reloaded', { hard: true });
   ok('a hard stop is only a request at first', p.running && p.stopping,
      'the loop is still mid-pass; it has not noticed yet');
+  ok('a hard stop turns off its independent watchdog immediately', !p.watchTimer);
   p.start();
   ok('a start cancels a hard stop that has not landed', p.running && !p.stopping);
+  ok('cancelling that stop restores the independent watchdog', !!p.watchTimer);
+  ok('and restores the current pass observation window', p.passStartedAt != null);
   ok('and says so in the journal',
-     p.journal.some(e => /start cancelled a stop/.test(e.what)));
+     p.journal.some(e => /start cancelled a stop/.test(e.what) &&
+                         e.watchdog_restarted === true && e.uptime_resumed === true &&
+                         e.pass_watch_restored === true));
 
   await new Promise(r => setTimeout(r, 150));   // let several passes go by
   ok('it is still running afterwards', p.running,
@@ -645,6 +650,13 @@ console.log('\n--- a freeze that changed nothing is not repeated ---');
   // outcome, not on the cause.
   const w = world({ health: 4, max: 25 });
   const p = keeper(w);
+  // ON A PROVEN WALL, because since 2026-08-21 that is the only place a freeze is legal at
+  // all: off one, playDead refuses outright, since it recovers vigor and NEVER health and
+  // three characters were measured freezing in the open and dying. That rule is pinned in
+  // m59-playdead-test.mjs. THIS block is about something else — the livelock guard, which
+  // is on the OUTCOME rather than the cause — so it has to set up the one situation where
+  // a freeze can happen, or it is testing the refusal instead of the repeat.
+  p.hold = { col: w.me().col, row: w.me().row, proven: true, takenAt: Date.now() - 60_000 };
   let rejoins = 0;
   p.s.rejoin = async () => { rejoins++; };
   const first = await p.playDead('test');
@@ -985,5 +997,134 @@ console.log('\nprovenance of a verdict');
 }
 
 try { unlinkSync(BOOK); } catch { /* never written */ }
+console.log('');
+console.log('shelters planned with the route, not searched for from a standstill');
+{
+  // You do not add a fuel stop by braking in the road, unfolding a map and re-planning from
+  // a standstill. You work out where the stops are while driving and change the road ahead.
+  // The version this replaces did the braking: cancel the journey, hand the character back,
+  // search the room from wherever it happened to be, walk to whatever it found. Health leaves
+  // at a median of 4.7 a second and the average maximum here is 45 — nine and a half seconds
+  // from full to dead — so stopping to think was most of it.
+  const shelters = [
+    { col: 5,  row: 5,  atStep: 2,  detour: 2, proven: false },
+    { col: 9,  row: 9,  atStep: 2,  detour: 1, proven: true  },
+    { col: 20, row: 20, atStep: 10, detour: 1, proven: true  },
+    { col: 30, row: 30, atStep: 18, detour: 9, proven: true  },
+  ];
+  const at = (i, o) => shelterAhead(shelters, i, o);
+
+  ok('the next stop ahead is offered', at(0)?.atStep === 2);
+  // AHEAD, NEVER BEHIND. A character got hurt somewhere; sending it back through the place
+  // it was bitten to reach a wall it has already passed is a longer way to die.
+  ok('one already passed is not offered', at(5)?.atStep === 10);
+  ok('and when everything is behind, nothing is offered', at(19) === null);
+  // NEAREST ALONG THE ROUTE, not best in the room — the best may be forty squares on, which
+  // is the same mistake as searching.
+  ok('the nearest along the route wins, not the best',
+     at(0)?.detour === 1 && at(0)?.row === 9);
+  // THE REAL GATE IS THE DETOUR. A wall nine squares off the road is not shelter when there
+  // are nine seconds of health left.
+  ok('a stop too far off the road is not shelter', at(11) === null);
+  ok('unless the caller says it will pay that far', at(11, { maxDetour: 12 })?.atStep === 18);
+  ok('an empty list is null rather than a throw', shelterAhead([], 0) === null);
+  ok('and so is nothing at all', shelterAhead(null, 0) === null);
+}
+
+console.log('');
+console.log('--- a safe wall is the two grids disagreeing ---');
+{
+  // The criterion the operator set, 2026-08-21: a wall is worth standing at because the
+  // COARSE grid offers approaches the MOVER refuses. Everything else in this file scores a
+  // square on coarse walkability and line of sight, which describes the server artifact
+  // monsters path on and says nothing about whether the approach can be MADE.
+  //
+  // A stub geometry rather than a baked room: this is arithmetic over two predicates, and
+  // pinning it against a real room would pin the room instead of the rule.
+  const dgeo = (walkable, lands, ready = true) => ({
+    rows: 9, cols: 9, collisionReady: ready,
+    walkable: (r, c) => walkable(r, c),
+    moverStepLands: (fr, fc, tr, tc) => lands(fr, fc, tr, tc),
+  });
+  const allOpen = () => true;
+
+  const none = gridDisagreementAt(dgeo(allOpen, () => true), 5, 5);
+  ok('open floor the mover agrees with has nothing refused',
+     none && none.offered === 8 && none.refused === 0, JSON.stringify(none));
+
+  const all = gridDisagreementAt(dgeo(allOpen, () => false), 5, 5);
+  ok('a square the mover will not let anything into is refused from every side',
+     all && all.offered === 8 && all.refused === 8, JSON.stringify(all));
+
+  const half = gridDisagreementAt(dgeo(allOpen, (fr) => fr >= 5), 5, 5);
+  ok('and a genuine wall refuses SOME of what the grid offers',
+     half && half.offered === 8 && half.refused > 0 && half.refused < 8, JSON.stringify(half));
+
+  // Squares the coarse grid already calls solid are not a disagreement — there is nothing
+  // being offered to refuse, and counting them would score plain rock as perfect cover.
+  const walled = gridDisagreementAt(dgeo((r) => r >= 5, () => true), 5, 5);
+  ok('rock the grid already refuses is not counted as a disagreement',
+     walled && walled.offered < 8 && walled.refused === 0, JSON.stringify(walled));
+
+  // THE ONE THAT MATTERS MOST. `moverStepLands` answers TRUE for everything when collision
+  // is not baked — it is built to get out of the way, not to veto what it cannot check. So
+  // "no disagreement" and "cannot tell" read identically unless this refuses to answer, and
+  // a measurement that degrades to a plausible number instead of to an absence is how a
+  // whole criterion gets switched off without anybody noticing.
+  ok('an unbaked room answers NULL rather than zero',
+     gridDisagreementAt(dgeo(allOpen, () => true, false), 5, 5) === null);
+  ok('and so does a geometry with no mover at all',
+     gridDisagreementAt({ rows: 9, cols: 9, collisionReady: true, walkable: allOpen }, 5, 5) === null);
+  ok('and no geometry at all is null, not a throw', gridDisagreementAt(null, 5, 5) === null);
+}
+
+
+console.log('');
+console.log('A WALL WE COULD NOT WALK TO IS NOT SHELTER');
+{
+  // From a dead character's own decision trail in the Western border of the Twisted Wood:
+  //
+  //   could not reach the safe spot
+  //   will not rest in the open here
+  //   leaving the room to recover safely
+  //   could not leave
+  //
+  // ...and then it died. Nothing recorded the failure, so every pass chose the SAME
+  // unreachable square, and the crossing was never allowed to proceed. All three of that
+  // room's baked rails answer `moverStepLands` on every step — the room was crossable the
+  // whole time; the character simply never got to walk it.
+  //
+  // Distinct from the safe-spot BOOK, which records squares that failed to HOLD. That is a
+  // fact about the wall and it is permanent. This is a fact about the WALK, usually
+  // temporary — something in the doorway — so it expires rather than condemning a good wall.
+  const spots = [
+    { atStep: 1, detour: 1, col: 10, row: 5, refused_approaches: 3, proven: true },
+    { atStep: 2, detour: 2, col: 20, row: 5, refused_approaches: 2, proven: false },
+  ];
+  const first = shelterAhead(spots, 0, { maxDetour: 4 });
+  ok('with nothing excluded, the nearest planned stop is offered',
+     first?.col === 10, JSON.stringify(first));
+
+  const skipped = shelterAhead(spots, 0, { maxDetour: 4, unreachable: new Set(['10,5']) });
+  ok('a stop we failed to reach is not offered again',
+     skipped?.col === 20, JSON.stringify(skipped));
+
+  // AND WHEN NOTHING IS LEFT, IT SAYS SO rather than handing back a square it already knows
+  // is no good. Null is what lets the rung decline and the journey carry on — which is the
+  // whole point: a shelter that cannot be reached must not keep cancelling the crossing.
+  const none = shelterAhead(spots, 0, { maxDetour: 4, unreachable: new Set(['10,5', '20,5']) });
+  ok('and when every planned stop is unreachable it declines outright', none === null,
+     JSON.stringify(none));
+
+  // The exclusion is applied BEFORE the ranking, not after — otherwise an unreachable square
+  // wins on disagreement and is then failed again, which is the loop this replaces.
+  const ranked = shelterAhead(
+    [{ atStep: 1, detour: 1, col: 30, row: 5, refused_approaches: 9 },
+     { atStep: 1, detour: 1, col: 31, row: 5, refused_approaches: 1 }],
+    0, { maxDetour: 4, unreachable: new Set(['30,5']) });
+  ok('and the best-scoring square does not win it back by scoring well',
+     ranked?.col === 31, JSON.stringify(ranked));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

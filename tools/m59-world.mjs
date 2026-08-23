@@ -19,12 +19,13 @@
 // a person or an agent can look at.
 
 import { sharedRoomGeometry } from './m59-roo.mjs';
-import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE } from './m59-map.mjs';
+import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE,
+         AVOID_IN_TRANSIT, selectedEdgeAt } from './m59-map.mjs';
 import { inRegion } from './m59-codeexits.mjs';
 import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { observedCrossings } from './m59-crossings.mjs';
-import { activeRoutes, anchorFor } from './m59-routes.mjs';
+import { activeRoutes, anchorFor, sameRegion, anchorReach } from './m59-routes.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -324,8 +325,22 @@ export class World {
     // So this answers the tactical question — how far is that square, really — exactly as
     // it did before clearance existed. Crossing the room is `walkTo`'s business.
     const r = geo.path(me.row, me.col, toRow, toCol, { clearance: 0 });
-    if (!r.found) return { reachable: false, why: r.reason };
-    return { reachable: true, steps: r.steps.length, path: r.steps.map(s => ({ col: s.col, row: s.row, dir: s.dir })),
+    if (!r.found) return { reachable: false, verified: false, why: r.reason };
+    // REACHABLE, AND SEPARATELY, WALKABLE ALL THE WAY.
+    //
+    // `path` will plan a final step into the goal that the MOVER refuses rather than delete
+    // a doorway the model dislikes — 346 of the exit anchors this bake cannot reach are
+    // `go` exits whose square IS the door tile — and it flags such a route `goal_exempt`.
+    // That flag has to survive to here, because "there is a route" and "the mover will walk
+    // every step of it" are different answers and only the second predicts arrival.
+    //
+    // REPORTED BESIDE `reachable`, NEVER INSTEAD OF IT. Every tactical consumer should go on
+    // treating the doorway as offered and attempt it — being wrong about one step costs a
+    // packet and a fine correction, which `leaveVia` already does. What this lets a caller
+    // do is stop PLANNING A JOURNEY through a door whose last step is a known disagreement,
+    // which is the difference between a longer route and eighty seconds of failing at a wall.
+    return { reachable: true, verified: r.goal_exempt !== true,
+             steps: r.steps.length, path: r.steps.map(s => ({ col: s.col, row: s.row, dir: s.dir })),
              ...(me.offGrid ? { from_nearest_floor: { col: me.col, row: me.row },
                                 note: 'you are standing off the movement grid; steps are counted from the nearest floor square' }
                             : {}) };
@@ -586,6 +601,10 @@ export class World {
           : `walk ${e.leaveName} past the room edge`,
         condition: e.condition ? `${e.condition.name}${e.condition.threshold}` : null,
         reachable: true,
+        // THE MOVER'S FLOOD ALREADY ANSWERED THIS. `grid_only` means no staging square for
+        // this crossing was reachable under collision and the coarse grid was used instead
+        // — which is exactly "offered, but do not build a journey on it".
+        verified: !approach.grid_only,
         // Flagged so leaveVia can tell a declared boundary from a guessed one, and
         // retire the guess when the server refuses it.
         ...(e.inferred ? { inferred: true } : {}),
@@ -607,7 +626,8 @@ export class World {
             if (!inRegion(ce.when, r, c) || !geo.walkable(r, c)) continue;
             const p = this.reach(c, r);
             if (p.reachable) {
-              direct.push({ col: c, row: r, steps: p.steps, reachable: true });
+              direct.push({ col: c, row: r, steps: p.steps, reachable: true,
+                            verified: p.verified !== false });
               continue;
             }
 
@@ -623,6 +643,7 @@ export class World {
             const approach = this.approachSquare(c, r);
             if (approach)
               staged.push({ col: c, row: r, steps: approach.steps + 1, reachable: false,
+                            verified: false,
                             approach_on: { col: approach.col, row: approach.row } });
           }
         }
@@ -650,6 +671,7 @@ export class World {
         stand_on: best ? { col: best.col, row: best.row } : null,
         steps_away: best ? best.steps : null,
         reachable: best ? best.reachable : (geo && me ? false : null),
+        verified: best ? best.verified === true : (geo && me ? false : null),
         ...(best?.approach_on ? { approach_on: best.approach_on } : {}),
         ...(targets.length ? { trigger_targets: targets.map(target => ({
           stand_on: { col: target.col, row: target.row },
@@ -673,6 +695,10 @@ export class World {
         stand_on: { col: g.col, row: g.row },
         steps_away: rr.steps ?? null,
         reachable: rr.reachable,
+        // A `go` exit's square IS the door tile, which is a pocket by design and exactly
+        // the case `path`'s goal exemption exists for — so this is very often `false` here
+        // and that is correct. It must never be read as "do not offer this door".
+        verified: rr.verified ?? null,
         how: g.locked
           ? `locked door at (${g.col},${g.row})`
           : `walk_to EXACTLY (${g.col},${g.row}) then act go — the match is on that one square`,
@@ -696,6 +722,7 @@ export class World {
         stand_on: { col: o.col, row: o.row },
         steps_away: rr.steps ?? null,
         reachable: rr.reachable,
+        verified: rr.verified ?? null,
         // The flag is certain; where it goes is not. Some portals are fixed and some
         // change their destination on a timer, and the only way to find out is to
         // look at it — the description names the place in prose.
@@ -915,13 +942,240 @@ export class World {
 
   // ------------------------------------------------------------------ travel
 
+  /**
+   * Can `room` be WALKED from the door you came in by to the door you want? `null` when
+   * the table cannot say, and every caller must read that as "carry on".
+   *
+   * The router has always planned over rooms, which assumes any two doors of a room are
+   * joined by floor. Often they are not. The Cragged Mountains basin reaches exactly one
+   * of its five exits on foot. West Merchant Way is the same shape inverted — the operator
+   * walked it: you come in from Marion at the TOP, walk down, and cannot climb back, and
+   * blink does not help either. A route planned in ignorance of that is not a long route,
+   * it is a plan that puts a character in a hole it cannot leave.
+   *
+   * The answer is already baked: every anchor in substrate/m59-routes.json carries the
+   * strongly-connected region of the room's floor it stands in.
+   *
+   * IT ONLY EVER REFUSES ON EVIDENCE. No table, no masks, an unbaked room, an anchor that
+   * is not there, or a region of -1 all return null rather than false — the same rule the
+   * step mask follows, and for the same reason: a bake must never be the thing that makes
+   * a doorway disappear.
+   */
+  transitOk() {
+    const table = activeRoutes();
+    if (!table) return null;
+    return (room, cameFrom, goingTo) => {
+      const inA = anchorFor(table, room, cameFrom);
+      const outA = anchorFor(table, room, goingTo);
+      if (!inA || !outA) return null;
+      // DIRECTED, BECAUSE THE QUESTION IS. `sameRegion` asks whether two doors are in the
+      // same strongly connected component — whether each can reach the OTHER — and that is
+      // a stricter thing than "can I get from the door I came in by to the one I want".
+      // Where a room contains a one-way drop the two answers differ, and the mutual one is
+      // wrong in the direction that matters: measured in Ukgoth, the Castle Victoria door
+      // reaches the Sentinel door in 136 steps while the reverse has no route at all, so
+      // the components differ and `sameRegion` refused a transit the fleet makes.
+      //
+      // The bake already holds the directed answer. It is one BFS per anchor square,
+      // written per ORDERED pair, so a yes in the table is a yes in that direction.
+      // Absent, fall through to the component test rather than to nothing: for a pair the
+      // bake never covered, mutual reachability is still evidence, and `null` still means
+      // carry on.
+      //
+      // ASK `anchorReach`, NOT `bakedPath`. The question here is "is there a way", and
+      // `bakedPath` answers "here are the squares" — which is null whenever the route
+      // contains a FALL, because the step string is one letter per unit direction and a
+      // fall is one move of two or three squares. Ukgoth's Castle Victoria doorway reaches
+      // the Sentinel doorway in 83 steps whose FIRST move is a fall, so the crossing the
+      // fleet makes every lap was refused by a table that had walked it.
+      if (anchorReach(table, room, inA, outA)) return true;
+      return sameRegion(table, room, inA, outA);
+    };
+  }
+
+  /**
+   * THE SQUARES ON THIS EXIT'S BOUNDARY THAT WOULD FIRE A DIFFERENT EXIT.
+   *
+   * A boundary is not one door. The server picks between the exits on an edge by evaluating
+   * a condition on the crossing square, and `selectedEdgeAt` simulates that ordered scan
+   * exactly — it is the same question the server answers when the body crosses.
+   *
+   * The Western border of the Twisted Wood is the measured case. Its east edge is split by a
+   * row threshold:
+   *
+   *     east -> 586  Main gate to the city of Tos   when row < 19
+   *     east -> 597  The Twisted Wood               when row > 20
+   *
+   * A character entering from Tos lands at row 8, column 66 — one square from that boundary,
+   * inside the FIRST band. Every walk toward the Twisted Wood door at row 46 begins beside
+   * the door back to Tos, and one slide east takes it. Measured: thirteen consecutive
+   * attempts at `587 -> 597`, each reporting the crossing and then landing in 586, a hundred
+   * and eighty seconds in one room without leaving it.
+   *
+   * Keeping AWAY from a boundary was the wrong shape of fix, because the arrival square is
+   * already beside it. The right one is to refuse the squares that fire the wrong door: they
+   * are known before the walk starts, they are few, and the router can simply route around
+   * them. The strip one square inland goes too, because that is where a slide starts.
+   *
+   * Empty whenever the edge carries only one exit, which is nearly always — this costs
+   * nothing on an ordinary boundary.
+   */
+  wrongExitSquares(exit, { includeInland = false } = {}) {
+    const out = new Set();
+    const room = this.room && this.map?.rooms?.[this.room.num];
+    const dir = exit?.direction ?? exit?.leaveName;
+    if (!room || !dir || exit?.to == null) return out;
+    const edges = (room.edgeExits ?? []).filter(e => (e.leaveName ?? '') === dir);
+    if (edges.length < 2) return out;                 // one door on this edge: nothing to avoid
+    const geo = this.geometry;
+    const rows = Number(geo?.rows ?? room.rows), cols = Number(geo?.cols ?? room.cols);
+    if (!Number.isFinite(rows) || !Number.isFinite(cols)) return out;
+    const want = Number(exit.to);
+    const along = (dir === 'east' || dir === 'west')
+      ? { count: rows, at: (n) => ({ row: n, col: dir === 'east' ? cols : 1 }), inland: dir === 'east' ? -1 : 1, axis: 'col' }
+      : { count: cols, at: (n) => ({ row: dir === 'south' ? rows : 1, col: n }), inland: dir === 'south' ? -1 : 1, axis: 'row' };
+    for (let n = 1; n <= along.count; n++) {
+      const sq = along.at(n);
+      const fires = selectedEdgeAt(room, dir, sq);
+      if (!fires || Number(fires.to) === want) continue;
+      out.add(`${sq.row},${sq.col}`);
+      // THE STRIP ONE SQUARE INLAND IS WHERE A SLIDE STARTS — and it is also where the baked
+      // rail runs, because a line leaving this room hugs the edge before it turns away.
+      // Blocking it would make the crossing unplannable, which is a worse failure than the
+      // one being fixed, so it is off by default and available to a caller that wants it.
+      if (includeInland) {
+        if (along.axis === 'col') out.add(`${sq.row},${sq.col + along.inland}`);
+        else out.add(`${sq.row + along.inland},${sq.col}`);
+      }
+    }
+    return out;
+  }
+
+  /**
+   * HOW MANY SQUARES IT IS ACROSS A ROOM, door to door. Same shape as `transitOk`, and from
+   * the same baked table: that one answers whether a crossing is possible, this one what it
+   * costs. Used only to choose between routes of equal ROOM COUNT, so it can never make a
+   * journey longer — and `null` whenever the table cannot say, which the planner charges as
+   * an ordinary crossing rather than as free.
+   *
+   * The measured case is Tos to Castle Victoria. Both ways are seven rooms; via the Western
+   * border of the Twisted Wood is 310 baked steps and via the Outskirts of Tos is 298, and
+   * the second is shorter on every leg where they differ. The planner counted rooms, could
+   * not see any of that, and picked the longer one by accident.
+   */
+  crossCost() {
+    const table = activeRoutes();
+    if (!table) return null;
+    return (room, cameFrom, goingTo) => {
+      const inA = anchorFor(table, room, cameFrom);
+      const outA = anchorFor(table, room, goingTo);
+      if (!inA || !outA) return null;
+      if (inA.row === outA.row && inA.col === outA.col) return 0;
+      const r = table.rooms?.[room] ?? table.rooms?.[String(room)];
+      const path = r?.routes?.[`${inA.row},${inA.col}>${outA.row},${outA.col}`];
+      return typeof path === 'string' ? path.length : null;
+    };
+  }
+
   // A route to another room, expressed as things to do rather than rooms to be in.
   // Each leg says which square to stand on and which mechanism to use, because the
   // two mechanisms are not interchangeable and getting it wrong produces silence.
-  route(toRoomNum) {
+  /**
+   * @param blockedHops  Hops this CALLER has learned are unusable, as `"from>to"` room
+   *   numbers. Merged with the ones derived from `exits()` below rather than replacing
+   *   them. A hop is the right unit for a learned failure and a room is not: the room a
+   *   character cannot cross from THIS door it can usually cross from another, and the
+   *   destination is frequently somewhere it must still be able to arrive at.
+   */
+  route(toRoomNum, { avoid = null, blockedHops: learned = null } = {}) {
     const room = this.room;
     if (!room) return { found: false, reason: 'current room is not in the graph' };
-    const r = findPath(this.map, room.num, toRoomNum);
+    // A CALLER MAY ADD TO THE AVOID SET, NEVER REPLACE IT. `AVOID_IN_TRANSIT` is this
+    // repository's standing opinion about the world; a caller's set is what THIS character
+    // has learned the hard way — a doorway the server actually refused it. Overwriting the
+    // first with the second would quietly route the fleet back through the rooms the map
+    // module exists to keep it out of.
+    const merged = avoid?.size
+      ? new Set([...AVOID_IN_TRANSIT, ...avoid])
+      : AVOID_IN_TRANSIT;
+
+    // AND THE FIRST HOP, WHICH `transitOk` CANNOT SEE.
+    //
+    // The transit predicate asks "can this room be crossed from the door I came in by",
+    // and the room we are STANDING IN has no such door — so leaving it was the one hop
+    // planned with no idea whether its exit can be walked to. That is not a corner case:
+    // a character already inside West Merchant Way, asked to go anywhere through Deep
+    // Forest of Farol, planned straight at a doorway on the far side of a 1664-unit face
+    // and failed with "every square for that exit refused" every single time. Measured on
+    // the arena fleet, that one shape was four of nine torture-run failures.
+    //
+    // For the first hop the question is not about anchors at all — it is where this
+    // character is standing right now, which `exits()` already answers per exit. A raw
+    // graph destination that is absent from that authoritative offered list is not
+    // somewhere we can set off for.
+    //
+    // NOT A PREFERENCE. The graph's permissive transit pass exists because an offline bake
+    // may be stricter than the server. A raw destination that is absent from an
+    // AUTHORITATIVE live exit list is different: the executor has no action it can take for
+    // that hop. Falling back through it plans a journey whose first instruction cannot be
+    // executed. Room 27 is the measured case: the raw graph declares west -> 2500, but that
+    // boundary is a stranded collision pocket and `exits()` correctly offers only 587 and
+    // 5; the permissive pass nevertheless planned west and stopped in the cave.
+    //
+    // CONSTRAIN THE FIRST EXPANSION, NOT THE ROOM. A later route may legitimately re-enter
+    // this room through another door, from another position, and the live answer observed
+    // here says nothing about that later state.
+    let availableFirstHops = null;
+    const blockedHops = new Set();
+    try {
+      const geometry = this.geometry;
+      const self = this.self;
+      const origin = geometry && self ? this.origin() : null;
+      // `origin()` deliberately falls back to `self` when it cannot reconcile that
+      // position to a floor. That is useful to callers, but it is not authority for a
+      // HARD absence claim: ROOM_CONTENTS can briefly describe the previous room and put
+      // self outside this geometry. Fail open unless both the raw position and reconciled
+      // origin are actually in the current room's bounds.
+      if (geometry && self && origin
+          && typeof geometry.inBounds === 'function'
+          && geometry.inBounds(self.row, self.col)
+          && geometry.inBounds(origin.row, origin.col)) {
+        // CACHE THE ONE LIVE READ. `exits()` is expensive and, more importantly, a second
+        // read can observe a different ROOM_CONTENTS generation. Every offered non-null
+        // destination counts, including `reachable:false` / `verified:false`: those are
+        // soft model warnings and the executor still has a concrete action to attempt.
+        const offered = this.exits();
+        availableFirstHops = new Set(offered
+          .filter(e => e.to != null && Number.isFinite(Number(e.to)))
+          .map(e => Number(e.to)));
+
+        // ABSENCE IS HARD; AN OFFERED BUT UNVERIFIED EXIT IS STILL SOFT. Preserve the
+        // existing preference against a destination whose every offered action is known
+        // unreachable/unverified, using this SAME snapshot. `findPath` drops blockedHops
+        // on its permissive pass but retains availableFirstHops, so the exit is avoided
+        // when another executable route exists and still attempted when it is the only one.
+        const byDest = new Map();
+        for (const exit of offered) {
+          if (exit.to == null || !Number.isFinite(Number(exit.to))) continue;
+          const to = Number(exit.to);
+          const usable = exit.reachable !== false && exit.verified !== false;
+          byDest.set(to, byDest.get(to) === true ? true : usable);
+        }
+        for (const [to, usable] of byDest)
+          if (!usable) blockedHops.add(`${room.num}>${to}`);
+      }
+    } catch { /* no authoritative geometry/self means no first-hop constraint */ }
+    // AND WHAT THE CALLER HAS ACTUALLY WATCHED FAIL. `exits()` is a model, and a model that
+    // says a hop is fine is not evidence that it is: the Western border of the Twisted Wood
+    // publishes a perfectly reachable crossing to The Twisted Wood, and taking it lands the
+    // character in the Main gate to the city of Tos instead, because both exits share one
+    // boundary. Nothing in the model can see that. A journey that has watched it happen can.
+    if (learned) for (const h of learned) blockedHops.add(h);
+    const r = findPath(this.map, room.num, toRoomNum,
+                       { avoid: merged, transitOk: this.transitOk(),
+                         blockedHops: blockedHops.size ? blockedHops : null,
+                         crossCost: this.crossCost(),
+                         availableFirstHops });
     if (!r.found) return r;
     return {
       found: true,

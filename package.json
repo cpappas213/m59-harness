@@ -3,8 +3,11 @@
   "private": true,
   "type": "module",
   "description": "Play Meridian 59 as a real player character, from an agent. Only the chat responder needs a dependency \u2014 every other tool in tools/ is standalone .mjs and runs with `node tools/<name>.mjs` against a bare Node install.",
+  "engines": {
+    "node": ">=22"
+  },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.70.0"
+    "@anthropic-ai/sdk": "0.117.1"
   },
   "scripts": {
     "terminal": "node tools/m59-tui.mjs",

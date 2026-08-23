@@ -316,6 +316,34 @@ console.log('\nboth boards render against this fixture');
   const empty = abilities.fleetAbilities({ sinceMs: 1 });
   ok('an empty window still lists every ability, with nothing moved',
      empty.abilities.length === 3 && empty.advanced === 0 && empty.atrophied === 0);
+
+  // THE PACK DRILL-IN NAMES WHAT IS IN THE PACK, not only how full it is.
+  //
+  // A meter at 94% is a question; the list is the answer to it, and it comes off the
+  // fleet row the broker already builds from the client's cached inventory, so the page
+  // sends nothing. The two empty cases are the point: an EMPTY pack and an UNHELD
+  // character must not render alike, the same rule the hatched meter follows.
+  const withPack = renderEconomy({ hours: 6, live: [
+    { character: 'Gonzo', purse: 999, reagents: { elderberry: 3, herbs: 4 },
+      carrying: 3, pack: { percent: 41, weight: 700, bulk: 300, max: 1700,
+                           binding: 'weight', exact: true },
+      pack_items: [{ name: 'Herbs', amount: 176 }, { name: 'ElderBerry', amount: 41 },
+                   { name: 'battle axe', amount: 1 }] },
+    { character: 'Beaker', carrying: 0, pack_items: [] },
+  ] });
+  ok('the pack drill-in lists the items, with the amount on a stack',
+     /Herbs <span class="dim">x176<\/span>/.test(withPack) && /battle axe/.test(withPack));
+  ok('and an item with one of it carries no xN', !/battle axe <span class="dim">x/.test(withPack));
+  ok('an empty pack says it is empty', /nothing in the pack/.test(withPack));
+  ok('and a character nobody is holding says no list rather than an empty one',
+     /no item list/.test(withPack));
+  // The third absence, which is the one that will actually be seen first: the page is
+  // new and the broker serving it is not. A row with no `pack_items` field at all is an
+  // OLD BROKER, not an empty pack, and saying "nothing in the pack" about a character
+  // carrying a full load is the kind of confident wrong answer this page exists to avoid.
+  const oldBroker = renderEconomy({ hours: 6, live: [{ character: 'Gonzo', purse: 999, carrying: 3 }] });
+  ok('a broker too old to report the list says so instead of claiming an empty pack',
+     /does not report the item list/.test(oldBroker) && !/nothing in the pack/.test(oldBroker));
 }
 
 // ------------------------------------------------------------------ the tab bar

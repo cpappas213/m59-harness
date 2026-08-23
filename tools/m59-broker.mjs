@@ -44,7 +44,16 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
   from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
+// UNION OF BOTH SIDES. Ours added loadRoo/buildAllRoomGeometry for the keeper split;
+// upstream added clientToProtocol for its collision work. Same module, both needed.
+import { CLIENT_FINENESS, elideLoops, protocolToClient, clientToProtocol,
+         loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
+import { recordTactic } from './m59-tactics.mjs';
+import { recordCrossing } from './m59-crossings.mjs';
+import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
+import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
+import { traceMove } from './m59-collision-trace.mjs';
+import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -56,8 +65,8 @@ import * as bankbook from './m59-bank.mjs';
 import * as hitbook from './m59-hits.mjs';
 import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
-import { resolveFleet } from './m59-fleetpath.mjs';
 import { Session, Recorder, Pacer, readAbilitiesOnce, loadMonsterLevels, monsterKarmaByName, monsterLevelByName, arrivalReport, orderExits } from './m59-session.mjs';
+import { resolveFleet, rosterGameEndpoint } from './m59-fleetpath.mjs';
 import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
 import { resolveItemNames, weighItem } from './m59-items.mjs';
 import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
@@ -74,11 +83,12 @@ import { StorageCache, GUILD_CHEST_SLOTS, chestFullness } from './m59-storage.mj
 import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup,
+         TRAVEL_GUARD_KEYS,
          applyFightAboveVigor } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import * as exitgap from './m59-exitgap.mjs';
-import { attachStepMasks } from './m59-routes.mjs';
+import { attachStepMasks, activeRoutes, anchorFor, bakedPath } from './m59-routes.mjs';
 import { TitheBook, guildRentStatus, payGuildTithe, titheFleet } from './m59-tithe.mjs';
 import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
          DEFAULT_RANK_TITLES, maturityWait, inductionPlan, INVITATION_MS,
@@ -87,7 +97,9 @@ import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
          SELF_SUSTAINING_RANK, CANNOT_REJOIN_MINUTES } from './m59-guild.mjs';
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES,
          knownDrops, whoDrops } from './m59-spawns.mjs';
-import { safeSpots, safeSpotBook } from './m59-safespots.mjs';
+// UNION: upstream's shelter helpers plus the book this checkout already used.
+import { safeSpots, safeSpotBook,
+         nearestSafeSpot, sheltersAlong, shelterAhead } from './m59-safespots.mjs';
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
 import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport, killsIn } from './m59-ledger.mjs';
@@ -250,6 +262,11 @@ const MOVE_INTERVAL_MS = Number(process.env.M59_MOVE_INTERVAL_MS || 250);
 // the reading that makes a working exit look like a phantom, and the one that would have
 // had us delete a real edge from the map.
 const EDGE_CROSSING_WAIT_MS = Number(process.env.M59_EDGE_CROSSING_WAIT_MS || 10000);
+// AND HOW LONG TO GO ON LOOKING AFTER THAT WAIT EXPIRES. Cheap insurance against a
+// crossing that lands a moment late: the alternative to waiting three more seconds is
+// walking the whole room again to try another square. See the confirmation poll in
+// leaveVia's edge branch.
+const EDGE_CONFIRM_MS = Number(process.env.M59_EDGE_CONFIRM_MS || 3000);
 
 // The server may silently discard UserGo when it follows the final movement packet
 // too closely. Preserve normal 250ms walking, but leave half a second between the
@@ -331,6 +348,28 @@ const squaresPerSecond = speed => SQUARES_PER_SECOND[speed] ?? (speed > WALK_SPE
 // elapsed — so about 14 squares. One second of running is 5 squares, squared distance
 // 25, comfortably inside it. Eight is the ceiling this uses, which is still only 64.
 const MOVE_HOP_MAX_SQUARES = Number(process.env.M59_MOVE_HOP_MAX || 8);
+// AND HOW FAR ONE MOVE MAY REACH ALONG A LEG THE STRING PULL ALREADY PROVED.
+//
+// Eight is the right cap for ground nobody has traced: a long move that fails costs its
+// whole length. It is the WRONG cap for a leg the pull proved arrives, and chopping one is
+// how the fleet lost the Cragged Mountains. The baked crossing of room 598 — its north
+// doorway to its south — is 64 squares and SEVEN proved legs, of 20, 3, 9, 1, 1, 7 and 23
+// squares. At a cap of eight the walker cannot take the 20 or the 23 in one move; it stops
+// at an intermediate square CENTRE that nothing ever proved, aims at it, slides, and starts
+// the bounce the rest of this file is about. The proof is "the straight line from here to
+// there arrives"; a prefix of it aimed at a different point is not that proof.
+//
+// THIRTEEN, AND THE NUMBER IS THE SERVER'S. user.kod:3049 logs a possible speedhacker when
+// a move covers `iSquaredDistance >= 200` with fewer than three seconds since the last
+// update — 200 is 14.1 squares, so 13 (169) keeps a square of margin. `step` also paces a
+// hop by its OWN duration as well as the one it owes, so a long move is never sent hard on
+// the heels of a short one; without that the distance check is the only thing standing
+// between a proved leg and a cheat log.
+const PROVED_HOP_MAX_SQUARES = Number(process.env.M59_PROVED_HOP_MAX || 13);
+// How many packets a planned square may cost before the walk is called runaway. One would
+// be right if the mover landed where the router aims it; it does not, and the argument and
+// the measurement are at the `budget` line in walkTo.
+const OFF_PLAN_STEP_BUDGET = Number(process.env.M59_STEP_BUDGET_FACTOR || 3);
 
 // HOW MANY OFF-PLAN LANDINGS BEFORE THE WALKER STOPS TALKING IN SQUARES.
 //
@@ -352,6 +391,150 @@ const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
 // quietly readmit the sliding this is meant to avoid. Loosening it does not make walks
 // succeed, it makes them skip ground nothing checked.
 const PIVOT_ARRIVE_WITHIN = Number(process.env.M59_PIVOT_ARRIVE_WITHIN || 64);
+// REFUSALS THAT ARE ABOUT THE CHARACTER RATHER THAN THE MOMENT, so retrying can only
+// reproduce them. `player_no_enter` (player.kod) is a GuildHall turning away anyone
+// without PFLAG_PKILL_ENABLE. Matched on the server's own words because there is no code
+// on the wire: it arrives as ordinary prose, exactly like a merchant's refusal.
+// PROVE THE ROUTE ONCE, NOT ONCE PER STEP.
+//
+// `stringPull` reaches as far along a route as the straight line still ARRIVES with
+// `slide:false`, and the bake has used it for exactly this since routes were first baked —
+// "doing it HERE rather than at walk time is the point of a bake". Nothing at runtime ever
+// called it. Instead `walkTo` rediscovered the same thing per step, tracing up to seven
+// fine BSP lines every single move, on the one event loop every session in the broker
+// shares. Measured across the twenty rooms of the Tos/Castle Victoria/Barloque circuit,
+// the same routes are 97,113 grid squares and 16,810 pivots: 5.8x more moves than needed,
+// each one paying for its own proof.
+//
+// So the plan is pulled ONCE, and the walker is told which squares sit on a leg the pull
+// PROVED. On a proved leg every intermediate point is safe to aim at — a prefix of a
+// straight line that arrives also arrives — so the coalescer can take the furthest square
+// its hop cap allows without asking the geometry anything.
+//
+// AIMED AT THE STAND POINT, NOT THE CENTRE, because that is what `step` sends. The bake
+// pulls between centres, which is the older aim; matching the sender here is the same
+// "the second aim has to match the first" rule the coalescer below is built on.
+//
+// A room with no collision model, a pull that throws, or a route of one step all return
+// null, and null means "walk exactly as before".
+function provedSquares(geo, from, steps) {
+  if (!geo?.collisionReady || typeof geo.stringPull !== 'function') return null;
+  if (!Array.isArray(steps) || steps.length < 2 || !from) return null;
+  const half = KOD_FINENESS >> 1;
+  const pointOf = s => geo.standPoint?.(s.row, s.col)
+    ?? { x: protocolToClient(s.col * KOD_FINENESS + half),
+         y: protocolToClient(s.row * KOD_FINENESS + half) };
+  try {
+    const line = [from, ...steps];
+    const pulled = geo.stringPull(line.map(pointOf));
+    if (!pulled?.points?.length || !pulled.proved) return null;
+    // Walk the pulled points back onto the plan, so a square can be asked "is the leg you
+    // are on one the pull proved". Matching by POSITION rather than by index, because the
+    // pull returns a subsequence and the caller holds the full route.
+    const key = pt => Math.round(pt.x) + ',' + Math.round(pt.y);
+    const pivotAt = new Map(pulled.points.map((pt, i) => [key(pt), i]));
+    const ok = new Set();
+    let leg = -1;
+    for (const st of line) {
+      const hit = pivotAt.get(key(pointOf(st)));
+      if (hit !== undefined) leg = hit;               // we are standing on a pivot
+      // `proved[leg]` is the leg LEAVING pivot `leg`; the final pivot has no leg after it.
+      if (leg >= 0 && pulled.proved[leg]) ok.add(st.row + ',' + st.col);
+    }
+    return { squares: ok, pivots: pulled.points.length, unverified: pulled.unverified };
+  } catch { return null; }
+}
+
+// The one packet that intentionally leaves the room grid must be bound to the exact baked
+// opening it belongs to. Keep this predicate pure: `queueValidatedMove` repeats it inside
+// the paced callback, against the position that will actually send the packet.
+function atEdgeOpening(position, opening, direction) {
+  if (!Number.isFinite(position?.x) || !Number.isFinite(position?.y)
+      || !Number.isFinite(opening?.x) || !Number.isFinite(opening?.y)) return false;
+  const name = String(direction ?? '').toLowerCase();
+  const fixedAxisMatches = name === 'north' || name === 'south'
+    ? Number.isInteger(position.row) && position.row === Math.floor(opening.y / KOD_FINENESS)
+    : name === 'west' || name === 'east'
+      ? Number.isInteger(position.col) && position.col === Math.floor(opening.x / KOD_FINENESS)
+      : false;
+  return fixedAxisMatches
+    && Math.abs(position.x - opening.x) <= KOD_FINENESS
+    && Math.abs(position.y - opening.y) <= KOD_FINENESS;
+}
+
+const BARRED_ON_ENTRY = /guardian angel holds you back/i;
+// A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
+// never got there. `leaveViaAny` has already tried every square the room publishes for
+// that destination, so this is the room saying "not from here", and the answer is another
+// door rather than another attempt at this one.
+const UNREACHABLE_EXIT =
+  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
+// Fine-positioning at a boundary opening before the outward step that actually crosses.
+// Both are deliberately small: this is a nudge onto the opening, and the crossing does
+// not depend on hitting it exactly. See leaveVia's edge branch.
+// HOW HARD `leaveVia` PREFERS OPEN GROUND ON THE WAY TO A BOUNDARY — AND IT IS ZERO NOW.
+//
+// The argument for 0.6 was good and the measurement behind it was of the wrong thing. It
+// counted PLAN-TIME blocked neighbours per step (1.35 -> 0.72 in room 587) on the reasoning
+// that threading a walker along a wall is where a slid step starts the bounce. Measured
+// instead on whether the walker ARRIVES — `m59-walksim.mjs --cycle --clearance 0,0.6`, the
+// same starts, the same twelve walks a room to each room's own baked exit anchors:
+//
+//     clearance 0     218/252   86.5%   36.2 steps per arrival
+//     clearance 0.6   211/252   83.7%   37.9
+//
+// No room is better with it on. Two are much worse, and one of them is the room that was
+// blocking the whole itinerary: THE CRAGGED MOUNTAINS GOES 7/12 TO 2/12. Traced on the one
+// walk a live character kept failing — 598, 30,24 to the Ukgoth doorway at 64,19 — it is
+// 93 steps and arrives flat, and 118 steps and runs out of budget at clearance 0.6, with
+// the off-plan landings going 14 to 26.
+//
+// That is the whole of "598 -> 599: every square for that exit refused (4 tried)", which
+// the transit ledger recorded 49 times in a row: `leaveVia` walks to the boundary with this
+// preference on, the walk never gets there, and the exit is blamed for it.
+//
+// Left as a named constant rather than deleted because the mechanism is real — a wall-hug
+// IS where a slide starts — and somebody may yet find the right weight. The number to beat
+// is 218/252, and `m59-walksim.mjs` is how to beat it.
+// HOW CLOSE TO A DOOR MAKES A RAIL POINTLESS. A rail crosses a ROOM; inside this radius the
+// ordinary walk is a short approach over ground the coarse grid expresses, and getting onto a
+// line that starts somewhere else is strictly worse — sometimes catastrophically, when the
+// line's start is itself a doorway to somewhere we do not want to go.
+const RAIL_SKIP_WITHIN_SQUARES = Number(process.env.M59_RAIL_SKIP_WITHIN || 8);
+// HOW MANY WAYPOINTS MAY PASS WITH THE BODY NO FURTHER ALONG THE LINE before the follower
+// stops asking for the next square and jumps. Small, because each one is a second or two
+// spent standing in whatever room this is, and the Cragged Mountains is not a room to spend
+// seconds in. The jump is short for the same reason a skip is: the line ahead is still the
+// line, and `walkFine` covers a gap of a few squares perfectly well.
+// HOW MUCH CLEAR GROUND TO PUT BETWEEN THE BODY AND A BOUNDARY AFTER ARRIVING.
+//
+// ONE IS NOT ENOUGH, and the map says why. Entering the Western border of the Twisted Wood
+// from the Main gate to the city of Tos lands the character at row 8, column 66 — and that
+// room is 55 rows by 67 columns, so the east boundary is one square away. That boundary
+// carries TWO exits, split on the crossing row:
+//
+//     east -> 586  Main gate to the city of Tos   when row < 19
+//     east -> 597  The Twisted Wood               when row > 20
+//
+// Row 8 is inside the first band. So the body arrives one slide from the door it just came
+// through, and the tracer shows exactly that: `586->587` followed immediately by `587->586`.
+// Stepping merely OFF the boundary does not help when the arrival square is already off it.
+//
+// Two squares costs one extra step and removes the whole class: a slide has to go wrong
+// twice in the same direction before it crosses anything.
+const INLAND_MARGIN_SQUARES = Number(process.env.M59_INLAND_MARGIN || 2);
+
+// HOW MANY STEPS A WALK MAY TAKE WITHOUT EVER GETTING CLOSER. Generous enough to go round a
+// building — the Streets of Tos crossing is 24 squares and its worst legitimate detour is a
+// handful — and far short of the sixty-odd squares of oscillation that prompted it.
+const WALK_STALL_STEPS = Number(process.env.M59_WALK_STALL_STEPS || 24);
+
+const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
+const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
+
+const LEAVE_VIA_CLEARANCE = Number(process.env.M59_LEAVE_VIA_CLEARANCE ?? 0);
+const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
+const EDGE_NUDGE_MAX_STEPS = Number(process.env.M59_EDGE_NUDGE_MAX_STEPS || 6);
 
 // ---------------------------------------------------------------- pacing
 
@@ -1442,6 +1625,7 @@ function backoffFor(failures) {
   return Math.min(BACKOFF_BASE_MS * (2 ** Math.max(0, failures - 1)), BACKOFF_MAX_MS);
 }
 
+
 async function reconcileFleet() {
   // Someone else owns this roster. Rejoining its characters would be the two-brokers
   // failure the lock exists to prevent, arriving one character at a time.
@@ -1471,6 +1655,25 @@ async function reconcileFleet() {
       if (!st.lastJoinAt) st.lastJoinAt = Date.now();
       st.keeperWasRunning = !!autopilotIfAny(agent)?.running;
       rejoinState.set(agent, st);
+      // A PROACTIVE RE-IDENTIFY SWEEP BELONGS HERE AND THE OBVIOUS ONE IS WRONG — DO NOT
+      // RE-ADD IT WITHOUT READING THIS.
+      //
+      // Sending BP_SEND_PLAYER from this loop, to every session whose own id was not in its
+      // room map, DROPPED 18 OF 21 CONNECTIONS in a single run. The evidence is a clean
+      // step function: zero `[rejoin] ... is back` lines across the six broker sessions
+      // before it, eighteen in the one that had it.
+      //
+      // And the damage was invisible from the place anybody would look. The sweep logged
+      // them all back in, which killed every in-flight journey WITHOUT recording a failure:
+      // 0 of 21 arrived while the transit book showed 52 clean hops, 8 ordinary exit
+      // refusals and no error at all. A journey that is destroyed by a relog leaves no
+      // trace in the per-hop record, so "no failures" and "nothing worked" looked the same.
+      //
+      // The reactive path (`selfOrResync`, the same packet, only when a walk actually needs
+      // it) ran a whole trip with zero rejoins. So it is the RATE or the fan-out that hurts
+      // rather than the packet, and anything reinstated here has to be paced and proven
+      // against the rejoin count — which is the number that exposed this and the number no
+      // amount of reading the transits would have.
       continue;
     }
 
@@ -2893,44 +3096,39 @@ const TOOLS = [
       //
       // So: poll. If the keeper is awake and we are still walking, take the hold; keep a
       // note of whether the hold is OURS, and only ever revive our own.
-      const keeper = autopilotIfAny(s.name);
-      const holdKeeper = () => {
-        if (!keeper) return null;
-        let ours = false;
-        const assert_ = () => {
-          if (keeper.inert) return;
-          keeper.goInert(`travelling to ${where.name}`);
-          ours = true;
-        };
-        assert_();
-        const timer = setInterval(assert_, 2000);
-        timer.unref?.();
-        return () => {
-          clearInterval(timer);
-          if (ours) keeper.revive('travel finished');
-        };
-      };
+      // A FOREGROUND TRAVEL CLAIMS THE SAME ONE BODY A BACKGROUND ONE DOES.
+      //
+      // The foreground path used to call `s.travel` directly — no job slot, no busy
+      // check — so `background` was the only arm of this tool that honoured "one job at
+      // a time per session". Two travel calls on one character therefore both RAN, each
+      // replanning against the other's steps. Measured live on arena: two journey ids
+      // walking one character to one destination, recording the same crossings at
+      // identical timestamps.
+      //
+      // It is reached by the ordinary path rather than an exotic one. A travel here runs
+      // for minutes — longer than a default HTTP client timeout — so a caller that gives
+      // up and retries issues the second call believing the first is gone. It is not; the
+      // broker is still walking it, and nothing told the caller otherwise.
+      //
+      // The cost is not just a wasted walk. `travelJob` holds the keeper INERT for the
+      // whole journey, deliberately, so while the two loops fight the character neither
+      // fights back nor flees — which is what turns a survivable corridor into the
+      // 60-second killings recorded in the postmortems.
+      //
+      // Both the slot and the keeper hold now live on `Session.travelJob`, because this
+      // tool having its own private copy of them is precisely why every other caller in
+      // the file had neither. ONE definition, two ways to wait for it.
+      const startTravel = () => s.travelJob(dest, {
+        where: where.name, maxHops: num(a.max_hops, 25), controlToken: a.control_token,
+      });
 
       if (a.background) {
-        s.startJob('travel', `walk to ${where.name}`,
-                   async movementGeneration => {
-                     const release = holdKeeper();
-                     try {
-                       return await s.travel(dest, {
-                         maxHops: num(a.max_hops, 25), movementGeneration,
-                         controlToken: a.control_token,
-                       });
-                     } finally { release?.(); }
-                   });
+        startTravel();
         const hops = s.world.route(dest)?.length ?? null;
         return { started: true, destination: where, hops,
                  note: 'walking now; poll `fleet` or `status` — do not re-issue while busy' };
       }
-      const release = holdKeeper();
-      let r;
-      try {
-        r = await s.travel(dest, { maxHops: num(a.max_hops, 25), controlToken: a.control_token });
-      } finally { release?.(); }
+      const r = await startTravel().promise;
       return { destination: { num: dest, name: worldMap.rooms[dest].name }, ...r, now: arrivalReport(s) };
     },
   },
@@ -2943,7 +3141,7 @@ const TOOLS = [
       agent: { type: 'string' },
       control_token: { type: 'string', description: 'also reject a late stale movement carrying this token' },
     }, required: ['agent'] },
-    run: (a) => session(a.agent).cancelMovement(a.control_token),
+    run: (a) => session(a.agent).cancelMovement(a.control_token, 'the cancel_movement tool'),
   },
   {
     name: 'go_through',
@@ -3508,7 +3706,7 @@ const TOOLS = [
           (!a.token || item.id === Number(a.token)));
         if (!held) throw new Error('no real Council token is carried');
         if ((s.world?.room?.num ?? null) !== join.room) {
-          const traveled = await s.travel(join.room, { maxHops: 25 });
+          const traveled = await s.travelExclusive(join.room, { maxHops: 25 });
           if (!traveled.arrived) return { delivered: false, faction: own.faction, token: held,
             reason: `could not reach ${join.leader}: ${traveled.reason ?? 'travel did not arrive'}` };
         }
@@ -3525,7 +3723,7 @@ const TOOLS = [
           report = await factionSpeech(s, council.councilor);
           const weak = report.some(line => /suspected to be a weak believer/i.test(line));
           if (weak) {
-            const traveled = await s.travel(council.room, { maxHops: 25 });
+            const traveled = await s.travelExclusive(council.room, { maxHops: 25 });
             if (!traveled.arrived) return { delivered: false, faction: own.faction, token: held,
               councilor_report: report,
               reason: `could not reach weak councilor ${council.councilor}: ${traveled.reason ?? 'travel did not arrive'}` };
@@ -3697,6 +3895,116 @@ const TOOLS = [
         }),
         messages: out.slice(-limit),
       };
+    },
+  },
+  {
+    name: 'replay_track',
+    description: 'Walk a recorded track: the fastest crossing anybody has actually made of this ' +
+      'room, between these two doors, straightened against the baked BSP. Learned by m59-tracks.mjs ' +
+      'from the trail ledger, so a track is made of accepted moves and cannot contain a step the ' +
+      'mover refuses — which is the failure mode of planning on square stand points a body never ' +
+      'occupies. ' +
+      'Answers replayed:false with no movement at all when there is no track for this crossing, ' +
+      'which the caller must read as "plan it the way you always did" rather than as a refusal. ' +
+      'Every waypoint still goes through the ordinary validated fine move, so a world that has ' +
+      'changed refuses it exactly as it would refuse a fresh plan.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      to: { type: 'number', description: 'the room number this crossing leads to' },
+      from: { type: 'number', description: 'the room walked in from; omitted matches any' },
+      max_steps: { type: 'number', description: 'fine steps allowed per waypoint, default 60' },
+    }, required: ['agent', 'to'] },
+    run: async (a) => {
+      const s = session(a.agent);
+      const c = s.need();
+      const here = Number(s.world?.room?.num ?? NaN);
+      const track = recallTrack(here, a.from == null ? null : num(a.from), num(a.to));
+      if (!track?.waypoints?.length)
+        return { replayed: false, room: here, to: num(a.to),
+                 note: 'no track for this crossing — plan it as usual' };
+      // GET ON AT THE NEAREST STATION GOING YOUR WAY.
+      //
+      // A track is a crossing somebody made, and it starts where THEY came in. Replaying it
+      // from waypoint one means walking back to their entrance first, which is a long way
+      // across the room and through whatever is standing in it — the first live attempt
+      // spent over ten minutes doing exactly that in Ukgoth, on a track whose whole
+      // recorded crossing took 28 seconds.
+      //
+      // So the replay joins at the nearest waypoint that is not BEHIND us: nearest by
+      // distance, and among the last few it never goes backwards along the track. If the
+      // nearest is further than JOIN_WITHIN, we are not on this track at all and saying so
+      // is the honest answer — the caller plans as usual rather than being dragged to
+      // somebody else's doorway.
+      const JOIN_WITHIN = Number(process.env.M59_TRACK_JOIN_WITHIN || 640);   // 10 squares
+      const me0 = c.self;
+      const geo = s.world?.geometry ?? null;
+      // JOIN AT THE NEAREST COARSE SPOT, NOT SIMPLY THE NEAREST POINT.
+      //
+      // The operator's rule, and it follows from what a safe wall IS: the tight squares are
+      // exactly the ones the coarse grid cannot deliver you to, and they are most of what a
+      // track threads. Picking the geometrically nearest waypoint therefore picks, by
+      // preference, a station standing inside a wall pocket — the one place ordinary routing
+      // cannot reach — so the approach fails before the track is ever ridden.
+      //
+      // So a station has to be somewhere the SQUARE router can get to, and the walk to it is
+      // an ordinary coarse walk. Fine precision is for riding the track, not for boarding it.
+      let joinAt = -1, joinDist = Infinity;
+      if (me0) {
+        for (let i = 0; i < track.waypoints.length; i++) {
+          const wp = track.waypoints[i];
+          const sq = { row: Math.floor(wp.y / KOD_FINENESS) + 1, col: Math.floor(wp.x / KOD_FINENESS) + 1 };
+          // A station must be coarse-walkable. With no geometry loaded every point qualifies,
+          // which is the old behaviour and is right for a checkout with no bake.
+          if (geo && typeof geo.walkable === 'function' && !geo.walkable(sq.row, sq.col)) continue;
+          const d = Math.hypot(wp.x - me0.x, wp.y - me0.y);
+          if (d < joinDist) { joinDist = d; joinAt = i; }
+        }
+      }
+      if (joinAt < 0 || !(joinDist <= JOIN_WITHIN))
+        return { replayed: false, room: here, to: num(a.to),
+                 off_track_by: Number.isFinite(joinDist) ? Math.round(joinDist) : null,
+                 note: joinAt < 0
+                   ? 'no station on this track is reachable on the coarse grid; plan it as usual'
+                   : 'not on this track — the nearest station is ' + Math.round(joinDist / 64) +
+                     ' squares away; plan it as usual' };
+      // BOARD IT COARSELY. Anything more than a step away is an ordinary square walk, which
+      // is what the router is good at and what the station was chosen to be reachable by.
+      if (joinDist > KOD_FINENESS) {
+        const wp = track.waypoints[joinAt];
+        const board = await s.walkTo(Math.floor(wp.x / KOD_FINENESS) + 1,
+                                     Math.floor(wp.y / KOD_FINENESS) + 1,
+                                     { maxSteps: 60 }).catch(() => null);
+        if (!board?.arrived)
+          return { replayed: false, room: here, to: num(a.to), boarding_failed: true,
+                   off_track_by: Math.round(joinDist),
+                   note: 'could not reach the station on the coarse grid; plan it as usual' };
+      }
+      const started = Date.now();
+      const hp0 = c.self?.health ?? null;
+      const log = [];
+      let reached = 0, blocked = 0;
+      for (const wp of track.waypoints.slice(joinAt)) {
+        const before = c.self ? { x: c.self.x, y: c.self.y } : null;
+        const r = await s.walkFine(wp.x, wp.y, { maxSteps: num(a.max_steps, 60) }).catch(() => null);
+        const now = c.self;
+        // A WAYPOINT IS REACHED OR IT IS NOT, AND BEING PUSHED OFF IT IS THE INTERESTING CASE.
+        // The track is what the room allows; anything that stops us on it is a body, and that
+        // is exactly the number this verb exists to produce.
+        const near = now && Math.hypot(now.x - wp.x, now.y - wp.y) <= 48;
+        if (near) reached++; else blocked++;
+        log.push({ to: { x: wp.x, y: wp.y }, reached: !!near,
+                   ...(r?.reason ? { reason: r.reason } : {}),
+                   moved: !!(before && now && (before.x !== now.x || before.y !== now.y)) });
+        if (r?.left_room) break;
+      }
+      const hp1 = c.self?.health ?? null;
+      return { replayed: true, room: here, to: num(a.to),
+               joined_at: joinAt, off_track_by: Math.round(joinDist),
+               waypoints: track.waypoints.length - joinAt, reached, blocked,
+               ms: Date.now() - started, track_best_ms: track.ms,
+               ...(hp0 != null && hp1 != null && hp1 < hp0 ? { health_lost: hp0 - hp1 } : {}),
+               left_room: Number(s.world?.room?.num ?? NaN) !== here,
+               log };
     },
   },
   {
@@ -6152,11 +6460,193 @@ const TOOLS = [
       break_out_via_logoff: { type: 'boolean',
         description: 'reconnect before stepping off a crowded safe spot, default true. The entry ' +
           'grace period means the swarm has to notice you one at a time instead of all at once' },
-      travel_hold: { type: 'string', enum: ['ab', 'observe', 'off'],
-        description: 'resting at a safe wall part-way through a journey. "ab" runs the experiment ' +
-          '(half of journeys hold, half walk on, decided per journey); "observe" writes down what it ' +
-          'would have done and changes nothing; "off" is the behaviour from before it existed. This ' +
-          'is the kill switch for that experiment and takes effect on the next hop — no restart.' },
+      travel_hold: { type: 'string', enum: ['on', 'half', 'ab', 'observe', 'off'],
+        description: 'resting at a safe wall part-way through a journey, to arrive at full health ' +
+          'rather than at whatever the road left. "on" is the DEFAULT and always holds when the ' +
+          'conditions below are met; "observe" writes down what it would have done and changes ' +
+          'nothing; "off" is the behaviour from before it existed. Takes effect on the next hop — ' +
+          'no restart. THE A/B IS RETIRED (2026-08-21): "half"/"ab" used to run half of journeys ' +
+          'in a control arm that walked hurt characters straight past the only free healing on the ' +
+          'road, and they now mean "on" — accepted so a roster on disk carrying one does not throw ' +
+          'on restart, and reported in the journal every time rather than silently remapped. The ' +
+          'experiment was closed because the question changed: the deaths this fleet suffers are ' +
+          'stuck-and-eaten, not travelled-badly, and no arm of it addressed that.' },
+      travel_hold_below: { type: 'number',
+        description: 'the health FRACTION under which a journey will stop at a wall to heal. ' +
+          'Default 0.75. Only the rooms in the MIDDLE of a journey are eligible — arriving hurt is ' +
+          'fine, because the destination is somebody\'s decision and there is usually a reason to ' +
+          'be there.' },
+      travel_hold_to: { type: 'number',
+        description: 'the health fraction a mid-journey rest stops at. Default 1 — full. It was ' +
+          '0.9, on the argument that the last tenth costs as long as the first half and every ' +
+          'second of it is a second something can find you: true on open ground, and not true on ' +
+          'a square a creature cannot path to, which is what a safe spot is. A traveller that has ' +
+          'gone to the trouble of reaching a wall should leave it healed, and restUntil aborts on ' +
+          'damage if the wall turns out to be wrong. Vigor is rested to the resting cap alongside ' +
+          'it, since that is the most an unfed character can reach.' },
+      travel_start_health: { type: 'number',
+        description: 'the health FRACTION a character rests to before setting out on a journey, ' +
+          'when it is somewhere safe to sit down. Default 1 — full. An inn is the one place ' +
+          'healing is free: nothing spawns there and nothing can reach you, so the points that ' +
+          'would cost eighty-seven exposed seconds at a wall in the Cragged Mountains cost nothing ' +
+          'at all here. It is also where a character stands after coming out of the Underworld, ' +
+          'which is exactly when something asks it to cross the world next. VIGOR IS TOPPED UP ' +
+          'TOO, to the resting cap of 80 of 200 — everything above that has to be EATEN, so ' +
+          '"full vigor" by resting is not a thing that exists. Set 0 to switch it off. Only ' +
+          'applies in a sanctuary, read from the spawn index rather than the room name.' },
+      resume_travel: { type: 'boolean',
+        description: 'whether a journey the SURVIVAL LADDER interrupted is picked back up once ' +
+          'the character is well again. Default true. The four mid-hop guards — flee, fight_back, ' +
+          'play_dead, arm — end the movement on purpose, and until this existed they ended the ' +
+          'OBJECTIVE with it: a character pulled off the road at 30% health healed up and went ' +
+          'back to farming with no memory of where it had been sent, which reads from outside as ' +
+          'travel silently not working. Resuming happens in the last pass stage, so it can only ' +
+          'run on a tick where nothing more urgent applied.' },
+      resume_travel_attempts: { type: 'number',
+        description: 'how many times one objective may be resumed before it is dropped. Default 12, ' +
+          'and it is a RUNAWAY BACKSTOP rather than the abandon policy: a journey is given up ' +
+          'only when a PLAYER is attacking, and every other kind of trouble pauses at a safe ' +
+          'wall and carries on, so a road with eight wall-rests along it is a road and not a ' +
+          'bug. Set low and this quietly becomes a second abandon rule.' },
+      travel_deaths_allowed: { type: 'number',
+        description: 'how many DEATHS one objective may cost before the journey is given up. ' +
+          'Default 0, which is the rule: a death is a failed journey, not an interrupted one. ' +
+          'Get out of the Underworld, rest at the inn the exit lands in, and do not pick the ' +
+          'road back up — whatever killed the character is still on it, everything carried is ' +
+          'on the floor where it fell, and max health has already been paid for the trip. Set ' +
+          'to 1 or more for a road worth dying for: the character still rests to whole first ' +
+          '(the recovery hold is upstream of the resume and cannot be skipped), then sets off ' +
+          'again, and the count is per OBJECTIVE rather than per lifetime.' },
+      resume_travel_within_ms: { type: 'number',
+        description: 'how long a suspended objective stays good, in milliseconds. Default 1800000 ' +
+          '(thirty minutes — long enough to rest to FULL at a wall and still be resumed; five ' +
+          'minutes was shorter than a bad rest, so an objective could expire while the ' +
+          'character was doing the very thing it had been taken off the road to do). ' +
+          'Older than this and it is somebody\'s earlier plan: a bot or an ' +
+          'operator has had time to want something else, and a stale objective resurfacing under ' +
+          'a live instruction is two directions on one body.' },
+      travel_hold_pvp: { type: 'string', enum: ['refuse', 'room', 'ignore'],
+        description: 'what a mid-journey rest does when there are PEOPLE about. A safe spot works ' +
+          'because a creature cannot path to it, and that says nothing whatever about a player — ' +
+          'who can walk to the same square, swing first, and take the pack. Standing still for a ' +
+          'minute and a half with a full inventory is the best target this game offers, so the ' +
+          'trade inverts: dying to the troll while running costs the walk back, dying to the player ' +
+          'costs everything carried. "refuse" (the default) declines a hold while a player who is ' +
+          'not ours is in the room OR the fleet-wide grudge book has a live entry — somebody who ' +
+          'attacked one of us within the hour, which is the closest thing to "PvP is anticipated" ' +
+          'that exists here. "room" counts only the player standing here. "ignore" is the behaviour ' +
+          'from before this existed.' },
+      confine_rooms: { type: 'array', items: { type: 'number' },
+        description: 'the rooms this character may be in AT ALL. Unlike assigned_room this is ' +
+          'honoured by the SURVIVAL refuge too, which is the largest hole in any confinement ' +
+          'because it runs exactly when everything else has agreed to stay put: retreatToSafety ' +
+          'walks 38 and 39 to room 2, which is monster-free and NOT player-safe. A refuge outside ' +
+          'this list is refused and the character takes a local wall instead. Empty or null ' +
+          'restores the ordinary search.' },
+      defend_chase: { type: 'boolean',
+        description: 'when defending against a flagged player, WALK TO THEM anywhere in the room ' +
+          'instead of only swinging at what has already closed to melee. Default false, which is ' +
+          'the behaviour before this existed. On, an organised group cannot hit and step back out ' +
+          'of a 3-square disc; off, the fleet never leaves its wall to chase somebody. The melee ' +
+          'reach itself belongs to the SERVER and is not a setting.' },
+      travel_hold_vigor: { type: 'number',
+        description: 'OPTIONAL floor on vigor before a mid-journey rest at a wall. Default 0 — ' +
+          'no floor, because vigor is not a reason to refuse refuge. It was 100 (above anything ' +
+          'an unfed fleet can present, so the hold never fired), then 80 (REST_VIGOR_CAP itself, ' +
+          'so a character slightly under was refused while vigor drains as it walks — measured, ' +
+          '8 of 18 deaths were characters down to 1 or 2 health refused at 74, 76, 78). The ' +
+          'exposure argument for a floor does not apply to a safe spot, which is a square a ' +
+          'creature cannot path to, and it was a deadlock besides: resting is how vigor comes ' +
+          'back and the gate on resting was vigor. Set it to 80 or 100 to restore either older ' +
+          'behaviour.' },
+      doomed_in_open_below: { type: 'number',
+        description: 'the health FRACTION at which a character on open ground plays dead. ' +
+          'Default 0.4. It used to be `worstHit * 2` — real arithmetic about the biggest ' +
+          'single hit this game lands, which on a fleet with maxima of 22 to 56 works out at ' +
+          '67% to 73% of the bar. Playing dead is a monster-fighting move, not a response to ' +
+          'being two thirds healthy: freezing there spends a minute of not healing and not ' +
+          'killing anything, and it pre-empts every rung that would have done something ' +
+          'useful — measured over 26 minutes of commuting, fifteen journeys were taken back ' +
+          'and every one of them read "two hits from death". Behind a wall the trigger is ' +
+          'doomed_in_spot_below (0.35), lower again because a spot already keeps most of it ' +
+          'off.' },
+      panic_logoff: { type: 'boolean',
+        description: 'whether this character may PLAY DEAD at all — disconnect rather than die. ' +
+          'Default true. It is the master switch above both doomed_in_*_below thresholds, and ' +
+          'like doomed_in_spot_below it was read by every keeper and declared by nothing, so ' +
+          'the only reachable value was the default. Set false for a character you would rather ' +
+          'lose than have drop connection — a mule mid-delivery, or anything a person is ' +
+          'watching.' },
+      freeze_ms: { type: 'number',
+        description: 'how long a character stays frozen after playing dead, in milliseconds. ' +
+          'Default 90000. The freeze recovers vigor and NEVER health, so this is a wait, not a ' +
+          'recovery — the only thing that heals is the health timer, and the timer needs ' +
+          'PFLAG_MOVED_SINCE_ENTRY, which needs an action. ON A SAFE SPOT THE FREEZE IS SKIPPED ' +
+          'ENTIRELY and the character turns instead: the walls do the work, so the grace period ' +
+          'is ours to spend and turning buys the timer without giving up the square. This ' +
+          'therefore only applies to freezing in the open, where there is nothing better.' },
+      doomed_in_spot_below: { type: 'number',
+        description: 'the health FRACTION at which a character ON A SAFE SPOT plays dead. ' +
+          'Default 0.35 — lower than doomed_in_open_below because a spot already keeps most ' +
+          'of the damage off, so the same health means less trouble. THIS IS THE ONE THAT ' +
+          'FIRES for a fleet that is farming from walls, and it spent the whole of prod ' +
+          'unsettable: it was described in the text above and never added here, so a call ' +
+          'passing it returned ok and changed nothing. That is the failure this repository ' +
+          'keeps writing down — a setting that silently does nothing is indistinguishable ' +
+          'from a setting that is working.' },
+      travel_wall_below: { type: 'number',
+        description: 'the health FRACTION at which a character MID-HOP detours to a safe wall ' +
+          'it is passing. Default 0.6. Separate from travel_hold_below (0.75, the hop-boundary ' +
+          'rest) because the two stops cost different things: at a boundary the journey is ' +
+          'already paused and a rest is nearly free, while mid-hop the mover has to be stopped ' +
+          'and the hop replanned. It exists at all because the refuge question used to be asked ' +
+          'only at boundaries, and a big room kills a character long before it offers one — ' +
+          'seven of eleven deaths in one window were inside the Cragged Mountains, 2,450 ' +
+          'squares, at 1, 2 and 5 health, with no refuge taken there at all.' },
+      travel_flee_from: { type: 'string', enum: ['players', 'anything', 'never'],
+        description: 'WHAT IS WORTH ABANDONING A JOURNEY FOR. Default "players". Being ' +
+          'attacked on the road is the ordinary condition of travel here, not an emergency: ' +
+          'there is no safe route, and a trip that turns back every time something bites ' +
+          'never arrives, it just takes the same damage in both directions. So by default a ' +
+          'monster does not end a journey — the wall rung takes shelter instead, and where ' +
+          'there is no wall the way out is THROUGH. A PLAYER is a different animal: a wall ' +
+          'stops monsters and says nothing about a person, who can walk to the same square, ' +
+          'swing first and take the pack, so dying to the troll costs the walk back and dying ' +
+          'to the player costs everything carried. "anything" is the behaviour before this ' +
+          'existed; "never" walks the road whatever happens. Gates flee and fight_back; ' +
+          'arm is last-ditch and is not about who is attacking.' },
+      travel_guard: {
+        description: 'WHAT THE KEEPER IS STILL ALLOWED TO DO WHILE A JOURNEY IS STEERING. An ' +
+          'object of booleans, or the string "on"/"off" for all of them at once. A journey used ' +
+          'to make the keeper INERT, which switched the whole survival ladder off for the length ' +
+          'of the walk: Cccc was walked out of a sanctuary at 27% health against a 70% flee ' +
+          'threshold and eaten over twenty-two seconds while the keeper watched every frame. ' +
+          'These are the faculties that state keeps, and each can be switched off per character, ' +
+          'live, with no restart. THEY ARE ON TWO DIFFERENT CLOCKS. ' +
+          'MID-HOP — the mover is walking, so each of these CANCELS the journey and hands the ' +
+          'character back to the ordinary ladder rather than fighting the mover for it: ' +
+          '"flee" (below flee_below with something adjacent), ' +
+          '"fight_back" (losing health fast enough that the bar empties before the road ends — ' +
+          'keyed on the damage RATE, never on whether the body is moving, because the shuffle ' +
+          'against a wall that killed Cccc reset every stillness timer it met), ' +
+          '"arm" (the weapon is gone). ' +
+          'HOP BOUNDARY — the mover is between rooms and nothing is contended, so these pause ' +
+          'the journey rather than ending it: ' +
+          '"rest" (sit in a sanctuary until health AND vigor are as high as sitting takes them — ' +
+          'full health and 80 of 200 vigor, because everything above that has to be eaten), ' +
+          '"safe_spot" (hold a defensible wall part-way through; see travel_hold). ' +
+          'All five default ON. An unrecognised key is REFUSED, not ignored — which includes ' +
+          '"play_dead", removed 2026-08-21: it cancelled a journey so the ladder could freeze, ' +
+          'and freezing is now refused anywhere but a proven safe spot because it recovers vigor ' +
+          'and NEVER health. Three characters were measured freezing in the open at 4, 10 and 13 ' +
+          'health in rooms of twelve to fifteen monsters and all three died. "flee" catches every ' +
+          'character that rung used to and hands over to moving instead.',
+        oneOf: [
+          { type: 'string', enum: ['on', 'off'] },
+          { type: 'object',
+            properties: Object.fromEntries(TRAVEL_GUARD_KEYS.map(k => [k, { type: 'boolean' }])),
+            additionalProperties: false },
+        ] },
       full_journal: { type: 'boolean', description: 'return the whole journal, not just the tail' },
     }, required: ['agent', 'action'] },
     run: (a) => {
@@ -6216,6 +6706,10 @@ const TOOLS = [
       // a vanished partner already, exactly as it does for one that logs out.
       if (a.action === 'release')
         return p.releaseCommitment(a.why ?? 'an operator took this character back');
+      // Set when a value was accepted but stored as something else, and returned with the
+      // status so the caller SEES the remap. A silent normalisation is a setting that does
+      // not do what it says, which is the failure this file has paid for twice.
+      let retired = null;
       if (a.mode) {
         if (!MODES.includes(a.mode)) throw new Error(`mode must be one of ${MODES.join(', ')}`);
         p.mode = a.mode;
@@ -6360,7 +6854,148 @@ const TOOLS = [
       if (a.weapon_priority !== undefined)
         p.policy.weaponPriority = Array.isArray(a.weapon_priority) && a.weapon_priority.length
           ? a.weapon_priority.map(String) : null;
-      if (a.travel_hold !== undefined) p.policy.travelHold = String(a.travel_hold);
+      // NORMALISED AT THE DOOR. `half` and `ab` were two names for the same retired
+      // experiment and they are stored as `on`, because storing them as themselves means
+      // every reader downstream has to remember the retirement — which is how `on` spent an
+      // evening looking enabled while the coin decided every journey. An unrecognised value
+      // is REPORTED rather than applied.
+      if (a.travel_hold !== undefined) {
+        const want = String(a.travel_hold);
+        if (!['on', 'half', 'ab', 'observe', 'off'].includes(want))
+          throw new Error(`travel_hold must be one of on/observe/off, not "${want}" ` +
+                          '(half and ab are the retired A/B and are accepted as "on")');
+        const mode = (want === 'half' || want === 'ab') ? 'on' : want;
+        p.policy.travelHold = mode;
+        if (mode !== want)
+          retired = { travel_hold: want, stored_as: mode,
+                      why: 'the safe-wall A/B is retired — holding is the behaviour now, not ' +
+                           'a treatment. See TRAVEL_HOLD_MODE in m59-autopilot.mjs' };
+      }
+      // A FRACTION, AND CHECKED, because "75" would read as 7500% and never fire — which is
+      // the same silence `on` had. Zero is refused too: a hold that never triggers is `off`
+      // said in a way nothing reports.
+      const holdFraction = (name, value) => {
+        const n = Number(value);
+        if (!Number.isFinite(n) || n <= 0 || n > 1)
+          throw new Error(`${name} must be a health fraction in (0,1] — 0.75 is 75%`);
+        return n;
+      };
+      if (a.travel_hold_below !== undefined)
+        p.policy.travelHoldBelow = holdFraction('travel_hold_below', a.travel_hold_below);
+      if (a.travel_hold_to !== undefined)
+        p.policy.travelHoldTo = holdFraction('travel_hold_to', a.travel_hold_to);
+      // Zero is allowed here and means OFF, which is why it does not go through
+      // `holdFraction` — a rest-to-nothing target is a legitimate way to say "just go".
+      if (a.travel_start_health !== undefined) {
+        const n = Number(a.travel_start_health);
+        if (!Number.isFinite(n) || n < 0 || n > 1)
+          throw new Error('travel_start_health must be a health fraction in [0,1] — 1 is full, 0 is off');
+        p.policy.travelStartHealth = n;
+      }
+      if (a.resume_travel !== undefined) p.policy.resumeTravel = !!a.resume_travel;
+      if (a.resume_travel_attempts !== undefined) {
+        const n = Number(a.resume_travel_attempts);
+        if (!Number.isInteger(n) || n < 0 || n > 50)
+          throw new Error('resume_travel_attempts must be a whole number of retries in [0,50]');
+        p.policy.resumeTravelAttempts = n;
+      }
+      if (a.travel_deaths_allowed !== undefined) {
+        const n = Number(a.travel_deaths_allowed);
+        if (!Number.isInteger(n) || n < 0 || n > 10)
+          throw new Error('travel_deaths_allowed must be a whole number of deaths in [0,10]');
+        p.policy.travelDeathsAllowed = n;
+      }
+      if (a.resume_travel_within_ms !== undefined) {
+        const n = Number(a.resume_travel_within_ms);
+        // A floor because an objective that expires faster than a rest at a wall can never
+        // be resumed at all, and the setting would read as "on" while doing nothing.
+        if (!Number.isFinite(n) || n < 10_000 || n > 3_600_000)
+          throw new Error('resume_travel_within_ms must be between 10000 and 3600000');
+        p.policy.resumeTravelWithinMs = n;
+      }
+      if (a.travel_hold_pvp !== undefined) {
+        const want = String(a.travel_hold_pvp);
+        if (!['refuse', 'room', 'ignore'].includes(want))
+          throw new Error(`travel_hold_pvp must be one of refuse/room/ignore, not "${want}"`);
+        p.policy.travelHoldPvp = want;
+      }
+      // Guarded rather than coerced: `Number(x) || d` turns a deliberate 0 into the default,
+      // which is the falsy-zero bug conflict_response_hops still has one screen below.
+      if (a.defend_chase !== undefined) p.policy.defendChase = !!a.defend_chase;
+      // The rooms a character may be in AT ALL, including when the survival ladder is the
+      // thing doing the moving. null or [] clears it and restores the ordinary refuge search.
+      if (a.confine_rooms !== undefined)
+        p.policy.confineRooms = Array.isArray(a.confine_rooms) && a.confine_rooms.length
+          ? a.confine_rooms.map(Number).filter(Number.isFinite) : null;
+      // AN UNRECOGNISED KEY IS REFUSED, NEVER DROPPED. `purpose` sat outside a schema for a
+      // year with every keeper's audit switched off because a setting that silently does
+      // nothing reads exactly like one that works — so a typo here is an error with the
+      // valid names in it, not a quiet no-op. See docs/m59-policy.md.
+      //
+      // `null` clears the override and restores the defaults; the whole point of the state
+      // is that a character with no opinion about it still defends itself.
+      if (a.doomed_in_open_below !== undefined) {
+        const n = Number(a.doomed_in_open_below);
+        if (!(n > 0 && n <= 1))
+          throw new Error(`doomed_in_open_below is a fraction between 0 and 1 — got ${a.doomed_in_open_below}`);
+        p.policy.doomedInOpenBelow = n;
+      }
+      if (a.panic_logoff !== undefined) {
+        if (typeof a.panic_logoff !== 'boolean')
+          throw new Error(`panic_logoff is true or false — got ${a.panic_logoff}`);
+        p.policy.panicLogoff = a.panic_logoff;
+      }
+      if (a.freeze_ms !== undefined) {
+        const n = Number(a.freeze_ms);
+        if (!(n >= 0 && n <= 600000))
+          throw new Error(`freeze_ms is milliseconds between 0 and 600000 — got ${a.freeze_ms}`);
+        p.policy.freezeMs = n;
+      }
+      if (a.doomed_in_spot_below !== undefined) {
+        const n = Number(a.doomed_in_spot_below);
+        if (!(n > 0 && n <= 1))
+          throw new Error(`doomed_in_spot_below is a fraction between 0 and 1 — got ${a.doomed_in_spot_below}`);
+        p.policy.doomedInSpotBelow = n;
+      }
+      if (a.travel_wall_below !== undefined) {
+        const n = Number(a.travel_wall_below);
+        if (!(n > 0 && n <= 1))
+          throw new Error(`travel_wall_below is a fraction between 0 and 1 — got ${a.travel_wall_below}`);
+        p.policy.travelWallBelow = n;
+      }
+      if (a.travel_flee_from !== undefined) {
+        const want = String(a.travel_flee_from);
+        if (!['players', 'anything', 'never'].includes(want))
+          throw new Error(`travel_flee_from must be one of players, anything, never — got ${want}`);
+        p.policy.travelFleeFrom = want;
+      }
+      if (a.travel_guard !== undefined) {
+        const want = a.travel_guard;
+        if (want == null) p.policy.travelGuard = null;
+        else if (want === 'on' || want === 'off') {
+          const on = want === 'on';
+          p.policy.travelGuard = Object.fromEntries(TRAVEL_GUARD_KEYS.map(k => [k, on]));
+        } else if (typeof want === 'object' && !Array.isArray(want)) {
+          const bad = Object.keys(want).filter(k => !TRAVEL_GUARD_KEYS.includes(k));
+          if (bad.length)
+            throw new Error(`travel_guard: no such faculty ${bad.map(b => `"${b}"`).join(', ')} — ` +
+                            `it is one of ${TRAVEL_GUARD_KEYS.join(', ')}`);
+          // MERGED OVER WHAT IS ALREADY THERE, so `{flee:false}` turns one thing off rather
+          // than turning the other five off by omission. Pass "off" to mean all of them.
+          p.policy.travelGuard = { ...(p.policy.travelGuard ?? {}),
+                                   ...Object.fromEntries(Object.entries(want)
+                                     .map(([k, val]) => [k, !!val])) };
+        } else throw new Error('travel_guard must be an object of booleans, or "on"/"off"');
+      }
+      if (a.travel_hold_vigor !== undefined) {
+        if (a.travel_hold_vigor == null) p.policy.travelHoldVigor = null;
+        else {
+          const v = Number(a.travel_hold_vigor);
+          if (!Number.isFinite(v) || v < 0 || v > skills.VIGOR_MAX)
+            throw new Error(`travel_hold_vigor must be between 0 and ${skills.VIGOR_MAX}`);
+          p.policy.travelHoldVigor = v;
+        }
+      }
       if (a.drop_junk !== undefined) p.policy.dropJunk = !!a.drop_junk;
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.assigned_room !== undefined)
@@ -6444,7 +7079,8 @@ const TOOLS = [
       // Persist the instruction, not the running object: on the far side of a
       // restart the keeper is rebuilt from these fields alone.
       rememberAutopilot(a.agent, { mode: p.mode, policy: { ...p.policy } });
-      return p.start();
+      const started = p.start();
+      return retired ? { ...started, retired } : started;
     },
   },
   {
@@ -8767,7 +9403,7 @@ const TOOLS = [
       const log = [];
       let out = false;
       for (let attempt = 0; attempt < 3 && !out; attempt++) {
-        const t = await s.travel(MUSEUM_ROOM, { maxHops: 8 }).catch(e => ({ arrived: false, reason: e.message }));
+        const t = await s.travelExclusive(MUSEUM_ROOM, { maxHops: 8, where: "the Grand Museum" }).catch(e => ({ arrived: false, reason: e.message }));
         log.push({ step: 'to the Grand Museum', ...t });
         // The bounce does not always put you back on the square you left, so step
         // off and on again rather than assuming position.
@@ -8781,7 +9417,7 @@ const TOOLS = [
 
       if (out && a.then_travel_to != null && worldMap) {
         const dest = resolveRoom(worldMap, a.then_travel_to);
-        if (dest != null) log.push({ step: 'onward', ...(await s.travel(dest, { maxHops: 18 }).catch(e => ({ arrived: false, reason: e.message }))) });
+        if (dest != null) log.push({ step: 'onward', ...(await s.travelExclusive(dest, { maxHops: 18 }).catch(e => ({ arrived: false, reason: e.message }))) });
       }
       return { left: out, log, now: arrivalReport(s),
                note: out ? 'one-way — you cannot walk back into Raza'
@@ -9691,7 +10327,11 @@ const TOOLS = [
           rememberAutopilot(o.agent, { mode: p.mode, policy: { ...p.policy } });
           if (a.travel && o.moves) {
             const s = session(o.agent);
-            try { s.startJob('travel', `walk to ${o.room_name}`, () => s.travel(o.room, { maxHops: 20 })); }
+            // `travelJob` rather than a hand-rolled `startJob`: this one did claim the
+            // slot, but it held no keeper and dropped the movement generation — so the
+            // keeper went on steering underneath it and `cancel_movement` could not reach
+            // it. Claiming the slot is only half of not being driven by two things.
+            try { s.travelJob(o.room, { where: o.room_name, maxHops: 20 }); }
             catch { /* already busy — the assignment alone will carry it there */ }
           }
         }
@@ -10160,8 +10800,35 @@ const TOOLS = [
           deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
           deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
           mulligans: st?.did?.mulligans ?? 0,
+          breakoffs: st?.did?.breakoffs ?? 0,
           logoffs: st?.did?.logoffs ?? 0,
           carrying: c.inventory?.length ?? null,
+          // WHAT THOSE STACKS ACTUALLY ARE. `carrying: 14` cannot answer the only
+          // question anybody asks of a full pack — what is in it that could come out —
+          // and the answer was one `inventory` call per character, on the wire, to read
+          // something the client already had.
+          //
+          // This is the CARRIED list and not the worn one: what you carry and what you
+          // are wearing are two different lists (see CLAUDE.md), and `equipment()` is the
+          // only answer to the second. Nothing here goes to the server — `c.inventory` is
+          // the client's cached pack, the same list the purse and the pack meter above
+          // are computed from, so a row that already knows how full the pack is now says
+          // what filled it.
+          //
+          // Grouped by NAME rather than left as stacks, because three stacks of herbs is
+          // one fact to a reader and three rows to a table, and `carrying` above is
+          // already the stack count for anyone who wants it. Biggest amount first.
+          pack_items: (() => {
+            if (!c.inventory) return null;
+            const by = new Map();
+            for (const o of c.inventory) {
+              const name = c.rsc.get(o.nameRsc) || '';
+              if (!name) continue;
+              by.set(name, (by.get(name) || 0) + (o.amount || 1));
+            }
+            return [...by].map(([name, amount]) => ({ name, amount }))
+                          .sort((a, b) => b.amount - a.amount || a.name.localeCompare(b.name));
+          })(),
           // HOW FULL THAT PACK IS, which the count above cannot answer: twenty stacks of
           // feathers and twenty of plate are the same `carrying` and opposite answers to
           // "will the next pickup be refused".
@@ -10584,10 +11251,46 @@ async function callTool(name, args, caller) {
   // event stream alone is guesswork; the call order is the other half.
   const rec = args?.agent ? sessions.get(args.agent)?.recorder : null;
   const recordedArgs = redactControlArgs(args);
+
+  // A SETTING THAT SILENTLY DOES NOTHING IS INDISTINGUISHABLE FROM ONE THAT WORKS.
+  //
+  // The tool schemas do not set additionalProperties, so a key that is not declared is
+  // accepted, dropped, and answered with a cheerful ok. That is not hypothetical: the
+  // whole of prod ran with `doomed_in_spot_below` describable in the text of a NEIGHBOURING
+  // setting and absent from the schema, so every call that set the threshold a fleet
+  // farming from walls actually fires on returned ok and changed nothing. It is the same
+  // shape as `purpose` missing from a schema for a year with every keeper's audit switched
+  // off — the repository's own standing example of this failure.
+  //
+  // REPORTED, NOT REFUSED. The rule this follows says an unrecognised key is reported,
+  // never applied and never dropped; refusing it outright is the stricter reading and it is
+  // the wrong one to take live, because a tool whose run() reads an argument it never
+  // declared would start throwing at a fleet that is mid-fight. Reporting makes the mistake
+  // visible on the very call that made it, which is all that was ever missing.
+  // `schema`, not `inputSchema` — the tool objects here carry it under `schema` and it is
+  // renamed only on the way out in tools/list. Reading the wrong one made this whole check
+  // a silent no-op, which is precisely the failure it was written to catch.
+  const declared = (t.schema ?? t.inputSchema)?.properties;
+  let unrecognised = null;
+  if (declared && args && typeof args === 'object' && !Array.isArray(args)) {
+    const known = new Set(Object.keys(declared));
+    const extra = Object.keys(args).filter(k => !known.has(k));
+    if (extra.length) {
+      unrecognised = extra;
+      console.warn(`[${name}] unrecognised setting(s) ignored: ${extra.join(', ')} — ` +
+                   'not declared by this tool, so nothing was applied for them');
+      rec?.line('call', { tool: name, unrecognised: extra });
+    }
+  }
+
   const t0 = Date.now();
   try {
     const out = await t.run(args || {}, caller);
-    if (rec?.line) rec.line('call', { tool: name, args: recordedArgs, ms: Date.now() - t0 });
+    // Say it in the ANSWER, not only in a log nobody is tailing. The caller that got this
+    // wrong is the one reading this reply.
+    if (unrecognised && out && typeof out === 'object' && !Array.isArray(out))
+      out.unrecognised_settings = unrecognised;
+    rec?.line('call', { tool: name, args: recordedArgs, ms: Date.now() - t0 });
     return out;
   } catch (e) {
     if (rec?.line) rec.line('call', { tool: name, args: recordedArgs, ms: Date.now() - t0, error: e.message });
@@ -10692,6 +11395,27 @@ function brokerGameEndpoints() {
   };
 }
 
+// WHAT THE STARTUP BANNER IS ALLOWED TO CLAIM.
+//
+// HOST/PORT are this PROCESS's defaults — where a join that names no host of its own
+// would go — and for a named fleet they are usually not where anybody actually is,
+// because every session's endpoint comes from the ROSTER. Printing the default as
+// "game server" is how broker-shadow.log came to announce 127.0.0.1:5959 in a banner
+// over twenty-one sessions established to 127.0.0.1:15959. On the one fleet whose
+// entire purpose is not being prod, that line is worse than no line at all.
+//
+// brokerGameEndpoints() cannot answer at banner time: the HTTP server starts listening
+// BEFORE resumeFleet() runs, so `sessions` is still empty. rosterGameEndpoint() can,
+// because the roster is exactly what the resume is about to dial.
+//
+// Never silently substitute one for the other: a reader has to be able to tell "this is
+// where the fleet is" from "this is what an unqualified join would use".
+function gameServerBanner() {
+  const rostered = rosterGameEndpoint(STATE_FILE);
+  if (rostered) return `game server ${rostered.host}:${rostered.port}`;
+  return `game server ${HOST}:${PORT} (this process's default; the roster names none)`;
+}
+
 // WHERE THE BAKED MAP AND THE LIVE SERVER DISAGREE.
 //
 // One entry per room, first seen and last seen, with both security values. It is a fact
@@ -10710,12 +11434,26 @@ const GEOMETRY_DRIFT_MAX = 64;
 function noteGeometryDrift(session, drift) {
   if (!session || !drift) return;
   const book = (session.geometryDrift ??= new Map());
-  const key = String(drift.room);
+  // KEYED BY THE ROOM NUMBER, NOT BY THE ROOM OBJECT.
+  //
+  // `drift.room` is `c.room.id` — a live handle the server renumbers on every system save,
+  // alongside garbage collection. The line below says the room is the key so a fleet
+  // walking a drifted zone updates rather than appends, and that stopped being true the
+  // first time the server saved: the same room came back under a new handle, appended a
+  // second entry, and the book filled with duplicates of one room until it hit its cap.
+  //
+  // `validateFineTarget` cannot resolve the number itself — it is PURE and text-lifted into
+  // m59-collision-test.mjs, and the client's room object carries only an id. The session
+  // can, so it is resolved here, at the one place that writes the record down. The handle
+  // is kept beside it under a name that says what it is, for matching against a live read.
+  const num = session.world?.room?.num ?? null;
+  const key = String(num ?? `object:${drift.room}`);
   const prev = book.get(key);
   // The room is the key, so a fleet walking a drifted zone updates rather than appends.
   if (prev) { prev.at = Date.now(); prev.seen++; return; }
   if (book.size >= GEOMETRY_DRIFT_MAX) return;
-  book.set(key, { room: drift.room, live_security: drift.live >>> 0,
+  book.set(key, { room: num, room_object: drift.room,
+                  live_security: drift.live >>> 0,
                   baked_security: drift.baked >>> 0,
                   first: Date.now(), at: Date.now(), seen: 1 });
 }
@@ -11120,7 +11858,7 @@ function serveHttp(port, dashboardPort = null) {
   const bind = process.env.M59_BIND || '127.0.0.1';
   server.listen(port, bind, () =>
     console.error(`m59 broker on http://${bind}:${port} — ${TOOLS.length} tools, ` +
-                  `${resources.size} resources; game server ${HOST}:${PORT}` +
+                  `${resources.size} resources; ${gameServerBanner()}` +
                   (bind === '127.0.0.1' ? '' : '  [WARNING: bound beyond loopback and UNAUTHENTICATED]')));
 }
 
@@ -11414,6 +12152,7 @@ function heroSnapshot(name) {
       deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
       deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
       mulligans: st?.did?.mulligans ?? 0,
+      breakoffs: st?.did?.breakoffs ?? 0,
       logoffs: st?.did?.logoffs ?? 0,
       credentials: fleetState.get(agent)?.credentials ?? null,
       client_path: process.env.M59_CLIENT_EXE || null,
@@ -12255,7 +12994,7 @@ async function supplyBetween(a) {
             // and chasing where it WAS is how this used to end up in the wrong room.
             const dest = other.world?.room?.num;
             if (dest == null) { why = 'cannot see which room the other one is in'; break; }
-            const t = await mover.travel(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
+            const t = await mover.travelExclusive(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
             why = t.arrived ? null : t.reason;
             arrived = await canSeeThem();
             const nowIn = mover.world?.room?.num ?? null;

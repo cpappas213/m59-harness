@@ -43,7 +43,7 @@ console.log('\nthe order the keeper decides in');
 {
   // Urgency descending. Each line is a claim about what outranks what, and the comment is
   // the reason — change the array and you are changing one of these claims.
-  ok('there are seven stages', PASS_STAGES.length === 7);
+  ok('there are eight stages', PASS_STAGES.length === 8);
   ok('being dead is decided first — the Underworld has no graph exits, so a character ' +
      'left there stays there',
      PASS_STAGES[0] === 'passUnderworld');
@@ -54,11 +54,18 @@ console.log('\nthe order the keeper decides in');
      PASS_STAGES[2] === 'passPlaybook');
   ok('then danger and being hurt — the survival ladder',
      PASS_STAGES[3] === 'passFleeAndRest');
+  // FOLLOWING A PERSON IS BELOW SURVIVAL AND ABOVE EVERYTHING DIRECTIONAL, and both halves
+  // of that are claims. Below survival, because being led somewhere is never worth dying on
+  // the way to — a leader cannot see a follower's health bar. Above everything directional,
+  // because the entire reason to lead a group by hand is that the person in front knows a
+  // door the router keeps getting wrong, and an errand or a farm assignment must not be able
+  // to peel a follower off mid-room.
+  ok('then following a person who is leading us', PASS_STAGES[4] === 'passFollow');
   ok('then whoever else is driving, which owns everything directional from there down',
-     PASS_STAGES[4] === 'passOutside');
+     PASS_STAGES[5] === 'passOutside');
   ok('then an errand, which outranks farming and is outranked by everything above it',
-     PASS_STAGES[5] === 'passErrand');
-  ok('and the actual job is last', PASS_STAGES[6] === 'passFarm');
+     PASS_STAGES[6] === 'passErrand');
+  ok('and the actual job is last', PASS_STAGES[7] === 'passFarm');
 
   ok('every stage names a real method on the keeper',
      PASS_STAGES.every(n => typeof Autopilot.prototype[n] === 'function'));

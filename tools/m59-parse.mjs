@@ -382,6 +382,33 @@ export function parseInventoryAdd(body) {
   return done(r, { object: extractObject(r) });
 }
 
+// BP_ADD_ENCHANTMENT (147) and BP_REMOVE_ENCHANTMENT (148) — HandleAddEnchantment and
+// HandleRemoveEnchantment, module/merintr/merintr.c:1228. A BYTE of type and then either a
+// whole object (add) or just its id (remove).
+//
+// WHAT THEY CARRY IS WHY HEALTH IS FALLING WHEN NOTHING IS HITTING YOU. Poison is a sickness
+// object, and a sickness reaches the client this way and no other. Both opcodes were declared
+// in the BP table and NEVER HANDLED, which is this repository's own trap written down twice:
+// "a packet nobody parses looks exactly like one nobody sends", and two separate comments —
+// m59-autopilot.mjs and m59-safespots.mjs — say "poison and archers look the same from here"
+// while the wire was carrying the answer the whole time.
+//
+// It matters most where a rest is interrupted. `restUntil` aborts when health falls, on the
+// reasoning that health only falls while resting if something is hitting us, and a safe spot
+// that "fails" that way is discredited PERMANENTLY. A poisoned character discredits a good
+// wall on every rest it takes.
+export function parseAddEnchantment(body) {
+  const r = new Reader(body);
+  const type = r.u8();
+  return done(r, { type, object: extractObject(r) });
+}
+
+export function parseRemoveEnchantment(body) {
+  const r = new Reader(body);
+  const type = r.u8();
+  return done(r, { type, id: objId(r.u32()) });
+}
+
 // BP_OBJECT_CONTENTS (135) — a container id then the same object list.
 export function parseObjectContents(body) {
   const r = new Reader(body);

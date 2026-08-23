@@ -1,0 +1,20 @@
+{
+  "_what": "The SHAPE of substrate/tuning.json, which is gitignored. Tactics layered over a profile by tools/m59-tuning.mjs, read live and validated — no restart, no code change. `node tools/m59-tuning.mjs --explain` prints the whole surface and what each key costs.",
+  "_layering": "defaults -> profiles -> characters, most specific wins, and the plan reports WHICH line won.",
+  "_silence": "Absent, empty or unparseable all mean THE PROFILE STANDS AS WRITTEN. An unusable value keeps the profile's rather than unsetting it, and an unrecognised key is reported rather than dropped.",
+  "defaults": {
+    "defend_against_players": false,
+    "defend_chase": false
+  },
+  "profiles": {
+    "town_safe_farming": {
+      "roam": false
+    }
+  },
+  "characters": {
+    "Example": {
+      "weapon_priority": ["mace", "morning star", "club", "short sword"],
+      "flee_below": 0.7
+    }
+  }
+}
