@@ -499,6 +499,11 @@ const RAIL_SKIP_WITHIN_SQUARES = Number(process.env.M59_RAIL_SKIP_WITHIN || 8);
 // twice in the same direction before it crosses anything.
 const INLAND_MARGIN_SQUARES = Number(process.env.M59_INLAND_MARGIN || 2);
 
+// HOW MANY STEPS A WALK MAY TAKE WITHOUT EVER GETTING CLOSER. Generous enough to go round a
+// building — the Streets of Tos crossing is 24 squares and its worst legitimate detour is a
+// handful — and far short of the sixty-odd squares of oscillation that prompted it.
+const WALK_STALL_STEPS = Number(process.env.M59_WALK_STALL_STEPS || 14);
+
 const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
 const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
 
@@ -4552,6 +4557,8 @@ class Session {
     // One re-centre per square per walk. Standing in the middle either helps or it does not;
     // trying it twice from the same square is the dither this is meant to remove.
     const recentredAt = new Set();
+    // The closest this walk has ever been to its target, and how long since that improved.
+    let bestGap = Infinity, sinceCloser = 0;
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     // AN EDGE THE MOVER CANNOT WALK IS A FACT ABOUT THE MAP, NOT ABOUT THIS WALK.
     //
@@ -5051,6 +5058,40 @@ class Session {
                    note: 'lost authoritative own-position state while walking, and a ' +
                          'position re-read did not bring it back',
                    steps: taken, replans };
+      // GROUND ALREADY MADE IS NOT GIVEN BACK — the rail's rule, which the ordinary walker
+      // never had.
+      //
+      // The existing `gainedGround` test only runs when a step MISSES, and the dither is made
+      // of steps that land exactly where they were aimed, on a plan that keeps changing. So it
+      // was invisible. Measured crossing The Streets of Tos — open town floor, nothing in the
+      // way:
+      //
+      //   43,24 -> 42,31 -> 43,24 -> 42,31 -> 43,24 -> 42,31 -> 43,24
+      //   37,27 -> 41,28 -> 37,27 -> 41,28 -> 37,27
+      //
+      // 324 moves over 164 seconds, 184 distinct positions, for a crossing 24 squares long —
+      // 1.12 squares a second against the five a player does, and the same diagonal walked
+      // three times over.
+      //
+      // Measured on the TARGET rather than on the plan, because the plan is what is wrong: how
+      // far is the body from where it is going, and has that number moved. Bounded, not
+      // forbidden — going around something legitimately costs ground, and a walk that is
+      // genuinely progressing resets this on every improvement.
+      //
+      // A BODY IN THE WAY IS NOT A DITHER. Standing still because something is standing on
+      // the next square is a fight or a wait, it has its own budget below, and it reports its
+      // own facts — how many bodies, where, and the health lost to them. Counting it here
+      // would swallow all of that and call it a bad plan.
+      const gapNow = Math.max(Math.abs(now.row - row), Math.abs(now.col - col));
+      if (gapNow < bestGap) { bestGap = gapNow; sinceCloser = 0; }
+      else if (r.reason === 'object_blocked') { /* the body path owns this one */ }
+      else if (++sinceCloser > WALK_STALL_STEPS)
+        return { arrived: false, steps: taken, replans,
+                 blocked_at: { col: now.col, row: now.row },
+                 reason: 'no_ground_gained',
+                 note: `${sinceCloser} steps without getting closer than ${bestGap} squares — ` +
+                       'this is a dither, not a walk. The plan is what is wrong, so the caller ' +
+                       'gets it back rather than another lap of the same two squares.' };
       if (now.col === next.col && now.row === next.row) {
         // It landed where it was aimed, so the reach it used is one the ground supports.
         if (was && (was.col !== now.col || was.row !== now.row)) prevSquare = was;
