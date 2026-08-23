@@ -151,9 +151,26 @@ console.log('\nthe guard: what a journey leaves switched on');
   // has the body. Firing on any damage in a zone that outranks the character then tore the
   // crossing down at step 0 of 40, over and over, and a shelter that prevents arrival is not
   // shelter. One faculty on one clock, and the wall pauses at the boundary instead.
-  ok('nothing is on both clocks — mid-hop can only cancel, and cancelling is the cost',
-     TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'both').length === 0,
+  // CORRECTED 2026-08-23. The line above is the argument as it stood, and the half of it
+  // that has since become false is "cancelling is the cost". A cancelled journey used to be
+  // a LOST journey; f245be5 made one that ends short keep its destination, and a4bb63f fixed
+  // the rung that resumes it — `passErrand`'s idle catch-all ended every tick before
+  // `passFarm` was ever reached, so the resume had never once fired in the life of this
+  // repository. It fires now. Mid-hop is therefore a pause by a slower route.
+  //
+  // And the thing that actually made mid-hop unaffordable was never the clock: it was
+  // `travelShelterBelow` returning 1 — shelter at any damage at all — in a zone that
+  // outranks the character, which the Twisted Wood does continuously. Fixed at its source.
+  ok('the wall is on BOTH clocks, because a mid-hop cancel now keeps its objective',
+     TRAVEL_GUARD_CLOCK.safe_spot === 'both', JSON.stringify(TRAVEL_GUARD_CLOCK));
+  ok('and it is the only faculty that is, because it is the only one that can be resumed',
+     TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'both').join() === 'safe_spot',
      JSON.stringify(TRAVEL_GUARD_CLOCK));
+  // A THRESHOLD OF 1 IS NOT A THRESHOLD, and that is the assertion that would have stopped
+  // the whole detour. A dangerous room is a reason to shelter EARLIER, not at full health.
+  ok('and an outranking room shelters earlier rather than at any scratch',
+     !/roomOutranksUs\(\) \? 1 :/.test(
+       readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8')));
   // The split is what keeps "only one thing drives a body" true, so it is pinned rather
   // than left to a comment: the four that CANCEL a journey and the two that PAUSE it.
   const midHop = TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'mid-hop');
@@ -161,8 +178,8 @@ console.log('\nthe guard: what a journey leaves switched on');
      JSON.stringify(midHop.sort()) === JSON.stringify(['arm', 'fight_back', 'flee']),
      JSON.stringify(midHop));
   const boundary = TRAVEL_GUARD_KEYS.filter(key => TRAVEL_GUARD_CLOCK[key] === 'hop boundary');
-  ok('and the two that only pause it are the hop-boundary ones',
-     JSON.stringify(boundary.sort()) === JSON.stringify(['rest', 'safe_spot']),
+  ok('and resting is the one that only ever pauses',
+     JSON.stringify(boundary.sort()) === JSON.stringify(['rest']),
      JSON.stringify(boundary));
 
   const k = keeper({ policy: { travelGuard: { flee: false } } });
@@ -458,7 +475,7 @@ console.log('\nthe safe-wall A/B is retired');
 
 
 console.log('');
-console.log('MID-HOP, A WALL IS NOT AN OPTION — BECAUSE THE ONLY OPTION IS TO CANCEL');
+console.log('MID-HOP A WALL IS AN OPTION AGAIN — BECAUSE A CANCEL NO LONGER LOSES THE ROAD');
 {
   // Room 587, measured: the body walked six squares of a 65-square baked rail, was taken
   // back for a wall, and started again. Thirty laps in one leg, with six refusals in two
@@ -484,12 +501,28 @@ console.log('MID-HOP, A WALL IS NOT AN OPTION — BECAUSE THE ONLY OPTION IS TO 
   const sheltered = async k => { await k.passTravelling(ctxFor(k)); return k.notes.some(n =>
     n.detail?.trigger === 'a wall is nearer than the next room'); };
 
-  // Hurt, in a zone that outranks us, something on us — and it walks on.
+  // CORRECTED 2026-08-23, AND THIS IS THE ASSERTION THAT WAS BACKWARDS.
+  //
+  // Hurt, in a zone that outranks us, something on us — it now TAKES the wall. Aaaa is the
+  // case: entered the Cragged Mountains at full health, killed inside it in twenty-five
+  // seconds, and never reached another boundary to be asked at. The room is 2,450 squares.
+  // A wall it cannot be offered until the far side of the room is not a wall it has.
   const hurt = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
-  ok('a hurt traveller mid-hop does NOT stop for a wall', !(await sheltered(hurt)));
-  ok('and it says so, once, rather than a faculty going quiet',
-     hurt.notes.some(n => /the wall for this is at the end of the hop/.test(n.what ?? '')),
+  ok('a hurt traveller mid-hop DOES stop for a wall now', await sheltered(hurt),
      JSON.stringify(hurt.notes.map(n => n.what)));
+
+  // WHAT STOPS IT BECOMING THE OLD BUG AGAIN: a per-room budget. The failure was never one
+  // stop, it was thirty laps of stop-and-restart in a single leg — so the budget is what
+  // makes mid-hop affordable, and the note when it is spent is what keeps the refusal
+  // arguable rather than silent.
+  const spent = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
+  // Keyed on the ROOM the counter belongs to — it resets on entering a new one, so a
+  // fixture that omits the room is a fixture whose budget is wiped before it is read.
+  spent.shelterStops = { room: spent.s.world.room.num, taken: 99, noted: false };
+  ok('but not once this room\'s budget is spent', !(await sheltered(spent)));
+  ok('and it says so rather than a faculty going quiet',
+     spent.notes.some(n => /the wall for this is at the end of the hop/.test(n.what ?? '')),
+     JSON.stringify(spent.notes.map(n => n.what)));
 
   // ...AND TWO HITS FROM DEATH IS NOT "A BAD ROOM". Waiting for a boundary that is 2,450
   // squares away is how the Cragged Mountains killed seven of eleven in one window, so the
