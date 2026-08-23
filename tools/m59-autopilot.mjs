@@ -10980,6 +10980,50 @@ export class Autopilot {
 
   // ── passErrand: extracted from pass() ────────────────────────────────
   async passErrand(ctx) {
+    // A JOURNEY IS ALREADY A DIRECTIONAL DECISION. THE ERRANDS STAND DOWN UNDER ONE.
+    //
+    // Every branch in this stage WALKS THE CHARACTER SOMEWHERE — the bank, the vault, a
+    // delivery — and not one of them asked whether it was already going somewhere. So a
+    // character with a live objective would set off for the bank instead, and from outside
+    // that is indistinguishable from travel not working.
+    //
+    // Measured 2026-08-23, shadow02, holding `{to: 38}` for the whole of a ten-minute leg:
+    //
+    //     mode idle | passes 2 | running_for_seconds 592
+    //     recent: First Royal Bank of Tos ... banking ... buying food ... resting
+    //
+    // TWO ladder passes in 592 seconds. It was not stuck and it was not lost — it was in
+    // town, doing exactly what its policy tells it to do, while a journey waited. And
+    // because `bankRun` is a long await, the ladder barely ran at all, so nothing further
+    // down could get a turn either.
+    //
+    // This is the same rule the boundary in CLAUDE.md already states — work, movement and
+    // economy decide on a clock of MINUTES and there is one of them per body. A journey is
+    // one. Shopping mid-journey is two directional decisions on one character, which is the
+    // configuration this whole carve-out exists to prevent.
+    //
+    // A SUSPENDED OBJECTIVE COUNTS. Standing down only while `travelling` would hand the
+    // errands every tick of a paused journey — which is precisely when the resume is trying
+    // to get the body back on the road — and the resume lives one rung BELOW this one.
+    //
+    // Nothing is lost by waiting: an errand is an END STATE, not a schedule. The bank is
+    // still there on arrival, and `passFleeAndRest` above still eats, rests and shelters,
+    // because those are survival and decide on a clock of one second.
+    if (this.inert?.travelling || this.suspendedJourney) {
+      if (!this.errandsStoodDown) {
+        this.errandsStoodDown = true;
+        this.note('errands stand down while there is a road to walk', {
+          to: this.suspendedJourney?.to ?? this.inert?.to ?? null,
+          state: this.inert?.travelling ? 'travelling' : 'journey suspended, waiting to resume',
+          why: 'every branch of this stage walks the character somewhere, and it is already ' +
+               'going somewhere. An errand is an end state rather than a schedule, so it ' +
+               'keeps until the road is finished',
+        });
+      }
+      return CONTINUE;
+    }
+    this.errandsStoodDown = false;
+
     // An errand outranks farming and is outranked by everything above it: we are past
     // the death, danger and rest branches, so a runner in trouble has already dealt
     // with the trouble.

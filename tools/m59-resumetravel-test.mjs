@@ -629,5 +629,52 @@ console.log('AND THE ALLOWANCE RUN AS CODE, NOT READ AS TEXT');
   ok('and it clears any leftover tab', idle.journeyDeaths === null);
 }
 
+console.log('');
+console.log('THE ERRANDS STAND DOWN UNDER A JOURNEY');
+{
+  // Every branch of `passErrand` WALKS THE CHARACTER SOMEWHERE — the bank, the vault, a
+  // delivery — and not one of them asked whether it was already going somewhere. Measured
+  // on shadow02, holding {to: 38} for a whole ten-minute leg:
+  //
+  //     mode idle | passes 2 | running_for_seconds 592
+  //     recent: First Royal Bank of Tos ... banking ... buying food ... resting
+  //
+  // Two ladder passes in 592 seconds. Not stuck, not lost — in town, doing what its policy
+  // says, while a journey waited. And because `bankRun` is a long await, nothing below it
+  // got a turn either, including the rung that would have resumed the road.
+  const travelling = keeper();
+  travelling.inert = { travelling: true, to: 38, why: 'travelling to Castle Victoria' };
+  ok('a travelling character does not go shopping',
+     await travelling.passErrand(ctxFor(travelling)) === CONTINUE);
+  ok('and says so once rather than a stage going quiet',
+     said(travelling, /errands stand down while there is a road to walk/));
+
+  // A SUSPENDED OBJECTIVE COUNTS TOO, and this is the half that matters most: it is
+  // precisely while a journey is paused that the resume — one rung BELOW this one — is
+  // trying to get the body back on the road. Handing those ticks to the bank instead is how
+  // a paused journey becomes a shopping trip.
+  const paused = keeper();
+  paused.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 't',
+                              attempts: 1, deaths_at: 0 };
+  ok('a paused journey also stands the errands down',
+     await paused.passErrand(ctxFor(paused)) === CONTINUE);
+  ok('and names the state rather than only the destination',
+     said(paused, /waiting to resume/));
+
+  // SAID ONCE, NOT EVERY PASS. This runs about once a second.
+  const before = paused.notes.length;
+  await paused.passErrand(ctxFor(paused));
+  ok('and it does not repeat every pass', paused.notes.length === before);
+
+  // AND IT LIFTS. An errand is an END STATE rather than a schedule — the bank is still
+  // there on arrival — so the stage has to come back when the road is finished, or a
+  // character that once travelled would never bank again.
+  paused.suspendedJourney = null;
+  paused.inert = null;
+  const after = await paused.passErrand(ctxFor(paused));
+  ok('with no road left the stage runs again', after !== CONTINUE || paused.errandsStoodDown === false,
+     JSON.stringify({ after: String(after), stoodDown: paused.errandsStoodDown }));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
