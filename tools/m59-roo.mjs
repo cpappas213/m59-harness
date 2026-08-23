@@ -1004,17 +1004,29 @@ export class RoomGeometry {
       // check keeps its purpose — a path that CROSSES a fine-unwalkable square in the
       // middle is still blocked — it just no longer vetoes the square the character
       // is already standing on and needs to walk off of.
-      if (this.walls?.length) {
-        const sqCol = Math.floor(clientToProtocol(at.x) / KOD_FINENESS);
-        const sqRow = Math.floor(clientToProtocol(at.y) / KOD_FINENESS);
-        if ((sqCol !== startSqCol || sqRow !== startSqRow)
-            && this.fineWalkable(sqRow, sqCol) === false) {
-          at = stepFrom; // revert to before this microstep
-          blocked = true;
-          reason = 'fine_wall_edge';
-          break;
-        }
-      }
+      // A CELL-CENTRE TEST MAY NOT VETO A FINE TRACE, AND A DOORWAY IS WHY.
+      //
+      // This block used to reject the whole trace whenever a microstep TRANSITED a
+      // square whose centre was `fineWalkable === false`. But fineWalkable tests the
+      // CELL CENTRE against wall segments within the player radius (248), and a doorway
+      // is exactly a cell whose centre sits close to its own frame. So every narrow
+      // passage in the game became impassable.
+      //
+      // Measured on the shipped geometry for room 106, the Brownestone Inn -- the narrow
+      // strip a character has to cross to leave the 300-unit pocket, which
+      // m59-collision-test has guarded by name for a long time:
+      //
+      //   with this block:     arrived: false, blocked: true, reason: 'fine_wall_edge'
+      //   without it:          arrived: true,  blocked: false
+      //
+      // And it was not buying anything: with the block removed, m59-mover-test's
+      // "the mover did NOT cross the wall segment" still passes, because SEGMENT
+      // crossing is caught by _blockingWall, which is the right test and was already
+      // there. This was a coarse approximation vetoing a physics trace.
+      //
+      // Since movement is client-authoritative, our model is the only collision check
+      // there is -- so a false refusal here is not a conservative choice, it is a
+      // character that cannot leave a room.
       const leaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
       const floor = this.floorBaseAtClient(at.x, at.y, leaf, { roomFlags, overrideDepths });
       // A CLIFF IS NOT A WALL, AND ONLY WALLS CAN REFUSE A CLIMB. OFF BY DEFAULT — THIS IS
