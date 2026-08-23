@@ -267,8 +267,26 @@ async function runLeg(r, { from = FROM, to = TO, place = true, heal = true, leg 
   if (place) await dm.relocate([r.character], from, { verify: false }).catch(() => null);
   const ids = await dm.resolve([r.character]);
   const max = maxOf(r.character);
-  if (heal && ids[r.character] != null && max)
-    await dm.dm(dm.healthCmds(ids[r.character], max), { timeoutMs: 60000 });
+  if (heal && ids[r.character] != null && max) {
+    // ALL THREE VITALS, BECAUSE THE RECOVERY HOLD ASKS FOR ALL THREE.
+    //
+    // This restored HEALTH only, and `recovered()` wants health, mana AND vigor. So a
+    // character that died in the previous run started the next one at full health with an
+    // empty mana bar, `recoverUntilWhole` still set, and `passUnderworld` — the FIRST rung —
+    // ending every tick while it sat in an inn. Caught by the ladder tracer:
+    //
+    //     Aaaa  15 passes  room 586  passUnderworld  idle/?  100%->100%
+    //
+    // Fifteen passes, full health, going nowhere. The leg was measuring a hold, not a road.
+    //
+    // CONSECUTIVE RUNS WERE NOT INDEPENDENT, which is worse than any single wrong number: a
+    // run's result depended on how the one before it ended, and today's runs alternated
+    // between "0 deaths" and "2 deaths" partly for that reason. A measurement whose result
+    // depends on the previous measurement is not a measurement.
+    const cmds = [...dm.healthCmds(ids[r.character], max)];
+    if (typeof dm.manaCmds === 'function') cmds.push(...dm.manaCmds(ids[r.character], 50));
+    await dm.dm(cmds, { timeoutMs: 60000 });
+  }
 
   // A LEG THAT STARTS UNDER A RECOVERY HOLD IS NOT A MEASUREMENT OF ANYTHING.
   //
