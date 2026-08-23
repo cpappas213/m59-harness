@@ -13,7 +13,7 @@
 // stand still and rest while something eats it. Refusing to believe a good one throws
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
-import { unlinkSync } from 'node:fs';
+import { unlinkSync, readFileSync } from 'node:fs';
 import { Autopilot, farmRoomDenials,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
@@ -1124,6 +1124,46 @@ console.log('A WALL WE COULD NOT WALK TO IS NOT SHELTER');
     0, { maxDetour: 4, unreachable: new Set(['30,5']) });
   ok('and the best-scoring square does not win it back by scoring well',
      ranked?.col === 31, JSON.stringify(ranked));
+}
+
+// ---------------------------------------------------------------------------
+// A SAFE SPOT IS THE TWO GRIDS DISAGREEING, AND NOTHING ELSE IS A CANDIDATE.
+//
+// Added 2026-08-23. The search used to open its candidate loop with
+//
+//     if (!geo.walkable(r, c)) continue;
+//
+// which considers only squares the COARSE grid admits — the grid monsters path on. That
+// excluded, by construction, every square that IS the mechanism, and left the search
+// grading pieces of open floor by how enclosed they looked.
+//
+// Measured against the shadow fleet's own book on the three rooms it was dying in: 15
+// squares recorded in the Cragged Mountains against 1,778 real walls in the room, 8 in the
+// Twisted Wood against 112 — and every square in the book, in all three rooms, INCLUDING
+// the ones recorded as having held, read `coarse=true, fine=true`. Ordinary grass. Nine
+// travel shelters in a row failed, the book wrote those down as facts about the squares,
+// and a character at 7 of 46 was sent eighteen steps across open ground to stand in a field.
+//
+// It should fail the day open floor can be offered as shelter again.
+console.log('');
+console.log('ONLY GRID-DISAGREEMENT SQUARES ARE CANDIDATES');
+{
+  const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
+  const fn = src.slice(src.indexOf('export function safeSpots'),
+                       src.indexOf('export function safeSpots') + 16000);
+  ok('the candidate loop no longer opens on the coarse grid',
+     !/for \(let c = 1; c <= geo\.cols; c\+\+\) \{\s*\n\s*if \(!geo\.walkable\(r, c\)\) continue;/.test(fn));
+  ok('a body still has to fit, which is the BSP question',
+     /!geo\.standable\(r, c\)\) continue/.test(fn));
+  ok('and a square is only a candidate if the grids disagree about it',
+     /coarseRefusesIt[\s\S]{0,200}disagree\?\.refused/.test(fn));
+  ok('a square the coarse grid refuses counts as the strongest disagreement there is',
+     /geo\.walkable\(r, c\) !== true/.test(fn));
+  // AND WHERE IT CANNOT BE MEASURED, NOTHING IS OFFERED. `moverStepLands` answers true for
+  // everything when collision is not ready, so accepting candidates in that state would
+  // silently restore the old behaviour and look like it was working.
+  ok('and with no collision to measure against, nothing is offered rather than everything',
+     /!geo\.collisionReady[\s\S]{0,80}return \[\]/.test(fn));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
