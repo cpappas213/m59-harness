@@ -393,9 +393,17 @@ console.log('\nthe wiring — the parts a rename would silently break');
   ok('travelJob stands the keeper down as travelling', /goTravelling\(/.test(BROKER_SRC));
   ok('and travelJob does not reach for goInert',
      !/goTravelling[\s\S]{0,1200}goInert\(/.test(BROKER_SRC.slice(BROKER_SRC.indexOf('  travelJob(dest, {'))));
+  // The result is CAPTURED rather than returned straight out, because the `finally` needs to
+  // know whether the journey arrived: one that ended short keeps its destination so the resume
+  // can pick it up, and one that arrived must not.
   ok('and it goes through the KEEPER travel, which carries the rest and the hop hook',
-     /keeper && typeof keeper\.travel === 'function'\)\s*\n\s*return await keeper\.travel\(/
+     /keeper && typeof keeper[.]travel === 'function'[)][\s\S]{0,40}outcome = await keeper[.]travel[(]/
        .test(BROKER_SRC));
+  ok('and a journey that ended short keeps its destination for the resume',
+     /suspendedJourney = [{][\s\S]{0,240}the travel job ended short/.test(BROKER_SRC));
+  ok('while one that ARRIVED does not',
+     /const arrived = outcome[?][.]arrived === true/.test(BROKER_SRC)
+     && /if [(]!arrived && dest != null/.test(BROKER_SRC));
   ok('travel_guard is settable from the autopilot tool', /travel_guard: \{/.test(BROKER_SRC));
   ok('and an unknown faculty is refused rather than ignored',
      /travel_guard: no such faculty/.test(BROKER_SRC));

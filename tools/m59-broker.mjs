@@ -2507,17 +2507,55 @@ class Session {
       assert_();
       const timer = setInterval(assert_, 2000);
       timer.unref?.();
+      let outcome = null;
       try {
         // Through the keeper, so the journey gets the pre-departure rest, the hop hook and
         // the ledger row. `Autopilot.travel` calls `Session.travel` underneath, so this is
         // one extra frame and no recursion.
         if (keeper && typeof keeper.travel === 'function')
-          return await keeper.travel(dest, { ...opts, movementGeneration });
-        return await this.travel(dest, { ...opts, movementGeneration });
+          outcome = await keeper.travel(dest, { ...opts, movementGeneration });
+        else outcome = await this.travel(dest, { ...opts, movementGeneration });
+        return outcome;
       } finally {
         clearInterval(timer);
         // Only if it is still the very hold we took.
-        if (ours && keeper?.inert === ours) keeper.revive('travel finished');
+        if (ours && keeper?.inert === ours) {
+          // A JOURNEY THAT DID NOT ARRIVE IS NOT FINISHED, AND THIS IS WHERE IT WAS FORGOTTEN.
+          //
+          // `revive` hands the body back to the ordinary ladder and drops the objective with
+          // it. That is right when the character got there, and wrong every other time — and
+          // every other time is common: a journey ends short on stumbles, on a hop budget, on
+          // a terminal refusal.
+          //
+          // Measured, from the harness's own account of what the character thought it was
+          // doing:
+          //
+          //     +  0s  room  50  inert — travelling to Castle Victoria
+          //     +213s  room 597  idle
+          //     +219s  room 597  holding a proven safe spot
+          //
+          //     travel_journey: to 38 | legs 3 of 7 | 214s | hp 33 -> 17
+          //
+          // Three legs of seven, then idle in The Twisted Wood — and it sat there for the
+          // remaining five hundred and seventy seconds of the leg, resting behind a wall with
+          // a destination it no longer knew about. `suspended_journey` read null.
+          //
+          // Kept HERE rather than at the individual failure paths, because there are many of
+          // those and this is the one place they all pass through. The resume machinery
+          // already exists and already refuses the cases it should — died since, too many
+          // tries, stale, too hurt, switched off — so all it needed was to be told.
+          const arrived = outcome?.arrived === true;
+          const here = Number(this.world?.room?.num ?? NaN);
+          if (!arrived && dest != null && here !== Number(dest)) {
+            keeper.suspendedJourney = {
+              to: Number(dest), why: `travelling to ${where}`, at: Date.now(),
+              trigger: 'the travel job ended short of the destination',
+              attempts: (keeper.inert?.attempts ?? 0) + 1,
+              deaths_at: keeper.tally?.deaths ?? 0,
+            };
+          }
+          keeper.revive('travel finished');
+        }
       }
     });
   }
