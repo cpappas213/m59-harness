@@ -89,6 +89,20 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   suite is STRUCTURAL — that the walk is spelled exactly once — because the mechanism was
   never broken and `startJob`'s own assertions pass on the buggy code; set
   `M59_BROKER_SRC` at a copy with the old path and exactly those two go red) and
+  `node tools/m59-sincefull-test.mjs` (24 — **what the body did since it was last
+  whole, and whether the moving went anywhere**. Health falling is in every reading here;
+  none of them could say what the character was DOING about it, and on a journey under
+  attack the job is exactly two things — keep going forward, or get to a wall. Both are
+  movement, and movement is all a stillness detector can see. So the number is PATH against
+  NET: ten squares walked ending ten away scores 1.0, and the 22<->23 oscillation walks the
+  SAME TEN SQUARES and scores 0. One assertion exists only to say that out loud — the two
+  are indistinguishable by distance walked and separated only by the ratio. Also pins that a
+  room change is not counted as fifty squares of sprinting when the coordinate system starts
+  again, that reaching shelter reports the seconds it took rather than a zero, that a second
+  wall does not restart that clock, and that the window is measured between OBSERVATIONS
+  rather than against the wall clock — which was a real bug in the first draft and would
+  have reported every bleed slowing down at the moment the keeper stopped being able to see
+  one) and
   `node tools/m59-travelling-test.mjs` (64 — **a journey steers a character; it does not
   switch off its will to live**. Every assertion is one line of Cccc's death record of
   2026-08-21: a commute driver saw him "stuck in room 1" — which is the UNDERWORLD — and

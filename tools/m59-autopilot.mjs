@@ -4286,6 +4286,93 @@ export class Autopilot {
   // `why` is kept on the frame so the trail says what it is: a frame written because we
   // arrived somewhere is a different observation from the pass's regular sample, and a
   // reader that cannot tell them apart will read a travel trail as a stall.
+  // WHAT THE BODY HAS DONE SINCE IT WAS LAST WHOLE.
+  //
+  // Health falling is the easy half and every instrument here already has it. The question
+  // that matters while it falls is what the character is DOING about it, and the honest
+  // answer is not a position or a heading — it is whether the moving is going anywhere.
+  //
+  // So the number this exists for is PATH against NET. A character that walked forty squares
+  // and ended two from where it started is not travelling, it is dithering — and that is
+  // indistinguishable from good progress in every other reading we have, because both show
+  // movement, both reset a stillness timer, and both burn the same seconds. The 22<->23
+  // oscillation, the drag along a wall back out the entrance, the two-square shuffle that
+  // reset every stall detector it met: all of them are a low ratio here and nothing else.
+  //
+  // Reset by being FULL rather than on a timer, because the interesting window is exactly
+  // one bleed. Once whole there is nothing to review.
+  trackSinceFull(at, hp) {
+    const value = hp?.value ?? null, max = hp?.max ?? null;
+    if (value === null || max === null || !(max > 0)) return;
+    if (value >= max) { this.sinceFull = null; return; }
+
+    const f = this.sinceFull;
+    if (!f || f.room == null) {
+      this.sinceFull = {
+        at: at.at, room: at.room, col: at.col, row: at.row,
+        anchorCol: at.col, anchorRow: at.row,
+        healthFrom: value, max, path: 0, roomChanges: 0,
+        rooms: [at.room], lastCol: at.col, lastRow: at.row,
+        low: value, safeSpotAt: null, doing: at.doing ?? null,
+      };
+      return;
+    }
+
+    // ACROSS A ROOM BOUNDARY, DISTANCE IN SQUARES IS MEANINGLESS — the coordinate system
+    // starts again. A room change is progress of a different kind and is counted as its own
+    // thing, and the net anchor restarts so the ratio describes THIS room's walking.
+    if (at.room !== f.lastRoom && at.room !== f.rooms[f.rooms.length - 1]) {
+      f.rooms.push(at.room);
+      if (f.rooms.length > 24) f.rooms.shift();
+      f.roomChanges++;
+      f.anchorCol = at.col; f.anchorRow = at.row;
+    } else if (Number.isFinite(at.col) && Number.isFinite(f.lastCol)) {
+      const d = Math.hypot(at.col - f.lastCol, at.row - f.lastRow);
+      // A sample that did not move adds nothing; a teleport is not walking either.
+      if (d > 0 && d < 12) f.path += d;
+    }
+    f.lastRoom = at.room; f.lastCol = at.col; f.lastRow = at.row; f.lastAt = at.at;
+    f.low = Math.min(f.low ?? value, value);
+    f.doing = at.doing ?? f.doing;
+    // WHETHER IT GOT WHERE IT WAS TRYING TO GO. On a journey while taking damage, reaching a
+    // wall IS the correct outcome, so the time from the first drop to the shelter is the
+    // number worth having — and a null here after a long bleed is its own finding.
+    if (f.safeSpotAt === null && /safe spot|shelter|resting/i.test(String(at.doing ?? '')))
+      f.safeSpotAt = at.at;
+  }
+
+  /** The reviewable summary, for `status` and for the ladder trace. Null while whole. */
+  sinceFullHealth() {
+    const f = this.sinceFull;
+    if (!f) return null;
+    // MEASURED BETWEEN OBSERVATIONS, NOT AGAINST THE WALL CLOCK. The window is first drop to
+    // last sample, and every number derived from it — the rate above all — has to divide by
+    // the time actually watched. `Date.now()` would keep the denominator growing through any
+    // gap in sampling, so a keeper that stopped pulsing would report a bleed slowing down at
+    // exactly the moment it stopped being able to see one.
+    const now = f.lastAt ?? f.at;
+    const secs = Math.max(0, Math.round((now - f.at) / 1000));
+    const net = Number.isFinite(f.lastCol) && Number.isFinite(f.anchorCol)
+      ? Math.hypot(f.lastCol - f.anchorCol, f.lastRow - f.anchorRow) : null;
+    const lost = f.healthFrom - (f.low ?? f.healthFrom);
+    return {
+      for_s: secs,
+      health_from: f.healthFrom, health_low: f.low, of_max: f.max,
+      losing_per_s: secs > 0 ? Math.round((lost / secs) * 100) / 100 : null,
+      rooms: [...f.rooms],
+      room_changes: f.roomChanges,
+      squares_walked: Math.round(f.path * 10) / 10,
+      net_from_start_of_this_room: net === null ? null : Math.round(net * 10) / 10,
+      // THE ONE TO READ. 1.0 is a straight line; near 0 is a body moving and getting
+      // nowhere, which is what every dithering bug in this repository has looked like.
+      // Null rather than a fabricated 0 when nothing has been walked yet.
+      progress_ratio: f.path > 0 && net !== null ? Math.round((net / f.path) * 100) / 100 : null,
+      reached_shelter_after_s: f.safeSpotAt === null ? null
+        : Math.max(0, Math.round((f.safeSpotAt - f.at) / 1000)),
+      doing: f.doing ?? null,
+    };
+  }
+
   recordFrame(why = null) {
     const c = this.s.client;
     if (!c?.room) return null;
@@ -6938,6 +7025,14 @@ export class Autopilot {
         until: 'health >= 95% and vigor >= the resting cap',
         why: 'came back from the dead; not going out again until whole',
       } : null,
+      // WHAT THE BODY HAS DONE SINCE IT WAS LAST WHOLE, and null while it is whole.
+      //
+      // Health falling is already in every reading here. What none of them could answer is
+      // whether the moving that happens while it falls is going anywhere — and on a journey
+      // under attack, "forward, or to a wall" is the entire job. `progress_ratio` is the
+      // number: 1.0 is a straight line, near 0 is a body moving and getting nowhere, and
+      // `reached_shelter_after_s` reading null after a long bleed is its own finding.
+      since_full_health: this.sinceFullHealth?.() ?? null,
       recent: this.journal.slice(-12),
       // THE MEASUREMENT, NOT THE CONCLUSION. Every window observe() looked at, with
       // the readings it was looking at, so that someone standing in the room can
@@ -7849,6 +7944,9 @@ export class Autopilot {
     if (at) {
       w.pulses.push(at);
       if (w.pulses.length > PULSE_SAMPLES) w.pulses.shift();
+      // Fed from the same sample rather than from its own timer: this has to agree with the
+      // pulses exactly, or two instruments will describe two different walks.
+      this.trackSinceFull(at, hp);
     }
 
     // A DRIVER THAT HAS STOPPED MOVING THE CHARACTER IS NOT DRIVING IT.
@@ -8469,6 +8567,7 @@ export class Autopilot {
         // rung ends every tick is the exact shape that cost this session three rounds.
         suspended_to: this.suspendedJourney?.to ?? null,
         holding: !!this.hold,
+        since_full: this.sinceFullHealth?.() ?? null,
       });
     } catch { /* never break the keeper */ }
   }
