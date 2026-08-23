@@ -539,8 +539,36 @@ export function makeDecider({ session, policy = {}, goals = [], onDecision = nul
               if (t?.col != null) {
                 faceDeg = (Math.atan2(t.row - me.row, t.col - me.col) * 180 / Math.PI + 180 + 360) % 360;
               }
+              // A blink needs CONCENTRATION: any move or turn packet we send while it
+              // charges interrupts it and it fails. The tick driver sends move/turn at
+              // 10Hz, so a fire-and-forget cast (the old behavior) was broken by the very
+              // next tick — the character blinked, the cast was interrupted, and it sat
+              // stuck forever re-blinking (JayB at (38,29) in the Mausoleum). Freeze the
+              // loop (hold the character perfectly still) for the cast duration, the same
+              // way the /action cast override does. The face turn is sent FIRST, then we
+              // freeze, so the turn lands before the cast begins and no further turn/move
+              // packets go out to break it.
               c.turn?.(faceDeg);
-              act.cast?.(blink.id, []) ?? c.cast(blink.id, []);
+              const loop = session?._tickLoop;
+              if (loop) {
+                loop._frozen = true;
+                const BLINK_MS = 11000;  // blink casts ~10s; hold a beat past it
+                // Unfreeze when the relocation lands OR after the cast window, whichever
+                // first. The moved-event path is the reliable one (the server confirms the
+                // teleport); the timeout is the backstop so a failed cast can't hold the
+                // character frozen for ever.
+                const since = c.evSeq;
+                let unfrozen = false;
+                const unfreeze = () => { if (!unfrozen) { unfrozen = true; loop._frozen = false; } };
+                c.cast(blink.id, [])
+                  .then?.(() => { try { c.waitFor?.({ since, kinds: ['moved'], timeoutMs: BLINK_MS }).then(() => unfreeze()).catch(() => unfreeze()); } catch { unfreeze(); } })
+                  .catch?.(() => unfreeze());
+                setTimeout(unfreeze, BLINK_MS);  // backstop
+              } else {
+                // No tick loop to freeze (shouldn't happen in the tick driver, but the
+                // decider is shared): plain cast, no concentration protection.
+                c.cast(blink.id, []);
+              }
               onDecision?.({ ticks, goal: 'unstuck', action: 'blink',
                 what: `stuck at (${me.col},${me.row}) for ${Math.round(held/1000)}s, blinking away (face ${Math.round(faceDeg)}°)`, sent: true });
               _lastPosAt = now(); // reset timer

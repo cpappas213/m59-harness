@@ -218,5 +218,32 @@ console.log('\nthe liveness guard flags a ghost (no server data while in game)')
   loop.stop();
 }
 
+console.log('\nposition recovery fires even when the self id is lost');
+{
+  // The recovery gate was `frame.selfId != null && !frame.position` — it only recovered
+  // the "have the id, lost the position" case. A character can lose BOTH the id and the
+  // position (a room transition that resets the self reference), and then the guard
+  // never fired and the character sat positionless forever. Now it recovers whenever we
+  // are in-game with a room but no position, whether or not the self id survived.
+  let roomCalls = 0;
+  const session = fakeSession();
+  session.client.roomContents = () => { roomCalls++; };
+  // In-game, has a room, but NO position and NO self id (full self loss).
+  session.client.self = null;
+  session.client.selfId = null;
+  session.client.lastRxAt = Date.now();
+  const loop = new TickLoop({ session, hz: 50, decide: () => {} });
+  loop._lastPosRecovery = 0;
+  loop.tick();
+  ok('roomContents re-requested when the self id is lost', roomCalls >= 1, `calls=${roomCalls}`);
+  // A position-less frame with NO room at all (not yet in a room) does not spam recovery.
+  roomCalls = 0;
+  session.client.room = { id: null, num: null, objects: new Map() };
+  loop._lastPosRecovery = 0;
+  loop.tick();
+  ok('no recovery when there is no room', roomCalls === 0, `calls=${roomCalls}`);
+  loop.stop();
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

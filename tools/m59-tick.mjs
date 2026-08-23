@@ -434,10 +434,18 @@ export class TickLoop {
       this._livenessFlagged = false;
       // POSITION RECOVERY: the character is in-game but has no position (the room
       // contents were read but our own object isn't in them, or a room change dropped
-      // us). Without a position the decider can do nothing — it idles in a "hunt /
-      // exhausted 5 nodes" loop. Re-request the room contents (throttled) to
-      // re-establish the position. The server pushes it back and c.self comes back.
-      if (frame.selfId != null && !frame.position) {
+      // us, or the client lost its self reference entirely after a transition). Without
+      // a position the decider can do nothing — it idles in a "hunt / exhausted 5 nodes"
+      // loop. Re-request the room contents (throttled) to re-establish the position. The
+      // server pushes them back and c.self / c.selfId come back.
+      //
+      // The gate was `frame.selfId != null && !frame.position` — it only recovered the
+      // "have the id, lost the position" case. A character can lose BOTH the id and the
+      // position (a room transition that resets the self reference), and then this guard
+      // never fires and the character sits positionless for ever, flapping between
+      // "equip" and "travel" doing nothing (JayB in Raza, 2026). Recover whenever we are
+      // in-game with a room but no position, whether or not the self id survived.
+      if (frame.in_game && frame.room && (frame.room.id != null || frame.room.num != null) && !frame.position) {
         const now = Date.now();
         if (!this._lastPosRecovery || now - this._lastPosRecovery > 3000) {
           this._lastPosRecovery = now;
