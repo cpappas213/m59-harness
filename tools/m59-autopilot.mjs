@@ -9224,6 +9224,29 @@ export class Autopilot {
         health: v?.health?.value ?? null, max: v?.health?.max ?? null,
         room: s.world?.room?.num ?? null,
       });
+      // ASK FOR THE WALL. THE NOTE ABOVE USED TO ASSERT THIS HAPPENED BY ITSELF.
+      //
+      // "the ordinary ladder runs on this same pass and its answer to being hurt on a road
+      // is a safe wall" — and that is true only for a character the ladder considers HURT,
+      // which means below `restBelow`, 0.7. This rung now fires at ANY damage. So a
+      // character at 85% cancelled its crossing for a wall, dropped into a ladder with no
+      // answer for it, went idle, and was picked back up by the resume a few seconds later
+      // having rested for none of them. Measured, both characters, this afternoon:
+      //
+      //   Aaaa  28/33 (85%)  travel_paused_for_wall   then  0r rest, dead at 92s
+      //   Bbbb  15/20 (75%)  travel_paused_for_wall   then  0r rest, dead at 175s
+      //
+      //   +34s  room 587  idle
+      //   +66s  room 587  inert — travelling to 38 (resumed)
+      //
+      // Thirty-two seconds of standing still, no wall taken, no health regained, and back
+      // on the road. Two rungs that disagreed about what "hurt" means, with the gap between
+      // them exactly where the resting was supposed to go.
+      //
+      // `wantsForwardShelter` is the mechanism that already existed for this — the watchdog
+      // sets it when it rescues a stalled driver — and it takes a spot FORWARD on the route
+      // and mends there. Pausing for a wall is the same request, so it makes the same one.
+      if (!abandon) this.wantsForwardShelter = 'the journey paused for a wall';
       return CONTINUE;
     };
 
@@ -11206,6 +11229,32 @@ export class Autopilot {
     if (!j) { this.resumeBest = null; this.resumeFlat = 0; this.resumeSaid = null; return CONTINUE; }
     if (this.policy.resumeTravel === false)
       return this.resumeDeclined('resume_travel is switched off for this character');
+
+    // THE WALL COMES FIRST, AND THE ROAD WAITS FOR IT.
+    //
+    // `releaseRestedHold()` above is the thing that decides whether a rest is FINISHED — it
+    // refuses below full health and the resting vigor cap. If it refused, the hold is still
+    // there, the character is still mending, and taking the body off the wall now is the
+    // race that produced two deaths this afternoon: paused for a wall at 85%, resumed
+    // thirty-two seconds later having rested for none of it, dead two rooms on.
+    //
+    // Asked here rather than in the health gates below because it is a different question.
+    // Those ask "is this character well enough to travel"; this asks "is something already
+    // in the middle of making it well". A rest interrupted at the halfway mark is worse
+    // than either answer.
+    if (this.hold)
+      return this.resumeDeclined('still mending at a wall — the rest is not finished',
+                                 { room: this.hold?.room ?? null });
+    // And if a wall has been ASKED FOR but not yet taken, the same applies: the shelter rung
+    // is one pass away and resuming now would cancel the request before it was acted on.
+    if (this.wantsForwardShelter)
+      // NOT `why`. `resumeDeclined` spreads the detail over `{ why, ...detail }`, so a
+      // detail field called `why` overwrites the reason it was meant to explain — the
+      // `emit(kind, data)` trap this repository documents, arriving in a note two lines
+      // after being written. The refusal read "the journey paused for a wall", which is
+      // what was ASKED FOR rather than what is being waited on.
+      return this.resumeDeclined('a wall has been asked for and not taken yet',
+                                 { asked_for: this.wantsForwardShelter });
 
     const drop = (why, detail = {}) => {
       this.suspendedJourney = null;

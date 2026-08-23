@@ -728,5 +728,66 @@ console.log('AND THEY ARE NOT ABOLISHED — THEY ARE MOVED IN FRONT OF THE ROAD'
   ok('and a timed leg asks for none of it', /run_errands: false/.test(solo));
 }
 
+console.log('');
+console.log('THE WALL COMES FIRST, AND THE ROAD WAITS FOR IT');
+{
+  // TWO RUNGS THAT DISAGREED ABOUT WHAT "HURT" MEANS, with the resting supposed to happen
+  // in the gap between them. The mid-hop rung now pauses a journey at ANY damage; the
+  // ladder's rest rung only acts below `restBelow` (0.7). So a character at 85% cancelled
+  // its crossing for a wall, dropped into a ladder with no answer for it, stood still, and
+  // was picked back up by the resume having rested for none of it:
+  //
+  //   Aaaa  28/33 (85%)  travel_paused_for_wall  ->  0r rest, dead at 92s
+  //   Bbbb  15/20 (75%)  travel_paused_for_wall  ->  0r rest, dead at 175s
+  //
+  //     +34s  room 587  idle
+  //     +66s  room 587  inert — travelling to 38 (resumed)
+  //
+  // Thirty-two seconds standing still, no wall, no health, back on the road.
+
+  // 1. A HOLD IN PROGRESS OUTRANKS THE ROAD. `releaseRestedHold` is what decides a rest is
+  //    finished — it refuses below full health and the resting vigor cap — so if the hold
+  //    survived that call, the rest is mid-way and the body is not available.
+  const mending = keeper({ health: 20, max: 37, hold: { room: 587, col: 5, row: 42 } });
+  mending.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 'a wall',
+                               attempts: 1, deaths_at: 0 };
+  const verdict = await mending.resumeSuspendedJourney(ctxFor(mending));
+  ok('a character still holding a wall does not resume', verdict === CONTINUE);
+  ok('and the objective is kept rather than dropped', mending.suspendedJourney !== null);
+  ok('and it says the rest is unfinished, not that it is unwell',
+     said(mending, /the rest is not finished/));
+  ok('and it did not travel', mending.travelled.length === 0);
+
+  // 2. A WALL ASKED FOR BUT NOT YET TAKEN IS ALSO A REASON TO WAIT. The shelter rung is one
+  //    pass away; resuming now cancels the request before anything acts on it.
+  const asked = keeper({ health: 30, max: 37 });
+  asked.wantsForwardShelter = 'the journey paused for a wall';
+  asked.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 'a wall',
+                             attempts: 1, deaths_at: 0 };
+  ok('a wall asked for and not taken holds the road back',
+     await asked.resumeSuspendedJourney(ctxFor(asked)) === CONTINUE);
+  ok('and says which of the two it is waiting on',
+     said(asked, /asked for and not taken/));
+  ok('and the request survives to be acted on',
+     asked.wantsForwardShelter === 'the journey paused for a wall');
+
+  // 3. AND IT LIFTS. Neither of these may become a character that never travels again.
+  const done = keeper({ health: 37, max: 37 });
+  done.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 'a wall',
+                            attempts: 1, deaths_at: 0 };
+  done.resumeBest = 37; done.resumeFlat = 99;      // whole, and the trend has settled
+  const went = await done.resumeSuspendedJourney(ctxFor(done));
+  ok('with no hold and no request outstanding the road resumes', went === HANDLED,
+     JSON.stringify({ verdict: String(went), travelled: done.travelled.length }));
+  ok('and it actually travels', done.travelled.some(t => t.to === 38),
+     JSON.stringify(done.travelled));
+
+  // 4. THE PAUSE ASKS FOR THE WALL AT ALL. The note in `takeBack` used to ASSERT that the
+  //    ordinary ladder would answer, which was true only for a character it considered hurt.
+  ok('pausing for a wall sets the request the shelter rung reads',
+     /if \(!abandon\) this\.wantsForwardShelter = 'the journey paused for a wall'/
+       .test(readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8')));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
