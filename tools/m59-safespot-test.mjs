@@ -1231,5 +1231,36 @@ console.log('A SHELTER YOU CANNOT LEAVE IS A TRAP, NOT A SHELTER');
      /cannot tell: allow/.test(src));
 }
 
+// ---------------------------------------------------------------------------
+// A SHELTER HAS TO BE SOMEWHERE THE BODY CAN ACTUALLY WALK TO.
+//
+// `escapeRoom` asks whether you could LEAVE a square. Nothing asked whether you could GET to
+// it — and an unreachable wall is not shelter, it is a character standing still being hit
+// while a walk it can never finish is retried.
+//
+// Measured live, a character at row 25, col 28 in The Twisted Wood:
+//
+//     the mover reaches 1092 squares from there
+//     the shelter it was offered, 14,38:   NOT among them
+//     nearest reachable real wall, 25,27:  ONE SQUARE AWAY
+//
+// and `walk_to` answered "no route the mover can walk through this geometry". It was right
+// to. There has always been an optional `reach` predicate for exactly this, and this call
+// path never passed one — an optional correctness check is a correctness check that is off.
+console.log('');
+console.log('A SHELTER HAS TO BE SOMEWHERE THE BODY CAN ACTUALLY WALK TO');
+{
+  const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
+  ok('reachability is computed inside the search, not asked of the caller',
+     /export function reachableFrom/.test(src));
+  ok('and every candidate is checked against it',
+     /canWalkThere && !canWalkThere\.has/.test(src));
+  ok('it is bounded, so a big room cannot make the search expensive', /REACH_CAP/.test(src));
+  ok('and it fails OPEN, because refusing everything would mean never sheltering at all',
+     /null means every candidate is allowed through/.test(src));
+  ok('the refusal is counted, so "nothing was offered" can be explained afterwards',
+     /unreachableToUs\+\+/.test(src));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
