@@ -502,7 +502,7 @@ const INLAND_MARGIN_SQUARES = Number(process.env.M59_INLAND_MARGIN || 2);
 // HOW MANY STEPS A WALK MAY TAKE WITHOUT EVER GETTING CLOSER. Generous enough to go round a
 // building — the Streets of Tos crossing is 24 squares and its worst legitimate detour is a
 // handful — and far short of the sixty-odd squares of oscillation that prompted it.
-const WALK_STALL_STEPS = Number(process.env.M59_WALK_STALL_STEPS || 14);
+const WALK_STALL_STEPS = Number(process.env.M59_WALK_STALL_STEPS || 24);
 
 const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
 const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
@@ -4597,6 +4597,8 @@ class Session {
     const recentredAt = new Set();
     // The closest this walk has ever been to its target, and how long since that improved.
     let bestGap = Infinity, sinceCloser = 0;
+    // Where the body has already been. A dither revisits; a detour walks new ground.
+    const seenSquares = new Set();
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     // AN EDGE THE MOVER CANNOT WALK IS A FACT ABOUT THE MAP, NOT ABOUT THIS WALK.
     //
@@ -5120,16 +5122,32 @@ class Session {
       // the next square is a fight or a wait, it has its own budget below, and it reports its
       // own facts — how many bodies, where, and the health lost to them. Counting it here
       // would swallow all of that and call it a bad plan.
+      // AND IT HAS TO BE A DITHER, NOT MERELY A DETOUR.
+      //
+      // The first version of this counted steps that did not get closer, and that is not the
+      // same thing: walking round a building legitimately loses ground for a while. It cost a
+      // character its whole leg — Bbbb spent THREE HUNDRED AND EIGHTY SECONDS in The Streets
+      // of Tos and never left, because the guard fired, `walkTo` handed back a failure, and
+      // `leaveViaAny` read that as `every square for that exit refused (2 tried)`. A dither
+      // became an unreachable door.
+      //
+      // The signature of a dither is REVISITING: 43,24 -> 42,31 -> 43,24 -> 42,31. A detour
+      // walks new ground even while the gap grows. So the count only advances when the body
+      // lands somewhere it has already been AND the walk is no closer than its best.
       const gapNow = Math.max(Math.abs(now.row - row), Math.abs(now.col - col));
+      const hereKey = `${now.row},${now.col}`;
+      const revisited = seenSquares.has(hereKey);
+      seenSquares.add(hereKey);
       if (gapNow < bestGap) { bestGap = gapNow; sinceCloser = 0; }
       else if (r.reason === 'object_blocked') { /* the body path owns this one */ }
-      else if (++sinceCloser > WALK_STALL_STEPS)
+      else if (revisited && ++sinceCloser > WALK_STALL_STEPS)
         return { arrived: false, steps: taken, replans,
                  blocked_at: { col: now.col, row: now.row },
                  reason: 'no_ground_gained',
-                 note: `${sinceCloser} steps without getting closer than ${bestGap} squares — ` +
-                       'this is a dither, not a walk. The plan is what is wrong, so the caller ' +
-                       'gets it back rather than another lap of the same two squares.' };
+                 note: `${sinceCloser} revisited squares without getting closer than ` +
+                       `${bestGap} — this is a dither, not a walk. The plan is what is wrong, ` +
+                       'so the caller gets it back rather than another lap of the same two ' +
+                       'squares.' };
       if (now.col === next.col && now.row === next.row) {
         // It landed where it was aimed, so the reach it used is one the ground supports.
         if (was && (was.col !== now.col || was.row !== now.row)) prevSquare = was;
