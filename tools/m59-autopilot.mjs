@@ -11375,7 +11375,12 @@ export class Autopilot {
                                  { room: this.hold?.room ?? null });
     // And if a wall has been ASKED FOR but not yet taken, the same applies: the shelter rung
     // is one pass away and resuming now would cancel the request before it was acted on.
-    if (this.wantsForwardShelter)
+    // BOUNDED, because nothing here can guarantee the shelter rung ever runs. During travel
+    // the ordinary ladder does not run at all, so a request set and never acted on would
+    // block the road for ever — the first draft of this did exactly that and a fixture
+    // caught it declining forty passes in a row with the ask counter stuck at one.
+    this.resumeShelterWaits = (this.resumeShelterWaits ?? 0) + 1;
+    if (this.wantsForwardShelter && this.resumeShelterWaits <= (this.policy.resumeShelterWaits ?? 20))
       // NOT `why`. `resumeDeclined` spreads the detail over `{ why, ...detail }`, so a
       // detail field called `why` overwrites the reason it was meant to explain — the
       // `emit(kind, data)` trap this repository documents, arriving in a note two lines
@@ -11457,13 +11462,58 @@ export class Autopilot {
     // between the same two points is not progress, and the default floor here is FULL
     // health, so without this the gate can only open on a character that hits its maximum
     // exactly and holds it.
+    // FLAT ONLY MEANS "AS WELL AS I WILL GET" IF SOMETHING IS TRYING TO HEAL ME.
+    //
+    // The gate is "go on when the wall has stopped paying", and it counts samples where
+    // health did not reach a new high. That is right for a character sitting behind a wall.
+    // For one standing in the open it is exactly backwards: nothing is healing it, so health
+    // is flat, so the counter fills in eight seconds and the gate opens on a hurt character.
+    //
+    // Measured, Aaaa, this evening — the whole failure in three lines of its own record:
+    //
+    //     +40s  room 587  idle                                  journey suspended
+    //     +46s  room 587  inert — travelling to 38 (resumed)    SIX SECONDS later
+    //     +194s room 598  idle          ... dead at 257s, 0r rest
+    //
+    // and the refusal note one pass before it went: `still mending — health below the start
+    // floor, health 88%, flat 0`. It declined, counted eight flat samples of not healing,
+    // and left at 88% into the room that kills things.
+    const resting = !!this.hold
+      || /rest|safe spot|holding|healing|mend/i.test(String(this.doing ?? ''));
     const nowHp = v?.health?.value ?? null;
     if (nowHp !== null) {
       const better = this.resumeBest == null || nowHp > this.resumeBest;
       this.resumeBest = better ? nowHp : this.resumeBest;
       this.resumeWatch = nowHp;
-      this.resumeFlat = better ? 0 : (this.resumeFlat ?? 0) + 1;
+      // Not mending? Then flatness is evidence of nothing and the counter does not move.
+      // ...UNLESS THE ASKING FOR A WALL HAS RUN OUT, and then flatness is allowed to count
+      // again. Without this the two halves deadlock: the ask stops after three tries and a
+      // character that is not resting can never accumulate a flat sample, so `stillMending`
+      // stays true and the resume declines for ever. A room with no reachable wall would
+      // become a character that never travels again — which is the failure mode every
+      // refusal in this method is written to avoid.
+      const askedEnough = (this.resumeWallAsks ?? 0) >= (this.policy.resumeWallAsks ?? 3);
+      this.resumeFlat = better ? 0
+        : ((resting || askedEnough) ? (this.resumeFlat ?? 0) + 1 : 0);
     }
+
+    // AND IF IT IS HURT WITH NOWHERE TO MEND, ASK FOR A WALL RATHER THAN SETTING OFF.
+    //
+    // This is the difference between "wait until you are well" and "go and get well". Left
+    // to wait, a character with no wall waits for a recovery that cannot happen where it is
+    // standing; the objective then ages out and the trip is lost anyway.
+    //
+    // BOUNDED, because a room with no reachable wall must not become a character that never
+    // travels again. After a few asks the trend gate below is allowed to open as it used to,
+    // which is the old behaviour and is at least a decision.
+    const asks = this.resumeWallAsks ?? 0;
+    if (hp !== null && hp < floor && !resting && asks < (this.policy.resumeWallAsks ?? 3)) {
+      this.resumeWallAsks = asks + 1;
+      this.wantsForwardShelter ??= 'the road is waiting on health and there is no wall yet';
+      return this.resumeDeclined('hurt with nowhere to mend — asking for a wall before the road',
+                                 { health: Math.round(hp * 100) + '%', ask: asks + 1 });
+    }
+    if (resting || hp === null || hp >= floor) this.resumeWallAsks = 0;
     // The wall is still working: let it.
     const stillMending = (this.resumeFlat ?? 0) < RESUME_FLAT_SAMPLES;
     if (hp !== null && hp < floor && stillMending)
