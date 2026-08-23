@@ -265,6 +265,45 @@ console.log('\nthe wiring the keeper cannot check for itself');
 
 
 console.log('');
+console.log('AN INJURED LEG MENDS AT A WALL FORWARD ON THE ROUTE, AND KEEPS ITS DESTINATION');
+{
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const fn = src.slice(src.indexOf('async shelterForwardAndMend'),
+                       src.indexOf('async shelterForwardAndMend') + 2200);
+  // Two deaths asked for this, and both were survivable:
+  //
+  //   Aaaa  journey ended at two legs after a watchdog rescue, idle at +81s, dead at 201s
+  //   Bbbb  reached the Cragged Mountains at 13 of 20, poisoned, and died there
+  //
+  // One answer for both: a wall AHEAD on the route, mended at, objective kept. Forward
+  // because the room is what is dangerous — a wall behind pays the exposure twice.
+  ok('there is a forward recovery stop at all', /async shelterForwardAndMend/.test(src));
+  ok('and it asks the ROUTE for the next wall in front', /shelterAhead\(/.test(fn));
+  ok('and refuses walls it has just failed to reach', /unreachableIn\(/.test(fn));
+  ok('and says the destination is kept', /not the end of one/.test(fn));
+
+  // TRIGGER ONE. The watchdog must never leave a body idle in the room it was dying in.
+  const rescue = src.slice(src.indexOf('WATCHDOG — took the character back from a driver') - 2600,
+                           src.indexOf('WATCHDOG — took the character back from a driver'));
+  ok('the watchdog rescue asks for that stop', /wantsForwardShelter =/.test(rescue));
+  ok('and still keeps the journey', /suspendedJourney = \{/.test(rescue));
+
+  // TRIGGER TWO. Poison takes a character to 1 health and then makes it rest to full anyway
+  // once the enchantment ends — the rest is coming either way, and the only question is
+  // whether it happens behind a wall on the route or in the open where the fall started.
+  const stage = src.slice(src.indexOf('async passFleeAndRest'), src.indexOf('async passFollow'));
+  ok('being ailing and fading asks for it too', /poisonedAndFading/.test(stage));
+  ok('and it reads the real ailments rather than guessing from health',
+     /client\?\.ailments\?\.\(\)/.test(stage));
+  ok('three quarters is the line, and it is overridable',
+     /AILING_SHELTER_BELOW/.test(src) && /ailingShelterBelow/.test(stage));
+  // A standing instruction that outlives its trouble is how a character stops travelling
+  // for the rest of a session.
+  ok('the request is cleared the moment it is acted on',
+     /this\.wantsForwardShelter = null;/.test(stage));
+}
+
+console.log('');
 console.log('FIT TO GO ON MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUMBER');
 {
   const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');

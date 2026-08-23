@@ -258,6 +258,12 @@ const REACH = 3;
 // once a second, so this is a handful of seconds of no improvement — long enough not to fire
 // between two ticks of a rest that is working, short enough that a character stalled where it
 // cannot heal sets off again instead of resting out the clock.
+// HOW FAR AN AILING CHARACTER MAY FALL BEFORE IT STOPS AND MENDS. Poison takes a character
+// to 1 health and then makes it rest to full once the enchantment ends, so the rest is coming
+// either way — the only question is whether it happens behind a wall on the route or in the
+// open where the fall started.
+const AILING_SHELTER_BELOW = Number(process.env.M59_AILING_SHELTER_BELOW || 0.75);
+
 const RESUME_FLAT_SAMPLES = Number(process.env.M59_RESUME_FLAT_SAMPLES || 8);
 
 const UNREACHABLE_SPOT_MS = Number(process.env.M59_UNREACHABLE_SPOT_MS || 5 * 60 * 1000);
@@ -5638,6 +5644,45 @@ export class Autopilot {
     return this.roomOutranksUs() ? 1 : (this.policy.travelWallBelow ?? 0.8);
   }
 
+  /**
+   * TAKE A WALL THAT IS FORWARD ON THE ROUTE, AND MEND THERE BEFORE GOING ON.
+   *
+   * The recovery stop a journey needs, as opposed to the brief pause a hop boundary takes.
+   * Two things ask for it and both were losing characters without it:
+   *
+   *   - the watchdog rescuing a stalled driver, which used to hand the body to the ordinary
+   *     ladder and leave it IDLE in whatever room it was dying in. Aaaa: journey ended at two
+   *     legs, idle at +81s, dead at 201s.
+   *   - poison, which drains a character below any threshold it can fight at and then makes
+   *     it rest to full anyway once the enchantment ends. Bbbb reached the Cragged Mountains
+   *     at 13 of 20, poisoned, and died there.
+   *
+   * FORWARD, because the room is what is dangerous: a wall behind us pays the exposure twice
+   * and a wall ahead is shelter and a hop of progress at once. `sheltersAlong` worked these
+   * out when the crossing was planned and `shelterAhead` returns the next one still in front.
+   *
+   * The objective is KEPT. Resting here is part of the journey, not the end of it, and the
+   * resume already waits while health is climbing and goes when it stops.
+   */
+  async shelterForwardAndMend(why) {
+    const planned = this.s.activeShelter;
+    if (!planned?.spots?.length) return false;
+    let ahead = null;
+    try {
+      ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
+                           { maxDetour: planned.maxDetour ?? 4,
+                             unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
+    } catch { ahead = null; }
+    if (!ahead) return false;
+    this.note('taking the next wall on the route and mending there', {
+      to: { col: ahead.col, row: ahead.row }, detour: ahead.detour, why,
+      keeps: 'the destination — this is a stop on the journey, not the end of one',
+    });
+    const took = await this.takeSafeSpot(why, null, { source: 'travel' })
+                           .catch(() => ({ took: false }));
+    return !!took?.took;
+  }
+
   // A WALL WE CANNOT PATH TO IS NOT A CANDIDATE, AND THE SELECTOR CAN BE TOLD SO.
   //
   // `nearestSafeSpot` takes a `reach` predicate and NOBODY PASSED ONE, so every wall it
@@ -7972,6 +8017,11 @@ export class Autopilot {
             deaths_at: this.tally?.deaths ?? 0,
           };
         }
+        // AND IT MUST NOT BE LEFT IDLE WHERE IT WAS DYING. Reviving hands the body to the
+        // ordinary ladder, which in a bad room has nothing to offer — Aaaa's journey ended at
+        // two legs, it went idle at +81s and was dead at 201s. The next pass now takes a wall
+        // FORWARD on the route and mends there, with the destination kept.
+        this.wantsForwardShelter = 'the watchdog took us back from a stalled driver';
         this.revive('the character stopped moving and started dying while ' + was);
         this.note('WATCHDOG — took the character back from a driver that had stopped', {
           health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
@@ -9966,6 +10016,26 @@ export class Autopilot {
     // widens WHEN A WALL IS FETCHED; the rest gate below is untouched, so nothing that
     // could rest before is forbidden from resting now — it just sits down behind
     // something first.
+    // THE RECOVERY STOP A JOURNEY ASKED FOR, and the one poison always needs.
+    //
+    // Two triggers, one answer — a wall FORWARD on the route, mended at, objective kept:
+    //
+    //   the watchdog rescue, which used to leave the body idle in the room it was dying in
+    //   poison below three quarters, which drains past any line the character can fight at
+    //     and then makes it rest to full anyway once the enchantment ends
+    //
+    // Cleared the moment it is taken or there is nothing ahead to take, so this can never
+    // become a standing instruction that outlives the trouble that set it.
+    const ailingNow = (this.s.client?.ailments?.() ?? []).length > 0;
+    const poisonedAndFading = ailingNow && hp !== null
+      && hp < (this.policy.ailingShelterBelow ?? AILING_SHELTER_BELOW);
+    if ((this.wantsForwardShelter || poisonedAndFading) && !sheltered && !this.hold) {
+      const why = this.wantsForwardShelter
+        || `ailing and down to ${Math.round(hp * 100)}% — mending before going on`;
+      this.wantsForwardShelter = null;
+      if (await this.shelterForwardAndMend(why).catch(() => false)) return HANDLED;
+    }
+
     const spawnsHere = !this.sanctuary();
     if (hurt && (combatZone || spawnsHere) && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
         && (!this.wallTriedAt || Date.now() - this.wallTriedAt > 30_000)) {
