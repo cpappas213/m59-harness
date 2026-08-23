@@ -169,6 +169,52 @@ export function gridDisagreementAt(geo, row, col) {
   return { offered, refused };
 }
 
+// A SHELTER YOU CANNOT LEAVE IS A TRAP, NOT A SHELTER.
+//
+// Measured in The Twisted Wood, 2026-08-23. The book held a square at row 5, col 35 marked
+// as having HELD — and from it the mover can reach FIVE squares and none of the room's five
+// exits. A character that sheltered there could never leave the room:
+//
+//     row  col   coarse   reaches   exit squares reachable
+//       7    2   true       1092    5 of 5        <- the entry square
+//       5   35   true          5    0 of 5        <- the trap
+//      11   15   true       1092    5 of 5
+//      21   14   false      1092    5 of 5
+//
+// That is the four hundred and fifty seconds this fleet kept losing in one room, and the
+// transit book recorded it as "every square for that exit refused (4 tried)" — a sentence
+// about the exit, describing a body on an island somewhere else entirely.
+//
+// AND THE BOOK CALLED IT PROVEN, which is the cruelest part: nothing could reach the
+// character there, so it held, so it was remembered as good. A perfect shelter and a perfect
+// prison are the same square until you try to leave.
+//
+// So a candidate has to be able to get OUT. A bounded flood — the cap is what keeps this
+// affordable when it runs over every square in a room — and anything that cannot reach
+// `minEscape` squares is an island rather than a wall. Real walls in these rooms reach a
+// thousand or more; the trap reached five, so the threshold is not delicate.
+const ESCAPE_CAP = 40;
+export function escapeRoom(geo, row, col, minEscape = 24) {
+  if (!geo || typeof geo.moverStepLands !== 'function') return true;   // cannot tell: allow
+  const seen = new Set([`${row},${col}`]);
+  const q = [[row, col]];
+  while (q.length && seen.size < ESCAPE_CAP) {
+    const [r0, c0] = q.shift();
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      const r = r0 + dr, c = c0 + dc, k = `${r},${c}`;
+      if (seen.has(k) || !geo.inBounds(r, c)) continue;
+      let ok = false;
+      try { ok = geo.moverStepLands(r0, c0, r, c); } catch { ok = false; }
+      if (!ok) continue;
+      seen.add(k);
+      if (seen.size >= minEscape) return true;      // out is out; stop counting
+      q.push([r, c]);
+    }
+  }
+  return seen.size >= minEscape;
+}
+
 // The longest run of blocked directions, treating the ring as circular. A square
 // with four blocked neighbours scattered around it is exposed from every side; one
 // with four in a row has its back covered, which is the thing players describe.
@@ -189,7 +235,10 @@ function backCover(blocked) {
 // `backCover` is the longest contiguous wall arc behind you. Both matter, and they
 // are not the same: a doorway has few open neighbours but no back cover, while a
 // long flat wall has plenty of open neighbours and excellent cover.
-export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
+export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
+                                // How many squares a shelter has to be able to reach before
+                                // it counts as somewhere you can leave. See escapeRoom.
+                                minEscape = 24 } = {}) {
   if (!geo) return [];
   // Which grid governs the thing trying to hit us. LOS_OLD is the server default, so
   // monsters move and see on the COARSE grid — see RoomGeometry.LOS.
@@ -287,6 +336,10 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0 } = {}) {
       // Anything else is open floor and is not a safe spot however good it scores.
       const coarseRefusesIt = geo.walkable(r, c) !== true;
       if (!coarseRefusesIt && !((disagree?.refused ?? 0) > 0)) continue;
+      // ...AND YOU HAVE TO BE ABLE TO LEAVE IT AGAIN. See escapeRoom: a five-square island
+      // in The Twisted Wood cost four hundred and fifty seconds a leg and was recorded in
+      // the book as a square that had HELD, because nothing could reach the character there.
+      if (!escapeRoom(geo, r, c, minEscape)) continue;
       out.push({
         col: c, row: r,
         // APPROACHES THE COARSE GRID OFFERS AND THE MOVER REFUSES. null when collision is
