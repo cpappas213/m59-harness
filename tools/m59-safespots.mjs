@@ -225,6 +225,48 @@ export function gridDisagreementAt(geo, row, col) {
 // of why, which is what this comment is for. `node tools/m59-exitgap.mjs` is the instrument
 // aimed at exactly this class of disagreement.
 const ESCAPE_CAP = 40;
+// EVERY SQUARE THE BODY CAN ACTUALLY WALK TO, FROM WHERE IT IS STANDING.
+//
+// The counterpart to `escapeRoom`, and the half that was missing. That one asks whether you
+// could LEAVE a square; nothing asked whether you could GET to it, and a shelter you cannot
+// reach is not shelter — it is a character standing still being hit while a walk it can
+// never finish is retried.
+//
+// Measured live, 2026-08-23, a character at row 25 col 28 in The Twisted Wood:
+//
+//     the mover reaches 1092 squares from there
+//     the shelter it was offered, 14,38:   NOT among them
+//     nearest reachable real wall, 25,27:  ONE SQUARE AWAY
+//
+// The search offered a square in a disconnected component twelve squares off while a
+// perfectly good wall sat adjacent, and `walk_to` answered "no route the mover can walk
+// through this geometry". It was right to.
+//
+// There has always been an optional `reach` predicate for this and this call path never
+// passed one. An optional correctness check is a correctness check that is off — so this is
+// computed here, once per search, rather than left to callers to remember.
+const REACH_CAP = 8192;
+export function reachableFrom(geo, from, cap = REACH_CAP) {
+  if (!geo || !from || typeof geo.moverStepLands !== 'function') return null;   // cannot tell
+  const r0 = Number(from.row), c0 = Number(from.col);
+  if (!Number.isFinite(r0) || !Number.isFinite(c0)) return null;
+  const seen = new Set([`${r0},${c0}`]);
+  const q = [[r0, c0]];
+  while (q.length && seen.size < cap) {
+    const [a, b] = q.shift();
+    for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+      if (!dr && !dc) continue;
+      const r = a + dr, c = b + dc, k = `${r},${c}`;
+      if (seen.has(k) || !geo.inBounds(r, c)) continue;
+      let ok = false;
+      try { ok = geo.moverStepLands(a, b, r, c); } catch { ok = false; }
+      if (!ok) continue;
+      seen.add(k); q.push([r, c]);
+    }
+  }
+  return seen;
+}
+
 export function escapeRoom(geo, row, col, minEscape = 24) {
   if (!geo || typeof geo.moverStepLands !== 'function') return true;   // cannot tell: allow
   const seen = new Set([`${row},${col}`]);
@@ -663,6 +705,11 @@ export function nearestSafeSpot(geo, from, {
   // The cap bought nothing anyway — the loop below already narrows by `within` long
   // before anything expensive happens. Scoring every square is one pass over the room.
   const all = safeSpots(geo, { limit: Infinity, los });
+  // WHAT THE BODY CAN ACTUALLY WALK TO. Computed once, here, rather than left to whichever
+  // caller remembered to pass `reach` — see reachableFrom. Null when it cannot be measured,
+  // and null means every candidate is allowed through, because refusing them all would turn
+  // a checkout with no collision baked into a fleet that never shelters.
+  const canWalkThere = reachableFrom(geo, from);
   const known = book && room != null ? book.recall(room) : null;
   let best = null;
   let bestPredictedUnreachable = null;
@@ -683,6 +730,9 @@ export function nearestSafeSpot(geo, from, {
     // / "leaving the room to recover safely" / "could not leave", and then the character
     // died. Nothing recorded the failure, so every pass made the identical choice.
     if (unreachable?.has(key(s.col, s.row))) continue;
+    // AND NOT ONE THE MOVER CANNOT GET TO AT ALL. The measured case is a shelter offered in
+    // a disconnected component while a real wall sat one square from the character.
+    if (canWalkThere && !canWalkThere.has(`${s.row},${s.col}`)) { unreachableToUs++; continue; }
     // CHEAP TESTS FIRST. Distance and the defensibility cutoff are arithmetic on two
     // integers; quarryReach and reach are pathfinds. With the candidate list no longer
     // capped this ordering is the difference between one pass over the room and a
