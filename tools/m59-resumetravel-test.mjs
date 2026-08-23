@@ -287,8 +287,36 @@ console.log('A WALL THAT HAS FINISHED ITS WORK IS RELEASED IN THE STAGE THAT OWN
   ok('and only when there is a journey waiting on it',
      /if \(this\.hold && this\.suspendedJourney\)/.test(stage));
   // The release itself is unchanged: a hurt character still keeps its wall.
-  ok('the release still refuses a hurt character',
-     /hp < \(this\.policy\.holdResumeAbove/.test(src));
+  // RUN, NOT GREPPED. This asserted the SPELLING of the threshold — `hp < (this.policy
+  // .holdResumeAbove` — and went red the moment the expression grew a second case, while
+  // the property it was defending was untouched. What matters is which characters keep
+  // their wall, so ask the function.
+  {
+    const hurt = keeper({ health: 20, max: 46, hold: { room: 587, col: 5, row: 42 } });
+    ok('the release still refuses a hurt character', hurt.releaseRestedHold() === false);
+
+    // ON A ROAD IT IS FULL HEALTH, NOT NINE-TENTHS. The last tenth is the margin that
+    // decides whether the NEXT room is survivable, which is the whole reason it stopped.
+    // Bbbb gave up a proven wall at nine-tenths and was dead forty seconds later, one room
+    // on: 18s of holding, 15r of rest, then 597 -> 598 -> the Underworld.
+    const nearly = keeper({ health: 43, max: 46, hold: { room: 587, col: 5, row: 42 } });
+    nearly.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 't',
+                                attempts: 1, deaths_at: 0 };
+    ok('a traveller at nine-tenths keeps its wall', nearly.releaseRestedHold() === false,
+       'the last tenth is the margin the next room is crossed on');
+
+    // ...AND A FARMER DOES NOT, because for it the last tenth is the slowest thing to come
+    // back, the room it is in is the room it works in, and nothing waits on the other side.
+    const farming = keeper({ health: 43, max: 46, hold: { room: 587, col: 5, row: 42 } });
+    ok('a character with no road keeps the old nine-tenths', farming.releaseRestedHold() !== false);
+
+    const whole = keeper({ health: 46, max: 46, hold: { room: 587, col: 5, row: 42 } });
+    whole.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 't',
+                               attempts: 1, deaths_at: 0 };
+    ok('and a whole one gives the wall up and goes', whole.releaseRestedHold() !== false);
+    ok('and says what it needed, so the number is arguable from the record',
+       said(whole, /needed/) || said(whole, /full health/));
+  }
 }
 
 console.log('');

@@ -11250,11 +11250,36 @@ export class Autopilot {
     const v = this.s.client?.vitals?.();
     const hp = v?.health?.max ? v.health.value / v.health.max : null;
     const vig = vigorPct(v);
-    if (hp === null || hp < (this.policy.holdResumeAbove ?? 0.9)) return false;
+    // ON A JOURNEY IT IS FULL HEALTH, NOT NINE-TENTHS OF IT.
+    //
+    // The note below has always said "full health" and the number has always been 0.9, and
+    // for a farming character that is right: the last tenth is the slowest to come back, the
+    // room it is standing in is the room it works in, and there is nothing on the other side
+    // of leaving.
+    //
+    // A traveller is the opposite case. What it is about to do is walk into the NEXT room,
+    // which is the whole reason it stopped, and the last tenth is exactly the margin that
+    // decides whether it arrives. Measured, Bbbb, this afternoon:
+    //
+    //     + 94s  room 597  holding a proven safe spot
+    //     +112s  room 597  idle                          18s of holding, 15r of rest
+    //     +125s  room 597  inert — travelling to 38 (resumed)
+    //     +154s  room 598  idle
+    //           dead at 166s in the Cragged Mountains
+    //
+    // It gave up a proven wall at nine-tenths and was dead forty seconds later, one room on.
+    // The operator's rule for this was set before any of it: rest to FULL when healing at a
+    // safe spot while travelling.
+    const onARoad = !!(this.inert?.travelling || this.suspendedJourney);
+    const floor = onARoad
+      ? (this.policy.travelHoldResumeAbove ?? 1)
+      : (this.policy.holdResumeAbove ?? 0.9);
+    if (hp === null || hp < floor) return false;
     if (vig !== null && vig < REST_VIGOR_CAP) return false;
     this.note('leaving the wall — full health and all the vigor resting can give', {
       health: `${v?.health?.value}/${v?.health?.max}`,
       vigor: `${v?.vigor?.value}/${v?.vigor?.scale_max ?? 200}`,
+      needed: Math.round(floor * 100) + '%', on_a_road: onARoad,
       why: 'a rest stop is for getting well, and this character is as well as sitting down ' +
            'can make it. Staying is how a journey times out without ever being in danger.',
     });
