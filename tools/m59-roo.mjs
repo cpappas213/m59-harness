@@ -1439,6 +1439,18 @@ export class RoomGeometry {
     margin = 12 * KOD_FINENESS,
     maxNodes = 20000,
   } = {}) {
+    const _fpT0 = Date.now();
+    const _fpResult = this._finePathProtocolImpl(fromX, fromY, toX, toY, { step, margin, maxNodes });
+    const _fpMs = Date.now() - _fpT0;
+    if (_fpMs > 1000) console.error(`[slow-finepath] room ${this.file}: finePathProtocol took ${_fpMs}ms (found=${_fpResult?.found})`);
+    return _fpResult;
+  }
+
+  _finePathProtocolImpl(fromX, fromY, toX, toY, {
+    step = 8,
+    margin = 12 * KOD_FINENESS,
+    maxNodes = 20000,
+  } = {}) {
     if (!this.collisionReady || ![fromX, fromY, toX, toY].every(Number.isFinite))
       return { found: false, reason: 'collision_geometry_unavailable', waypoints: [] };
 
@@ -2864,7 +2876,8 @@ export class RoomGeometry {
         collisionSides = decodeCollisionWallSides(j.collision.wallSides, j.walls.length,
           collisionSectors, collisionNodes);
         collisionValid = true;
-      } catch {
+      } catch (e) {
+        if (process.env.M59_FROMJSON_DEBUG) console.error(`[fromJSON] ${j?.file}: ${e.message}`);
         // A malformed or truncated generated payload is not permission to move.
         // Keep the minimap usable and make fine movement fail closed.
       }
@@ -2981,6 +2994,23 @@ export function sharedRoomGeometry(roomOrRoo) {
   if (!roo || typeof roo !== 'object') return null;
   if (!SHARED_ROOM_GEOMETRY.has(roo)) SHARED_ROOM_GEOMETRY.set(roo, RoomGeometry.fromJSON(roo));
   return SHARED_ROOM_GEOMETRY.get(roo);
+}
+
+// EAGERLY PARSE EVERY ROOM'S GEOMETRY. sharedRoomGeometry is lazy — the first access to a
+// room parses its .roo (BSP, walls, sectors) via RoomGeometry.fromJSON, which is ~tens of
+// ms per room. The route search (findPath) visits many rooms and each first access pays
+// that parse, which is the ~12s half of the cold-start stall (the other half was the
+// inferred-reverse build). Calling this at startup populates SHARED_ROOM_GEOMETRY for all
+// rooms so the first tick does no geometry parsing — the cost is paid at startup, off the
+// tick path, while the keeper is already busy. It is idempotent (the cache is checked), so
+// a room already built is untouched.
+export function buildAllRoomGeometry(map) {
+  const built = [];
+  for (const room of Object.values(map?.rooms ?? {})) {
+    if (room?.roo) built.push(room.num);
+    sharedRoomGeometry(room);
+  }
+  return built.length;
 }
 
 // The wall list — the minimap, properly. clientd3d/map.c:294 draws exactly this:

@@ -22,7 +22,9 @@ import { autopilotFor, dropAutopilot, autopilotIfAny } from './m59-autopilot.mjs
 import { TickLoop } from './m59-tick.mjs';
 import { makeDecider, DEFAULT_GOALS, intend, INTENTS } from './m59-decide.mjs';
 import { Router, routeIntent } from './m59-route.mjs';
-import { protocolToClient, clientToProtocol } from './m59-roo.mjs';
+import { protocolToClient, clientToProtocol, buildAllRoomGeometry } from './m59-roo.mjs';
+import { loadMap, buildReverseEdges } from './m59-map.mjs';
+import { attachStepMasks } from './m59-routes.mjs';
 import * as watchdog from './m59-watchdog.mjs';
 
 // ---------------------------------------------------------------- args
@@ -100,6 +102,24 @@ async function join() {
 
     // Start the autopilot: GOAP (default) or tick driver
     if (mode === 'tick') {
+      // WARM THE MAP THIS KEEPER'S ROUTER WILL USE, before the Router loads it.
+      // loadMap() is cached per process, so calling it here (and building on the SAME map
+      // object) means the Router's own loadMap() gets the warmed instance. Without this,
+      // the first findPath the router runs pays a ~13s reverse-edge/geometry build on the
+      // FIRST tick, stalling the loop. See m59-broker.mjs / m59-game.mjs for the rationale.
+      // A keeper lives one login session; a single ~12s warm at startup is acceptable (it is
+      // not repeated per rejoin in a way that matters, and it is off the tick path).
+      try {
+        const _wt0 = Date.now();
+        const _wmap = loadMap();
+        attachStepMasks(_wmap);
+        buildReverseEdges(_wmap);   // no-ops if already built (idempotent)
+        buildAllRoomGeometry(_wmap);
+        console.error(`[keeper] ${agent} map warmed at startup in ${Date.now() - _wt0}ms` +
+                      ` (reverse=${_wmap.__reverse?.size ?? 0} rooms)`);
+      } catch (e) {
+        console.error(`[keeper] ${agent} map warm failed (${e.message}); will build lazily on first use`);
+      }
       const router = new Router({ session });
       session._mover = router.mover;
       session._router = router;

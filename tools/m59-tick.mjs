@@ -476,6 +476,7 @@ export class TickLoop {
     } finally {
       const ms = Date.now() - t0;
       if (ms > this.stats.longest_decide_ms) this.stats.longest_decide_ms = ms;
+      if (ms > 2000) console.error(`[slow-tick] tick ${this.stats.ticks + 1} took ${ms}ms`);
       this.stats.ticks++;
       this.busy = false;
     }

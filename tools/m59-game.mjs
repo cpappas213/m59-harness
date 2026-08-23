@@ -20,9 +20,9 @@ import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, blocksMovement, prepareActTarget } from './m59-parse.mjs';
 import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
-import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
+import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
          from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -243,6 +243,38 @@ try {
   }
 } catch (e) {
   console.error(`[routes] no step masks — ${e.message}`);
+}
+
+// EAGERLY BUILD THE INFERRED-REVERSE-EDGE TABLE. This is the ~10s map-global build that
+// used to run lazily on the first world.exits() call — i.e. on a character's FIRST TICK
+// after entering a room, stalling the tick loop for 24s (the cold-start stall). It is a
+// pure, complete build (no budget, no truncation, no dropped edges), so moving it to
+// startup only changes WHEN the cost is paid, not WHAT is computed. At startup the keeper
+// is already busy loading geometry and masks, so the cost is off the tick path and
+// invisible. inferredExits() still builds lazily as a fallback, so this is belt-and-braces
+// rather than load-bearing.
+try {
+  const t0 = Date.now();
+  buildReverseEdges(worldMap);
+  console.error(`[routes] inferred-reverse table built at startup in ${Date.now() - t0}ms` +
+                `, ${worldMap.__reverse?.size ?? 0} rooms (off the first tick)`);
+} catch (e) {
+  // A failure here means the lazy build will just happen on first use, as before.
+  console.error(`[routes] startup reverse-edge build failed (${e.message}); will build lazily on first use`);
+}
+
+// EAGERLY PARSE EVERY ROOM'S GEOMETRY, off the tick path. The route search (findPath)
+// visits many rooms, and the first access to each parses its .roo via RoomGeometry.
+// fromJSON (~tens of ms each) — the ~12s half of the cold-start stall. Building them all
+// at startup means the first tick does no geometry parsing. Same rationale as the
+// reverse-edge build above: a pure, idempotent, complete build scheduled off the tick.
+try {
+  const t0 = Date.now();
+  const n = buildAllRoomGeometry(worldMap);
+  console.error(`[routes] ${n} room geometries parsed at startup in ${Date.now() - t0}ms` +
+                ` (off the first tick)`);
+} catch (e) {
+  console.error(`[routes] startup geometry build failed (${e.message}); will parse lazily on first use`);
 }
 
 // ---------------------------------------------------------------- recorder

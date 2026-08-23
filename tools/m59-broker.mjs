@@ -42,9 +42,9 @@ import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, blocksMovement, prepareActTarget } from './m59-parse.mjs';
 import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
-import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath }
+import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
   from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
@@ -408,6 +408,32 @@ console.error(stepMasks.attached
   ? `[routes] ${stepMasks.attached} room(s) planning on the mover's own geometry` +
     (stepMasks.refused ? `, ${stepMasks.refused} mask(s) refused as the wrong size` : '')
   : `[routes] planning on the coarse grid — ${stepMasks.why ?? 'no step masks attached'}`);
+
+// EAGERLY BUILD THE INFERRED-REVERSE-EDGE TABLE, off the tick path. The broker serves
+// world.exits() (health, fleet page), so its first such call would otherwise pay the ~10s
+// lazy build on a request handler. It is a pure, complete build (no truncation); moving it
+// to startup only changes WHEN the cost is paid. See m59-game.mjs for the rationale.
+try {
+  const t0 = Date.now();
+  buildReverseEdges(worldMap);
+  console.error(`[routes] inferred-reverse table built at startup in ${Date.now() - t0}ms` +
+                ` (off the request path)`);
+} catch (e) {
+  console.error(`[routes] startup reverse-edge build failed (${e.message}); will build lazily on first use`);
+}
+
+// EAGERLY PARSE EVERY ROOM'S GEOMETRY, off the request path. The route search (findPath)
+// visits many rooms and the first access to each parses its .roo — the ~12s half of the
+// cold-start stall. Same rationale as the reverse-edge build: a pure, idempotent, complete
+// build scheduled at startup. See m59-game.mjs.
+try {
+  const t0 = Date.now();
+  const n = buildAllRoomGeometry(worldMap);
+  console.error(`[routes] ${n} room geometries parsed at startup in ${Date.now() - t0}ms` +
+                ` (off the request path)`);
+} catch (e) {
+  console.error(`[routes] startup geometry build failed (${e.message}); will parse lazily on first use`);
+}
 
 // Who buys what, who sells what, who teaches what, and where they stand. Built once
 // from the running world plus the source tree — a merchant's buying rule is a kod
