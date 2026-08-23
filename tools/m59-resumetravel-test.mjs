@@ -265,6 +265,34 @@ console.log('\nthe wiring the keeper cannot check for itself');
 
 
 console.log('');
+console.log('FIT TO GO ON MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUMBER');
+{
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const fn = src.slice(src.indexOf('async resumeSuspendedJourney'),
+                       src.indexOf('async resumeSuspendedJourney') + 6000);
+  // Full health is the right bar for a character resting somewhere safe and the wrong one for
+  // one stalled mid-journey — because a stalled character is usually stalled SOMEWHERE IT
+  // CANNOT HEAL, and then the gate never opens. Measured, both characters, the same shape:
+  //
+  //     +237s  room 597  idle
+  //     +258s  room 597  holding a proven safe spot
+  //
+  // Aaaa rested out its whole clock at 21 of 33; Bbbb wandered back to the Western border and
+  // spent 360 seconds there at 9 of 20. Neither ever set off again.
+  ok('the resume watches whether health is still climbing',
+     /resumeFlat/.test(fn) && /resumeWatch/.test(fn));
+  ok('and the health gate yields once it has stopped',
+     /hp < floor && stillMending/.test(fn), 'floor && stillMending');
+  ok('as does the vigor gate', /vig < REST_VIGOR_CAP && stillMending/.test(fn));
+  ok('and the absolute floor is still there for anyone who wants one',
+     /travelStartHealth/.test(fn));
+  // The same argument releaseRestedHold already makes about a rest stop, which is where this
+  // rule came from — standing there is worth it only while it is buying something.
+  ok('which is the rule the rest stop already follows',
+     /releaseRestedHold/.test(src));
+}
+
+console.log('');
 console.log('A WATCHDOG RESCUE PAUSES A JOURNEY — IT DOES NOT THROW THE DESTINATION AWAY');
 {
   // `revive` drops the objective and hands the body to the ordinary ladder. For an ERRAND

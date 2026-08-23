@@ -254,6 +254,12 @@ const REACH = 3;
 // HOW LONG A SQUARE STAYS "COULD NOT GET THERE". Long enough that a hurt character stops
 // re-choosing it for the rest of the fight that is stopping it, short enough that a wall
 // blocked by one wandering monster is not written off for the session.
+// HOW MANY PASSES OF LEVEL HEALTH MEAN THE WALL HAS STOPPED PAYING. The keeper passes about
+// once a second, so this is a handful of seconds of no improvement — long enough not to fire
+// between two ticks of a rest that is working, short enough that a character stalled where it
+// cannot heal sets off again instead of resting out the clock.
+const RESUME_FLAT_SAMPLES = Number(process.env.M59_RESUME_FLAT_SAMPLES || 8);
+
 const UNREACHABLE_SPOT_MS = Number(process.env.M59_UNREACHABLE_SPOT_MS || 5 * 60 * 1000);
 const CROWD_RADIUS = 4;
 // Where resting alone runs out. RestTimer stops awarding vigor at its threshold of 80
@@ -10765,11 +10771,41 @@ export class Autopilot {
     // REST_VIGOR_CAP is 80 of 200 — the ceiling of what sitting down can ever buy, since
     // everything above it has to be eaten — so this asks for what resting can actually
     // deliver rather than a number that would sit for ever waiting on food.
+    // ...AND "FIT" MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUMBER.
+    //
+    // Full health is the right bar for a character resting somewhere safe. It is the wrong
+    // bar for one stalled mid-journey, because a stalled character is usually stalled
+    // SOMEWHERE IT CANNOT HEAL — and then the gate can never open and the journey never
+    // resumes. Measured, both characters, the same shape:
+    //
+    //     +237s  room 597  idle
+    //     +258s  room 597  holding a proven safe spot
+    //
+    // Aaaa rested out its whole clock at 21 of 33; Bbbb wandered back to the Western border
+    // and spent three hundred and sixty seconds there at 9 of 20. Neither ever set off again,
+    // because neither ever reached full.
+    //
+    // This is the same argument `releaseRestedHold` already makes about a rest stop: standing
+    // there is worth it while it is buying something, and the moment it stops buying, staying
+    // is just a slower way to run out of clock. So the gate is the TREND rather than the
+    // level. Health still climbing behind a wall — wait, that is what the wall is for. Health
+    // level for a few samples — go, at whatever it is, because waiting will not raise it.
+    //
+    // `travel_start_health` still sets an absolute floor for anyone who wants one; it is
+    // simply no longer the only way through.
     const floor = this.policy.travelStartHealth ?? 1;
     const { hp, v } = ctx;
-    if (hp !== null && hp < floor) return CONTINUE;
+    const nowHp = v?.health?.value ?? null;
+    if (nowHp !== null) {
+      const climbing = this.resumeWatch != null && nowHp > this.resumeWatch;
+      this.resumeWatch = nowHp;
+      this.resumeFlat = climbing ? 0 : (this.resumeFlat ?? 0) + 1;
+    }
+    // The wall is still working: let it.
+    const stillMending = (this.resumeFlat ?? 0) < RESUME_FLAT_SAMPLES;
+    if (hp !== null && hp < floor && stillMending) return CONTINUE;
     const vig = vigorPct(v);
-    if (vig !== null && vig < REST_VIGOR_CAP) return CONTINUE;
+    if (vig !== null && vig < REST_VIGOR_CAP && stillMending) return CONTINUE;
     // Already there. Nothing to resume, and reporting it as a resume would put a journey in
     // the ledger that never moved.
     if (ctx.room?.num === j.to) { this.suspendedJourney = null; return CONTINUE; }
