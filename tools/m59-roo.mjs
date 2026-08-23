@@ -1183,15 +1183,22 @@ export class RoomGeometry {
     // for a player move — so a square the BSP says holds somebody must not be vetoed by a
     // coarse byte that says otherwise. `standable` is exactly "coarse-walkable OR fine-
     // occupiable", which is what the mover's step predicate already uses.
-    if (arrived && this.standable) {
-      const destCol = Math.floor(clientToProtocol(x1) / KOD_FINENESS);
-      const destRow = Math.floor(clientToProtocol(y1) / KOD_FINENESS);
-      if (!this.standable(destRow, destCol)) {
-        return { available: true, x: x0, y: y0, moved: false, arrived: false,
-                 motionZ: carriedMotionZ,
-                 blocked: true, reason: 'standable_wall' };
-      }
-    }
+    // A DESTINATION OFF THE MAP IS NOT A WALL, AND THIS TEST COULD NOT TELL THE DIFFERENCE.
+    //
+    // This rejected any trace whose destination square was not `standable`. But
+    // `edgeCrossingRanges` traces from INSIDE a room to a point deliberately OUTSIDE the
+    // grid -- that is what crossing a boundary IS -- so the destination is never standable
+    // and EVERY crossing was rejected. Measured on room 536 north: 4 open ranges upstream,
+    // ZERO here, and with the ranges empty edgeCrossingCandidates returns nothing, which
+    // is why six assertions about edge approaches went red and, more to the point, why a
+    // character could not find the way out of a room.
+    //
+    // It is the same mistake as the cell-centre veto removed from this trace earlier: a
+    // COARSE standable test overruling a fine physics trace. The trace already knows
+    // whether the move lands; `standable` only knows whether the server's one-byte grid
+    // has floor there, and outside the room it has nothing at all.
+    //
+    // Added by 624e29a. Upstream has no such check.
     const destinationLeaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
     const destinationFloor = this.floorBaseAtClient(at.x, at.y, destinationLeaf,
       { roomFlags, overrideDepths });

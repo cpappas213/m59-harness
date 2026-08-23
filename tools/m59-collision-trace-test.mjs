@@ -56,7 +56,12 @@ const readRows = traceFile => readFileSync(traceFile, 'utf8').split('\n')
   .filter(Boolean).map(line => JSON.parse(line));
 
 const SRC = readFileSync(join(HERE, 'm59-collision-trace.mjs'), 'utf8');
-const BROKER = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+// THE SESSION MOVED. queueValidatedMove lives in m59-game.mjs in this checkout -- the
+// keeper split took it out of the broker so a keeper process need not load the gateway.
+// Upstream still has it in the broker, so this path is one of the few places our
+// architecture is visible to a test of theirs. Same fix as m59-collision-test's, and the
+// same failure shape: a suite bound to which FILE code lives in goes quiet when it moves.
+const BROKER = readFileSync(join(HERE, 'm59-game.mjs'), 'utf8');
 
 console.log('');
 console.log('the default is off, in the source');
