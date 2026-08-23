@@ -61,13 +61,49 @@ export const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS ||
 // the thing that prevents it must not disagree about what it is.
 export const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 export const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
-export const PULSE_SAMPLES = 3;
+// SIX, NOT THREE, and the reason is a rate rather than a position. "How fast is it losing
+// health" cannot be asked of three samples: damage lands about once a second, so a
+// two-second window is one hit wide and reports either zero or enormous. Upstream measured
+// a character losing 7 health over 22 seconds -- half a point a second, perfectly steady,
+// and invisible to every two-second window in it. Six samples is five seconds of history.
+export const PULSE_SAMPLES = 6;
+// THE NEWEST FEW, for the questions that are about the body having MOVED rather than about
+// how much time is left. Its own constant on purpose: `pennedIn` gets STRICTER as the ring
+// grows, so widening the ring above would quietly switch off the rescue it feeds.
+export const PULSE_MOVEMENT_SAMPLES = 3;
+// How long a stationary, bleeding, INERT character waits for its driver before the keeper
+// takes it back. Four pulses: long enough that a driver pausing at a door is not treated as
+// an abandonment, short enough to matter at these health totals.
+export const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
 
 const pct = v => (v && v.max ? v.value / v.max : null);
 
+// PENNED IN: the newest three samples, in one room, within a square of each other.
+// Explicitly the newest three and NOT the whole ring -- the ring widened so a damage rate
+// could be seen, and reading it here would demand a character stay in one square for six
+// seconds instead of three. That is a handbrake loosened by an edit about something else.
+export function pennedIn(w) {
+  const ring = (w?.pulses ?? []).slice(-PULSE_MOVEMENT_SAMPLES);
+  if (ring.length < PULSE_MOVEMENT_SAMPLES) return false;
+  const last = ring[ring.length - 1];
+  return ring.every(p => p.room === last.room
+    && Math.abs((p.col ?? 0) - (last.col ?? 0)) <= 1
+    && Math.abs((p.row ?? 0) - (last.row ?? 0)) <= 1);
+}
+
+// Penned in AND losing health. The pair is the whole test: standing still is ordinary,
+// bleeding is ordinary, and standing still WHILE bleeding is the one that is not.
+export function inertBleeding(w, hp) {
+  if (!pennedIn(w)) return false;
+  const prev = (w?.pulses ?? [])[(w?.pulses ?? []).length - 2];
+  const now = hp?.value, before = prev?.health;
+  return Number.isFinite(now) && Number.isFinite(before) && now < before;
+}
+
 // The scratch the tick keeps. Created here so a host cannot forget a field.
 export function freshState() {
-  return { ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
+  return { ticks: 0, frames: 0, interrupts: 0, rescues: 0, rescuedPass: null,
+           longest_block_ms: 0,
            lastHealth: null, blockedSince: null, interruptedPass: null,
            pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 };
 }
@@ -129,7 +165,16 @@ export function pulse(host, now, hp) {
   // Standing still on purpose is not a stall, and each of these is a different reason.
   // Named rather than folded together, because "why was it not flagged" is a question
   // somebody will ask of this instrument.
-  const excused = !at ? 'no position'
+  // INERT IS NO LONGER AN UNCONDITIONAL EXCUSE.
+  //
+  // Standing down for a driver is right until the body is penned in AND bleeding, at which
+  // point "something else is driving" has stopped being true in the only sense that
+  // matters. That case is allowed through so a wedge is recorded, and the rescue in tick()
+  // reads it.
+  const bleedingWhileInert = at && host.inert
+    && (inertBleeding(w, hp) || !!w.wedged?.inert);
+  const excused = bleedingWhileInert ? null
+    : !at ? 'no position'
     : host.inert ? 'inert — something else is driving'
     : host.hold ? 'holding a safe spot, which is standing still on purpose'
     : !GOING.includes(doing) ? `not going anywhere — ${doing ?? 'idle'}`
@@ -158,7 +203,7 @@ export function pulse(host, now, hp) {
     return w.wedged;
   }
   w.wedges++;
-  w.wedged = { since: prev.at, for_ms: now - prev.at, doing,
+  w.wedged = { since: prev.at, for_ms: now - prev.at, doing, inert: !!host.inert,
                at: { col: last.col, row: last.row, room: last.room },
                taking_hits: takingHits };
   host.tally.pulse_wedges = (host.tally.pulse_wedges || 0) + 1;
@@ -204,6 +249,50 @@ export function tick(host) {
 
   // 1b. THE POSITION PULSE. See PULSE_MS.
   if (now - w.lastPulseAt >= PULSE_MS) { w.lastPulseAt = now; pulse(host, now, hp); }
+
+  // 1c. THE INERT RESCUE — taking the character back from a driver that has stopped.
+  //
+  // The handbrake below cancels a walk. This is the other case: something ELSE is driving,
+  // the body is penned in, it is taking hits, and it is below the line this keeper flees
+  // at. Standing down is the right default and it stops being right here: whatever holds
+  // the character is no longer moving it, and standing still under attack is not something
+  // to stand down for.
+  //
+  // A RESCUED JOURNEY IS PAUSED, NOT CANCELLED. Reviving hands the body to the ordinary
+  // ladder, and upstream measured what that costs when the destination goes with it -- a
+  // rail cancelled at 12 of 112, then zero squares in fifteen seconds while the ladder
+  // cycled through refusals, then dead. So the destination is handed to the host to keep,
+  // and the host is asked to mend FORWARD rather than idle where it was dying.
+  //
+  // Every hook here is optional: a host that cannot suspend a journey or revive simply
+  // does not, and the cancel still happens. That is what lets the tick driver share this.
+  const wedge = w.wedged;
+  if (host.inert && wedge?.inert && wedge.taking_hits
+      && (now - wedge.since) >= INERT_RESCUE_MS && w.rescuedPass !== host.passes) {
+    const frac = pct(hp);
+    if (frac !== null && frac < host.safety().fleeAt) {
+      w.rescuedPass = host.passes;
+      w.rescues = (w.rescues ?? 0) + 1;
+      host.tally.inert_rescues = (host.tally.inert_rescues || 0) + 1;
+      const stopped = (() => {
+        try { return host.s.cancelMovement(null, 'the watchdog rescuing a stalled driver'); }
+        catch (e) { return { cancelled: false, why: e.message }; }
+      })();
+      const was = host.inert?.why ?? 'inert';
+      host.suspendJourney?.('the watchdog rescued a stalled driver');
+      host.wantForwardShelter?.('the watchdog took us back from a stalled driver');
+      host.revive?.('the character stopped moving and started dying while ' + was);
+      host.note('WATCHDOG — took the character back from a driver that had stopped', {
+        health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
+        stood_down_for: was, still_ms: now - wedge.since,
+        square: `${wedge.at.col},${wedge.at.row}`, room: wedge.at.room,
+        interrupted: stopped.interrupted ?? null,
+        why: 'not moving, being hit, and below the line this keeper flees at',
+      });
+      host.progress('watchdog took the character back from a stalled driver');
+      return;
+    }
+  }
 
   // 2. THE HANDBRAKE.
   const blockedFor = host.passStartedAt ? now - host.passStartedAt : 0;

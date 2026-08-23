@@ -61,6 +61,58 @@ console.log('the handbrake — the only thing it actually does');
   ok('a NEW blocked pass may be interrupted again', h.cancels === 2);
 }
 
+console.log('\nthe inert rescue — taking a character back from a driver that stopped');
+{
+  // Standing down for a driver is right until the body is penned in AND bleeding. Ported
+  // from upstream, where reviving alone was measured to be worse than the stall: the
+  // destination went with the driver and the character stood in a bad room until it died.
+  const h = host({ hp: 5, blockedMs: 0, inert: { why: 'an errand' }, doing: 'travelling' });
+  const calls = [];
+  h.suspendJourney = (t) => { calls.push(['suspend', t]); return true; };
+  h.wantForwardShelter = (w) => calls.push(['shelter', w]);
+  h.revive = (w) => calls.push(['revive', w]);
+  let t = 1000;
+  h.s.client.vitals = () => ({ health: { value: 20 - Math.floor(t / 1000), max: 20 } });
+  // Four pulses in one square, losing a point each second.
+  for (let i = 0; i < 6; i++) { wd.pulse(h, t, h.s.client.vitals().health); t += 1000; }
+  ok('a penned-in body is recognised', wd.pennedIn(h.watch) === true);
+  ok('and losing health while penned in is the pair that matters',
+     wd.inertBleeding(h.watch, { value: 10 }) === true);
+  ok('the wedge records that something else was driving', h.watch.wedged?.inert === true,
+     JSON.stringify(h.watch.wedged ?? null));
+  ok('and that it is taking hits', h.watch.wedged?.taking_hits === true);
+
+  h.passStartedAt = t; h.passes = 1;
+  h.s.client.vitals = () => ({ health: { value: 5, max: 20 } });   // 25%, below fleeAt
+  wd.tick(h);
+  ok('the movement is cancelled', h.cancels === 1);
+  ok('the journey is SUSPENDED, not thrown away', calls.some(c => c[0] === 'suspend'),
+     'reviving without keeping the destination is how a character ends up idle where it was dying');
+  ok('it is asked to mend FORWARD rather than idle here', calls.some(c => c[0] === 'shelter'));
+  ok('and the keeper stops being inert', calls.some(c => c[0] === 'revive'));
+  ok('counted', h.watch.rescues === 1 && h.tally.inert_rescues === 1);
+
+  const before = h.cancels;
+  wd.tick(h);
+  ok('ONCE per pass, not once per tick', h.cancels === before);
+}
+
+console.log('\nand a host that cannot do any of it still gets the cancel');
+{
+  // The tick driver supplies none of these hooks. The rescue must degrade to its cheapest
+  // useful action rather than throwing, or sharing the guard between drivers is a fiction.
+  const h = host({ hp: 5, inert: { why: 'a bot' }, doing: 'travelling' });
+  let t = 1000;
+  h.s.client.vitals = () => ({ health: { value: 20 - Math.floor(t / 1000), max: 20 } });
+  for (let i = 0; i < 6; i++) { wd.pulse(h, t, h.s.client.vitals().health); t += 1000; }
+  h.passStartedAt = t; h.passes = 1;
+  h.s.client.vitals = () => ({ health: { value: 5, max: 20 } });
+  let threw = false;
+  try { wd.tick(h); } catch { threw = true; }
+  ok('no hooks, no throw', threw === false);
+  ok('and the walk is still cancelled', h.cancels === 1);
+}
+
 console.log('\nand the four times it must NOT act');
 {
   ok('healthy: a long pass on a full bar is not an emergency',

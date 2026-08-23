@@ -7835,6 +7835,22 @@ export class Autopilot {
   // inert, hold, doing, passes, passStartedAt, lastFrameAt, tally, safety, recordFrame,
   // note, progress), and keeping the method NAMES here means every existing caller and
   // m59-combat-test's direct ticks carry on untouched.
+  // THE HOOKS THE WATCHDOG'S INERT RESCUE ASKS FOR. Optional by design -- the tick driver
+  // supplies none of them and still gets the cancel -- but this keeper can do all three,
+  // and the reason they exist is that reviving alone was measured to be worse than the
+  // stall: the destination went with the driver, the ordinary ladder had nothing to offer
+  // in a bad room, and the character stood there until it died.
+  suspendJourney(trigger) {
+    const journey = this.travelling;
+    if (journey?.to == null) return false;
+    this.suspendedJourney = {
+      to: journey.to, why: journey.why ?? 'travelling', at: Date.now(), trigger,
+      attempts: (journey.attempts ?? 0) + 1, deaths_at: this.tally?.deaths ?? 0,
+    };
+    return true;
+  }
+  wantForwardShelter(why) { this.wantsForwardShelter = why; }
+
   startWatchdog()          { return watchdog.start(this); }
   stopWatchdog()           { return watchdog.stop(this); }
   watchdogTick()           { return watchdog.tick(this); }
