@@ -10979,6 +10979,41 @@ export class Autopilot {
   }
 
   // ── passErrand: extracted from pass() ────────────────────────────────
+  /**
+   * THE ERRANDS, DONE ONCE, BEFORE SETTING OFF.
+   *
+   * The operator's shape, and it is the right one: most of the time a character sent across
+   * the world should bank its takings and top up its food FIRST, and then go — not discover
+   * halfway through the Twisted Wood that it wants to visit a bank. So the errands are not
+   * abolished under a journey, they are MOVED IN FRONT OF IT.
+   *
+   * `run_errands: false` on the journey skips this, which is what a measurement wants (the
+   * road is the thing being timed) and what an emergency wants (go now, bank later).
+   *
+   * BOUNDED, AND FAILURES DO NOT STOP THE JOURNEY. An errand that cannot be finished is not
+   * a reason to refuse to travel — that would turn a full pack or a shut shop into a
+   * character that never leaves town, which is the "a trip that cannot fix the thing that
+   * opened it will run for ever" trap this repository already documents. Each step gets one
+   * attempt, whatever happens the road follows.
+   */
+  async settleErrandsBeforeJourney({ where = null } = {}) {
+    const did = [];
+    const tryStep = async (name, fn) => {
+      try { if (await fn()) did.push(name); }
+      catch (e) { did.push(`${name} failed: ${e.message}`); }
+    };
+    await tryStep('banked what was on us', async () => { await this.bankSurplus(); return false; });
+    await tryStep('went to a vault we were passing', () => this.vaultRunIfPassing());
+    await tryStep('went to the bank', () => this.bankRun());
+    await tryStep('handed over farm supplies', () => this.deliverFarmSupplies());
+    this.note('did the errands before setting off', {
+      to: where, did: did.length ? did : 'nothing was outstanding',
+      why: 'a character sent across the world should bank and stock up first rather than ' +
+           'discover halfway through that it wants to. run_errands:false skips this',
+    });
+    return did;
+  }
+
   async passErrand(ctx) {
     // A JOURNEY IS ALREADY A DIRECTIONAL DECISION. THE ERRANDS STAND DOWN UNDER ONE.
     //

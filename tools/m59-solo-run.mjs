@@ -256,7 +256,13 @@ async function runLeg(r, { from = FROM, to = TO, place = true, heal = true, leg 
                 `this leg is not a measurement of the road`);
 
   const started = Date.now();
-  const sent = await call('travel', { agent: r.agent, to, max_hops: 30, background: true }, 60000);
+  // NO ERRANDS ON A TIMED LEG. `run_errands` defaults to true on a journey — a character
+  // sent across the world should bank and stock up before it goes — and that is exactly
+  // what this experiment must not measure. shadow02 spent a whole ten-minute leg in the
+  // First Royal Bank of Tos with a live objective in hand, and the leg was scored as a
+  // failure to cross when what it had actually done was go shopping.
+  const sent = await call('travel', { agent: r.agent, to, max_hops: 30, background: true,
+                                       run_errands: false }, 60000);
   let ended = null, low = null, died = false, restedMs = 0, refusedWhy = null;
   const FROM = from, TO = to;              // the rest of this body reads these two names
   const rooms = new Set([FROM]);

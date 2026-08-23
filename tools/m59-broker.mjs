@@ -2491,7 +2491,7 @@ class Session {
   // confined character now refuses an external travel out of its confinement instead of
   // quietly taking it. That is the documented intent of the setting — "the rooms this
   // character may be in AT ALL" — and the refusal is returned, not thrown.
-  travelJob(dest, { where = `room ${dest}`, ...opts } = {}) {
+  travelJob(dest, { where = `room ${dest}`, runErrands = true, ...opts } = {}) {
     const keeper = autopilotIfAny(this.name);
     return this.startJob('travel', `walk to ${where}`, async movementGeneration => {
       let ours = null;
@@ -2499,6 +2499,13 @@ class Session {
       // it is the count that already includes the death it is supposed to detect — which is
       // exactly the bug this pairs with below.
       const deathsAtStart = Number(keeper?.tally?.deaths ?? NaN);
+      // ERRANDS FIRST, AND ONLY EVER HERE. `passErrand` stands down for the whole of a
+      // journey — every branch of it walks the character somewhere and it is already going
+      // somewhere — so this is the one moment they get. Default on, because a character
+      // sent across the world should bank and stock up before it goes rather than discover
+      // halfway through the Twisted Wood that it wants a bank.
+      if (runErrands && keeper?.settleErrandsBeforeJourney)
+        await keeper.settleErrandsBeforeJourney({ where }).catch(() => null);
       // RE-ASSERTED ON A TIMER, because a stood-down keeper WAKES ON A DEADLINE
       // (`INERT_MAX_MS`, so a crashed errand cannot silence one for ever) and that
       // deadline does not know a journey is in progress. Watched live before this
@@ -9066,6 +9073,13 @@ const TOOLS = [
       control_token: { type: 'string', description: 'optional owner token that can invalidate stale movement' },
       background: { type: 'boolean', description: 'return at once and walk in the background; ' +
         'watch for it under `busy` in status/fleet, and the outcome under `last_action`' },
+      run_errands: { type: 'boolean', description: 'do the outstanding errands — bank the ' +
+        'takings, visit a vault being passed, hand over farm supplies — BEFORE setting off. ' +
+        'Default true, because a character sent across the world should stock up first ' +
+        'rather than discover halfway through that it wants a bank. Set false to leave now: ' +
+        'that is what a timed measurement of the road wants, and what an emergency wants. ' +
+        'Errands never run DURING a journey either way — every one of them walks the ' +
+        'character somewhere, and it is already going somewhere.' },
     }, required: ['agent', 'to'] },
     run: async (a) => {
       const s = session(a.agent);
@@ -9140,6 +9154,7 @@ const TOOLS = [
       // the file had neither. ONE definition, two ways to wait for it.
       const startTravel = () => s.travelJob(dest, {
         where: where.name, maxHops: num(a.max_hops, 25), controlToken: a.control_token,
+        runErrands: a.run_errands !== false,
       });
 
       if (a.background) {

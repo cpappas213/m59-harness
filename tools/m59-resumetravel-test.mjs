@@ -676,5 +676,57 @@ console.log('THE ERRANDS STAND DOWN UNDER A JOURNEY');
      JSON.stringify({ after: String(after), stoodDown: paused.errandsStoodDown }));
 }
 
+console.log('');
+console.log('AND THEY ARE NOT ABOLISHED — THEY ARE MOVED IN FRONT OF THE ROAD');
+{
+  // The operator's shape, and it is the right one: most of the time a character sent across
+  // the world should bank its takings and top up its food FIRST and then go — not discover
+  // halfway through the Twisted Wood that it wants a bank. So the errands are not switched
+  // off under a journey, they happen BEFORE it.
+  const k = keeper();
+  const ran = [];
+  k.bankSurplus = async () => { ran.push('bankSurplus'); return false; };
+  k.vaultRunIfPassing = async () => { ran.push('vaultRunIfPassing'); return false; };
+  k.bankRun = async () => { ran.push('bankRun'); return true; };
+  k.deliverFarmSupplies = async () => { ran.push('deliverFarmSupplies'); return false; };
+  const did = await k.settleErrandsBeforeJourney({ where: 'Castle Victoria' });
+  ok('every errand gets its one turn before setting off',
+     JSON.stringify(ran) === JSON.stringify(['bankSurplus', 'vaultRunIfPassing', 'bankRun',
+                                             'deliverFarmSupplies']), JSON.stringify(ran));
+  ok('and what it actually did is recorded', did.includes('went to the bank'),
+     JSON.stringify(did));
+  ok('and said, so a journey that starts late has a reason',
+     said(k, /did the errands before setting off/));
+
+  // AN ERRAND THAT FAILS MUST NOT STOP THE JOURNEY. A full pack or a shut shop turning into
+  // a character that never leaves town is the "a trip that cannot fix the thing that opened
+  // it will run for ever" trap this repository already documents.
+  const broken = keeper();
+  broken.bankSurplus = async () => { throw new Error('pack is full'); };
+  broken.vaultRunIfPassing = async () => false;
+  broken.bankRun = async () => { throw new Error('no bank in Barloque'); };
+  broken.deliverFarmSupplies = async () => false;
+  let threw = false;
+  try { await broken.settleErrandsBeforeJourney({ where: 'x' }); } catch { threw = true; }
+  ok('a failing errand does not throw the journey away', !threw);
+  ok('and the failure is named rather than swallowed',
+     said(broken, /no bank in Barloque/));
+
+  // THE FLAG ITSELF. Default true — the common case — and false for a timed measurement or
+  // an emergency, which are the two cases the operator named.
+  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+  ok('the journey takes the flag and defaults it to true',
+     /travelJob\(dest, \{ where = `room \$\{dest\}`, runErrands = true/.test(broker));
+  ok('and only runs them when it is set',
+     /if \(runErrands && keeper\?\.settleErrandsBeforeJourney\)/.test(broker));
+  ok('the travel tool declares it, so it is not a setting that silently does nothing',
+     /run_errands: \{ type: 'boolean'/.test(broker));
+  ok('and reads it off the arguments defaulting to on',
+     /runErrands: a\.run_errands !== false/.test(broker));
+  // The measurement is the case that must not include a shopping trip.
+  const solo = readFileSync(join(HERE, 'm59-solo-run.mjs'), 'utf8');
+  ok('and a timed leg asks for none of it', /run_errands: false/.test(solo));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
