@@ -48,6 +48,21 @@ const PORT    = Number(flag('port', 8971));
 const FLEET   = flag('fleet', 'shadow');
 const FROM    = Number(flag('from', 50));     // The Streets of Tos
 const TO      = Number(flag('to', 38));       // Castle Victoria
+// A CIRCUIT, NOT A CROSSING. `--tour 50,38,593,50` walks Tos -> Castle Victoria -> Barloque
+// -> Tos as three legs, one after another, without teleporting back to the start between
+// them. That is a different question from `--from/--to` and a better one: a one-way crossing
+// always starts from a relocated body at full health, which is the condition a fleet is
+// almost never in. A tour asks whether a character can still be somewhere useful after it
+// has already made one crossing under its own power.
+//
+// Each leg is timed separately and the arrival room of one is the departure room of the
+// next, so a leg that ends short is REPORTED short rather than papered over by a relocate.
+const TOUR = (flag('tour', '') || '').split(',').map(n => Number(n.trim())).filter(Number.isFinite);
+
+// How long to wait for a leftover recovery hold before timing a leg anyway. Generous,
+// because vigor is the slowest of the three bars to come back and the alternative is a leg
+// that silently measures nothing.
+const RECOVERY_WAIT_MS = Number(flag('recovery-wait', 60)) * 1000;
 // HOW LONG A LEG MAY TAKE BEFORE IT IS A FAILURE RATHER THAN A JOURNEY.
 //
 // 240s was below the human reference — the operator walks Tos to Castle Victoria in under
@@ -197,20 +212,53 @@ const results = [];
 // an operator actually has: if I send everybody, how many arrive. `--stagger <seconds>` sets
 // them off that far apart and polls them all, which keeps them from leaving as one crowd
 // without pretending they are alone.
-async function runLeg(r) {
+async function runLeg(r, { from = FROM, to = TO, place = true, heal = true, leg = null } = {}) {
   // Same starting conditions for every one of them, or the run measures who went first.
   await call('autopilot', { agent: r.agent, mode: 'idle', roam: false, confine_rooms: [] });
   await call('autopilot', { agent: r.agent, action: 'unpark' });
   if (WALL !== null) await call('autopilot', { agent: r.agent, travel_wall_below: Number(WALL) });
   if (HOLD !== null) await call('autopilot', { agent: r.agent, travel_hold_below: Number(HOLD) });
-  await dm.relocate([r.character], FROM, { verify: false }).catch(() => null);
+  // ON A TOUR, ONLY THE FIRST LEG IS PLACED AND HEALED. Relocating between legs would throw
+  // away the thing the tour is asking about — whether the character is still in a state to
+  // go on — and healing between them would turn three legs into three first legs.
+  if (place) await dm.relocate([r.character], from, { verify: false }).catch(() => null);
   const ids = await dm.resolve([r.character]);
   const max = maxOf(r.character);
-  if (ids[r.character] != null && max) await dm.dm(dm.healthCmds(ids[r.character], max), { timeoutMs: 60000 });
+  if (heal && ids[r.character] != null && max)
+    await dm.dm(dm.healthCmds(ids[r.character], max), { timeoutMs: 60000 });
+
+  // A LEG THAT STARTS UNDER A RECOVERY HOLD IS NOT A MEASUREMENT OF ANYTHING.
+  //
+  // `recoverUntilWhole` is set when a character comes back from the dead and stays set until
+  // health, mana AND vigor are all back. While it is up, `passUnderworld` — the FIRST rung —
+  // ends every tick, and `travel` is refused the instant it is asked. Healing the body with
+  // the DM tools does not clear it: the flag is the keeper's, the clock is its own, and mana
+  // and vigor come back at their own pace.
+  //
+  // Measured here: leg B of the 597 investigation reported `refused` at zero seconds and
+  // `597 -> 597`, which reads exactly like a room that cannot be left. It was a character
+  // that had died two legs earlier and was still mending. The crossing itself, asked for
+  // directly a minute later, took 16 seconds.
+  //
+  // So wait for it, bounded, and SAY SO rather than producing a zero-second leg that looks
+  // like a routing failure.
+  let heldBack = null;
+  for (let waited = 0; waited <= RECOVERY_WAIT_MS; waited += 5000) {
+    const ap = await call('autopilot', { agent: r.agent, action: 'status' }, 30000);
+    if (!ap?.recovering_from_death) { heldBack = null; break; }
+    heldBack = ap.recovering_from_death?.until ?? 'recovering after a death';
+    if (waited >= RECOVERY_WAIT_MS) break;
+    await sleep(5000);
+  }
+  if (heldBack)
+    console.log(`  ${String(r.character).padEnd(12)} still recovering after ` +
+                `${Math.round(RECOVERY_WAIT_MS / 1000)}s — ${heldBack}; ` +
+                `this leg is not a measurement of the road`);
 
   const started = Date.now();
-  const sent = await call('travel', { agent: r.agent, to: TO, max_hops: 30, background: true }, 60000);
-  let ended = null, low = null, died = false, restedMs = 0;
+  const sent = await call('travel', { agent: r.agent, to, max_hops: 30, background: true }, 60000);
+  let ended = null, low = null, died = false, restedMs = 0, refusedWhy = null;
+  const FROM = from, TO = to;              // the rest of this body reads these two names
   const rooms = new Set([FROM]);
   const perRoom = {};                 // room number -> seconds spent in it
   // POISON RUINS A TIMING AND LOOKS EXACTLY LIKE A SLOW ROAD.
@@ -236,7 +284,12 @@ async function runLeg(r) {
   const activity = [];
   let roomNow = FROM;
   if (sent?._error || sent?.refused) {
+    // A REFUSAL WITH NO REASON IS THE THING THIS REPOSITORY KEEPS PAYING FOR. The reason was
+    // being computed by the broker, returned over the wire, and dropped on this line — so a
+    // leg that never started looked identical to one that started and got nowhere.
     ended = 'refused';
+    refusedWhy = sent?._error ?? sent?.reason ?? sent?.refused ?? 'no reason given';
+    if (heldBack) refusedWhy += ` (and it was still ${heldBack})`;
   } else {
     for (;;) {
       await sleep(5000);
@@ -297,6 +350,8 @@ async function runLeg(r) {
   // but a room holding a character for minutes shows up unmistakably, and that is the
   // question this answers.
   // SAID ON THE LEG'S OWN LINE, because a timing without it is a number nobody can trust.
+  if (refusedWhy)
+    console.log('               REFUSED: ' + refusedWhy);
   if (ailments.size)
     console.log('               AILING: ' + [...ailments].join(', ') +
                 " — this leg's time is not a measurement of the road");
@@ -313,10 +368,38 @@ async function runLeg(r) {
   if (spent.length)
     console.log('               time by room: ' +
                 spent.map(([num, sec]) => num + '=' + sec + 's').join('  '));
+  // HANDED BACK AS WELL AS RECORDED. A tour has to know whether this leg arrived before it
+  // decides to start the next one from wherever the body ended up — and `results` is the
+  // report, not a channel for that.
+  return { character: r.character, ended, secs, died, endedIn: at?.where?.num ?? null };
+}
+
+// A TOUR IS RUN PER CHARACTER, LEG AFTER LEG, AND STOPS AT THE FIRST LEG THAT DOES NOT
+// ARRIVE. Carrying on from a body that is dead or stranded would measure a relocate rather
+// than a road, and the interesting number is how far round the circuit it got.
+async function runTour(r) {
+  const legs = [];
+  for (let i = 0; i + 1 < TOUR.length; i++) {
+    const out = await runLeg(r, { from: TOUR[i], to: TOUR[i + 1],
+                                  place: i === 0, heal: i === 0, leg: i + 1 });
+    legs.push(out);
+    if (out.ended !== 'arrived') break;
+  }
+  const done = legs.filter(l => l.ended === 'arrived').length;
+  console.log(`  ${String(r.character).padEnd(12)} completed ${done} of ${TOUR.length - 1} leg(s) ` +
+              `— ${legs.map(l => `${l.ended}@${l.endedIn ?? '?'}`).join(' -> ')}`);
+  return legs;
 }
 
 const STAGGER = Number(flag('stagger', 0));
-if (STAGGER > 0) {
+if (TOUR.length >= 2) {
+  if (STAGGER > 0) {
+    await Promise.all(rows.map((r, i) =>
+      new Promise(done => setTimeout(done, i * STAGGER * 1000)).then(() => runTour(r))));
+  } else {
+    for (const r of rows) await runTour(r);
+  }
+} else if (STAGGER > 0) {
   console.log(`(staggered: one every ${STAGGER}s, all polled together)
 `);
   await Promise.all(rows.map((r, i) =>
