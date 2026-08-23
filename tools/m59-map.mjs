@@ -858,7 +858,8 @@ export function roomsWithin(map, fromNum, radius = 2, { avoid = AVOID_IN_TRANSIT
 // The search itself. Unchanged except that it can be told to pretend some rooms are not
 // there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
 // where we are going.
-function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = null) {
+function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = null,
+                 availableFirstHops = null) {
   // WITH A TRANSIT PREDICATE THE STATE IS (ROOM, DOOR YOU CAME IN BY), NOT THE ROOM.
   //
   // Whether you can cross a room depends on which side you entered it from, so keying
@@ -874,6 +875,18 @@ function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = nul
     if (!room) continue;
     for (const ex of passableExits(map, at)) {
       if (ex.to == null) continue;
+      // THE FIRST STEP HAS TO BE SOMETHING THE EXECUTOR CAN ACTUALLY SEE.
+      //
+      // This is deliberately keyed on path depth rather than `at === fromNum`. With a
+      // transit predicate the search state includes the door we arrived through, so a
+      // legitimate route may revisit the origin later by a different door. The live exit
+      // list describes only the character's position NOW; it must constrain expansion zero
+      // and must not turn that room into a permanent graph-wide restriction.
+      //
+      // `null` means the caller has no authoritative live answer. An empty Set is the
+      // authoritative answer that no executable first hop was offered.
+      if (sofar.length === 0 && availableFirstHops !== null
+          && !availableFirstHops.has(Number(ex.to))) continue;
       if (blockedHops?.has(`${at}>${ex.to}`)) continue;
       // Can this room be walked from the door we arrived by to the one we want? Only
       // an explicit FALSE refuses: no table, no anchors, no answer all mean "carry on".
@@ -970,7 +983,8 @@ const DETOUR_SLACK = 2;
  * rooms that the spawn table cannot express: 534 is deadly in transit because of how many
  * things gang up in it, not because its worst single generator is remarkable.
  */
-function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null, blockedHops = null) {
+function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null,
+                    blockedHops = null, availableFirstHops = null) {
   // Dijkstra on (worst room so far, hops). The frontier is small enough — the whole world
   // is a few hundred rooms — that a sorted insert beats a heap in both speed and reading.
   // Same keying argument as bfsPath: with a transit predicate the state carries the door
@@ -991,6 +1005,10 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null
     if (!room) continue;
     for (const ex of passableExits(map, cur.at)) {
       if (ex.to == null) continue;
+      // Same depth-zero rule as bfsPath. A later re-entry to the origin is a graph state,
+      // not the live position from which `availableFirstHops` was observed.
+      if (cur.path.length === 0 && availableFirstHops !== null
+          && !availableFirstHops.has(Number(ex.to))) continue;
       if (blockedHops?.has(`${cur.at}>${ex.to}`)) continue;
       // Only an explicit FALSE refuses — see bfsPath.
       if (transitOk && cur.cameFrom != null
@@ -1051,14 +1069,21 @@ export function findPath(map, fromNum, toNum,
                            // walk a character into a hole. The regions this needs are
                            // already baked per anchor in substrate/m59-routes.json.
                            transitOk = null,
-                           // ONE DIRECTED EDGE, NOT A ROOM. `avoid` cannot say "not from
-                           // here to there": it excludes rooms, and it deliberately never
-                           // excludes the destination — so a caller standing in a room
-                           // whose door to the TARGET cannot be walked to had no way to ask
-                           // for the long way round. Strings of the form `from>to`.
-                           blockedHops = null,
-                           // internal: the strict half of the two-pass below
-                           strictTransit = false } = {}) {
+                            // ONE DIRECTED EDGE, NOT A ROOM. `avoid` cannot say "not from
+                            // here to there": it excludes rooms, and it deliberately never
+                            // excludes the destination — so a caller standing in a room
+                            // whose door to the TARGET cannot be walked to had no way to ask
+                            // for the long way round. Strings of the form `from>to`.
+                            blockedHops = null,
+                            // DESTINATIONS THE LIVE EXECUTOR ACTUALLY OFFERS FROM THE
+                            // ORIGIN. This is harder evidence than a permissive graph
+                            // fallback: a raw exit absent from an authoritative `exits()`
+                            // result cannot be executed at all. It constrains expansion
+                            // zero only. `null` means no authoritative answer; an empty Set
+                            // means there is no executable first hop.
+                            availableFirstHops = null,
+                            // internal: the strict half of the two-pass below
+                            strictTransit = false } = {}) {
   if (fromNum === toNum) return { found: true, hops: [] };
 
   // TWO PASSES, AND THE SECOND IS EXACTLY WHAT THIS FUNCTION DID BEFORE.
@@ -1071,10 +1096,12 @@ export function findPath(map, fromNum, toNum,
   // refusing costs the errand, silently.
   if ((transitOk || blockedHops?.size) && !strictTransit) {
     const strict = findPath(map, fromNum, toNum,
-      { avoid, danger, allowHazardDestination, transitOk, blockedHops, strictTransit: true });
+      { avoid, danger, allowHazardDestination, transitOk, blockedHops,
+        availableFirstHops, strictTransit: true });
     if (strict.found) return { ...strict, transit_checked: true };
     const loose = findPath(map, fromNum, toNum,
-      { avoid, danger, allowHazardDestination, transitOk: null, blockedHops: null });
+      { avoid, danger, allowHazardDestination, transitOk: null, blockedHops: null,
+        availableFirstHops });
     return loose.found ? { ...loose, transit_unverified: true } : loose;
   }
   const crossing = strictTransit ? transitOk : null;
@@ -1107,10 +1134,12 @@ export function findPath(map, fromNum, toNum,
   if (danger !== false) {
     const table = danger instanceof Map ? danger : roomDanger();
     if (table.size) {
-      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null, crossing, blocked);
+      const shortest = bfsPath(map, fromNum, toNum, skip?.size ? skip : null,
+                               crossing, blocked, availableFirstHops);
       if (shortest.found) {
         const budget = shortest.hops.length * DETOUR_FACTOR + DETOUR_SLACK;
-        const safest = safestPath(map, fromNum, toNum, skip, table, budget, crossing, blocked);
+        const safest = safestPath(map, fromNum, toNum, skip, table, budget,
+                                  crossing, blocked, availableFirstHops);
         // A DETOUR HAS TO BE WORTH WHAT IT COSTS, AND THE BOTTLENECK SEARCH CANNOT SEE THE
         // COST AT ALL.
         //
@@ -1166,14 +1195,16 @@ export function findPath(map, fromNum, toNum,
   }
 
   if (skip?.size) {
-    const safer = bfsPath(map, fromNum, toNum, skip, crossing, blocked);
+    const safer = bfsPath(map, fromNum, toNum, skip, crossing, blocked,
+                          availableFirstHops);
     if (safer.found) return safer;
   }
   // THE LAST RESORT STILL HONOURS THE HARD BLOCK. This line used to pass `null`, which is
   // what made every avoid a preference — and it is the line Statler's route came down.
   // A soft hazard is dropped here; a NEVER_ENTER room is not, so a journey that needs one
   // comes back `found: false` and names the room rather than walking a character into it.
-  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null, crossing, blocked);
+  const last = bfsPath(map, fromNum, toNum, forbidden.size ? forbidden : null,
+                       crossing, blocked, availableFirstHops);
   if (!last.found && forbidden.size)
     return { ...last, blocked_by_hazard: [...forbidden],
              reason: `${last.reason} without crossing ${[...forbidden]
