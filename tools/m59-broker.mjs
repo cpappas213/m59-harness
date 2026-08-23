@@ -4105,6 +4105,26 @@ class Session {
           return this.cancelledMovement({ steps: i, log });
         const a = base + off;
         const r = await this.stepFine(me.x + Math.cos(a) * reach, me.y + Math.sin(a) * reach);
+        // THE FINE WALK IS WHERE THE TRACE USED TO GO DARK.
+        //
+        // `traceMove` sat on the two square-step call sites only, so every fine move was
+        // invisible — and fine movement is exactly what carries a body across the seam where
+        // the coarse grid stops. In room 587 the baked line's sixth square, 16,60, is
+        // fine-grid-only (coarse says no, the BSP says yes), and the trace ends at the square
+        // before it every single time: five squares recorded, then sixty-two moves with no
+        // position at all, then a reading of the room we came from.
+        //
+        // Whether that reading is real is the open question, and it cannot be answered from
+        // a record that stops at the seam. So the fine walk records too: the same fields, plus
+        // the FINE coordinates, because a square number is exactly the resolution that hides
+        // what happens inside one.
+        traceMove({ agent: this.name, room: this.world?.room?.num, kind: 'fine',
+                    square: c.self ? { col: c.self.col, row: c.self.row } : null,
+                    fine: { x: Math.round(me.x), y: Math.round(me.y) },
+                    aimed: { x: Math.round(me.x + Math.cos(a) * reach),
+                             y: Math.round(me.y + Math.sin(a) * reach) },
+                    sent: !!r.moved, reason: r.reason ?? null,
+                    left_room: !!r.left_room });
         lastStep = { aimed: { x: Math.round(me.x + Math.cos(a) * reach), y: Math.round(me.y + Math.sin(a) * reach) },
                      from: { x: me.x, y: me.y }, reach,
                      moved: r.moved, travelled: r.travelled, reason: r.reason ?? null,
@@ -7690,14 +7710,20 @@ class Session {
       //
       // Confirmed before it is believed: read the room back and require it to still disagree.
       // A real crossing survives that; a blink does not.
-      let wrongRoom = r.left && Number.isFinite(landedNow) && nextHop.to != null
+      const wrongRoom = r.left && Number.isFinite(landedNow) && nextHop.to != null
         && landedNow !== Number(nextHop.to);
-      if (wrongRoom) {
-        await this.pacer.submit('read', () => this.client.roomContents()).catch(() => null);
-        await this.client.waitFor({ kinds: ['room-contents'], timeoutMs: 1500 }).catch(() => null);
-        const confirmed = Number(this.world?.room?.num ?? NaN);
-        if (!Number.isFinite(confirmed) || confirmed === Number(nextHop.to)) wrongRoom = false;
-      }
+      // A SECOND READ WAS TRIED HERE AND DID NOT HELP: it confirmed the same room every time,
+      // and cost a room-contents round trip plus up to 1500ms on every attempt — enough that
+      // neither character reached The Twisted Wood at all in that run, where the one before it
+      // had. Removed rather than kept "just in case", because an instrument that costs a
+      // second and changes no answer is a slower way to be wrong.
+      //
+      // WHAT IS STILL UNEXPLAINED. The tracer shows six steps in 587 and then ONE move
+      // reading 586, from a body at 14,62 walking to 15,61 — south-west, five columns from
+      // the boundary. Nothing there can enter the Main gate. But `walkFine` does not go
+      // through `traceMove` (only the two `queueValidatedMove` sites do), so the crossing may
+      // be happening in a move the trace cannot see. That is the next thing to instrument,
+      // and it should be instrumented before anything else is changed.
       this.noteTransit({
         room: here.num, roomName: here.name, to: nextHop.to, toName: nextHop.to_name,
         ms: inRoomMs, walkMs: Date.now() - walkBegan, ok: r.left && !wrongRoom,

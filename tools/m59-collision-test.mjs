@@ -1050,8 +1050,15 @@ const ordinaryStep = compileSessionMethod(brokerSource,
 // and this one is load-bearing: it is what stops the two-square bounce.
 const aimInto = compileSessionMethod(brokerSource,
   'aimInto(from, row, col) {', 'aimInto', { KOD_FINENESS, protocolToClient });
+// `traceMove` again, for the same reason `leaveVia` needs it: the fine walk records now, and
+// a module-scope name a lifted method reaches has to be declared or the branch throws here
+// while working perfectly in the broker. The tracer is off by default, so this is a no-op —
+// which is exactly the property m59-collision-trace-test asserts.
 const walkFine = compileSessionMethod(brokerSource,
-  'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason, KOD_FINENESS });
+  'async walkFine(destX, destY, {', 'walkFine', {
+    // Stubbed rather than imported, the same way the other lifted methods take it: this
+    // suite is about what the walk DECIDES, and the tracer is a recorder with its own suite.
+    traceMove: () => {}, isTerminalMovementReason, KOD_FINENESS });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     provedSquares,
