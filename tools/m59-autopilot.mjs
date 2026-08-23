@@ -6781,6 +6781,22 @@ export class Autopilot {
       // The second invisible failure, alongside `stalled`: working perfectly and earning
       // nothing. Null when there is no opinion to give — never a quiet "fine".
       yield_check: this.yieldCheck(),
+      // THE OBJECTIVE A STOPPED JOURNEY IS STILL CARRYING, or null if it carries none.
+      //
+      // Every leg of a twenty-one character run went `idle` between +170s and +400s, several
+      // of them at 45 to 56 health — not hurt, just stopped. Whether the destination survived
+      // is the obvious next question and it could not be asked: nothing reported this, so a
+      // reader got `undefined` and read it as "no journey". That is the same mistake as
+      // reading a missing ailments field as "nothing was on us", and I made it twice in a day.
+      //
+      // A record that cannot answer a question is worse than one that says "I do not know",
+      // because it answers anyway.
+      suspended_journey: this.suspendedJourney
+        ? { to: this.suspendedJourney.to,
+            trigger: this.suspendedJourney.trigger ?? null,
+            attempts: this.suspendedJourney.attempts ?? 0,
+            age_s: Math.round((Date.now() - (this.suspendedJourney.at ?? Date.now())) / 1000) }
+        : null,
       stalled: this.stalledSince
         ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
             idle_passes: this.idlePasses, why: this.stalledWhy }
