@@ -10032,6 +10032,28 @@ export class Autopilot {
     // widens WHEN A WALL IS FETCHED; the rest gate below is untouched, so nothing that
     // could rest before is forbidden from resting now — it just sits down behind
     // something first.
+    // A WALL THAT HAS FINISHED ITS WORK IS RELEASED HERE, NOT FOUR STAGES LATER.
+    //
+    // `releaseRestedHold` lives at the top of `resumeSuspendedJourney`, which lives in
+    // `passFarm` — the LAST stage. A character holding a wall never reaches it, because this
+    // stage handles the pass and returns first. So the release could only ever run for a
+    // character that was not holding anything, which is the one case it is not for.
+    //
+    // Watched live, one sample every fifteen seconds:
+    //
+    //   holding a proven safe spot | 587 | hp 30/46 | suspended to 38  age  21s
+    //   holding a proven safe spot | 587 | hp 46/46 | suspended to 38  age 106s
+    //   holding a proven safe spot | 587 | hp 46/46 | suspended to 38  age 206s
+    //
+    // Everything worked: the watchdog kept the journey, the character took a proven wall, it
+    // healed thirty to forty-six. Then it sat at FULL HEALTH for another hundred seconds
+    // carrying a destination, with health at 100% and vigor at the resting cap — both release
+    // conditions satisfied, and nothing asking.
+    //
+    // Called here so the wall is given up on the pass that finishes it. The release itself is
+    // unchanged and still refuses a hurt character; all that changes is that it is asked.
+    if (this.hold && this.suspendedJourney) this.releaseRestedHold();
+
     // THE RECOVERY STOP A JOURNEY ASKED FOR, and the one poison always needs.
     //
     // Two triggers, one answer — a wall FORWARD on the route, mended at, objective kept:

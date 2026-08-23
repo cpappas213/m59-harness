@@ -265,6 +265,33 @@ console.log('\nthe wiring the keeper cannot check for itself');
 
 
 console.log('');
+console.log('A WALL THAT HAS FINISHED ITS WORK IS RELEASED IN THE STAGE THAT OWNS IT');
+{
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const stage = src.slice(src.indexOf('async passFleeAndRest'), src.indexOf('async passFollow'));
+  // `releaseRestedHold` lives at the top of `resumeSuspendedJourney`, which lives in
+  // `passFarm` — the LAST stage. A character holding a wall never reaches it, because
+  // passFleeAndRest handles the pass and returns first. So the release could only ever run
+  // for a character that was not holding anything, which is the one case it is not for.
+  //
+  // Watched live, fifteen seconds a sample:
+  //
+  //   holding a proven safe spot | 587 | hp 30/46 | suspended to 38  age  21s
+  //   holding a proven safe spot | 587 | hp 46/46 | suspended to 38  age 106s
+  //   holding a proven safe spot | 587 | hp 46/46 | suspended to 38  age 206s
+  //
+  // Full health, vigor at the resting cap, a destination still carried — both release
+  // conditions satisfied and nothing asking.
+  ok('the stage that owns the wall asks whether it is finished',
+     /this\.hold && this\.suspendedJourney[\s\S]{0,60}releaseRestedHold\(\)/.test(stage));
+  ok('and only when there is a journey waiting on it',
+     /if \(this\.hold && this\.suspendedJourney\)/.test(stage));
+  // The release itself is unchanged: a hurt character still keeps its wall.
+  ok('the release still refuses a hurt character',
+     /hp < \(this\.policy\.holdResumeAbove/.test(src));
+}
+
+console.log('');
 console.log('AN INJURED LEG MENDS AT A WALL FORWARD ON THE ROUTE, AND KEEPS ITS DESTINATION');
 {
   const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
