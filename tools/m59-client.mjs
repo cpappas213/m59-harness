@@ -1246,6 +1246,24 @@ export class M59Client {
           o.appearanceRevision = ++this.appearanceRevision;
           return [o.id, o];
         }));
+        // SELF-HEAL A STALE selfId. selfId is set only by the BP.PLAYER packet (one per
+        // room entry), and if it ever goes stale — the object map is rebuilt, an id is
+        // reassigned — `self` resolves to undefined and the character is BLIND: no
+        // position, no room, every tick "no room or position yet", while the session
+        // itself stays perfectly alive (so the liveness guard never fires). Re-requesting
+        // room contents cannot fix it, because BP.PLAYER is not resent. Character names
+        // are unique in this game, and we know ours from character select, so the player
+        // object carrying our name in the fresh contents IS us: re-bind selfId to it.
+        if (this.inGame && (this.selfId == null || !this.room.objects.has(this.selfId))
+            && this.me?.name) {
+          const want = String(this.me.name).toLowerCase();
+          const mine = res.objects.find(o => (o.flags & OF.PLAYER)
+            && String(this.rsc.get(o.nameRsc) ?? o.name ?? '').toLowerCase() === want);
+          if (mine) {
+            this.log(`self-heal: selfId ${this.selfId} did not resolve; re-bound to ${mine.id} (${this.me.name})`);
+            this.selfId = mine.id;
+          }
+        }
         this.log(`room ${res.roomId}: ${res.count} object(s)`);
         this.emit('room-contents', { room: res.roomId, count: res.count, request,
                                      objects: res.objects.map(o => describeObject(o, this.lookup)) });

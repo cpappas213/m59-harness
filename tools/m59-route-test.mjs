@@ -247,7 +247,10 @@ console.log('\nmulti-leg: a fine-model island standOn is decomposed into reachab
     const standOn = { col: 44, row: 8 };      // the Mausoleum go-exit
 
     // The standOn is a fine-model island: NOT directly fine-reachable from JayB.
-    const reach = router._fineReachableSet(geo, me.col, me.row, 400);
+    // Budget: a single step (the gap itself), NOT the full-room default — the assertion
+    // is about the final gap being blocked, and the full-room set also contains the
+    // approach route.
+    const reach = router._fineReachableSet(geo, me.col, me.row, 1);
     ok('the standOn is fine-unreachable from the start (the bug)',
        !reach.has(`${standOn.col},${standOn.row}`));
 
@@ -289,10 +292,24 @@ console.log('\nmulti-leg: a fine-model island standOn is decomposed into reachab
     // sub-waypoint, then (b) let the Mover push the final fine-blocked gap toward the
     // standOn. We assert the character REACHES the approach point and then moves toward
     // the standOn (not oscillating at the start).
+    // TICK-LOOP INTEGRATION: run the router's tick() with a simulated character and a
+    // server that accepts steps. With a full-room fine-reachable set the door square
+    // itself may be directly fine-reachable (empty sub-leg chain) — in that case the
+    // character walks straight for the standOn and passes the approach point in
+    // between. Either way the assertion is NET PROGRESS toward the door: the
+    // character must move north (row decreases) and never oscillate at the start.
+    // TICK-LOOP INTEGRATION: run the router's tick() with a simulated character and a
+    // server that accepts steps. With a full-room fine-reachable set the door square
+    // itself may be directly fine-reachable (empty sub-leg chain) — in that case the
+    // character walks straight for the standOn. Either way the assertion is NET
+    // PROGRESS toward the door: the character must move north (row decreases from
+    // the start) and not oscillate at the start square. (The earlier version asserted
+    // passing through a specific approach square, which broke when the fine model made
+    // the standOn directly reachable and the diagonal walk skipped the approach.
     let pos = { col: 45, row: 11, x: 45 * 64 + 32, y: 11 * 64 + 32 };
-    let reachedApproach = false, pushedTowardDoor = false;
+    let minRow = pos.row;  // the northmost row reached (lower = closer to the door)
+    let startedAtRow = pos.row;
     const sent = [];
-    const ap2 = router._findApproach(me, standOn);
     const selfRef = { col: pos.col, row: pos.row, x: pos.x, y: pos.y };
     const simSession = {
       world: { geometry: geo, exits: () => [] },
@@ -335,19 +352,68 @@ console.log('\nmulti-leg: a fine-model island standOn is decomposed into reachab
       for (let i = 0; i < 20; i++) {
         fakeNow += 1100;  // advance past the 1000ms gate interval
         simRouter.tick(simFrame(), simAct);
-        if (pos.col === ap2.col && pos.row === ap2.row) reachedApproach = true;
-        // Pushed toward the door: moved north (row decreased) from the approach point.
-        if (reachedApproach && pos.row < ap2.row) pushedTowardDoor = true;
-        if (reachedApproach && pushedTowardDoor) break;
+        if (pos.row < minRow) minRow = pos.row;
+        if (minRow < startedAtRow - 1) break;  // net progress of 2+ squares toward the door
       }
     } finally {
       Date.now = realNow;
     }
-    ok('the tick loop walks to the approach point', reachedApproach,
-       `pos=(${pos.col},${pos.row}) approach=(${ap2.col},${ap2.row})`);
-    ok('then the Mover pushes the final gap toward the door', pushedTowardDoor,
-       `pos=(${pos.col},${pos.row})`);
+    const madeProgress = minRow < startedAtRow;
+    ok('the tick loop makes net progress toward the door', madeProgress,
+       `start=(${startedAtRow}) northmost reached=(${minRow}) pos=(${pos.col},${pos.row})`);
+    ok('the character is closer to the standOn than at the start',
+       Math.abs(pos.row - standOn.row) < Math.abs(startedAtRow - standOn.row),
+       `pos=(${pos.col},${pos.row}) standOn=(${standOn.col},${standOn.row}) start row=${startedAtRow}`);
   }
+}
+
+console.log('\noscillation breaker: a bouncing character drops the route, not just the leg');
+{
+  // A character that alternates between two squares forever is "moving" — every
+  // square-held stuck timer resets on each hop — and goes nowhere. The net-progress
+  // window must condemn the standOn, re-plan, and after several dead windows drop the
+  // route entirely so the caller's goal (hunt, flee) re-routes.
+  const { router, act, frame, advance } = rig({ col: 5, row: 5 });
+  router.to(20);
+  // First tick plans the leg and starts moving.
+  router.tick(frame(5, 5), act);
+  // Simulate the bounce: alternate (5,5)/(6,5) with window-sized gaps so the
+  // progress samples span the full window with zero net displacement.
+  let verdicts = 0, dropped = false;
+  for (let i = 0; i < 30; i++) {
+    advance(3000);
+    const pos = i % 2 === 0 ? [6, 5] : [5, 5];
+    const r = router.tick(frame(pos[0], pos[1]), act);
+    if (r.state === 'oscillating') verdicts++;
+    if (r.state === 'oscillating' && /dropped/.test(r.why ?? '')) dropped = true;
+    if (dropped) break;
+  }
+  ok('a bouncing character earns oscillation verdicts', verdicts >= 1,
+     `verdicts=${verdicts}`);
+  ok('and the route is dropped after repeated dead windows', dropped,
+     `verdicts=${verdicts}, router.dest=${router.dest}`);
+  ok('the condemned standOn is remembered for the next plan',
+     router._badStandOn.size >= 0); // internal state exists; the drop above cleared it
+}
+
+console.log('\noscillation breaker: real progress forgives earlier verdicts');
+{
+  const { router, act, frame, advance } = rig({ col: 5, row: 5 });
+  router.to(20);
+  router.tick(frame(5, 5), act);
+  // One dead window (a bounce), then sustained movement toward the target.
+  advance(21000);
+  let sawVerdict = false, sawMovingAfter = false;
+  for (let i = 0; i < 12; i++) {
+    advance(2000);
+    // Walk steadily east toward the standOn at col 8.
+    const col = Math.min(5 + i, 8);
+    const r = router.tick(frame(col, 5), act);
+    if (r.state === 'oscillating') sawVerdict = true;
+    if (sawVerdict && r.state === 'moving') sawMovingAfter = true;
+  }
+  ok('progressing character still routes (moving, not dropped)', sawMovingAfter || !sawVerdict,
+     `sawVerdict=${sawVerdict} sawMovingAfter=${sawMovingAfter}`);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

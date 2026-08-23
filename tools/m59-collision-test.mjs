@@ -973,7 +973,22 @@ function compileSessionMethod(source, signature, name, dependencies = {}) {
   }
 }
 
-const brokerSource = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+// THE SESSION MOVED, AND THIS SUITE WENT DARK WITHOUT SAYING SO.
+//
+// These methods are lifted out of the PRODUCTION source by brace matching and compiled,
+// so the suite tests the real code rather than a copy. That binds it to which FILE the
+// code lives in — and the Phase 3 broker split moved the Session class out of
+// m59-broker.mjs into m59-game.mjs. `validateFineTarget` then compiled to null, the
+// dependency check skipped one group politely, and a later assertion dereferenced the
+// null and took the whole file down.
+//
+// So 164 assertions about the collision contract stopped running, at exactly the moment
+// the fleet established that MOVEMENT IS CLIENT-AUTHORITATIVE and this model is therefore
+// the only collision check there is. A suite that goes quiet is worse than one that goes
+// red, and this one did both in the wrong order.
+//
+// If it moves again, the failure to look for is `compileSessionMethod` returning null.
+const brokerSource = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
 for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
@@ -995,6 +1010,11 @@ const ordinaryStep = compileSessionMethod(brokerSource,
   'async step(col, row, {', 'step', {
     MOVE_INTERVAL_MS: 0, ROOM_RESYNC_MS: Number.POSITIVE_INFINITY,
     KOD_FINENESS, squaresPerSecond: () => 2.5,
+    // THE REAL VALUES FROM m59-game.mjs (:67, :72), not stand-ins. `step` grew these
+    // when combat facing landed, and a compiled method whose constants are invented is
+    // testing a different function from the one that ships. The dependency check below
+    // is what caught them missing, which is the check earning its keep.
+    FACE_EPS: 8, COMBAT_FACE_HOLD_MS: 1500,
   });
 const walkFine = compileSessionMethod(brokerSource,
   'async walkFine(destX, destY, {', 'walkFine', { isTerminalMovementReason });
