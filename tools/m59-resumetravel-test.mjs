@@ -44,7 +44,7 @@
 // It should fail the day a resume stops asking one of those five questions, or the day
 // something other than a player starts abandoning journeys.
 
-import { Autopilot, HANDLED, CONTINUE } from './m59-autopilot.mjs';
+import { Autopilot, HANDLED, CONTINUE, PASS_STAGES } from './m59-autopilot.mjs';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -438,6 +438,73 @@ console.log('A REST STOP ENDS WHEN THERE IS NOTHING LEFT TO GAIN BY STANDING THE
   const noHold = keeper({ health: 54, max: 54, vigor: 80 });
   ok('a character with no hold is a no-op rather than a throw',
      noHold.releaseRestedHold() === false && noHold.left.length === 0 && noHold.notes.length === 0);
+}
+
+console.log('');
+console.log('THE RUNG THAT RESUMES HAS TO GET A TURN, AND FOR A DAY IT DID NOT');
+{
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  // NARROWED TO THE BRANCH, NOT TO THE FILE BETWEEN TWO METHOD NAMES. Both
+  // `resumeSuspendedJourney` and `releaseRestedHold` are defined between `passErrand` and
+  // `passFarm`, and both legitimately mention the gates the last assertion here says must
+  // not be COPIED into the idle branch. Slicing by method name swallowed them and the first
+  // draft duly failed against perfectly correct code — twice, on two different methods.
+  //
+  // So the subject is the branch itself: from the idle test to the end of the stage.
+  const errandAll = src.slice(src.indexOf('async passErrand'), src.indexOf('async passFarm'));
+  // The branch ends where the STAGE does: `return CONTINUE;` at four spaces. Matching a
+  // closing brace instead ran 14,640 characters past the end of the stage and swept in the
+  // whole of `resumeSuspendedJourney` again, which is the third spelling of this same
+  // mistake in one sitting — a slice is only as good as the thing that terminates it.
+  const idleAt = errandAll.indexOf("if (this.mode === 'idle') {");
+  const stageEnd = errandAll.indexOf('\n    return CONTINUE;', idleAt);
+  const errand = idleAt >= 0 ? errandAll.slice(idleAt, stageEnd > 0 ? stageEnd : undefined) : '';
+  ok('the idle branch is where it always was, at the tail of the stage', idleAt >= 0);
+
+  // THE FAILURE THIS PINS. `passErrand` ends with an idle catch-all that claimed the tick
+  // for ANY character in `mode idle`, and `passFarm` — which holds `resumeSuspendedJourney`
+  // — is the very next rung. A journey that ends short sets the character idle, so from the
+  // instant an objective was suspended the rung that would resume it never ran again.
+  //
+  // Three fixes went into the resume's own gates before this was found, and none of them
+  // could have mattered. The ladder tracer's first run said so in one line:
+  //
+  //   ran: passUnderworld -> ... -> passErrand   [28 passes, 33s, room 596]
+  //
+  // seven rungs and no eighth. It should fail the day the eighth stops being reachable.
+  ok('the idle branch asks whether there is an objective before claiming the tick',
+     /A SUSPENDED JOURNEY IS A JOB/.test(errand));
+  ok('and hands the tick to the resume when there is one',
+     /this\.suspendedJourney[\s\S]{0,160}resumeSuspendedJourney/.test(errand));
+  ok('and still hibernates when the resume declines, because mending is what idle is for',
+     /idle: no job to do/.test(errand));
+  // The resume must be ASKED, not reimplemented here — one copy of the gates, in one place.
+  ok('the idle branch does not re-implement any resume gate',
+     !/travelStartHealth|REST_VIGOR_CAP|resumeFlat/.test(errand));
+
+  // AND THE LADDER ORDER IS UNCHANGED. Fixing this by reordering PASS_STAGES would have
+  // moved a directional decision above survival, which is the one thing the boundary
+  // between this repository and a bot is not allowed to do.
+  ok('passFarm is still last', PASS_STAGES[PASS_STAGES.length - 1] === 'passFarm',
+     PASS_STAGES.join(','));
+  ok('and passErrand is still the one before it',
+     PASS_STAGES[PASS_STAGES.length - 2] === 'passErrand', PASS_STAGES.join(','));
+}
+
+console.log('');
+console.log('AND THE WALK IS RECORDED, BECAUSE THAT IS WHAT FOUND IT');
+{
+  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  // Every other instrument reports the RESULT of the ladder walk. This one reports the walk,
+  // and three different bugs share the symptom `mode idle` without it.
+  ok('the ladder records which rungs got a turn', /const ran = \[\];/.test(src));
+  ok('and which one ended the tick', /traceThisPass\(ctx, ran, stage\)/.test(src));
+  ok('and says so when every rung passed', /traceThisPass\(ctx, ran, null\)/.test(src));
+  ok('and it carries the objective, which is the field it was built for',
+     /suspended_to: this\.suspendedJourney/.test(src));
+  // A diagnostic that can end a tick is worse than no diagnostic.
+  ok('and a diagnostic can never end a tick',
+     /never break the keeper/.test(src));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

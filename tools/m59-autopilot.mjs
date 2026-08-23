@@ -38,6 +38,7 @@ import { arenaCall } from './m59-chatter.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
 import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
+import { traceLadder, traceDecision } from './m59-keeper-trace.mjs';
 import { detailSettings, recordStrategyStat, saveVaultSnapshot }
   from './m59-strategy-stats.mjs';
 import { routeTravelKind } from './m59-travel-kind.mjs';
@@ -8421,7 +8422,13 @@ export class Autopilot {
   //
   // Returns the stage that ended the tick, or null if every one of them passed.
   async runPassLadder(ctx) {
+    // THE ONLY PLACE THAT KNOWS WHICH RUNGS GOT A TURN. Everything else reports the result
+    // of this walk; `M59_KEEPER_TRACE=1` reports the walk. Free when off — `traceLadder`
+    // returns on its first line — and run-length collapsed when on, so a character stuck
+    // for six minutes is one row saying so rather than four hundred saying nothing.
+    const ran = [];
     for (const stage of PASS_STAGES) {
+      ran.push(stage);
       const verdict = await this[stage](ctx);
       if (verdict === CONTINUE) continue;
       if (verdict !== HANDLED) {
@@ -8437,9 +8444,33 @@ export class Autopilot {
                'neither, and used to be read as "carry on to the next stage"',
         });
       }
+      this.traceThisPass(ctx, ran, stage);
       return stage;
     }
+    this.traceThisPass(ctx, ran, null);
     return null;
+  }
+
+  // The shape of one walk, for the ladder tracer. Kept out of `runPassLadder` so the ladder
+  // reads as the ladder, and wrapped so a diagnostic can never end a tick.
+  traceThisPass(ctx, ran, decidedBy) {
+    try {
+      traceLadder({
+        who: this.who?.() ?? this.character ?? '?',
+        pass: this.passes ?? 0,
+        decided_by: decidedBy,
+        ran,
+        room: Number(ctx?.room?.num ?? this.s?.world?.room?.num ?? NaN) || null,
+        mode: this.mode ?? null,
+        doing: this.doing ?? null,
+        health: ctx?.hp ?? null,
+        vigor: vigorPct(ctx?.v) ?? null,
+        // THE FIELD THIS WAS BUILT FOR. A character carrying an objective while some other
+        // rung ends every tick is the exact shape that cost this session three rounds.
+        suspended_to: this.suspendedJourney?.to ?? null,
+        holding: !!this.hold,
+      });
+    } catch { /* never break the keeper */ }
   }
 
   // ── passUnderworld: extracted from pass() ────────────────────────────────
@@ -10768,6 +10799,33 @@ export class Autopilot {
     // regeneration rate and it is what swinging spends. Standing about at 30 of 200
     // because nobody gave us a task is throwing away the one thing idle time is for.
     if (this.mode === 'idle') {
+      // A SUSPENDED JOURNEY IS A JOB, AND "no job to do" WAS ASSERTED WITHOUT LOOKING.
+      //
+      // This branch claims the tick for ANY idle character, and `passFarm` — which is where
+      // `resumeSuspendedJourney` lives — is the very next rung. A journey that ends short
+      // sets the character idle, so from the instant an objective was suspended it could
+      // never be picked back up: the rung that would have done it never ran again.
+      //
+      // That is the whole of a failure this session spent a day inside. Three separate
+      // fixes went into the resume's own gates — the health floor, the vigor cap, the trend
+      // test — and every one of them was inside a stage that was not being reached. The
+      // measured shape, on the ladder tracer's first run:
+      //
+      //   ran: passUnderworld -> passArm -> passPlaybook -> passFleeAndRest
+      //        -> passFollow -> passOutside -> passErrand          [28 passes, 33s, room 596]
+      //
+      // Seven rungs, and the eighth never got a turn.
+      //
+      // ASKED HERE RATHER THAN BY REORDERING THE LADDER. The resume belongs in `passFarm`:
+      // it is a directional decision, and the ladder's order is load-bearing and asserted by
+      // `m59-passorder-test.mjs`. What was wrong is not where the resume lives, it is that
+      // an idle catch-all declared there was nothing to do without asking. So it asks, and
+      // the answer is the same object either way — a resume that fires returns HANDLED here,
+      // and one that declines falls through to the hibernate below, which is exactly what a
+      // character that is still mending should be doing anyway.
+      if (this.suspendedJourney
+          && await this.resumeSuspendedJourney(ctx).catch(() => CONTINUE) === HANDLED)
+        return HANDLED;
       if (await this.hibernate('idle: no job to do').catch(() => false)) return HANDLED;
       return HANDLED;
     }
@@ -10843,6 +10901,7 @@ export class Autopilot {
     // alone, the note scrolled out of `recent` long before anybody looked and the refusal
     // was invisible again — which is the whole failure this was added to end.
     const key = why + '|' + JSON.stringify(detail);
+    traceDecision(this.who?.() ?? '?', 'resume declined', { why, ...detail });
     if (this.resumeSaid === key) return CONTINUE;
     this.resumeSaid = key;
     this.note('not resuming the journey yet', { why, ...detail });
