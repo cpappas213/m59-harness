@@ -4251,10 +4251,90 @@ class Session {
     arriveWithin = 40,
     movementGeneration = this.movementGeneration,
     controlToken,
+    // Internal. Set when this call is already walking one leg of a planned path, so the
+    // planner below does not run again per leg.
+    _leg = false,
   } = {}) {
     const c = this.need();
     const startRoom = c.room.id;
     let me = c.self ?? await this.selfOrResync();
+
+    // ================= A LONG FINE WALK MUST FOLLOW THE MAP, NOT THE BEARING =================
+    //
+    // This walker aims AT ITS TARGET and slides off whatever it hits. That is exactly right
+    // for a sub-square nudge at a doorway, which is what it was built for. Given a distance
+    // to cover it becomes a machine for grinding along walls, because a bearing is not a
+    // route and geometry is not obliged to lie in the direction you want to go.
+    //
+    // Measured in Ukgoth, 2026-08-24, from the collision trace of one crossing:
+    //
+    //     room 599:  124 moves, 14 sent, 110 REFUSED — 156 geometry_blocked
+    //     room 598:   29 moves, 14 sent,  15 refused
+    //
+    //     fine 3738,493 -> aimed 3755,538   geometry_blocked
+    //     fine 3729,524 -> aimed 3752,566   geometry_blocked
+    //     fine 3727,538 -> aimed 3752,579   geometry_blocked
+    //
+    // Nine tenths of the packets in Ukgoth were refused. It kept aiming SOUTH-EAST at a
+    // distant point and creeping south-WEST fifteen units at a time along a wall. The
+    // operator's account of that room is the other half of the explanation: the successful
+    // shape there is a Z and an E — a lot of zig-zagging — and the way forward is often not
+    // towards the exit at all. A walker that aims at the exit cannot express that, and will
+    // spend its whole packet budget being told no.
+    //
+    // So: over a couple of squares, ask the map for a route and walk its corners. The
+    // collision-aware planner finds one to all forty boundary targets in both of these
+    // rooms, so this is not a case of the geometry being unroutable — it is a case of nobody
+    // having asked. Under that distance nothing changes, and the doorway nudge this function
+    // exists for is untouched.
+    //
+    // `_leg` stops the planner recursing once per corner. If no route can be planned the old
+    // behaviour stands, because a bearing is still better than refusing to move.
+    const FINE_PLAN_OVER = Number(process.env.M59_FINE_PLAN_OVER || 2) * KOD_FINENESS;
+    if (!_leg && me && Number.isFinite(me.x)) {
+      const far = Math.hypot(destX - me.x, destY - me.y) > FINE_PLAN_OVER;
+      const geo = this.world?.geometry;
+      if (far && geo && typeof geo.path === 'function') {
+        const toCol = Math.floor(destX / KOD_FINENESS), toRow = Math.floor(destY / KOD_FINENESS);
+        let plan = null;
+        try { plan = geo.path(me.row, me.col, toRow, toCol, {}); } catch { plan = null; }
+        const steps = plan?.found ? (plan.steps ?? []) : null;
+        if (steps && steps.length > 1) {
+          // The corners only. Every square would be one packet per square, which is the
+          // pace this repository already measured as "more packets than a person, less
+          // ground"; the pull's own corners are what a running client would aim at.
+          const corners = [];
+          for (let i = 1; i < steps.length; i++) {
+            const a = steps[i - 1], b = steps[i], n = steps[i + 1];
+            if (!n || (n.row - b.row) !== (b.row - a.row) || (n.col - b.col) !== (b.col - a.col))
+              corners.push(b);
+          }
+          const half = KOD_FINENESS >> 1;
+          let walked = 0;
+          for (const st of corners) {
+            if (this.movementWasCancelled(movementGeneration, controlToken))
+              return this.cancelledMovement({ steps: walked });
+            const r = await this.walkFine(st.col * KOD_FINENESS + half,
+                                          st.row * KOD_FINENESS + half,
+                                          { avoidSquares, maxSteps, stride, arriveWithin,
+                                            movementGeneration, controlToken, _leg: true })
+                                .catch(() => null);
+            walked += r?.steps ?? 0;
+            if (r?.left_room) return { ...r, steps: walked, via_path: true };
+            if (r && isTerminalMovementReason(r.reason))
+              return { ...r, steps: walked, via_path: true };
+          }
+          // The last stretch is the ordinary aim, from a corner that can see the target.
+          const last = await this.walkFine(destX, destY,
+                                           { avoidSquares, maxSteps, stride, arriveWithin,
+                                             movementGeneration, controlToken, _leg: true })
+                                 .catch(() => null);
+          return { ...(last ?? { arrived: false, reason: 'fine path ended without a final aim' }),
+                   steps: walked + (last?.steps ?? 0), via_path: true, corners: corners.length };
+        }
+      }
+    }
+
     if (!me) return { arrived: false, reason: 'own_position_unknown',
                       note: 'own position is unknown and a re-read did not recover it' };
 
