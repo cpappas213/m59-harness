@@ -95,8 +95,15 @@ function call(name, args, ms = 90000) {
       let t = ''; res.setEncoding('utf8');
       res.on('data', c => { t += c; });
       res.on('end', () => {
-        try { done(JSON.parse(JSON.parse(t).result.content[0].text)); }
-        catch (e) { done({ _error: e.message }); }
+        let text = null;
+        try { text = JSON.parse(t).result.content[0].text; }
+        catch (e) { return done({ _error: `no result from ${name}: ${String(t).slice(0, 80)}` }); }
+        // A TOOL THAT REFUSES ANSWERS IN PROSE. `travel` replies "error: <agent> is not in
+        // game" as bare text, and parsing that as JSON reports a SyntaxError — which reads
+        // like a broken tool instead of a refused request, and put three characters in the
+        // first run's report as "Unexpected token 'e'".
+        try { done(JSON.parse(text)); }
+        catch { done({ _error: String(text).trim().slice(0, 120) }); }
       });
     });
     req.on('timeout', () => { req.destroy(); done({ _error: 'timeout' }); });
@@ -187,28 +194,37 @@ async function launch(r) {
   return out;
 }
 
-async function watch(out) {
-  if (out.outcome !== 'running') return out;
-  while (Date.now() - out.began < TIMEOUT) {
+// ONE POLL FOR THE WHOLE FLEET, NOT ONE PER CHARACTER.
+//
+// The first version asked `autopilot action=status` per character every five seconds — 21
+// requests a cycle into a broker whose event loop the same 21 keepers are already sharing,
+// to answer a question that one `fleet` call answers for everybody. It also read the wrong
+// field: a fleet row's `room` is the room's NAME and `room_num` is the number, so every
+// reading came back NaN and the whole first run reported "timed out ... NaN".
+async function watchAll(outs) {
+  const live = new Map(outs.filter(o => o.outcome === 'running').map(o => [o.agent, o]));
+  const began = Date.now();
+  while (live.size && Date.now() - began < TIMEOUT) {
     await sleep(5000);
-    const ap = await call('autopilot', { agent: out.agent, action: 'status' }, 30000);
-    if (ap?._error) continue;
-    const room = Number(ap.room ?? ap.room_num ?? NaN);
-    if (Number.isFinite(room)) out.rooms.add(room);
-    const hp = Number(ap.health ?? NaN), max = Number(ap.max_health ?? ap.max ?? NaN);
-    if (Number.isFinite(hp)) out.low = out.low === null ? hp : Math.min(out.low, hp);
-    if (Number.isFinite(max)) out.max = max;
-    if (room === TO) { out.outcome = 'arrived'; break; }
-    // THE UNDERWORLD IS A DEATH, and it is the only honest way to see one from here: the
-    // journey does not report it, the room read does.
-    if (room === UNDERWORLD) { out.outcome = 'died'; break; }
+    const snap = await call('fleet', {}, 60000);
+    if (snap?._error) continue;
+    for (const row of (snap.fleet ?? [])) {
+      const o = live.get(row.agent);
+      if (!o) continue;
+      const room = Number(row.room_num ?? NaN);
+      if (Number.isFinite(room)) { o.rooms.add(room); o.ended = room; o.endedName = row.room ?? null; }
+      const hp = Number(row.health ?? NaN);
+      if (Number.isFinite(hp)) o.low = o.low === null ? hp : Math.min(o.low, hp);
+      const max = Number(row.max_health ?? row.health_max ?? NaN);
+      if (Number.isFinite(max)) o.max = max;
+      if (room === TO) { o.outcome = 'arrived'; o.ms = Date.now() - o.began; live.delete(row.agent); continue; }
+      // THE UNDERWORLD IS A DEATH, and it is the only honest way to see one from here: the
+      // journey does not report it, the room read does.
+      if (room === UNDERWORLD) { o.outcome = 'died'; o.ms = Date.now() - o.began; live.delete(row.agent); }
+    }
   }
-  if (out.outcome === 'running') out.outcome = 'timed out';
-  out.ms = Date.now() - out.began;
-  const last = await call('autopilot', { agent: out.agent, action: 'status' }, 30000);
-  out.ended = Number(last?.room ?? last?.room_num ?? NaN);
-  out.endedName = last?.room_name ?? null;
-  return out;
+  for (const o of live.values()) { o.outcome = 'timed out'; o.ms = Date.now() - o.began; }
+  return outs;
 }
 
 console.log('launching…');
@@ -217,7 +233,7 @@ for (const r of order) {
   launched.push(await launch(r));
   await sleep(400);           // the pacer is per character; this is only to be kind to the DM port
 }
-const results = await Promise.all(launched.map(watch));
+const results = await watchAll(launched);
 
 // ------------------------------------------------------------------ the report
 const pad = (s, n) => String(s ?? '').padEnd(n);

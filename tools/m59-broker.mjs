@@ -17856,6 +17856,35 @@ function drainExitGaps() {
   }
 }
 
+// HOW LATE THE EVENT LOOP IS RUNNING, WHICH IS NOT THE SAME AS HOW BUSY IT IS.
+//
+// Every keeper in this fleet shares one event loop, and all the geometry is synchronous:
+// `path()` costs 7-88ms a call, `safeSpots()` 15-30ms, and a raw BSP trace 0.3ms with
+// `walkFine` doing many per walk. None of that saturates a core — the shadow broker with 21
+// characters sits at about 24% of one — but it does not arrive smoothly. It arrives in
+// bursts, and while one character is planning, the other twenty get no timer service, so
+// their `sleep(1000)` becomes `sleep(1000 + burst)` and the fleet's movement goes lumpy.
+//
+// That was the operator's read of it from watching them move, and it needs a NUMBER rather
+// than an inference. Timing an HTTP request from outside cannot give one: it measures the
+// handler's own work as well as the delay, and this broker's health handler walks every
+// session. `monitorEventLoopDelay` is in Node core and measures the thing itself.
+//
+// Cumulative since start; `mean`/`p50`/`p99`/`max` in milliseconds. A p99 of a few ms is a
+// loop keeping up. A p99 in the hundreds is a fleet stepping on itself.
+let LOOP_LAG = null;
+try {
+  const { monitorEventLoopDelay } = await import('node:perf_hooks');
+  LOOP_LAG = monitorEventLoopDelay({ resolution: 10 });
+  LOOP_LAG.enable();
+} catch { LOOP_LAG = null; }
+function loopLag() {
+  if (!LOOP_LAG) return null;
+  const ms = n => Math.round(n / 1e5) / 10;      // nanoseconds -> ms, one decimal
+  return { mean: ms(LOOP_LAG.mean), p50: ms(LOOP_LAG.percentile(50)),
+           p99: ms(LOOP_LAG.percentile(99)), max: ms(LOOP_LAG.max) };
+}
+
 function brokerHealth() {
   const readiness = sessionReadiness(sessions);
   return {
@@ -17870,6 +17899,7 @@ function brokerHealth() {
     // Empty is the ordinary answer and is worth saying: "no rooms have drifted" and
     // "nobody has tried to move" are different, so this carries the count either way.
     geometry_drift: geometryDriftReport(),
+    loop_lag_ms: loopLag(),
     ...brokerGameEndpoints(),
   };
 }
