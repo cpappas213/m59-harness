@@ -453,11 +453,12 @@ export class World {
           const seen = new Set([`${origin.row},${origin.col}`]);
           for (let index = 0; index < reachable.length; index++) {
             const at = reachable[index];
-            // The coarse flood (collision: false) widens into fine-open cells (fineWiden) so a
-            // character in a pocket (coarse-sealed, fine-open) can still reach an exit's
-            // staging square. The mover flood (collision: true) already widens via the fine
-            // fallback, so fineWiden is a no-op there.
-            for (const next of geo.neighbors(at.row, at.col, { collision, fineWiden: !collision })) {
+            // NO FINE WIDENING HERE. This flood decides which exits are OFFERED, and
+            // widening it into fine-open cells is how room 27 came to offer the stranded
+            // 2500 boundary and then plan an eight-hop route through it. The fine view is
+            // the MOVER's (roo's `fineNav`), asked for where a body is actually walked;
+            // asking for it while deciding what is reachable invents roads.
+            for (const next of geo.neighbors(at.row, at.col, { collision })) {
               const key = `${next.row},${next.col}`;
               if (seen.has(key)) continue;
               seen.add(key);

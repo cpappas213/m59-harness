@@ -1248,7 +1248,19 @@ export class RoomGeometry {
     return frozen;
   }
 
-  edgeCrossingCandidates(direction) {
+  // THE FINE FALLBACK IS OPT-IN, AND UPSTREAM'S COARSE ANSWER IS THE DEFAULT.
+  //
+  // Wherever this file consults the server's coarse grid, a MOVER wants to fall back to
+  // the BSP when the grid says wall: the grid is not authoritative for players (see
+  // _occupiable), and 137 of 2164 recorded client positions sit in squares it calls
+  // unwalkable. That is right for walking and WRONG FOR ROUTING, which is a different
+  // question — "may a route be planned through here", where being generous invents roads.
+  //
+  // Applied everywhere it cost 12 assertions in m59-routing-test: room 27 began offering
+  // the stranded 2500 boundary and planning an eight-hop route through it. So the fine
+  // view is now asked for by the caller that wants it, and every caller that does not ask
+  // gets exactly the upstream answer.
+  edgeCrossingCandidates(direction, { fineNav = false } = {}) {
     const name = String(direction ?? '').toLowerCase();
     const horizontal = name === 'north' || name === 'south';
     if (!['north', 'south', 'west', 'east'].includes(name)) return [];
@@ -1333,8 +1345,10 @@ export class RoomGeometry {
     // offering the whole crossing lets leaveViaAny try each square and report what happened).
     const coarseOk = all.filter(c => this.walkable(c.row, c.col));
     if (coarseOk.length) return coarseOk;
-    const fineOk = all.filter(c => this.fineWalkable(c.row, c.col) === true);
-    if (fineOk.length) return fineOk;
+    if (fineNav) {
+      const fineOk = all.filter(c => this.fineWalkable(c.row, c.col) === true);
+      if (fineOk.length) return fineOk;
+    }
     return all;
   }
 
@@ -1343,7 +1357,7 @@ export class RoomGeometry {
   // trace alone over-advertises decorative slits on the outside of a wall (Cor Noth
   // is the concrete counterexample). Resolve that question while baking and keep
   // the live exits() hot path to one coarse flood fill.
-  edgeApproachCandidates(direction) {
+  edgeApproachCandidates(direction, { fineNav = false } = {}) {
     const name = String(direction ?? '').toLowerCase();
     if (!['north', 'south', 'west', 'east'].includes(name) || !this.collisionReady) return [];
     if (this._edgeApproachCache.has(name)) return this._edgeApproachCache.get(name);
@@ -1389,7 +1403,7 @@ export class RoomGeometry {
 
     const approaches = [];
     const MAX_STAGE_RADIUS = 4;
-    for (const crossing of this.edgeCrossingCandidates(name)) {
+    for (const crossing of this.edgeCrossingCandidates(name, { fineNav })) {
       const stages = [];
       const seen = new Set();
       let firstStageRadius = null;
@@ -2470,7 +2484,7 @@ export class RoomGeometry {
     // This is how exits()'s reachability flood can see past the coarse grid's silent veto
     // into fine-open cells (pockets), WITHOUT changing the coarse path for every other
     // caller — they simply don't pass fineWiden, and behave exactly as before.
-    const fineFallback = !authoritative && (collision || fineWiden || fine) && (this.walls?.length > 0);
+    const fineFallback = !authoritative && fineWiden && (this.walls?.length > 0);
     const coarseDirs = fineFallback ? new Set(this.openDirections(row, col, { fine }).map(d => `${d.dr},${d.dc}`)) : null;
     const dirs = authoritative || fineFallback ? DIRS : this.openDirections(row, col, { fine });
     for (const d of dirs) {
@@ -2687,7 +2701,7 @@ export class RoomGeometry {
 
   path(fromRow, fromCol, toRow, toCol,
        { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
-         blockedEdges = null, extraCost = null,
+         blockedEdges = null, extraCost = null, fineNav = false,
          // How hard to prefer the open side of a gap — see clearanceField.
          //
          // OFF BY DEFAULT, AND THAT IS THE SAFE DIRECTION. A preference that shapes a long
@@ -2786,11 +2800,12 @@ export class RoomGeometry {
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
     if (!this.standable(toRow, toCol)) {
-      // Fine grid is the source of truth. When the room has wall data,
-      // fineWalkable is the primary check.
-      const fine = this.walls?.length > 0 ? this.fineWalkable(toRow, toCol) : null;
-      if (fine === false) return { found: false, reason: 'goal square has no floor' };
-      // fine === true or null: allow the goal
+      // THE MOVER'S VIEW, ON REQUEST ONLY — see the note on edgeCrossingCandidates.
+      // With fineNav the BSP overrules the coarse grid for the goal square; without it
+      // the coarse grid is final, which is upstream's answer and the router's.
+      const fine = fineNav && this.walls?.length > 0 ? this.fineWalkable(toRow, toCol) : null;
+      if (!fineNav || fine === false)
+        return { found: false, reason: 'goal square has no floor' };
     }
     if (fromRow === toRow && fromCol === toCol) return { found: true, steps: [] };
 
@@ -2824,7 +2839,7 @@ export class RoomGeometry {
     if (!this.standable(fromRow, fromCol)) {
       // Fine grid is the source of truth. If the fine grid says the start
       // is walkable, the character is fine — don't drag it to nearestWalkable.
-      const fine = this.walls?.length > 0 ? this.fineWalkable(fromRow, fromCol) : null;
+      const fine = fineNav && this.walls?.length > 0 ? this.fineWalkable(fromRow, fromCol) : null;
       if (fine !== true) {
         const near = this.nearestWalkable(fromRow, fromCol);
         if (!near) return { found: false, reason: 'no floor anywhere near the starting square', stuck: true };
