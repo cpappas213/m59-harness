@@ -8354,7 +8354,43 @@ export class Autopilot {
     // unless the roster consents (PROTECTED_FACULTIES); a keeper that stood down for an
     // errand and then watched the character die had given it away anyway.
     const wedge = w.wedged;
-    if (this.inert && wedge?.inert && wedge.taking_hits
+    // A WEDGED ERRAND IS RESCUED. A WEDGED JOURNEY IS NOT CANCELLED.
+    //
+    // The operator's rule again — death or a player, nothing else stops a trip — and this
+    // was the last thing in the file still breaking it. Measured on the two most recent
+    // journeys before this change, both of which ended here:
+    //
+    //     599 -> 2    FAIL  movement cancelled by the watchdog rescuing a stalled driver
+    //     587 -> 597  FAIL  movement cancelled by the watchdog rescuing a stalled driver
+    //
+    // and the rung's OWN comment, written after an earlier death, already says what the
+    // cancel costs: "measured in Ukgoth, the rail was cancelled at 12 of 112 by the watchdog
+    // rescuing a stalled driver and the character then walked ZERO squares in fifteen
+    // seconds while the ladder ran through 'could not reach the safe spot', 'will not rest
+    // in the open here', 'leaving the room to recover safely', 'could not leave' — and died."
+    // It was known to be lethal and kept because nothing had connected it to the rule.
+    //
+    // AND THE WEDGE IT ANSWERS HAS LARGELY BEEN FIXED AT ITS SOURCE. The blind grinding this
+    // used to catch was `walkFine` aiming at a bearing over a distance — nine tenths of the
+    // packets in Ukgoth refused, the body creeping sideways along a wall. That walker now
+    // follows a planned route, and the same crossing went from 107 seconds to 15.
+    //
+    // An ERRAND is a different case and keeps its rescue: something else is driving, it has
+    // stopped moving the body, and there is no destination being thrown away by stepping in.
+    const travelling = !!this.inert?.travelling;
+    if (travelling && wedge?.inert && wedge.taking_hits
+        && (now - wedge.since) >= INERT_RESCUE_MS && w.rescuedPass !== this.passes
+        && !w.saidTravelWedge) {
+      w.saidTravelWedge = true;
+      this.note('wedged mid-journey, and the journey stands', {
+        wedged_for_s: Math.round((now - wedge.since) / 1000),
+        health: hp?.value == null ? null : `${hp.value}/${hp.max}`,
+        why: 'only a death or a player ends a trip. Cancelling this is what put a character ' +
+             'in Ukgoth that walked zero squares in fifteen seconds and died — the mover is ' +
+             'left to unstick itself, which is now a planned route rather than a bearing',
+      });
+    }
+    if (!travelling && this.inert && wedge?.inert && wedge.taking_hits
         && (now - wedge.since) >= INERT_RESCUE_MS && w.rescuedPass !== this.passes) {
       const frac = pct(hp);
       if (frac !== null && frac < this.safety().fleeAt) {

@@ -607,5 +607,39 @@ console.log('A REFUGE IS SOMEWHERE YOU STOP UNTIL YOU ARE WHOLE');
      && /leaving the refuge/.test(AUTOPILOT_SRC));
 }
 
+
+// ---------------------------------------------------------------------------
+// NOT EVEN THE WATCHDOG STOPS A JOURNEY.
+//
+// The last thing in the file that broke the operator's rule. The two most recent journeys
+// before it was fixed both ended here:
+//
+//     599 -> 2    FAIL  movement cancelled by the watchdog rescuing a stalled driver
+//     587 -> 597  FAIL  movement cancelled by the watchdog rescuing a stalled driver
+//
+// and the rung's own comment, written after an earlier death, already said what it cost:
+// "the rail was cancelled at 12 of 112 by the watchdog rescuing a stalled driver and the
+// character then walked ZERO squares in fifteen seconds ... and died". Known to be lethal,
+// and kept, because nothing had connected it to the rule.
+//
+// An ERRAND keeps its rescue: something else is driving, it has stopped moving the body, and
+// no destination is thrown away by stepping in.
+console.log('');
+console.log('NOT EVEN THE WATCHDOG STOPS A JOURNEY');
+{
+  ok('the wedge rescue asks whether this is a journey first',
+     /const travelling = !!this\.inert\?\.travelling;/.test(AUTOPILOT_SRC));
+  ok('and only cancels when it is NOT one',
+     /if \(!travelling && this\.inert && wedge\?\.inert/.test(AUTOPILOT_SRC));
+  ok('a wedged journey says so rather than going quiet',
+     /wedged mid-journey, and the journey stands/.test(AUTOPILOT_SRC));
+  ok('once, not every pass — this runs on a 500ms clock',
+     /saidTravelWedge/.test(AUTOPILOT_SRC));
+  // AND THE BLIND-WALK WATCHDOG ALREADY DID THE RIGHT THING, which is worth pinning so
+  // nobody "fixes" it into symmetry with the other one.
+  ok('the blind-walk watchdog was already skipping travelling characters',
+     /if \(blockedFor < WATCHDOG_BLOCKED_MS\) return;[\s\S]{0,400}if \(this\.inert\) return;/.test(AUTOPILOT_SRC));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
