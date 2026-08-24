@@ -6233,7 +6233,41 @@ class Session {
         // aim at a point roughly sixteen times farther away.
         const pt = fineOnly && typeof geo.standPointWire === 'function'
           ? geo.standPointWire(target.row, target.col) : null;
-        const r = (pt && typeof this.walkFine === 'function')
+        // A DECLARED FALL-JUMP IS NOT A WALK, AND WALKING IT IS HOW UKGOTH STRANDS PEOPLE.
+        //
+        // `m59-falljumps.json` says it outright: the mover's one vertical rule gates
+        // climbing, so "none of these can be expressed as a step". `step()` has taken
+        // `{ fall: true }` since fallTargets landed, and the planner's own waypoints carry a
+        // `fall` flag which `path()`'s walkers honour (see `fall: !!target.fall`). The RAIL
+        // never did — it reaches every waypoint with `walkFine`, which has no way to be told
+        // that this one is a drop.
+        //
+        // So the leg 36,16 -> 38,10 in Ukgoth, the only step in that whole route the mover
+        // refuses, was attempted as an ordinary fine walk: the body steps off the ledge one
+        // square at a time and lands SHORT, in the pocket below. Measured 2026-08-24 with
+        // three characters re-run from the Cragged Mountains: 268 moves in the room, 240
+        // refused, and 230 of the refusals on 49,26 / 49,27 / 50,26 — the floor of that
+        // pocket. Only 8 moves were ever made in the rows the take-off is on.
+        //
+        // The pocket is a trap and the strict geometry knows it: from 48,27 exactly 681
+        // squares are reachable, Castle Victoria and the Cragged Mountains are NOT among
+        // them, and the only door is the Sentinel. The operator's account matches to the
+        // square — get it wrong and the way out is several rooms the long way round.
+        //
+        // Only a DECLARED jump takes this path. That is the whole safeguard: the table is
+        // operator-supplied and walked, never derived, so this cannot become a general
+        // licence to move through geometry the mover refuses.
+        const jumpHere = (here && geo && typeof geo.declaredFallJumps === 'function')
+          ? geo.declaredFallJumps(here.row, here.col)
+              // declaredFallJumps returns the LANDING as {row, col, dir:'fall', distance},
+              // not a nested {to:{...}} — reading it as the latter is a check that silently
+              // never fires, which is the failure mode this repository keeps meeting.
+              .some(j => j.row === target.row && j.col === target.col)
+          : false;
+        const r = jumpHere
+          ? await this.step(target.col, target.row, { fall: true })
+              .catch(e => ({ moved: false, reason: e.message }))
+          : (pt && typeof this.walkFine === 'function')
           ? await this.walkFine(pt.x, pt.y, { maxSteps: 6, stride: 40, avoidSquares })
               .then(w => ({ ...w, moved: w?.arrived ?? w?.moved }))
               .catch(e => ({ moved: false, reason: e.message }))
