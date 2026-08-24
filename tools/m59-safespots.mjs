@@ -565,13 +565,17 @@ export function sheltersAlong(geo, steps, {
   if (!geo || !Array.isArray(steps) || !steps.length) return [];
   const out = [];
   const seen = new Set();
+  // ONE FLOOD FOR THE WHOLE PATH. Every step of a plan is in the same connected component,
+  // so asking per step is the same answer computed fifty times — and it froze the walker for
+  // up to twenty-eight seconds at a stretch when the reachability filter was added.
+  const reachable = reachableFrom(geo, { row: steps[0].row, col: steps[0].col });
   for (let i = 0; i < steps.length; i++) {
     const st = steps[i];
     if (!Number.isFinite(st?.row) || !Number.isFinite(st?.col)) continue;
     let spot = null;
     try {
       spot = nearestSafeSpot(geo, { row: st.row, col: st.col },
-                             { within, book, room, minBackCover });
+                             { within, book, room, minBackCover, reachable });
     } catch { spot = null; }
     if (!spot) continue;
     const k = `${spot.col},${spot.row}`;
@@ -659,6 +663,9 @@ export function nearestSafeSpot(geo, from, {
   // is what `discredited` records — this one is about the walk, not about the wall.
   // See `unreachableSpots` on the keeper for why it is session-scoped and expires.
   unreachable = null,
+  // THE REACHABLE SET, WHEN THE CALLER ALREADY HAS ONE — because computing it is expensive
+  // and a whole path shares one answer. See `canWalkThere` below.
+  reachable = null,
 } = {}) {
   if (!geo || !from) return null;
   // EVERY QUALIFYING SQUARE, NOT THE TOP FEW HUNDRED BY SCORE.
@@ -697,7 +704,17 @@ export function nearestSafeSpot(geo, from, {
   // caller remembered to pass `reach` — see reachableFrom. Null when it cannot be measured,
   // and null means every candidate is allowed through, because refusing them all would turn
   // a checkout with no collision baked into a fleet that never shelters.
-  const canWalkThere = reachableFrom(geo, from);
+  // SUPPLIED BY THE CALLER WHEN THERE IS ONE, BECAUSE THIS IS EXPENSIVE AND SHARED.
+  //
+  // The flood is up to 8,192 squares of `moverStepLands` traces. `sheltersAlong` calls this
+  // once per STEP of a plan, so a fifty-step crossing of a 2,700-square room ran fifty of
+  // them — and the walker froze while it did. Measured in Ukgoth after the reachability
+  // filter went in: median gap between moves 468ms, p90 2,648ms, WORST 27,847ms, and a
+  // character that could not cross the room before something killed it.
+  //
+  // Every step of one path is in the same connected component by construction, so one flood
+  // answers for all of them.
+  const canWalkThere = reachable ?? reachableFrom(geo, from);
   const known = book && room != null ? book.recall(room) : null;
   let best = null;
   let bestPredictedUnreachable = null;
