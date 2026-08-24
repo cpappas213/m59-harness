@@ -3875,7 +3875,27 @@ class Session {
         if (isTerminalMovementReason(r.reason)) return { done: false, legs, singles, ...r };
         const now = c.self;
         if (!now) return { done: false, legs, singles, why: 'own_position_unknown' };
-        if (now.col === target.col && now.row === target.row) { remaining.shift(); continue; }
+        if (now.col === target.col && now.row === target.row) {
+          // ARRIVED AT A REFUGE. SIT DOWN IF WE ARE NOT WHOLE.
+          //
+          // The operator's rule: stop at each safe waypoint until health and vigor are full,
+          // and skip the ones you do not need. Until now the fuel stop put the wall on the
+          // route and WALKED THROUGH IT — the comment above says "nothing stops", which is
+          // right about not cancelling the crossing and wrong about not resting. A refuge you
+          // pass at 40% health is a square, not a refuge.
+          //
+          // This is NOT a cancellation. The mover keeps the body, the route behind this
+          // waypoint is untouched, and the walk continues from here the moment the rest is
+          // done. That is the whole difference between a pause and an ending.
+          if (target.shelter && typeof shelter?.onArrive === 'function') {
+            try { await shelter.onArrive({ col: target.col, row: target.row }); }
+            catch { /* a rest that cannot happen must not strand the crossing */ }
+            if (this.movementWasCancelled(movementGeneration, controlToken))
+              return { done: false, legs, singles, cancelled: true };
+            if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
+          }
+          remaining.shift(); divertedTo = null; continue;
+        }
         return { done: false, legs, singles, why: 'an unproved step landed off plan' };
       }
 
@@ -3915,7 +3935,19 @@ class Session {
       const at = c.self;
       let cut = remaining.findIndex(st => st.col === at.col && st.row === at.row);
       if (cut < 0) cut = 0;
+      // A PROVED LEG CAN SWALLOW THE REFUGE TOO, so the same stop belongs here. Without it
+      // the rest happens only when the shelter was reached by a single unproved step, which
+      // is the less common half and would make this look intermittent rather than broken.
+      const sheltered = remaining.slice(0, cut + 1).some(st => st.shelter);
       remaining = remaining.slice(cut + 1);
+      if (sheltered && typeof shelter?.onArrive === 'function') {
+        try { await shelter.onArrive({ col: at.col, row: at.row }); }
+        catch { /* a rest that cannot happen must not strand the crossing */ }
+        if (this.movementWasCancelled(movementGeneration, controlToken))
+          return { done: false, legs, singles, cancelled: true };
+        if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
+        divertedTo = null;
+      }
     }
     return { done: remaining.length === 0, legs, singles,
              ...(remaining.length ? { why: 'ran out of moves before the route ended' } : {}) };
@@ -4853,7 +4885,8 @@ class Session {
           ? { spots: sheltersAlong(geo, plan.steps,
                                    { book: sp.book ?? null, room: c.room?.num ?? null,
                                      within: sp.within ?? 6 }),
-              need: sp.need, maxDetour: sp.maxDetour ?? 4, onDivert: sp.onDivert ?? null }
+              need: sp.need, maxDetour: sp.maxDetour ?? 4, onDivert: sp.onDivert ?? null,
+              onArrive: sp.onArrive ?? null }
           : null;
         const ran = await this.walkPivots(plan.steps, geo,
                                           { movementGeneration, controlToken, shelter });

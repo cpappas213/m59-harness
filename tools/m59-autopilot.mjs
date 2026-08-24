@@ -7403,6 +7403,39 @@ export class Autopilot {
           // Anything that is not "untouched" is worth the next wall on the way past.
           return hp < (this.policy.travelDivertBelow ?? 0.95);
         },
+        // AND SIT DOWN WHEN WE GET THERE, IF WE ARE NOT WHOLE.
+        //
+        // The operator's rule: stop at each safe waypoint until health and vigor are full,
+        // and skip the ones you do not need. The divert alone only put the wall ON the route
+        // — the walker passed straight through it, so a whole evening of journeys recorded
+        // `0r` rest while crossing rooms full of perfectly good walls.
+        //
+        // Full health AND the resting cap of vigor, because vigor is what pays for running
+        // and running is what makes the next room survivable. `restUntil` aborts the moment
+        // health falls rather than sitting out a leash, so a wall that turns out to be wrong
+        // costs one interrupted rest instead of a death.
+        onArrive: async (where) => {
+          const v = this.s.client?.vitals?.();
+          const hp = v?.health?.max ? v.health.value / v.health.max : null;
+          const vig = vigorPct(v);
+          const whole = (hp === null || hp >= 1) && (vig === null || vig >= REST_VIGOR_CAP);
+          if (whole) return false;                     // the stop we did not need — walk on
+          this.note('resting at a refuge on the way', {
+            where, health: hp === null ? null : Math.round(hp * 100) + '%', vigor: vig,
+            why: 'a refuge passed at less than full is a square rather than a refuge. The ' +
+                 'crossing is not cancelled — the mover keeps the body and the route behind ' +
+                 'this waypoint is untouched',
+          });
+          // BOUNDED, because a refuge that cannot heal must not hold a crossing for ever —
+          // and `abortOnDamage` defaults on, so a wall that turns out to be wrong costs one
+          // interrupted rest rather than a death.
+          const done = await skills.restUntil(this.s, {
+            health: 1, vigor: REST_VIGOR_CAP,
+            maxSeconds: this.policy.refugeRestSeconds ?? 90,
+          }).catch(e => ({ ok: false, why: e.message }));
+          this.note('leaving the refuge', { where, ...(done?.ok === false ? { cut_short: done.why } : {}) });
+          return true;
+        },
         onDivert: (stop, at) => this.note('taking a wall on the way past', {
           where: { col: stop.col, row: stop.row }, proven: stop.proven,
           off_the_road: stop.detour, at_step: at.atStep,
