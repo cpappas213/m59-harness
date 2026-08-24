@@ -3849,6 +3849,19 @@ class Session {
       //
       // This is the difference between a proof and a plan. From room 598's own doorway the
       // pull proves all nine legs — `111111111` — and the crossing is nine moves. From an
+      // AND IT IS NOT THE BODY BEING OFF-CENTRE, WHICH IS THE OBVIOUS READING AND IS WRONG.
+      // The pull traces from where the body actually is; a slid body is not on the stand
+      // point the router priced; `recentreInSquare` exists to put it back. Tried, measured,
+      // reverted — the ratio does not move:
+      //
+      //     before recentring   step 120, pivot 13
+      //     after recentring    step 456, pivot  7
+      //
+      // Ninety percent single steps either way. So the first leg is unproved for a reason
+      // that survives standing in the middle of the square, and the pace gap it causes — one
+      // square per packet against the client's five — is still open. Written down so the next
+      // person does not spend the hour I spent on a plausible-looking idea.
+      //
       // interior square a character was dropped on, the FIRST leg is routinely unproved
       // (`011`, `011111`), and a walker that gives up there gets no benefit from any of it.
       // So an unproved leg is walked as one ordinary step and the route is re-proved from
