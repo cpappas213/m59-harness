@@ -194,9 +194,33 @@ export function bakedPath(table, roomNum, from, to) {
   // it sends and falls back to the fine walker on a refusal, so an `unverified` pivot costs
   // one refused packet and a short walk rather than a wrong crossing. The per-square replay
   // stays as the answer when a route has no pivots baked.
+  // CAPPED AT WHAT THE CLIENT ITSELF COVERS IN ONE PACKET, WHICH IS ABOUT FIVE SQUARES.
+  //
+  // Raw pivots go up to twenty-four squares in Ukgoth, and `followRail` sends each leg as a
+  // single validated move with `walkFine` as the fallback. A twenty-four square move is
+  // refused far more often than it lands, and the fine walker then gropes the whole gap:
+  //
+  //     raw pivots      850 moves, 142 sent, 708 refused   0.54 sent/s
+  //     per-square      463 moves, 395 sent,  68 refused   1.83 sent/s
+  //
+  // The pivots were right about the ROUTE and wrong about the packet. So the long legs are
+  // subdivided along their own straight line — every intermediate point is on a segment the
+  // bake already proved, so this adds no new claim about the geometry, only more chances to
+  // land one.
+  const CAP = 5;
   const pivots = r.pivots?.[key]?.squares;
-  if (Array.isArray(pivots) && pivots.length > 1)
-    return pivots.map(([row, col]) => ({ row, col }));
+  if (Array.isArray(pivots) && pivots.length > 1) {
+    const out = [{ row: pivots[0][0], col: pivots[0][1] }];
+    for (let i = 1; i < pivots.length; i++) {
+      const [ar, ac] = pivots[i - 1], [br, bc] = pivots[i];
+      const span = Math.max(Math.abs(br - ar), Math.abs(bc - ac));
+      const cuts = Math.ceil(span / CAP);
+      for (let k = 1; k <= cuts; k++)
+        out.push({ row: Math.round(ar + (br - ar) * k / cuts),
+                   col: Math.round(ac + (bc - ac) * k / cuts) });
+    }
+    return out;
+  }
   const p = r.routes?.[key];
   if (typeof p !== 'string') return null;
   return replay(from.row, from.col, p);
