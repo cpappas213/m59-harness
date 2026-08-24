@@ -578,5 +578,47 @@ console.log('A TRIP IS REFUGE TO REFUGE — DIVERTS ARE EAGER, CANCELS ARE RARE'
      /THE FUEL-STOP POLICY, HANDED TO THE MOVER FOR THE LENGTH OF THE JOURNEY/.test(AUTOPILOT_SRC));
 }
 
+
+// ---------------------------------------------------------------------------
+// A REFUGE IS SOMEWHERE YOU STOP UNTIL YOU ARE WHOLE — OR WALK PAST IF YOU ARE.
+//
+// The operator's rule completed: stop at each safe waypoint until health and vigor are
+// full, and skip the ones you do not need.
+//
+// The divert alone only put the wall ON the route. The walker's own comment — "nothing
+// stops" — is right about not cancelling the crossing and wrong about not resting, and a
+// whole evening of journeys recorded `0r` rest while crossing rooms holding twelve to
+// twenty-one perfectly good walls. A refuge you pass at 40% health is a square.
+//
+// This is NOT a cancellation, and that distinction is the whole design: the mover keeps the
+// body, the route behind the waypoint is untouched, and the walk continues the moment the
+// rest is done. A pause, not an ending — which is the only kind of stop the operator's
+// "death or a player" rule leaves room for.
+console.log('');
+console.log('A REFUGE IS SOMEWHERE YOU STOP UNTIL YOU ARE WHOLE');
+{
+  ok('the shelter contract carries an arrival hook, not just a divert one',
+     /onArrive: sp\.onArrive \?\? null/.test(BROKER_SRC));
+  ok('and the walker awaits it when it lands on a refuge',
+     /target\.shelter && typeof shelter\?\.onArrive === 'function'/.test(BROKER_SRC));
+  // A PROVED LEG CAN SWALLOW THE WAYPOINT TOO. Handling only the single-step arrival would
+  // make this look intermittent rather than broken, which is worse than either.
+  ok('including when a proved leg swallowed the waypoint whole',
+     /remaining\.slice\(0, cut \+ 1\)\.some\(st => st\.shelter\)/.test(BROKER_SRC));
+  ok('and a rest that cannot happen does not strand the crossing',
+     /a rest that cannot happen must not strand the crossing/.test(BROKER_SRC));
+
+  // THE SKIP IS THE OTHER HALF OF THE RULE.
+  ok('a character that is already whole walks straight past',
+     /if \(whole\) return false;/.test(AUTOPILOT_SRC));
+  ok('and one that is not rests to FULL health and the resting cap',
+     /health: 1, vigor: REST_VIGOR_CAP/.test(AUTOPILOT_SRC));
+  ok('bounded, so a refuge that cannot heal cannot hold a crossing for ever',
+     /refugeRestSeconds \?\? 90/.test(AUTOPILOT_SRC));
+  ok('and it says both arriving and leaving, so a long leg can be read afterwards',
+     /resting at a refuge on the way/.test(AUTOPILOT_SRC)
+     && /leaving the refuge/.test(AUTOPILOT_SRC));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
