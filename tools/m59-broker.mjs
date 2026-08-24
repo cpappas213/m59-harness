@@ -4296,8 +4296,31 @@ class Session {
       const geo = this.world?.geometry;
       if (far && geo && typeof geo.path === 'function') {
         const toCol = Math.floor(destX / KOD_FINENESS), toRow = Math.floor(destY / KOD_FINENESS);
-        let plan = null;
-        try { plan = geo.path(me.row, me.col, toRow, toCol, {}); } catch { plan = null; }
+        // MEMOISED, BECAUSE THIS RUNS ON EVERY FINE WALK OVER TWO SQUARES AND IS NOT CHEAP.
+        //
+        // A collision-aware path over a 71x66 room traces `moverStepLands` per edge. The rail
+        // follower calls this walker once per waypoint, so the room was planned again for
+        // every one of them — and the collision trace shows exactly what that cost, as a gap
+        // between a coarse step and the fine walk that followed it:
+        //
+        //     gap 27665ms at + 0.0s into the walk | after step -> fine
+        //     gap  7019ms at +52.5s               | after step -> fine
+        //
+        // Twenty-seven seconds of planning while a character stood in Ukgoth being eaten.
+        // That is the second time in one evening that a correctness improvement of mine
+        // became a freeze by running once per something instead of once.
+        //
+        // Safe to memoise: no `blockedEdges` are passed here, and a room's geometry does not
+        // change while it is loaded, so the answer is a pure function of the two squares.
+        // Keyed on the room too, because one session walks many of them.
+        const pathKey = c.room.id + ':' + me.row + ',' + me.col + '>' + toRow + ',' + toCol;
+        const memo = (this._finePathMemo ??= new Map());
+        let plan = memo.get(pathKey);
+        if (plan === undefined) {
+          try { plan = geo.path(me.row, me.col, toRow, toCol, {}); } catch { plan = null; }
+          if (memo.size > 512) memo.clear();          // a walk, not a database
+          memo.set(pathKey, plan);
+        }
         const steps = plan?.found ? (plan.steps ?? []) : null;
         if (steps && steps.length > 1) {
           // THREE WAYS TO WALK THIS WERE MEASURED. THE CORNERS WON, AND NOT BY A LITTLE.
