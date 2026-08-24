@@ -4310,42 +4310,13 @@ class Session {
               corners.push(b);
           }
           const half = KOD_FINENESS >> 1;
-          // DISTANCE PER PACKET IS THE ONLY THING THAT IS ACTUALLY SPEED.
-          //
-          // This repository established that from the client and kod source: the `speed`
-          // byte does not move anybody, `MOVEUNITS` per `MOVE_DELAY` gives the real client
-          // five squares a second at a run, and it tells the server at most once a second —
-          // ONE PACKET COVERING ABOUT FIVE SQUARES. The note that recorded it also recorded
-          // what we were doing instead: "more packets than a person, less ground".
-          //
-          // Measured in Ukgoth after the route-following fix above, which is what made this
-          // visible by removing the refusals that were hiding it:
-          //
-          //     1032 moves, 826 sent, 206 refused, ground/move 0.29 squares
-          //
-          // Four packets a second covering under a third of a square each — 1.16 squares a
-          // second against a running player's 5.0. The refusals were the loud problem; this
-          // is the whole of what is left.
-          //
-          // A CORNER LEG IS THE ONE PLACE A LONG STRIDE IS SAFE. Between two corners of a
-          // planned route the line is straight and already proved walkable, which is exactly
-          // the condition the short cautious stride exists to cope with the absence of. So
-          // the legs aim far and the last stretch keeps the caller's stride, because that
-          // one ends at a doorway or a target square where precision is the point.
-          //
-          // Bounded by what the game itself allows rather than by nerve: teleport detection
-          // (user.kod:3072) drains vigor at a squared distance of 200 from the last second
-          // boundary — about fourteen squares — and five is comfortably inside it, which is
-          // why five is what the client does.
-          const LEG_STRIDE = Number(process.env.M59_LEG_STRIDE || 5) * KOD_FINENESS;
           let walked = 0;
           for (const st of corners) {
             if (this.movementWasCancelled(movementGeneration, controlToken))
               return this.cancelledMovement({ steps: walked });
             const r = await this.walkFine(st.col * KOD_FINENESS + half,
                                           st.row * KOD_FINENESS + half,
-                                          { avoidSquares, maxSteps,
-                                            stride: Math.max(stride, LEG_STRIDE), arriveWithin,
+                                          { avoidSquares, maxSteps, stride, arriveWithin,
                                             movementGeneration, controlToken, _leg: true })
                                 .catch(() => null);
             walked += r?.steps ?? 0;
