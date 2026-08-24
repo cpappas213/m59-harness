@@ -208,22 +208,62 @@ export function bakedPath(table, roomNum, from, to) {
   // bake already proved, so this adds no new claim about the geometry, only more chances to
   // land one.
   const CAP = 5;
+  // SUBDIVIDE ALONG THE ROUTE, NEVER ALONG THE STRAIGHT LINE BETWEEN TWO PIVOTS.
+  //
+  // This used to cut a long leg by interpolating between its endpoints, on the argument
+  // that "every intermediate point is on a segment the bake already proved". That argument
+  // is wrong twice: `stringPull` leaves legs it could NOT prove (this room reports two),
+  // and even on a proved leg the straight line is only known to ARRIVE — the points along
+  // it were never asked about individually.
+  //
+  // What that cost, on 2026-08-24, with the route itself finally clean: pivot 29,50 in
+  // Ukgoth is followed by pivot 29,20, thirty squares away, so the first aim out of 29,50
+  // was the interpolated 29,45 — which is rock. `moverStepLands` waves it through, because
+  // it gates on `standable`, and `standable` answers yes to all 4,686 squares in that room.
+  // So the walker aimed into a rock face and stopped. Bbbb's postmortem: "doing: stalled,
+  // moving: false", at 29,50, six of twenty health, eighteen attackers at once, killed by a
+  // Guardian of Zjiria. The route was right and the packets were not.
+  //
+  // The per-square route is the thing that IS proved, square by square, and after bake v3
+  // every square of it is ground the coarse grid agrees exists. So a long leg is filled in
+  // from the route's own squares: the pivots stay as the anchors, and the points between
+  // them are real places the bake walked rather than points on a line over the top of them.
   const pivots = r.pivots?.[key]?.squares;
-  if (Array.isArray(pivots) && pivots.length > 1) {
+  const spelled = r.routes?.[key];
+  const squares = typeof spelled === 'string' ? replay(from.row, from.col, spelled) : null;
+  if (Array.isArray(pivots) && pivots.length > 1 && squares?.length) {
+    const indexOf = new Map();
+    squares.forEach((sq, i) => {
+      const k = `${sq.row},${sq.col}`;
+      if (!indexOf.has(k)) indexOf.set(k, i);
+    });
+    const gap = (x, y) => Math.max(Math.abs(x.row - y.row), Math.abs(x.col - y.col));
     const out = [{ row: pivots[0][0], col: pivots[0][1] }];
-    for (let i = 1; i < pivots.length; i++) {
-      const [ar, ac] = pivots[i - 1], [br, bc] = pivots[i];
-      const span = Math.max(Math.abs(br - ar), Math.abs(bc - ac));
-      const cuts = Math.ceil(span / CAP);
-      for (let k = 1; k <= cuts; k++)
-        out.push({ row: Math.round(ar + (br - ar) * k / cuts),
-                   col: Math.round(ac + (bc - ac) * k / cuts) });
+    let usable = true;
+    for (let i = 1; i < pivots.length && usable; i++) {
+      const from2 = { row: pivots[i - 1][0], col: pivots[i - 1][1] };
+      const to2 = { row: pivots[i][0], col: pivots[i][1] };
+      if (gap(from2, to2) <= CAP) { out.push(to2); continue; }
+      // `replay` returns the squares the path STEPS ONTO, so the start square is not in it
+      // and the first pivot never will be. It is index -1 by construction, not a mismatch.
+      const start = from2.row === from.row && from2.col === from.col;
+      const ia = start ? -1 : indexOf.get(`${from2.row},${from2.col}`);
+      const ib = indexOf.get(`${to2.row},${to2.col}`);
+      // A pivot that is not ON the route it was pulled from means the two disagree, and a
+      // guess between them is exactly what this exists to stop. Fall back to the route.
+      if (ia === undefined || ib === undefined || ib <= ia) { usable = false; break; }
+      let last = ia < 0 ? from2 : squares[ia];
+      for (let j = ia + 1; j <= ib; j++) {
+        if (gap(squares[j], last) >= CAP || j === ib) {
+          out.push({ row: squares[j].row, col: squares[j].col });
+          last = squares[j];
+        }
+      }
     }
-    return out;
+    if (usable) return out;
   }
-  const p = r.routes?.[key];
-  if (typeof p !== 'string') return null;
-  return replay(from.row, from.col, p);
+  if (!squares) return null;
+  return squares;
 }
 
 /**

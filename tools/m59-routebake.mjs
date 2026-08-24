@@ -82,7 +82,20 @@ import { sharedRoomGeometry, CLIENT_FINENESS, STEP_MASK_VERSION } from './m59-ro
 // silently kept.
 //
 //   2 — main region chosen by forward reach rather than largest SCC; blink points recorded
-export const BAKE_VERSION = 2;
+// 3 — plans STRICT-FIRST: where the coarse grid can connect two anchors, that is the route
+//     baked, and the permissive plan is the fallback rather than the default. A v2 table
+//     planned with clip steps everywhere, which in the 70 rooms where standable() answers
+//     yes to every square meant planning with no floor test at all. Measured on the travel
+//     corridor, v3 takes 599 from 147 squares of rock to 0 and 587 from 82 solid-wall
+//     crossings to 12, losing no route in any room.
+// 4 — the strict plan also PREFERS CLEARANCE: a square with a wall against it costs
+//     1 + M59_ROUTE_CLEARANCE (3) instead of 1, so the line keeps a square off the rock
+//     wherever the room allows it. A v3 route means "shortest"; a v4 route means "shortest
+//     that is not scraping a corner", and the two are different lines — watched live,
+//     runners ground along the corner at 29,50 in Ukgoth and took hits for as long as they
+//     were stuck on it. Measured: 599 went from 80% of route squares touching a wall to
+//     21%, and 586 from 58% to 5%, for 3% more length.
+export const BAKE_VERSION = 4;
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -330,27 +343,98 @@ export function components(geometry, { collision = true } = {}) {
 }
 
 /** Shortest collision-valid path from one square to every other, as a came-from map. */
-function bfs(geometry, fromRow, fromCol, { collision = true } = {}) {
+// `coarseFloor` adds back the one veto `neighbors` deliberately dropped, and it is NOT the
+// return of "the coarse grid may refuse a step". It is narrower: the destination square has
+// to be ground the server's grid agrees exists.
+//
+// WHY IT IS NEEDED AGAIN, AFTER BEING ARGUED AWAY. The reason the veto went is measured and
+// still true — in 587 a person ran two steps the coarse grid calls impossible. The reason it
+// is back is that `standable`, which was supposed to be the floor test that replaced it,
+// ANSWERS YES TO EVERY SQUARE IN 70 OF THE 264 BAKED ROOMS. Ukgoth is one: all 4,686 of them.
+// A predicate that cannot say no is not a floor test, and in those rooms the planner has been
+// running with no floor test at all — which is how a route was baked through the rock faces
+// of 599 and crossed four solid walls.
+//
+// So this is used as a PREFERENCE, never a veto: `bakeRoom` plans strictly first and keeps
+// that path when one exists, and falls back to the permissive plan when it does not. 587
+// keeps its corridor, because there the strict plan simply has no path and the fallback runs.
+function bfs(geometry, fromRow, fromCol,
+             { collision = true, coarseFloor = false, clearance = 0 } = {}) {
   const { cols } = geometry;
   const came = new Map();
   const key = (r, c) => r * (cols + 2) + c;
   const start = key(fromRow, fromCol);
   came.set(start, null);
-  let frontier = [[fromRow, fromCol]];
-  while (frontier.length) {
-    const nextFrontier = [];
-    for (const [r, c] of frontier) {
+
+  if (!clearance) {
+    let frontier = [[fromRow, fromCol]];
+    while (frontier.length) {
+      const nextFrontier = [];
+      for (const [r, c] of frontier) {
+        for (const n of geometry.neighbors(r, c, { collision })) {
+          if (coarseFloor && geometry.walkable(n.row, n.col) !== true) continue;
+          const k = key(n.row, n.col);
+          if (came.has(k)) continue;
+          came.set(k, { row: r, col: c, dir: n.dir });
+          nextFrontier.push([n.row, n.col]);
+        }
+      }
+      frontier = nextFrontier;
+    }
+    return { came, key };
+  }
+
+  // KEEP A SQUARE OFF THE WALL WHERE THE ROOM ALLOWS IT.
+  //
+  // An unweighted BFS returns A shortest path, and among the shortest it returns whichever
+  // it happened to expand first — which is routinely the one scraping the inside of a
+  // corner, because that is the shortest. Watched live in Ukgoth: runners ground along the
+  // corner at 29,50, lost speed to it, and took extra hits from the trolls they were
+  // running past for as long as they were stuck on it.
+  //
+  // The fix is not a different path, it is a PREFERENCE. A square with all eight neighbours
+  // walkable costs 1; one with a wall against it costs 1 + `clearance`. So the search takes
+  // a detour of up to `clearance` squares to avoid hugging, and still goes through the tight
+  // place when the room offers nothing else — which is what "wherever possible" has to mean
+  // in a corridor two squares wide.
+  //
+  // Costs are small integers, so this is a bucket queue rather than a heap: no comparator,
+  // no library, and it stays O(edges) the way the BFS it replaces was.
+  const dist = new Map([[start, 0]]);
+  const buckets = [[[fromRow, fromCol]]];
+  const roomy = (r, c) => {
+    for (let dr = -1; dr <= 1; dr++)
+      for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        if (geometry.walkable(r + dr, c + dc) !== true) return false;
+      }
+    return true;
+  };
+  for (let d = 0; d < buckets.length; d++) {
+    const bucket = buckets[d];
+    if (!bucket) continue;
+    while (bucket.length) {
+      const [r, c] = bucket.pop();
+      if (dist.get(key(r, c)) !== d) continue;      // superseded by a cheaper way here
       for (const n of geometry.neighbors(r, c, { collision })) {
+        if (coarseFloor && geometry.walkable(n.row, n.col) !== true) continue;
+        const cost = d + 1 + (roomy(n.row, n.col) ? 0 : clearance);
         const k = key(n.row, n.col);
-        if (came.has(k)) continue;
+        const seen = dist.get(k);
+        if (seen !== undefined && seen <= cost) continue;
+        dist.set(k, cost);
         came.set(k, { row: r, col: c, dir: n.dir });
-        nextFrontier.push([n.row, n.col]);
+        (buckets[cost] ??= []).push([n.row, n.col]);
       }
     }
-    frontier = nextFrontier;
   }
   return { came, key };
 }
+
+// How far out of its way the strict plan will go to keep a square between itself and a wall.
+// Three: measured against 2 (which still hugged two of the four Ukgoth corners) and 5 (which
+// started taking visibly silly detours in open ground for no gain).
+const CLEARANCE_PENALTY = Number(process.env.M59_ROUTE_CLEARANCE ?? 3);
 
 const LETTER = new Map(STEP_DIRS.map(([ch, dr, dc]) => [`${dr},${dc}`, ch]));
 
@@ -397,7 +481,8 @@ function blinkPointFor(roomNum) {
 }
 
 /** Bake one room. */
-export function bakeRoom(room, { collision = true } = {}) {
+export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = {}) {
+  let strictRoutes = 0;
   const geometry = sharedRoomGeometry(room);
   if (!geometry?.collisionReady)
     return { room: room.num, skipped: 'no collision geometry' };
@@ -578,10 +663,22 @@ export function bakeRoom(room, { collision = true } = {}) {
     const targets = squares.filter(t => t.row !== from.row || t.col !== from.col);
     if (!targets.length) continue;
     const { came, key } = bfs(geometry, from.row, from.col, { collision });
+    // The strict plan is computed alongside and preferred wherever it arrives. `reach` stays
+    // the permissive answer, because whether a place can be got to at all is a different
+    // question from which line we would rather walk to it.
+    const strict = preferCoarseFloor
+      ? bfs(geometry, from.row, from.col,
+            { collision, coarseFloor: true, clearance: CLEARANCE_PENALTY })
+      : null;
     for (const to of targets) {
       const pair = `${from.row},${from.col}>${to.row},${to.col}`;
       if (came.has(key(to.row, to.col))) reach[pair] = 1;
-      const p = pathString(came, key, from.row, from.col, to.row, to.col);
+      let p = null;
+      if (strict && strict.came.has(strict.key(to.row, to.col))) {
+        p = pathString(strict.came, strict.key, from.row, from.col, to.row, to.col);
+        if (p != null) strictRoutes++;
+      }
+      if (p == null) p = pathString(came, key, from.row, from.col, to.row, to.col);
       if (p == null) { if (reach[pair]) unspellable++; continue; }
       routes[pair] = p;
 
@@ -635,6 +732,9 @@ export function bakeRoom(room, { collision = true } = {}) {
     // the note above `reach`. `unspellable` is how many of those there were.
     reach,
     ...(unspellable ? { unspellable } : {}),
+    // How many routes came from the strict plan rather than the permissive one. A room that
+    // reports 0 here is one where the coarse grid could not connect its exits at all.
+    ...(strictRoutes ? { strict_routes: strictRoutes } : {}),
     // `from_body` is the one a router should read: can the room walk to this exit. `region`
     // is kept beside it because a pocket exit and a main-body exit behave differently once
     // you are standing on one — the first cannot be stepped back off.

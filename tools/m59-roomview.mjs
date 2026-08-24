@@ -947,7 +947,27 @@ var railRows = D.tacticsRows.filter(function(t){ return t.tactic === 'baked_rail
 var railOk = railRows.filter(function(t){ return t.worked; }).length;
 var cross = D.crossings.filter(function(x){ return x.room === D.room.num; });
 var crossOk = cross.filter(function(x){ return x.ok; });
-var times = crossOk.map(function(x){ return x.ms; }).sort(function(a,b){ return a-b; });
+/* A DEPARTURE IS NOT A CROSSING, AND THE MEDIAN WAS MADE OF DOORSTEPS.
+   A character that enters a room beside the exit it wants and steps straight back out
+   records a leg exactly like one that walked the whole room. In Ukgoth 38 of 121
+   "successful" departures took under five seconds, which is not a traversal of anything —
+   and including them put the median at 15s for a room whose real median is nearer two
+   minutes.
+
+   THE FLOOR IS AN OPERATOR MEASUREMENT, NOT A GUESS. Thirteen seconds, because no human
+   has ever walked an exit-to-exit in Ukgoth faster than that without cheating — with one
+   exception, Castle Victoria to the Sentinel, which is a genuinely short pair. A transit
+   row records the room and the destination but NOT the door the character came in by, so
+   that exception cannot be told apart here and will be excluded along with the doorsteps.
+   The page says so rather than quietly folding it in.
+
+   This is a room-shaped constant standing in a general tool: it is right for Ukgoth
+   because somebody walked it, and for another room the honest reading is the histogram
+   rather than the median. */
+var DOORSTEP_MS = 13000;
+var doorsteps = crossOk.filter(function(x){ return x.ms < DOORSTEP_MS; }).length;
+var times = crossOk.filter(function(x){ return x.ms >= DOORSTEP_MS; })
+                   .map(function(x){ return x.ms; }).sort(function(a,b){ return a-b; });
 var p50 = times.length ? Math.round(times[times.length >> 1]/1000) : null;
 document.getElementById('hRoom').textContent = D.room.num;
 document.getElementById('hName').textContent = D.room.name;
@@ -956,7 +976,7 @@ document.getElementById('hStats').innerHTML =
   statBlock(apprCount, 'squares with a refused approach') +
   (railRows.length ? statBlock(railOk + '/' + railRows.length, 'rail crossings worked', railOk/railRows.length < .5 ? 'warn' : 'good') : '') +
   (cross.length ? statBlock(crossOk.length + '/' + cross.length, 'left the room', crossOk.length/cross.length < .5 ? 'warn' : 'good') : '') +
-  (p50 !== null ? statBlock(p50 + 's', 'median crossing') : '');
+  (p50 !== null ? statBlock(p50 + 's', 'median real crossing') : '');
 
 /* ---- findings ---- */
 function findings(){
@@ -1023,10 +1043,16 @@ findings();
          (dest[k].ok/dest[k].n < .5 ? 'var(--bad)' : 'var(--ok)') + '">' + dest[k].ok + '</td></tr>';
   });
   h += '</tbody></table>';
+  if (doorsteps){
+    h += '<p style="font-size:12px;color:var(--muted);margin-top:10px"><b>' + doorsteps + ' of ' +
+         crossOk.length + '</b> departures took under ' + (DOORSTEP_MS/1000) + 's — below the fastest ' +
+         'exit-to-exit a person has walked here, so a step out of a door the character arrived ' +
+         'beside rather than a crossing. Excluded below.</p>';
+  }
   if (times.length){
-    h += '<p style="font-size:12px;color:var(--muted);margin-top:10px">Of the ' + crossOk.length +
-         ' that got out: fastest <b>' + (times[0]/1000).toFixed(1) + 's</b>, median <b>' + p50 +
-         's</b>, slowest <b>' + Math.round(times[times.length-1]/1000) + 's</b>.</p>';
+    h += '<p style="font-size:12px;color:var(--muted);margin-top:' + (doorsteps ? '6' : '10') + 'px">Of the ' +
+         times.length + ' that actually crossed: fastest <b>' + Math.round(times[0]/1000) +
+         's</b>, median <b>' + p50 + 's</b>, slowest <b>' + Math.round(times[times.length-1]/1000) + 's</b>.</p>';
   }
   h += '<p style="font-size:12px;color:var(--muted);margin-top:6px">' + inbound.length + ' arrivals into this room are on record.</p>';
   el.innerHTML = h;

@@ -49,7 +49,9 @@
 // record, 1467 were discredited; 519 of those had held first, and 309 of THOSE went out
 // on a single point. They come back as untested — eligible, unproven, and made to earn
 // their twelve quiet seconds again with a character standing on them.
-import { selectForRetest, reinstateUntested } from './m59-safespots.mjs';
+import { selectForRetest, reinstateUntested, gridDisagreementAt } from './m59-safespots.mjs';
+import { sharedRoomGeometry } from './m59-roo.mjs';
+import { attachStepMasks } from './m59-routes.mjs';
 import { readFileSync, writeFileSync, copyFileSync, existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -77,6 +79,30 @@ const ONLY_UNHELD = arg('only-unheld');
 // verdict was withdrawn and which is worth re-testing; a phantom is a square nobody
 // ever tested, and leaving a record behind implies a visit that did not happen.
 const PHANTOMS = arg('phantoms');
+// THE SQUARE WAS NEVER A SAFE WALL, SO ITS FAILURE IS NOT EVIDENCE ABOUT ONE.
+//
+//   node tools/m59-safespot-retest.mjs --not-a-wall --dry-run
+//
+// The two discriminators above retire a reading because of HOW it was taken. This one
+// retires it because of WHAT it was taken on. `safeSpots` used to score any square with a
+// blocked arc behind it; it now only considers squares where the two grids disagree —
+// where the BSP admits a body the coarse grid the monsters path on refuses. That is the
+// whole mechanism, and a square without it is ordinary floor that happened to have a wall
+// in shot.
+//
+// Those old candidates are still in the book, still carrying failures, and `recall()` still
+// refuses to recommend them — which is harmless — but they also sit in the fleet's evidence
+// as "safe walls fail a lot", which is not. Measured in Ukgoth, which is the room that
+// prompted this: 14 of the 16 records are on squares with ZERO refused approaches, and every
+// one of the 14 is a failure. Both records that do meet the current definition HELD. So the
+// room reads as "3 held, 14 failed" and the honest reading of the same book is that no
+// square meeting the definition has ever failed there.
+//
+// The damage backs it: every one of the 14 lost 1-2 health with a single attacker present,
+// against characters with 20 maximum. A troll does not hit a 20-health character for 1. That
+// is a tick — poison, which damages through any geometry and which the keeper only learned
+// to tell apart later (see the BP_ADD_ENCHANTMENT note in m59-autopilot.mjs).
+const NOT_A_WALL = arg('not-a-wall');
 const isPhantom = r => (r.failed || 0) >= 1 && (r.most_attackers || 0) === 0 &&
                        (r.damage_taken || 0) === (r.failed || 0);
 
@@ -194,6 +220,62 @@ if (arg('untested')) {
   console.log(`\nwritten. backup: ${bak}`);
   console.log(`${picked.length} square(s) are untested again. They are NOT trusted: each has to`);
   console.log('hold for 12s with something adjacent before any character rests on it.');
+  process.exit(0);
+}
+
+if (NOT_A_WALL) {
+  const world = JSON.parse(readFileSync(
+    fileURLToPath(new URL('../substrate/m59-map.json', import.meta.url)), 'utf8'));
+  try { attachStepMasks(world); } catch { /* the coarse grid is enough for this question */ }
+  const geoFor = new Map();
+  const geometry = num => {
+    if (!geoFor.has(num)) {
+      const room = world.rooms?.[String(num)];
+      geoFor.set(num, room ? sharedRoomGeometry(room) : null);
+    }
+    return geoFor.get(num);
+  };
+  let gone = 0, heldToo = 0, kept = 0, noGeometry = 0;
+  const emptied = [];
+  for (const [room, spots] of Object.entries(rooms)) {
+    const geo = geometry(room);
+    for (const [k, rec] of Object.entries(spots)) {
+      squares++;
+      if (!geo) { noGeometry++; continue; }
+      // A square with a mark on it outranks this arithmetic, exactly as in selectForRetest.
+      if (rec.verified) { kept++; continue; }
+      let refused = 0;
+      try { refused = gridDisagreementAt(geo, rec.row, rec.col)?.refused ?? 0; } catch {}
+      const coarseRefusesIt = geo.walkable(rec.row, rec.col) !== true;
+      if (coarseRefusesIt || refused > 0) { kept++; continue; }
+      if ((rec.held || 0) > 0) {
+        // It held. Whatever the rule that picked it, standing there worked, and that is
+        // evidence worth more than the rule. Keep the square, drop the failure.
+        heldToo++;
+        if (!DRY) { rec.failed = 0; rec.damage_taken = 0; delete rec.failed_by; delete rec.failed_via; }
+      } else {
+        gone++;
+        if (!DRY) delete spots[k];
+      }
+      perRoom[room] = (perRoom[room] || 0) + 1;
+    }
+    if (!Object.keys(spots).length) { emptied.push(room); if (!DRY) delete rooms[room]; }
+  }
+  console.log(`${squares} squares in the book across ${Object.keys(rooms).length} rooms`);
+  console.log(`${kept} still meet the definition (the grids disagree at them) and are untouched`);
+  console.log(`${gone} record(s) ${DRY ? 'would be' : ''} deleted — not a wall by the current rule`);
+  console.log(`${heldToo} failure(s) stripped from squares that had also held`);
+  if (noGeometry) console.log(`${noGeometry} left alone: no geometry on disk for their room`);
+  for (const [room, n] of Object.entries(perRoom).sort((a, b) => b[1] - a[1]))
+    console.log(`  room ${String(room).padStart(5)}: ${n}`);
+  if (emptied.length)
+    console.log(`  rooms left with no records at all: ${emptied.join(', ')}`);
+  if (DRY) { console.log('\ndry run — nothing written'); process.exit(0); }
+  const bak = FILE.replace(/\.json$/, '.before-not-a-wall.json');
+  copyFileSync(FILE, bak);
+  writeFileSync(FILE, JSON.stringify(book, null, 0));
+  console.log(`\nwritten. backup: ${bak}`);
+  console.log('The broker holds this book in memory — restart it so the change takes effect.');
   process.exit(0);
 }
 

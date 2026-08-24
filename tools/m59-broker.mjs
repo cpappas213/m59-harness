@@ -6476,10 +6476,38 @@ class Session {
         // pre-rail `me0` to walk back to the entrance and replay the same failed line in
         // this call; the ordinary exit walk below continues from where the body really is.
         if (!rejoinAttempted) {
-          const onIt = me0.col === rail.from.col && me0.row === rail.from.row;
-          // 1. GET ON — skipped when we are already standing on the entry anchor.
-          const got = onIt ? { arrived: true } : await this.walkTo(rail.from.col, rail.from.row,
-            { maxSteps: budget({ steps_away: Math.hypot(rail.from.col - me0.col, rail.from.row - me0.row) }) })
+          // BOARD AT THE NEAREST POINT OF THE LINE, NOT AT ITS BEGINNING.
+          //
+          // The join above only looks one square out, so a body that is genuinely off the
+          // road — thrown there by a flee, or walked there by the ordinary exit walk after
+          // an earlier rail failure — falls through to here and is sent to `rail.from`,
+          // which is the ENTRY ANCHOR and therefore about the furthest point of the line
+          // from anywhere else in the room.
+          //
+          // In Ukgoth that is fatal rather than merely wasteful. Measured 2026-08-24 over
+          // three characters: 342 moves in the room, 301 of them refused, and 244 of the
+          // refusals on 50,23 / 50,24 / 50,25. Those are ordinary walkable squares — but
+          // their step masks are E, SE, S, SW, W and NOTHING ELSE. There is no northward
+          // move from any of them; they are cliff top. The entry anchor is at row 1, so the
+          // walk to it asks for north, the room has no north to give, and the body grinds
+          // against the cliff until `no_ground_gained` fires or a troll finishes it. The
+          // same walk is what `no_ground_gained` was refusing at 3,61 and 5,65.
+          //
+          // Ukgoth is a CYCLE — which is why its fall-jumps had to be declared at all — and
+          // "walk back to the start" is not a move a cycle supports. So board at the
+          // nearest square of the line and follow from there. It may be behind us or ahead
+          // of us; both are ground the bake proved, and either is nearer than the anchor.
+          let boardAt = 0, boardDistance = Infinity;
+          for (let n = 0; n < rail.squares.length; n++) {
+            const sq = rail.squares[n];
+            const d = Math.hypot(sq.row - me0.row, sq.col - me0.col);
+            if (d < boardDistance) { boardDistance = d; boardAt = n; }
+          }
+          const board = rail.squares[boardAt] ?? rail.from;
+          const onIt = me0.col === board.col && me0.row === board.row;
+          // 1. GET ON — skipped when we are already standing on the boarding square.
+          const got = onIt ? { arrived: true } : await this.walkTo(board.col, board.row,
+            { maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
             .catch(e => ({ arrived: false, reason: e.message }));
           if (!got?.arrived) {
             recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
@@ -6491,7 +6519,8 @@ class Session {
                            // present gets written — where it stopped, how far it got,
                            // whether it left the room — because a third of the evidence
                            // arriving as one character is how this stayed unexplained.
-                           note: `could not get on at ${rail.from.row},${rail.from.col}: ` +
+                           note: `could not get on at ${board.row},${board.col}` +
+                                 ` (nearest of ${rail.squares.length}, ${boardDistance.toFixed(1)} away): ` +
                                  (got?.reason
                                   ?? (got?.left_room ? 'left the room while walking to the rail'
                                       : got?.note ? String(got.note).slice(0, 60)
@@ -6500,22 +6529,23 @@ class Session {
                                         `${got?.replans != null ? `, replans ${got.replans}` : ''})`)) });
           }
           if (got?.arrived) {
-            // 2. FOLLOW.
-            const ran = await this.followRail(rail.squares, { movementGeneration, controlToken,
+            // 2. FOLLOW — from where we joined, not from the anchor.
+            const ahead = rail.squares.slice(boardAt);
+            const ran = await this.followRail(ahead, { movementGeneration, controlToken,
                                         avoidSquares: wrongDoor?.size ? wrongDoor : null })
               .catch(e => ({ railed: false, reason: e.message }));
-            if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked } };
+            if (ran?.left_room) return { left: true, via: 'rail', rail: { steps: ran.walked, boarded: boardAt } };
             // 3. COME OFF — at the far anchor, so the ordinary crossing below is a step, not
             //    a room-crossing. A rail that slipped leaves the body somewhere real and the
             //    walk below simply carries on from there.
             recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'baked_rail', trigger: 'exit_crossing',
                            worked: !!ran?.railed, ms: 0, hp_lost: 0,
-                           note: ran?.railed ? `followed ${ran.walked} of ${rail.squares.length} baked square(s), skipped ${ran.skipped ?? 0}`
+                           note: ran?.railed ? `boarded at ${boardAt} of ${rail.squares.length}, followed ${ran.walked} of ${ahead.length}, skipped ${ran.skipped ?? 0}`
                                              : ran?.cancelled
-                                               ? `cancelled at ${ran?.at} of ${rail.squares.length} by ` +
+                                               ? `cancelled at ${ran?.at} of ${ahead.length} by ` +
                                                  `${ran?.cancelled_by} (${ran?.cancelled_ms_ago}ms ago)`
-                                               : `slipped at ${ran?.at} of ${rail.squares.length}: ${ran?.reason ?? 'unknown'}` });
+                                               : `slipped at ${ran?.at} of ${ahead.length}: ${ran?.reason ?? 'unknown'}` });
           }
         }
       }
