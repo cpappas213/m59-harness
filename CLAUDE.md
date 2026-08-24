@@ -254,6 +254,33 @@ rather than the reagent pair**: castings are `min(elderberry, herbs) / 2`, so 3/
 casting and reads as well stocked to anything that sums. Both are explained in
 [`docs/m59-operations.md`](docs/m59-operations.md).
 
+## Asked WHERE a room goes wrong, rather than how often
+
+```bash
+node tools/m59-roomview.mjs 599            # one self-contained HTML file for that room
+node tools/m59-roomview.mjs "Cragged"      # by name; two rooms share that one, and it says so
+node tools/m59-roomview.mjs --list         # every room with a baked route
+```
+
+"Ukgoth crossed 7 times out of 190" is true and tells you nothing about where. This draws
+the room the way the mover sees it — the coarse grid, the BSP floor, the step degree, the
+.roo walls — with the baked route, the packets the rail actually sends, the declared
+fall-jumps and the tactics ledger's failures plotted on top of it. Hovering a square says
+what every predicate thinks of it. **Its first run answered a question that had cost two
+sessions**: square 5,65 in Ukgoth is walkable, has seven of eight mover steps out and zero
+refused approaches, and 84 boarding failures happen on it — so the geometry is not what is
+refusing, and `no_ground_gained` is firing on a walk the map supports.
+
+Everything it draws is read through the modules the broker moves on, never re-derived: a
+debugging view that computes its own geometry is a second opinion about the map rather than
+a look at the one in play. It reports the step-mask count for the same reason — without
+masks the picture is of a map the fleet is not walking on.
+
+**It never writes a character name.** The ledgers it reads are full of them, including
+inside the game's own sentences (`### <agent> was just killed by a groundworm`), so every
+string it embeds is redacted against this machine's rosters. `/substrate/roomviews/` is
+gitignored: the pages are derived, and regenerating one is a second.
+
 ## Backing the fleet up, DM powers, and a scenario in one file
 
 ```bash

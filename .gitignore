@@ -364,3 +364,8 @@ __pycache__/
 # one per machine, and meaningless in anybody else's checkout.
 /substrate/run-*.lock
 /substrate/keeper-trace.jsonl
+
+# Generated room views: one HTML file per room, rebuilt from the map and this machine's
+# ledgers by tools/m59-roomview.mjs. Derived, per-machine, and they carry character names
+# out of the transit logs — so they are regenerated, never committed.
+/substrate/roomviews/
