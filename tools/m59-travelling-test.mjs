@@ -196,9 +196,22 @@ console.log('\nthe guard: what a journey leaves switched on');
   //
   // So what is pinned now is the LOOP GUARD, because that is what carries the load once the
   // threshold stops trying to: a per-room budget, with the doomed case exempt from it.
-  ok('any damage is enough to want a wall — the threshold is not doing the rationing',
-     /travelWallBelowOutranked \?\? 1/.test(AUTOPILOT_SRC)
-     && /travelWallBelow \?\? 1\)/.test(AUTOPILOT_SRC));
+  // CORRECTED AGAIN, AND THIS TIME BY THE TRANSIT BOOK RATHER THAN BY AN ARGUMENT.
+  //
+  // "Any damage is enough" was right about the cost of ONE stop and silent about the cost of
+  // stopping OFTEN. Every journey of that evening ended
+  //
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //
+  // cancelled by this very rung, four health down, leaving the character idle in a
+  // 750-danger room until something killed it. The room is not unsurvivable — twenty-
+  // hitpoint mules cross to Castle Victoria daily — the difference is that they keep moving.
+  // A stationary character measured thirty health lost in eight seconds; a moving one
+  // outpaces most of what chases it.
+  ok('a scratch does not cancel a crossing',
+     /travelWallBelow \?\? 0\.5\)/.test(AUTOPILOT_SRC), 'mid-hop is for real trouble only');
+  ok('and an outranking room shelters a little earlier, not at full health',
+     /travelWallBelowOutranked \?\? 0\.55/.test(AUTOPILOT_SRC));
   ok('and the per-room budget is what stops a hostile room looping',
      /travelShelterPerRoom \?\? 4/.test(AUTOPILOT_SRC));
   // The split is what keeps "only one thing drives a body" true, so it is pinned rather
@@ -310,19 +323,40 @@ console.log('\nthe triggers — none of them ask whether the body is moving');
   const cccc = keeper({ health: 10, max: 37, adjacent: 6, fleeAt: 0.7,
                         guard: {}, pulses: ring({ from: 10, perSample: 0.5 }) });
   const r = await run(cccc);
-  ok('a shuffling character below the flee line with things adjacent IS taken back',
-     r.took && r.tookBack, JSON.stringify(r.verdict));
-  ok('and the journey is cancelled rather than fought for',
-     cccc.notes.some(n => n.detail?.interrupted?.kind === 'travel'));
-  ok('and the keeper is driving again on the same pass', cccc.inert === null);
-  ok('and it decides nothing itself — the ordinary ladder does',
-     cccc.notes.some(n => /ordinary ladder runs/.test(n.detail?.note ?? '')));
+  // ============ CORRECTED 2026-08-23: A MONSTER DOES NOT STOP A JOURNEY ============
+  //
+  // These four assertions used to require that Cccc's exact situation — 27% health, six
+  // monsters adjacent, shuffling — TOOK THE CHARACTER BACK. That was the fix for his death
+  // and it was aimed at the right thing (the ladder had been switched off) and settled on
+  // the wrong remedy (stop the journey).
+  //
+  // The operator's rule, stated repeatedly and finally taken: DEATH OR A PLAYER ARE THE ONLY
+  // TWO REASONS TO STOP TRAVELLING. Everything else keeps walking, and takes its walls as
+  // WAYPOINTS on the way past.
+  //
+  // The evidence for it is a whole evening of journeys that read
+  //
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //
+  // two legs of seven, four health down, cancelled by these very rungs — and then the
+  // character stood idle in a 750-danger room and lost thirty health in eight seconds. A
+  // character that keeps walking outpaces most of what chases it. Twenty-hitpoint mules
+  // cross to Castle Victoria every day, and they do it by never stopping.
+  //
+  // What Cccc actually needed was not to have his survival ladder switched off — which is
+  // what `goInert` did and what `goTravelling` fixed — and a wall he could take without
+  // giving up the road, which is what the fuel stop does.
+  ok('six monsters and a shuffle do NOT end the crossing', !r.tookBack,
+     JSON.stringify({ paused: r.paused, abandoned: r.abandoned }));
+  ok('and the journey is still his — nothing was handed back', cccc.inert !== null);
+  ok('and the ladder was never switched off, which is what actually killed him',
+     cccc.inert?.travelling === true);
   // SIX MONSTERS AND NO PLAYER, SO THE JOURNEY IS NOT GIVEN UP. This is the operator's
   // rule of 2026-08-21 and the reason the note names two different acts: the movement
   // stops so the ladder can put a wall at his back, and the destination is kept so he
   // walks on once he is whole. Abandoning is for a person being on us, and nothing else.
-  ok('a MONSTER pauses the journey rather than ending it', r.paused && !r.abandoned,
-     JSON.stringify({ paused: r.paused, abandoned: r.abandoned }));
+  ok('and it is certainly not ABANDONED — that is for a person, and only a person',
+     !r.abandoned, JSON.stringify({ paused: r.paused, abandoned: r.abandoned }));
 
   // THE SWITCH HAS TO ACTUALLY WORK, or it is decoration. Isolating the flee trigger needs
   // a character below the flee line and NOT inside two hits of death, or `play_dead` fires
@@ -393,8 +427,20 @@ console.log('\nthe triggers — none of them ask whether the body is moving');
   const doomed = keeper({ health: 8, max: 37, adjacent: 1, fleeAt: 0.2, guard: {},
                           pulses: ring({ from: 8, perSample: 0 }) });
   const r4 = await run(doomed);
-  ok('inside two hits of death it is taken back even with the flee line set low',
-     r4.took && doomed.notes.some(n => n.detail?.trigger === 'two hits from death'));
+  // CORRECTED 2026-08-23. This required that a character two hits from death be TAKEN BACK,
+  // and that rung is gone. Being nearly killed by a monster is neither death nor a player,
+  // and the argument that stopping helps only holds if stopping helps — it does not:
+  //
+  //     act=idle | hp 3/33 | for 8s | walked 5.4 | net 2.8 | shelter_after None
+  //
+  // thirty health in eight seconds, stationary, in the room this fleet dies in. A character
+  // two hits from death that keeps walking outpaces most of what is chasing it; one that
+  // stops is surrounded by all of it. The wall it wanted is still taken, as a waypoint the
+  // walker splices into the route — shelter that does not cost the crossing.
+  ok('two hits from death does NOT end the crossing any more', !r4.tookBack,
+     JSON.stringify({ paused: r4.paused, abandoned: r4.abandoned }));
+  ok('and no rung claims to have taken it back for that',
+     !doomed.notes.some(n => n.detail?.trigger === 'two hits from death'));
   // The doomed rung is gated on `flee` now, not on a `play_dead` key that no longer
   // exists — so switching flee off is what leaves the decision to the journey.
   ok('and flee off leaves that decision to the journey',
@@ -509,115 +555,27 @@ console.log('\nthe safe-wall A/B is retired');
 
 
 console.log('');
-console.log('MID-HOP A WALL IS AN OPTION AGAIN — BECAUSE A CANCEL NO LONGER LOSES THE ROAD');
+console.log('A TRIP IS REFUGE TO REFUGE — DIVERTS ARE EAGER, CANCELS ARE RARE');
 {
-  // Room 587, measured: the body walked six squares of a 65-square baked rail, was taken
-  // back for a wall, and started again. Thirty laps in one leg, with six refusals in two
-  // hundred and thirty move attempts — nothing was blocked, it was being interrupted. Then,
-  // with the interruption bounded, "cancelled at 0 of 40": step zero of forty.
-  //
-  // The cause is that mid-hop there is nothing else this rung can do. The mover has the
-  // body; the keeper cannot walk to a wall without taking the body off the line first. And
-  // `travelShelterBelow` returns 1 — ANY damage — in a zone that outranks the character,
-  // which the Twisted Wood does for every character this fleet has. So the crossing was torn
-  // down continuously, and a shelter that prevents arrival is not shelter.
-  //
-  // The wall is now the HOP BOUNDARY's business, where nothing is contended and the journey
-  // PAUSES rather than ending. What follows pins both halves of that.
-  const withPlan = extra => {
-    const k = keeper({ adjacent: 2, guard: {}, ...extra });
-    k.s.activeShelter = { atStep: 0, maxDetour: 4,
-                          spots: [{ atStep: 1, detour: 2, col: 20, row: 5,
-                                    refused_approaches: 3, proven: true }] };
-    return k;
-  };
-  // `run` above is block-scoped; the stage is called directly here.
-  const sheltered = async k => { await k.passTravelling(ctxFor(k)); return k.notes.some(n =>
-    n.detail?.trigger === 'a wall is nearer than the next room'); };
+  ok('the divert has its own threshold, separate from the cancel',
+     /travelDivertBelow \?\? 0\.95/.test(AUTOPILOT_SRC));
+  ok('and the cancel is for real trouble only',
+     /travelWallBelow \?\? 0\.5\)/.test(AUTOPILOT_SRC));
+  // THE ASSERTION THAT WOULD HAVE CAUGHT THE ORIGINAL BUG: the fuel-stop `need()` must not
+  // be reading the cancel's number.
+  const need = AUTOPILOT_SRC.slice(AUTOPILOT_SRC.indexOf('need: () => {'),
+                                   AUTOPILOT_SRC.indexOf('onDivert:'));
+  ok('the fuel stop does NOT ask the cancel what it thinks',
+     !/travelShelterBelow/.test(need), 'a divert and a cancel are different decisions');
 
-  // CORRECTED 2026-08-23, AND THIS IS THE ASSERTION THAT WAS BACKWARDS.
-  //
-  // Hurt, in a zone that outranks us, something on us — it now TAKES the wall. Aaaa is the
-  // case: entered the Cragged Mountains at full health, killed inside it in twenty-five
-  // seconds, and never reached another boundary to be asked at. The room is 2,450 squares.
-  // A wall it cannot be offered until the far side of the room is not a wall it has.
-  const hurt = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
-  ok('a hurt traveller mid-hop DOES stop for a wall now', await sheltered(hurt),
-     JSON.stringify(hurt.notes.map(n => n.what)));
-
-  // WHAT STOPS IT BECOMING THE OLD BUG AGAIN: a per-room budget. The failure was never one
-  // stop, it was thirty laps of stop-and-restart in a single leg — so the budget is what
-  // makes mid-hop affordable, and the note when it is spent is what keeps the refusal
-  // arguable rather than silent.
-  const spent = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
-  // Keyed on the ROOM the counter belongs to — it resets on entering a new one, so a
-  // fixture that omits the room is a fixture whose budget is wiped before it is read.
-  spent.shelterStops = { room: spent.s.world.room.num, taken: 99, noted: false };
-  ok('but not once this room\'s budget is spent', !(await sheltered(spent)));
-  ok('and it says so rather than a faculty going quiet',
-     spent.notes.some(n => /the wall for this is at the end of the hop/.test(n.what ?? '')),
-     JSON.stringify(spent.notes.map(n => n.what)));
-
-  // ...AND TWO HITS FROM DEATH IS NOT "A BAD ROOM". Waiting for a boundary that is 2,450
-  // squares away is how the Cragged Mountains killed seven of eleven in one window, so the
-  // one case that still stops mid-hop is the one that is about to be a death.
-  const doomed = withPlan({ health: 10, max: 60, fleeAt: 0.7 });
-  ok('but two hits from death still takes the wall where it stands', await sheltered(doomed));
-  // No budget on dying: the same character with a room full of spent stops still stops.
-  const doomedAgain = withPlan({ health: 10, max: 60, fleeAt: 0.7 });
-  doomedAgain.shelterStops = { room: 535, taken: 9 };
-  ok('and nothing rations that — there is no budget on dying', await sheltered(doomedAgain));
-
-  // The faculty switch still governs it, so an operator can turn the whole thing off.
-  const off = withPlan({ health: 10, max: 60, fleeAt: 0.7, guard: { safe_spot: false } });
-  ok('with safe_spot switched off even the doomed case declines', !(await sheltered(off)));
-}
-
-
-// ---------------------------------------------------------------------------
-// THE WALL IS FOUND ALONG THE ROUTE, AND BEING HURT ON A ROAD IS THE WHOLE TRIGGER.
-//
-// Two separate things kept a character from ever sheltering twice on one journey.
-//
-// THE TRIGGER asked for something within melee reach AT THE INSTANT OF THE PASS. A traveller
-// is hit and keeps walking; by the next sample the thing that hit it is three squares back
-// and `inReachOfUs()` is empty. Measured across a whole run: ZERO travel_paused_for_wall
-// events for two characters who between them lost thirty-eight health and both died. Bbbb
-// rested to full in 586, resumed, crossed 587, 597 and 598 in a hundred and seven seconds,
-// arrived in the Cragged Mountains at 8 of 20 having never once been offered a wall, and
-// died there in fifteen seconds.
-//
-// This repository already made this argument about the watchdog rescue — "the trigger is
-// DAMAGE, and it does not care whether the body is moving" — and a stillness requirement
-// missed it the same way an adjacency requirement does.
-//
-// THE SEARCH is the operator's rule: look along the PLANNED ROUTE and take the next wall
-// near it. That branch already existed and was simply never reached. The radius fallback is
-// what walked Bbbb backwards into 586, a room it had already crossed.
-console.log('');
-console.log('THE WALL IS FOUND ALONG THE ROUTE, AND DAMAGE ALONE IS THE TRIGGER');
-{
-  const stage = AUTOPILOT_SRC.slice(AUTOPILOT_SRC.indexOf('async passTravelling'),
-                                    AUTOPILOT_SRC.indexOf('async passFollow'));
-  ok('the shelter no longer waits for something to be standing next to us',
-     !/shelterNow && this\.travelAllows\('safe_spot'\) && hp !== null && near\.length/.test(stage));
-  ok('and says why an adjacency test is the wrong shape',
-     /NO ADJACENCY REQUIREMENT/.test(stage));
-  // THE ROUTE IS ASKED FIRST. `shelterAhead` refuses anything already passed, which is the
-  // property a radius search cannot have.
-  ok('the route is consulted before any search around the body',
-     stage.indexOf('shelterAhead(') < stage.indexOf('nearestSafeSpot(') ||
-     stage.indexOf('nearestSafeSpot(') === -1);
-  ok('and it is the planned stops it asks, not a fresh guess',
-     /const planned = this\.s\.activeShelter/.test(stage));
-  // THE FALLBACK IS THE ONE THAT CAN GO BACKWARDS, so it may not be silent.
-  ok('falling back to a radius search says so',
-     /no planned wall ahead — searching around the body instead/.test(stage));
-  ok('and names the risk rather than just the fact',
-     /can offer a wall behind us/.test(stage));
-  // The reason string has to survive an empty reach list now that one is expected.
-  ok('the reason reads sensibly with nothing in reach',
-     /nothing in reach right now/.test(stage));
+  // AND THE WALKER STILL SPLICES RATHER THAN STOPS, which is the half of the paradigm that
+  // was already right and must stay that way.
+  ok('a diverted wall is one more waypoint, not a new plan',
+     /ONE MORE WAYPOINT, NOT A NEW PLAN/.test(BROKER_SRC));
+  ok('and the route behind it is untouched',
+     /remaining\.unshift\(\{ row: stop\.row, col: stop\.col, shelter: true \}\)/.test(BROKER_SRC));
+  ok('and the policy is armed for the length of the journey, not per walk',
+     /THE FUEL-STOP POLICY, HANDED TO THE MOVER FOR THE LENGTH OF THE JOURNEY/.test(AUTOPILOT_SRC));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

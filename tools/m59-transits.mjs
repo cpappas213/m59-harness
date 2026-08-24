@@ -77,10 +77,23 @@ export const listCharacters = () => {
 export function record(book, { at = Date.now(), room = null, roomName = null,
                                to = null, toName = null, ms = 0, walkMs = null,
                                ok = true, tried = 1, reason = null,
-                               journey = null, hop = null, destination = null } = {}) {
+                               journey = null, hop = null, destination = null,
+                               // WHY EACH SQUARE SAID NO, AND THE ONE THE MODEL BELIEVED IN.
+                               //
+                               // These are named here because this function REBUILDS the row
+                               // from a fixed list rather than spreading what it was given —
+                               // so a field added at the call site is silently discarded at
+                               // the writer. `refusals` was added to `noteTransit` earlier
+                               // today precisely so that "every square for that exit refused
+                               // (4 tried)" would stop being opaque, and four more of those
+                               // rows were written tonight with the detail dropped on this
+                               // line. No error, no warning, just an empty column.
+                               refusals = null, believed = null } = {}) {
   const t = { at, room, room_name: roomName, to, to_name: toName,
               ms, walk_ms: walkMs, ok, tried,
               ...(reason ? { reason } : {}),
+              ...(refusals?.length ? { refusals } : {}),
+              ...(believed ? { believed } : {}),
               journey, hop, destination };
   book.transits.push(t);
   while (book.transits.length > MAX_TRANSITS) book.transits.shift();

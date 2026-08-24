@@ -363,7 +363,7 @@ console.log('FIT TO GO ON MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUM
 {
   const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
   const fn = src.slice(src.indexOf('async resumeSuspendedJourney'),
-                       src.indexOf('async resumeSuspendedJourney') + 9000);
+                       src.indexOf('async resumeSuspendedJourney') + 14000);
   // Full health is the right bar for a character resting somewhere safe and the wrong one for
   // one stalled mid-journey — because a stalled character is usually stalled SOMEWHERE IT
   // CANNOT HEAL, and then the gate never opens. Measured, both characters, the same shape:
@@ -815,6 +815,65 @@ console.log('THE WALL COMES FIRST, AND THE ROAD WAITS FOR IT');
   ok('pausing for a wall sets the request the shelter rung reads',
      /if \(!abandon\) this\.wantsForwardShelter = 'the journey paused for a wall'/
        .test(readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8')));
+}
+
+
+console.log('');
+console.log('FLAT ONLY MEANS "AS WELL AS I WILL GET" IF SOMETHING IS HEALING YOU');
+{
+  // The gate is "go on when the wall has stopped paying", counted as samples where health
+  // did not reach a new high. Right for a character behind a wall. EXACTLY BACKWARDS for one
+  // standing in the open: nothing is healing it, so health is flat, so the counter fills in
+  // eight seconds and the gate opens on a hurt character.
+  //
+  // Measured, Aaaa — the whole failure in three lines of its own record:
+  //
+  //     +40s  room 587  idle                                  journey suspended
+  //     +46s  room 587  inert — travelling to 38 (resumed)    SIX SECONDS later
+  //     +194s room 598  idle          ... dead at 257s, 0r rest
+  //
+  // with the refusal one pass earlier reading `still mending — health 88%, flat 0`.
+  const hurtInTheOpen = keeper({ health: 30, max: 37 });
+  hurtInTheOpen.doing = 'travelling';
+  hurtInTheOpen.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 't',
+                                     attempts: 1, deaths_at: 0 };
+  // Ten passes of no healing whatsoever — the shape that used to open the gate.
+  for (let i = 0; i < 10; i++) await hurtInTheOpen.resumeSuspendedJourney(ctxFor(hurtInTheOpen));
+  ok('ten samples of not healing do not add up to being well',
+     hurtInTheOpen.travelled.length === 0, JSON.stringify(hurtInTheOpen.travelled));
+  ok('and it asks for a wall rather than waiting for a recovery that cannot happen',
+     hurtInTheOpen.wantsForwardShelter != null);
+  ok('and says which of the two it is doing',
+     said(hurtInTheOpen, /hurt with nowhere to mend/));
+
+  // BOUNDED. A room with no reachable wall must not become a character that never travels
+  // again, so after a few asks the old trend gate is allowed to open — which is at least a
+  // decision, and the absolute floor and the attempt cap still bound it.
+  ok('the asking is bounded rather than a new way to never leave',
+     /resumeWallAsks/.test(readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8')));
+
+  // AND AT A WALL IT STILL WORKS AS BEFORE: flatness there is real evidence.
+  const atAWall = keeper({ health: 36, max: 37, hold: { room: 587, col: 5, row: 42 } });
+  atAWall.doing = 'holding a proven safe spot';
+  atAWall.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 't',
+                               attempts: 1, deaths_at: 0 };
+  await atAWall.resumeSuspendedJourney(ctxFor(atAWall));
+  // At a wall the HOLD gate answers first — the rest is not finished — so the trend counter
+  // is never reached, and that is right:  is what decides a rest is done.
+  ok('a character at a wall is held by the rest, not by the trend',
+     said(atAWall, /the rest is not finished/) && atAWall.travelled.length === 0);
+
+  // AND THE DEADLOCK THE FIRST DRAFT OF THIS CREATED. With flatness counting only while
+  // resting, a character that had used up its wall-asks could never accumulate a sample, so
+  // it declined for ever. A room with no reachable wall would have become a character that
+  // never travels again — the exact failure every refusal in that method is written against.
+  const noWall = keeper({ health: 30, max: 37 });
+  noWall.doing = 'travelling';
+  noWall.suspendedJourney = { to: 38, why: 'x', at: Date.now(), trigger: 't',
+                              attempts: 1, deaths_at: 0 };
+  for (let i = 0; i < 40; i++) await noWall.resumeSuspendedJourney(ctxFor(noWall));
+  ok('and once the asking runs out it goes rather than declining for ever',
+     noWall.travelled.length > 0, JSON.stringify({ flat: noWall.resumeFlat, asks: noWall.resumeWallAsks }));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

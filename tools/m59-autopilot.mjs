@@ -5832,7 +5832,48 @@ export class Autopilot {
 
   // The shelter threshold in force RIGHT HERE, which is not a constant. See roomOutranksUs.
   //
-  // ANY DAMAGE AT ALL, AND THE OPERATOR IS RIGHT THAT THIS IS NOW THE CHEAP OPTION.
+  // A SCRATCH DOES NOT STOP A CROSSING. MOVING IS HOW YOU SURVIVE THESE ROOMS.
+  //
+  // ===================== CORRECTED 2026-08-23, WITH EVIDENCE =====================
+  //
+  // This was 1 — shelter at any damage at all — for most of an evening, on the reasoning
+  // below, which was sound about the COST OF A STOP and silent about the cost of stopping
+  // OFTEN. The transit book says what that cost was:
+  //
+  //     587 -> 597  FAIL  movement cancelled by a travel guard rung taking the character back
+  //     598 -> 599  FAIL  movement cancelled by the watchdog pulling us out of a blind walk
+  //     587 -> 597  FAIL  movement cancelled by a travel guard rung taking the character back
+  //
+  // and the journey ledger says it in one number, on every single journey of the evening:
+  //
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //     legs 2, planned_legs 7      hp 20 -> 15
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //
+  // TWO LEGS OF SEVEN, EVERY TIME, having lost four health. Nothing was killing these
+  // characters. Our own guard was ending the crossing over a scratch, and then they stood
+  // idle in a 750-danger room until something did kill them. Measured on one:
+  //
+  //     act=idle | hp 3/33 | for 8s | walked 5.4 | net 2.8 | shelter_after None | rooms [598]
+  //
+  // Thirty health in eight seconds — WHILE STATIONARY. I read that rate as a property of
+  // the Cragged Mountains and concluded the room was unsurvivable. The operator's
+  // correction is the whole of it: twenty-hitpoint mules cross to Castle Victoria daily.
+  // The rate is a property of STANDING STILL. A moving character outpaces most of what
+  // chases it, and a thing that never catches you never hits you.
+  //
+  // So the damage rate is an OUTPUT of stopping, not an input that stopping answers — and a
+  // trigger that stops on any scratch is a machine for producing it.
+  //
+  // Mid-hop is now for real trouble only: half health, a little earlier where the room
+  // outranks the character, and `wouldPlayDead` regardless. Everything above that keeps
+  // walking, and the HOP BOUNDARY — where a pause costs nothing because the mover is
+  // between rooms and the journey pauses rather than ending — is where an ordinary shelter
+  // belongs. That distinction is what TRAVEL_GUARD_CLOCK exists to record, and it was right
+  // before I traded it away for sensitivity.
+  //
+  // The reasoning that produced the 1, kept because the half of it that is true is why the
+  // number is 0.5 rather than back where it started:
   //
   // This has been 1 before and it was a disaster then, so the change of mind needs its
   // reasons written down rather than just its new number. It produced
@@ -5864,8 +5905,8 @@ export class Autopilot {
   // trigger safe rather than the threshold doing that job badly.
   travelShelterBelow() {
     return this.roomOutranksUs()
-      ? (this.policy.travelWallBelowOutranked ?? 1)
-      : (this.policy.travelWallBelow ?? 1);
+      ? (this.policy.travelWallBelowOutranked ?? 0.55)
+      : (this.policy.travelWallBelow ?? 0.5);
   }
 
   /**
@@ -7335,12 +7376,35 @@ export class Autopilot {
         // Four squares off the road. A wall further than that is not shelter when a full bar
         // is nine and a half seconds; it is a longer way to die.
         maxDetour: this.policy.travelShelterDetour ?? 4,
+        // A TRIP IS REFUGE TO REFUGE, AND A REST STOP IS SKIPPED WHEN IT IS NOT NEEDED.
+        //
+        // The operator's framing, and it is the right way round: the journey is not a
+        // straight line that gets interrupted, it is a chain of walls with walking between
+        // them. Passing one costs nothing. Stopping at one is a decision made when you get
+        // there, not a reason to tear the crossing down from four rooms away.
+        //
+        // SO THIS IS NOT THE SAME NUMBER AS `travelShelterBelow`, AND THAT IS THE WHOLE FIX.
+        // Both used to read it, so every moment worth a free detour was also a moment worth
+        // a cancellation — and the cancellation won, because it happens in the keeper on a
+        // one-second clock while the divert happens in the walker between legs. Every
+        // journey of one evening ended `legs 2, planned_legs 7`, four health down, cancelled
+        // by its own guard.
+        //
+        // DIVERTING IS CHEAP AND SHOULD BE EAGER. The wall is already on the route,
+        // `shelterAhead` refuses anything behind us or more than `maxDetour` off the road,
+        // and the walker splices it in as one more waypoint without stopping. So any real
+        // damage is enough to want the next one.
+        //
+        // CANCELLING IS EXPENSIVE AND SHOULD BE RARE. It ends the crossing, and a character
+        // that stops in a 750-danger room loses thirty health in eight seconds standing
+        // still. That number is a property of stopping, not of the room: twenty-hitpoint
+        // mules cross to Castle Victoria every day by never doing it.
         need: () => {
           const v = this.s.client?.vitals?.();
           const hp = v?.health?.max ? v.health.value / v.health.max : null;
-          // Below 100% in a zone above our ceiling; below the ordinary threshold anywhere
-          // else. Asked fresh each leg because the room changes under a journey.
-          return hp !== null && hp < this.travelShelterBelow();
+          if (hp === null) return false;
+          // Anything that is not "untouched" is worth the next wall on the way past.
+          return hp < (this.policy.travelDivertBelow ?? 0.95);
         },
         onDivert: (stop, at) => this.note('taking a wall on the way past', {
           where: { col: stop.col, row: stop.row }, proven: stop.proven,
@@ -9270,71 +9334,34 @@ export class Autopilot {
     //
     // What bounds it is the per-room budget, which is where the rationing belongs — not a
     // condition that happens to be false most of the time something is wrong.
-    if (shelterNow && this.travelAllows('safe_spot') && hp !== null) {
-      const geo = this.s.world?.geometry;
-      let spot = null;
-      // THE STOP COMES FROM THE ROUTE, NOT FROM A SEARCH AROUND THE BODY.
-      //
-      // `sheltersAlong` already worked these out when the crossing was planned, and the
-      // walker splices the next one ahead into the route without stopping. This rung used
-      // to ignore all of that and call `nearestSafeSpot` from wherever the character was
-      // standing — a radius search in any direction, including BACK through whatever had
-      // just bitten it, and paid for at exactly the moment there is no time to think.
-      //
-      // `shelterAhead` refuses anything already passed and anything more than `maxDetour`
-      // off the road, and since 2026-08-21 it ranks by the two grids DISAGREEING rather
-      // than by whether this fleet has stood there before — the disagreement is what stops
-      // a monster reaching us, and it is computable for a square nobody has ever visited.
-      const planned = this.s.activeShelter;
-      if (planned?.spots?.length) {
-        try {
-          const stop = shelterAhead(planned.spots, planned.atStep ?? 0,
-                                    { maxDetour: planned.maxDetour ?? 4,
-                                      unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
-          if (stop) spot = { col: stop.col, row: stop.row, steps_away: stop.detour,
-                             proven: stop.proven, from_route: true,
-                             refused_approaches: stop.refused_approaches ?? null };
-        } catch { spot = null; }
-      }
-      // Only when there is no plan to be ahead ON — a hop that was never routed, or a
-      // journey whose walk has already finished. Then a search is the only thing left.
-      //
-      // AND IT IS SAID OUT LOUD, because this is the branch that can walk a character
-      // BACKWARDS. It is a radius search around the body with no notion of the route, so it
-      // will offer a wall back through whatever just bit us: Bbbb was in 587 and sheltered
-      // in 586, a room it had already crossed. The route branch above cannot do that —
-      // `shelterAhead` refuses anything already passed.
-      //
-      // Measured after the disagreement rewrite, the plan is almost always there: 12 to 21
-      // real walls along a single crossing of 597, 598 or 587. So this firing at all now
-      // means a hop was never routed, which is worth a line rather than a silence.
-      if (!spot && geo && me) {
-        this.note('no planned wall ahead — searching around the body instead', {
-          room: this.s.world?.room?.num ?? null,
-          health: Math.round(hp * 100) + '%',
-          why: 'this hop has no shelter plan, so the route cannot be asked. A radius search ' +
-               'has no idea which way the road went and can offer a wall behind us',
-        });
-        try {
-          spot = nearestSafeSpot(geo, me, { book: this.book,
-                                            unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
-                                            reach: this.reachTest(),
-                                            room: this.s.world?.room?.num ?? null,
-                                            within: this.policy.travelHoldWithin ?? 10 });
-        } catch { spot = null; }
-      }
-      if (spot) this.shelterStops.taken = (this.shelterStops.taken ?? 0) + 1;
-      if (spot)
-        return takeBack('a wall is nearer than the next room',
-                        `${Math.round(hp * 100)}% health with ` +
-                        `${near.length ? `${near.length} on us` : 'nothing in reach right now'}` +
-                        `, and a ` +
-                        `defensible square ${spot.steps_away ?? '?'} step(s) away. A creature ` +
-                        'cannot path to it, so reaching it ends this rather than outrunning it',
-                        { adjacent: near.length,
-                          spot: { col: spot.col, row: spot.row, steps: spot.steps_away ?? null,
-                                  proven: !!spot.proven } });
-    }
+    // ============ ONLY DEATH OR A PLAYER STOPS A JOURNEY. NOTHING ELSE. ============
+    //
+    // The operator's rule, stated repeatedly, and it is already written at the top of
+    // m59-resumetravel-test: A JOURNEY IS NEVER ABANDONED UNLESS A PLAYER IS ATTACKING.
+    // Every mid-hop health threshold this file has carried is a violation of it, and I have
+    // now tuned that number four times in one day — 1, then 0.8, then 1 again, then 0.5 —
+    // each time treating "what is the right level to stop at" as the question. The question
+    // was whether to stop at all.
+    //
+    // WHAT THE RECORD SAYS. Every journey of one evening:
+    //
+    //     legs 2, planned_legs 7      hp 33 -> 29
+    //     legs 2, planned_legs 7      hp 20 -> 15
+    //
+    // two legs of seven, four health down, cancelled by THIS RUNG, and then the character
+    // stood idle in a 750-danger room until something killed it. Measured on one of them:
+    // thirty health in eight seconds, stationary. Twenty-hitpoint mules cross to Castle
+    // Victoria every day by never doing that.
+    //
+    // A WALL IS STILL TAKEN — AS A WAYPOINT, NOT AS AN ENDING. `shelterPolicy` hands the
+    // walker a fuel-stop contract for the length of the journey and `walkPivots` splices the
+    // next refuge into the route without stopping: one more waypoint, no replan, no handing
+    // the character back. That is the whole of "run refuge to refuge and skip the stops you
+    // do not need", and it needs nothing from this rung.
+    //
+    // SO WHAT IS LEFT MID-HOP IS `flee`, WHICH IS PLAYERS-ONLY. A person can follow you to a
+    // wall, swing first and take the pack, so distance is the answer to a person and only to
+    // a person. Death ends a journey by definition. Those are the two.
 
 
     // ---- 3. INSIDE TWO HITS OF DEATH, AND NO WALL TO PUT AT OUR BACK.
@@ -9372,14 +9399,27 @@ export class Autopilot {
     // So the gate moves from `play_dead` to `flee`: it is a flee decision taken at a lower
     // threshold than the flee line, for the case where the flee line cannot see the danger
     // because the danger is not a person.
-    if (this.travelAllows('flee') && wouldPlayDead)
-      return takeBack('two hits from death',
-                      `${v.health.value} health with ${near.length} adjacent, and no wall ` +
-                      `within reach to put at our back`,
-                      { adjacent: near.length,
-                        doomed_below: this.policy.doomedInOpenBelow ?? 0.3,
-                        hands_over_to: 'a town trip or a withdrawal — never a freeze, which ' +
-                                       'off a proven spot recovers vigor and never health' });
+    // `two hits from death` USED TO END THE JOURNEY HERE, AND IT NO LONGER DOES.
+    //
+    // The operator's rule: death or a player are the only two reasons to stop travelling.
+    // Being nearly killed by a monster is neither, and the argument that it is only holds
+    // if stopping helps. It does not — it is the thing that kills:
+    //
+    //     act=idle | hp 3/33 | for 8s | walked 5.4 | net 2.8 | shelter_after None | rooms [598]
+    //
+    // Thirty health in eight seconds while STATIONARY. A character two hits from death that
+    // keeps walking outpaces most of what is chasing it; one that stops is surrounded by all
+    // of it. The rung's own comment argued that ending the journey was safe because what it
+    // handed over to — a town trip or a withdrawal — would MOVE. In practice the hand-over
+    // left the character idle, and the record above is what idle costs.
+    //
+    // The wall it wanted is still taken, as a WAYPOINT: `shelterPolicy` gives the walker a
+    // fuel stop for the whole journey and `walkPivots` splices the next refuge into the
+    // route without stopping. That is shelter that does not cost the crossing.
+    //
+    // The one below this — `dying faster than this journey can finish` — survives, because
+    // it is gated on `worthEnding`, which under the default `travel_flee_from: 'players'` is
+    // a PERSON. That is the PVP half of the rule and it stays exactly as it was.
 
     // ---- 4. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
     //
@@ -11121,7 +11161,12 @@ export class Autopilot {
                                  { room: this.hold?.room ?? null });
     // And if a wall has been ASKED FOR but not yet taken, the same applies: the shelter rung
     // is one pass away and resuming now would cancel the request before it was acted on.
-    if (this.wantsForwardShelter)
+    // BOUNDED, because nothing here can guarantee the shelter rung ever runs. During travel
+    // the ordinary ladder does not run at all, so a request set and never acted on would
+    // block the road for ever — the first draft of this did exactly that and a fixture
+    // caught it declining forty passes in a row with the ask counter stuck at one.
+    this.resumeShelterWaits = (this.resumeShelterWaits ?? 0) + 1;
+    if (this.wantsForwardShelter && this.resumeShelterWaits <= (this.policy.resumeShelterWaits ?? 20))
       // NOT `why`. `resumeDeclined` spreads the detail over `{ why, ...detail }`, so a
       // detail field called `why` overwrites the reason it was meant to explain — the
       // `emit(kind, data)` trap this repository documents, arriving in a note two lines
@@ -11203,13 +11248,58 @@ export class Autopilot {
     // between the same two points is not progress, and the default floor here is FULL
     // health, so without this the gate can only open on a character that hits its maximum
     // exactly and holds it.
+    // FLAT ONLY MEANS "AS WELL AS I WILL GET" IF SOMETHING IS TRYING TO HEAL ME.
+    //
+    // The gate is "go on when the wall has stopped paying", and it counts samples where
+    // health did not reach a new high. That is right for a character sitting behind a wall.
+    // For one standing in the open it is exactly backwards: nothing is healing it, so health
+    // is flat, so the counter fills in eight seconds and the gate opens on a hurt character.
+    //
+    // Measured, Aaaa, this evening — the whole failure in three lines of its own record:
+    //
+    //     +40s  room 587  idle                                  journey suspended
+    //     +46s  room 587  inert — travelling to 38 (resumed)    SIX SECONDS later
+    //     +194s room 598  idle          ... dead at 257s, 0r rest
+    //
+    // and the refusal note one pass before it went: `still mending — health below the start
+    // floor, health 88%, flat 0`. It declined, counted eight flat samples of not healing,
+    // and left at 88% into the room that kills things.
+    const resting = !!this.hold
+      || /rest|safe spot|holding|healing|mend/i.test(String(this.doing ?? ''));
     const nowHp = v?.health?.value ?? null;
     if (nowHp !== null) {
       const better = this.resumeBest == null || nowHp > this.resumeBest;
       this.resumeBest = better ? nowHp : this.resumeBest;
       this.resumeWatch = nowHp;
-      this.resumeFlat = better ? 0 : (this.resumeFlat ?? 0) + 1;
+      // Not mending? Then flatness is evidence of nothing and the counter does not move.
+      // ...UNLESS THE ASKING FOR A WALL HAS RUN OUT, and then flatness is allowed to count
+      // again. Without this the two halves deadlock: the ask stops after three tries and a
+      // character that is not resting can never accumulate a flat sample, so `stillMending`
+      // stays true and the resume declines for ever. A room with no reachable wall would
+      // become a character that never travels again — which is the failure mode every
+      // refusal in this method is written to avoid.
+      const askedEnough = (this.resumeWallAsks ?? 0) >= (this.policy.resumeWallAsks ?? 3);
+      this.resumeFlat = better ? 0
+        : ((resting || askedEnough) ? (this.resumeFlat ?? 0) + 1 : 0);
     }
+
+    // AND IF IT IS HURT WITH NOWHERE TO MEND, ASK FOR A WALL RATHER THAN SETTING OFF.
+    //
+    // This is the difference between "wait until you are well" and "go and get well". Left
+    // to wait, a character with no wall waits for a recovery that cannot happen where it is
+    // standing; the objective then ages out and the trip is lost anyway.
+    //
+    // BOUNDED, because a room with no reachable wall must not become a character that never
+    // travels again. After a few asks the trend gate below is allowed to open as it used to,
+    // which is the old behaviour and is at least a decision.
+    const asks = this.resumeWallAsks ?? 0;
+    if (hp !== null && hp < floor && !resting && asks < (this.policy.resumeWallAsks ?? 3)) {
+      this.resumeWallAsks = asks + 1;
+      this.wantsForwardShelter ??= 'the road is waiting on health and there is no wall yet';
+      return this.resumeDeclined('hurt with nowhere to mend — asking for a wall before the road',
+                                 { health: Math.round(hp * 100) + '%', ask: asks + 1 });
+    }
+    if (resting || hp === null || hp >= floor) this.resumeWallAsks = 0;
     // The wall is still working: let it.
     const stillMending = (this.resumeFlat ?? 0) < RESUME_FLAT_SAMPLES;
     if (hp !== null && hp < floor && stillMending)
