@@ -7373,12 +7373,35 @@ export class Autopilot {
         // Four squares off the road. A wall further than that is not shelter when a full bar
         // is nine and a half seconds; it is a longer way to die.
         maxDetour: this.policy.travelShelterDetour ?? 4,
+        // A TRIP IS REFUGE TO REFUGE, AND A REST STOP IS SKIPPED WHEN IT IS NOT NEEDED.
+        //
+        // The operator's framing, and it is the right way round: the journey is not a
+        // straight line that gets interrupted, it is a chain of walls with walking between
+        // them. Passing one costs nothing. Stopping at one is a decision made when you get
+        // there, not a reason to tear the crossing down from four rooms away.
+        //
+        // SO THIS IS NOT THE SAME NUMBER AS `travelShelterBelow`, AND THAT IS THE WHOLE FIX.
+        // Both used to read it, so every moment worth a free detour was also a moment worth
+        // a cancellation — and the cancellation won, because it happens in the keeper on a
+        // one-second clock while the divert happens in the walker between legs. Every
+        // journey of one evening ended `legs 2, planned_legs 7`, four health down, cancelled
+        // by its own guard.
+        //
+        // DIVERTING IS CHEAP AND SHOULD BE EAGER. The wall is already on the route,
+        // `shelterAhead` refuses anything behind us or more than `maxDetour` off the road,
+        // and the walker splices it in as one more waypoint without stopping. So any real
+        // damage is enough to want the next one.
+        //
+        // CANCELLING IS EXPENSIVE AND SHOULD BE RARE. It ends the crossing, and a character
+        // that stops in a 750-danger room loses thirty health in eight seconds standing
+        // still. That number is a property of stopping, not of the room: twenty-hitpoint
+        // mules cross to Castle Victoria every day by never doing it.
         need: () => {
           const v = this.s.client?.vitals?.();
           const hp = v?.health?.max ? v.health.value / v.health.max : null;
-          // Below 100% in a zone above our ceiling; below the ordinary threshold anywhere
-          // else. Asked fresh each leg because the room changes under a journey.
-          return hp !== null && hp < this.travelShelterBelow();
+          if (hp === null) return false;
+          // Anything that is not "untouched" is worth the next wall on the way past.
+          return hp < (this.policy.travelDivertBelow ?? 0.95);
         },
         onDivert: (stop, at) => this.note('taking a wall on the way past', {
           where: { col: stop.col, row: stop.row }, proven: stop.proven,

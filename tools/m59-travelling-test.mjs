@@ -622,5 +622,50 @@ console.log('THE WALL IS FOUND ALONG THE ROUTE, AND DAMAGE ALONE IS THE TRIGGER'
      /nothing in reach right now/.test(stage));
 }
 
+
+// ---------------------------------------------------------------------------
+// A TRIP IS REFUGE TO REFUGE, AND A REST STOP IS SKIPPED WHEN IT IS NOT NEEDED.
+//
+// The operator's framing, 2026-08-23, and it is the right way round: a journey is not a
+// straight line that gets interrupted, it is a chain of walls with walking between them.
+// Passing one costs nothing. Stopping at one is a decision made on arrival, not a reason to
+// tear the crossing down from four rooms away.
+//
+// TWO DIFFERENT NUMBERS, AND THEY MUST NEVER COLLAPSE INTO ONE AGAIN. Both the free divert
+// and the cancelling take-back used to read `travelShelterBelow`, so every moment worth a
+// detour was also a moment worth ending the trip — and the cancel won, because it runs in
+// the keeper on a one-second clock while the divert runs in the walker between legs. Every
+// journey of one evening ended `legs 2, planned_legs 7`, four health down, cancelled by its
+// own guard, leaving the character idle in a 750-danger room until something killed it.
+//
+//   DIVERTING IS CHEAP AND EAGER   the wall is already on the route, shelterAhead refuses
+//                                  anything behind or too far off it, and the walker splices
+//                                  it in as ONE MORE WAYPOINT without stopping
+//   CANCELLING IS EXPENSIVE, RARE  it ends the crossing, and standing still in these rooms
+//                                  costs thirty health in eight seconds
+console.log('');
+console.log('A TRIP IS REFUGE TO REFUGE — DIVERTS ARE EAGER, CANCELS ARE RARE');
+{
+  ok('the divert has its own threshold, separate from the cancel',
+     /travelDivertBelow \?\? 0\.95/.test(AUTOPILOT_SRC));
+  ok('and the cancel is for real trouble only',
+     /travelWallBelow \?\? 0\.5\)/.test(AUTOPILOT_SRC));
+  // THE ASSERTION THAT WOULD HAVE CAUGHT THE ORIGINAL BUG: the fuel-stop `need()` must not
+  // be reading the cancel's number.
+  const need = AUTOPILOT_SRC.slice(AUTOPILOT_SRC.indexOf('need: () => {'),
+                                   AUTOPILOT_SRC.indexOf('onDivert:'));
+  ok('the fuel stop does NOT ask the cancel what it thinks',
+     !/travelShelterBelow/.test(need), 'a divert and a cancel are different decisions');
+
+  // AND THE WALKER STILL SPLICES RATHER THAN STOPS, which is the half of the paradigm that
+  // was already right and must stay that way.
+  ok('a diverted wall is one more waypoint, not a new plan',
+     /ONE MORE WAYPOINT, NOT A NEW PLAN/.test(BROKER_SRC));
+  ok('and the route behind it is untouched',
+     /remaining\.unshift\(\{ row: stop\.row, col: stop\.col, shelter: true \}\)/.test(BROKER_SRC));
+  ok('and the policy is armed for the length of the journey, not per walk',
+     /THE FUEL-STOP POLICY, HANDED TO THE MOVER FOR THE LENGTH OF THE JOURNEY/.test(AUTOPILOT_SRC));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
