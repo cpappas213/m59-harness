@@ -173,7 +173,31 @@ export function regionsOf(table, roomNum) {
 export function bakedPath(table, roomNum, from, to) {
   const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
   if (!r) return null;
-  const p = r.routes?.[`${from.row},${from.col}>${to.row},${to.col}`];
+  const key = `${from.row},${from.col}>${to.row},${to.col}`;
+  // THE PIVOTS, WHEN THEY ARE THERE. THEY ALWAYS WERE, AND NOTHING EVER READ THEM.
+  //
+  // `routes` is one letter per SQUARE, and `followRail` sends one validated move per square
+  // of what this returns. So a crossing of Ukgoth was 117 packets covering one square each —
+  // which is the "more packets than a person, less ground" this repository measured from the
+  // client source and then did anyway.
+  //
+  // The bake already string-pulled every one of these routes and stored the result beside
+  // it. For that same Ukgoth crossing:
+  //
+  //     routes["1,66>71,2"]   117 squares, one letter each
+  //     pivots["1,66>71,2"]    17 squares — [1,66] [6,65] [7,64] [20,51] [23,51] ...
+  //
+  // `[7,64] -> [20,51]` is a THIRTEEN SQUARE leg. Seventeen moves instead of a hundred and
+  // seventeen, on a line the bake proved when it computed it.
+  //
+  // Safe because nothing downstream trusts this blindly: `followRail` validates every move
+  // it sends and falls back to the fine walker on a refusal, so an `unverified` pivot costs
+  // one refused packet and a short walk rather than a wrong crossing. The per-square replay
+  // stays as the answer when a route has no pivots baked.
+  const pivots = r.pivots?.[key]?.squares;
+  if (Array.isArray(pivots) && pivots.length > 1)
+    return pivots.map(([row, col]) => ({ row, col }));
+  const p = r.routes?.[key];
   if (typeof p !== 'string') return null;
   return replay(from.row, from.col, p);
 }
