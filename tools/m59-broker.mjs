@@ -3876,6 +3876,28 @@ class Session {
         return { done: false, legs, singles, why: 'the route could not be pulled' };
 
       if (!(pull.proved && pull.proved[0])) {
+        // SAY WHY, BECAUSE THIS IS NINETY PERCENT OF ALL MOVEMENT AND NOBODY KNOWS WHY.
+        //
+        // A single step is one square per packet; a proved leg is as many squares as the
+        // pull could see. Measured in Ukgoth: `step 120, pivot 13`. That ratio is the whole
+        // of the remaining pace gap, and every offline reproduction of it SUCCEEDS —
+        // same room, same plan, the broker's own masked geometry, thirty-three starting
+        // offsets across a whole square, and the first leg proves every time covering about
+        // four squares. So the reason it fails live is something the offline reproduction
+        // does not have, and guessing has cost three reverted commits.
+        //
+        // Cheap, and only in the trace: how many points the pull returned, what the proved
+        // string looks like, and how far the first aim wanted to go.
+        traceMove({ agent: this.name, room: this.world?.room?.num ?? null, kind: 'unproved',
+                    sent: false, reason: 'first_leg_unproved',
+                    points: pull?.points?.length ?? 0,
+                    proved: (pull?.proved ?? []).map(p => (p ? 1 : 0)).join('').slice(0, 24),
+                    remaining: remaining.length,
+                    aim_squares: pull?.points?.length > 1
+                      ? Math.round(Math.hypot(pull.points[1].x - pull.points[0].x,
+                                              pull.points[1].y - pull.points[0].y) / 1024 * 10) / 10
+                      : null,
+                    at: { col: me.col, row: me.row } });
         // The one square the pull could not prove: hand it to the ordinary step, which has
         // the aim correction, the slide and the edge learning. Then re-prove.
         const target = remaining[0];
