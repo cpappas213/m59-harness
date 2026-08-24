@@ -56,7 +56,13 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log('  FAIL ' + name + (extra ? '  ' + extra : '')); }
 };
 
-const BROKER_SRC = readFileSync('tools/m59-broker.mjs', 'utf8');
+// THE SPLIT MOVED THE CODE, SO THE SOURCE GREPS HAVE TO FOLLOW IT. `Session` (travelJob)
+// lives in m59-game.mjs and the watchdog rescue in m59-watchdog.mjs; reading only the two
+// original files leaves these assertions searching haystacks that no longer contain their
+// subject — which fails the positive ones loudly and passes the negative ones silently.
+const readSrc = f => { try { return readFileSync(f, 'utf8'); } catch { return ''; } };
+const BROKER_SRC = readSrc('tools/m59-game.mjs') + '\n' + readSrc('tools/m59-broker.mjs');
+const KEEPER_SRC = readSrc('tools/m59-autopilot.mjs') + '\n' + readSrc('tools/m59-watchdog.mjs');
 
 // Same shape as m59-travelling-test's fixture, and for the same reason: a real constructor
 // wants a session, which wants a socket, which wants a server. `who()` resolves to null so
@@ -161,7 +167,7 @@ console.log('\nthe take-back suspends rather than discards');
   ok('and the journey state itself is gone — a suspended journey holds nothing',
      k.inert === null);
 
-  const src = readFileSync('tools/m59-autopilot.mjs', 'utf8');
+  const src = KEEPER_SRC;
   ok('takeBack only suspends when it HAS a destination',
      /if \(held\.to != null\) \{/.test(src));
   ok('and carries the attempt count forward from the journey',
@@ -260,14 +266,14 @@ console.log('\nthe wiring the keeper cannot check for itself');
     ok(`\`${key}\` is a declared autopilot parameter`,
        BROKER_SRC.includes(`${key}:`) && BROKER_SRC.includes(`a.${key} !== undefined`));
   ok('resume happens in the LAST pass stage, so nothing more urgent is skipped for it',
-     /await this\.resumeSuspendedJourney\(ctx\)/.test(readFileSync('tools/m59-autopilot.mjs', 'utf8')));
+     /await this\.resumeSuspendedJourney\(ctx\)/.test(KEEPER_SRC));
 }
 
 
 console.log('');
 console.log('A WALL THAT HAS FINISHED ITS WORK IS RELEASED IN THE STAGE THAT OWNS IT');
 {
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   const stage = src.slice(src.indexOf('async passFleeAndRest'), src.indexOf('async passFollow'));
   // `releaseRestedHold` lives at the top of `resumeSuspendedJourney`, which lives in
   // `passFarm` — the LAST stage. A character holding a wall never reaches it, because
@@ -322,7 +328,7 @@ console.log('A WALL THAT HAS FINISHED ITS WORK IS RELEASED IN THE STAGE THAT OWN
 console.log('');
 console.log('AN INJURED LEG MENDS AT A WALL FORWARD ON THE ROUTE, AND KEEPS ITS DESTINATION');
 {
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   const fn = src.slice(src.indexOf('async shelterForwardAndMend'),
                        src.indexOf('async shelterForwardAndMend') + 2200);
   // Two deaths asked for this, and both were survivable:
@@ -340,8 +346,15 @@ console.log('AN INJURED LEG MENDS AT A WALL FORWARD ON THE ROUTE, AND KEEPS ITS 
   // TRIGGER ONE. The watchdog must never leave a body idle in the room it was dying in.
   const rescue = src.slice(src.indexOf('WATCHDOG — took the character back from a driver') - 2600,
                            src.indexOf('WATCHDOG — took the character back from a driver'));
-  ok('the watchdog rescue asks for that stop', /wantsForwardShelter =/.test(rescue));
-  ok('and still keeps the journey', /suspendedJourney = \{/.test(rescue));
+  // EITHER SPELLING. Upstream sets `this.wantsForwardShelter =` and `this.suspendedJourney
+  // = {` inline; the extracted watchdog reaches the same two through optional host hooks
+  // (`host.wantForwardShelter?.()`, `host.suspendJourney?.()`), which m59-autopilot.mjs
+  // implements at wantForwardShelter()/suspendJourney(). Same behaviour, one indirection —
+  // so assert the ASK, not the assignment, or the split reads as a missing rescue.
+  ok('the watchdog rescue asks for that stop',
+     /wantsForwardShelter =/.test(rescue) || /wantForwardShelter\?\.\(/.test(rescue));
+  ok('and still keeps the journey',
+     /suspendedJourney = \{/.test(rescue) || /suspendJourney\?\.\(/.test(rescue));
 
   // TRIGGER TWO. Poison takes a character to 1 health and then makes it rest to full anyway
   // once the enchantment ends — the rest is coming either way, and the only question is
@@ -361,7 +374,7 @@ console.log('AN INJURED LEG MENDS AT A WALL FORWARD ON THE ROUTE, AND KEEPS ITS 
 console.log('');
 console.log('FIT TO GO ON MEANS THE WALL HAS STOPPED PAYING, NOT AN ABSOLUTE NUMBER');
 {
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   const fn = src.slice(src.indexOf('async resumeSuspendedJourney'),
                        src.indexOf('async resumeSuspendedJourney') + 14000);
   // Full health is the right bar for a character resting somewhere safe and the wrong one for
@@ -414,13 +427,24 @@ console.log('A WATCHDOG RESCUE PAUSES A JOURNEY — IT DOES NOT THROW THE DESTIN
   //
   // The rescue itself is right: something was hitting it and the mover was not answering.
   // Throwing the destination away with the driver is what is not.
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   const rescue = src.slice(src.indexOf('WATCHDOG — took the character back from a driver') - 2400,
                            src.indexOf('WATCHDOG — took the character back from a driver'));
+  // FOLLOW THE DELEGATION RATHER THAN WEAKEN THE ASSERTION. The extracted watchdog calls
+  // host.suspendJourney?.(); m59-autopilot.mjs's suspendJourney(trigger) is where the
+  // record is actually written, and it carries BOTH halves this pins — the journey guard
+  // and the assignment. Searching only the inline rescue reads the split as a lost rescue.
+  const delegated = /suspendJourney\?\.\(/.test(rescue);
+  const hostSuspend = delegated
+    ? src.slice(src.indexOf('  suspendJourney(trigger) {'),
+                src.indexOf('  wantForwardShelter(why)'))
+    : '';
   ok('the rescue records a suspended journey before reviving',
-     /suspendedJourney = \{/.test(rescue), rescue.slice(-200));
+     /suspendedJourney = \{/.test(rescue) || /suspendedJourney = \{/.test(hostSuspend),
+     rescue.slice(-200));
   ok('and only when a journey is what was holding the character',
-     /const journey = this\.travelling/.test(rescue));
+     /const journey = this\.travelling/.test(rescue)
+     || /const journey = this\.travelling/.test(hostSuspend));
   ok('and names itself as the trigger, so a post-mortem can tell it from a guard rung',
      /the watchdog rescued a stalled driver/.test(rescue));
   ok('and it still revives — the rescue is not being cancelled, only the forgetting is',
@@ -471,7 +495,7 @@ console.log('A REST STOP ENDS WHEN THERE IS NOTHING LEFT TO GAIN BY STANDING THE
 console.log('');
 console.log('THE RUNG THAT RESUMES HAS TO GET A TURN, AND FOR A DAY IT DID NOT');
 {
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   // NARROWED TO THE BRANCH, NOT TO THE FILE BETWEEN TWO METHOD NAMES. Both
   // `resumeSuspendedJourney` and `releaseRestedHold` are defined between `passErrand` and
   // `passFarm`, and both legitimately mention the gates the last assertion here says must
@@ -522,7 +546,7 @@ console.log('THE RUNG THAT RESUMES HAS TO GET A TURN, AND FOR A DAY IT DID NOT')
 console.log('');
 console.log('AND THE WALK IS RECORDED, BECAUSE THAT IS WHAT FOUND IT');
 {
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   // Every other instrument reports the RESULT of the ladder walk. This one reports the walk,
   // and three different bugs share the symptom `mode idle` without it.
   ok('the ladder records which rungs got a turn', /const ran = \[\];/.test(src));
@@ -538,7 +562,7 @@ console.log('AND THE WALK IS RECORDED, BECAUSE THAT IS WHAT FOUND IT');
 console.log('');
 console.log('A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE');
 {
-  const src = readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8');
+  const src = KEEPER_SRC;
   const rule = src.slice(src.indexOf('journeyEndedInADeath(where'),
                          src.indexOf('recordFrame(why = null)'));
 
@@ -579,7 +603,7 @@ console.log('A DEATH IS A FAILED JOURNEY, NOT AN INTERRUPTED ONE');
   ok('and the rule is called the moment a death is DISCOVERED, not from one walk path',
      /woke up dead[\s\S]{0,400}journeyEndedInADeath/.test(src));
 
-  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+  const broker = BROKER_SRC;
   const job = broker.slice(broker.indexOf('travelJob(dest,'),
                            broker.indexOf('travelExclusive(dest'));
   ok('the travel job DELEGATES rather than keeping a second copy',
@@ -742,7 +766,7 @@ console.log('AND THEY ARE NOT ABOLISHED — THEY ARE MOVED IN FRONT OF THE ROAD'
 
   // THE FLAG ITSELF. Default true — the common case — and false for a timed measurement or
   // an emergency, which are the two cases the operator named.
-  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+  const broker = BROKER_SRC;
   ok('the journey takes the flag and defaults it to true',
      /travelJob\(dest, \{ where = `room \$\{dest\}`, runErrands = true/.test(broker));
   ok('and only runs them when it is set',
@@ -814,7 +838,7 @@ console.log('THE WALL COMES FIRST, AND THE ROAD WAITS FOR IT');
   //    ordinary ladder would answer, which was true only for a character it considered hurt.
   ok('pausing for a wall sets the request the shelter rung reads',
      /if \(!abandon\) this\.wantsForwardShelter = 'the journey paused for a wall'/
-       .test(readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8')));
+       .test(KEEPER_SRC));
 }
 
 
@@ -850,7 +874,7 @@ console.log('FLAT ONLY MEANS "AS WELL AS I WILL GET" IF SOMETHING IS HEALING YOU
   // again, so after a few asks the old trend gate is allowed to open — which is at least a
   // decision, and the absolute floor and the attempt cap still bound it.
   ok('the asking is bounded rather than a new way to never leave',
-     /resumeWallAsks/.test(readFileSync(join(HERE, 'm59-autopilot.mjs'), 'utf8')));
+     /resumeWallAsks/.test(KEEPER_SRC));
 
   // AND AT A WALL IT STILL WORKS AS BEFORE: flatness there is real evidence.
   const atAWall = keeper({ health: 36, max: 37, hold: { room: 587, col: 5, row: 42 } });
