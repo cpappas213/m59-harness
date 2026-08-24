@@ -38,6 +38,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { RoomGeometry } from './m59-roo.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 // The eight neighbours, in clockwise order, so that a run of blocked ones can be
 // recognised as a contiguous arc rather than eight independent facts.

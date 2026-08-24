@@ -127,6 +127,7 @@ import { COMMANDER_SCHEMA, COMMERCE_SCHEMA, COMMANDER_FACULTIES,
          exactRtsRoomBinding, fleetIdentity, leaseTiming, quoteTiming, redactControlArgs,
          resolveCommerceInventoryOrigins, tradeFingerprint } from './m59-rts-command.mjs';
 import { joinSessionOnce, sessionReadiness } from './m59-session-readiness.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);

@@ -26,6 +26,7 @@ import { protocolToClient, clientToProtocol, buildAllRoomGeometry } from './m59-
 import { loadMap, buildReverseEdges } from './m59-map.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 import * as watchdog from './m59-watchdog.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 // ---------------------------------------------------------------- args
 

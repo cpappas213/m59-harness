@@ -34,6 +34,7 @@ import {
   PLAYER_HEIGHT, PLAYER_RADIUS, PLAYER_WIDTH,
   heightKodToClient, DEFAULT_ROO_DIRS,
 } from './m59-roo.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 let pass = 0, fail = 0, skipped = 0;
 const ok = (label, cond, detail = '') => {

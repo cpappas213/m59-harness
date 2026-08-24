@@ -38,6 +38,7 @@ import { pickWeapon } from './m59-act/equip.mjs';
 import { pickFood } from './m59-act/eat.mjs';
 import { knownSpells } from './m59-act/cast.mjs';
 import { affordances } from './m59-parse.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 // BROKEN-WEAPON TRACKING (the fix for the shattered-mace loop).
 //

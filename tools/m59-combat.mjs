@@ -14,6 +14,7 @@
 
 import { KOD_FINENESS, protocolToClient } from './m59-roo.mjs';
 import { zapStatus, shouldCastZap, findZapSpell, equippedWeapon } from './m59-zap.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 /**
  * Compute the adjacent square to walk to when engaging a target.

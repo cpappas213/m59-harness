@@ -13,6 +13,12 @@
 //
 // Note: MOVE packets carry x=col, y=row in fine units; z/height is not sent, so we read
 // it from the geometry. moveToSquare takes (col, row).
+// heightStepOk is ours and lives in m59-navgeom.mjs, which installs it onto
+// RoomGeometry. Imported here for the side effect rather than relying on whichever
+// caller happened to load it first — this file takes its geometry from a caller and
+// would otherwise fail only on the branch that reads a ledge.
+import './m59-navgeom.mjs';
+
 export function wanderAway(client, session) {
   try {
     const room = client?.room;

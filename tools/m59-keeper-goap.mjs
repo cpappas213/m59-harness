@@ -75,6 +75,7 @@ function _compendiumLevel(roomNum, mobName) {
   return null;
 }
 import { affordances, OF } from './m59-parse.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 // ROOMS THAT HAVE SHOPS. A shop is any room where a merchant with a buy
 // list can be found. We use room names as a proxy: inns, taverns, shops,
