@@ -9588,71 +9588,34 @@ export class Autopilot {
     //
     // What bounds it is the per-room budget, which is where the rationing belongs — not a
     // condition that happens to be false most of the time something is wrong.
-    if (shelterNow && this.travelAllows('safe_spot') && hp !== null) {
-      const geo = this.s.world?.geometry;
-      let spot = null;
-      // THE STOP COMES FROM THE ROUTE, NOT FROM A SEARCH AROUND THE BODY.
-      //
-      // `sheltersAlong` already worked these out when the crossing was planned, and the
-      // walker splices the next one ahead into the route without stopping. This rung used
-      // to ignore all of that and call `nearestSafeSpot` from wherever the character was
-      // standing — a radius search in any direction, including BACK through whatever had
-      // just bitten it, and paid for at exactly the moment there is no time to think.
-      //
-      // `shelterAhead` refuses anything already passed and anything more than `maxDetour`
-      // off the road, and since 2026-08-21 it ranks by the two grids DISAGREEING rather
-      // than by whether this fleet has stood there before — the disagreement is what stops
-      // a monster reaching us, and it is computable for a square nobody has ever visited.
-      const planned = this.s.activeShelter;
-      if (planned?.spots?.length) {
-        try {
-          const stop = shelterAhead(planned.spots, planned.atStep ?? 0,
-                                    { maxDetour: planned.maxDetour ?? 4,
-                                      unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
-          if (stop) spot = { col: stop.col, row: stop.row, steps_away: stop.detour,
-                             proven: stop.proven, from_route: true,
-                             refused_approaches: stop.refused_approaches ?? null };
-        } catch { spot = null; }
-      }
-      // Only when there is no plan to be ahead ON — a hop that was never routed, or a
-      // journey whose walk has already finished. Then a search is the only thing left.
-      //
-      // AND IT IS SAID OUT LOUD, because this is the branch that can walk a character
-      // BACKWARDS. It is a radius search around the body with no notion of the route, so it
-      // will offer a wall back through whatever just bit us: Bbbb was in 587 and sheltered
-      // in 586, a room it had already crossed. The route branch above cannot do that —
-      // `shelterAhead` refuses anything already passed.
-      //
-      // Measured after the disagreement rewrite, the plan is almost always there: 12 to 21
-      // real walls along a single crossing of 597, 598 or 587. So this firing at all now
-      // means a hop was never routed, which is worth a line rather than a silence.
-      if (!spot && geo && me) {
-        this.note('no planned wall ahead — searching around the body instead', {
-          room: this.s.world?.room?.num ?? null,
-          health: Math.round(hp * 100) + '%',
-          why: 'this hop has no shelter plan, so the route cannot be asked. A radius search ' +
-               'has no idea which way the road went and can offer a wall behind us',
-        });
-        try {
-          spot = nearestSafeSpot(geo, me, { book: this.book,
-                                            unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
-                                            reach: this.reachTest(),
-                                            room: this.s.world?.room?.num ?? null,
-                                            within: this.policy.travelHoldWithin ?? 10 });
-        } catch { spot = null; }
-      }
-      if (spot) this.shelterStops.taken = (this.shelterStops.taken ?? 0) + 1;
-      if (spot)
-        return takeBack('a wall is nearer than the next room',
-                        `${Math.round(hp * 100)}% health with ` +
-                        `${near.length ? `${near.length} on us` : 'nothing in reach right now'}` +
-                        `, and a ` +
-                        `defensible square ${spot.steps_away ?? '?'} step(s) away. A creature ` +
-                        'cannot path to it, so reaching it ends this rather than outrunning it',
-                        { adjacent: near.length,
-                          spot: { col: spot.col, row: spot.row, steps: spot.steps_away ?? null,
-                                  proven: !!spot.proven } });
-    }
+    // ============ ONLY DEATH OR A PLAYER STOPS A JOURNEY. NOTHING ELSE. ============
+    //
+    // The operator's rule, stated repeatedly, and it is already written at the top of
+    // m59-resumetravel-test: A JOURNEY IS NEVER ABANDONED UNLESS A PLAYER IS ATTACKING.
+    // Every mid-hop health threshold this file has carried is a violation of it, and I have
+    // now tuned that number four times in one day — 1, then 0.8, then 1 again, then 0.5 —
+    // each time treating "what is the right level to stop at" as the question. The question
+    // was whether to stop at all.
+    //
+    // WHAT THE RECORD SAYS. Every journey of one evening:
+    //
+    //     legs 2, planned_legs 7      hp 33 -> 29
+    //     legs 2, planned_legs 7      hp 20 -> 15
+    //
+    // two legs of seven, four health down, cancelled by THIS RUNG, and then the character
+    // stood idle in a 750-danger room until something killed it. Measured on one of them:
+    // thirty health in eight seconds, stationary. Twenty-hitpoint mules cross to Castle
+    // Victoria every day by never doing that.
+    //
+    // A WALL IS STILL TAKEN — AS A WAYPOINT, NOT AS AN ENDING. `shelterPolicy` hands the
+    // walker a fuel-stop contract for the length of the journey and `walkPivots` splices the
+    // next refuge into the route without stopping: one more waypoint, no replan, no handing
+    // the character back. That is the whole of "run refuge to refuge and skip the stops you
+    // do not need", and it needs nothing from this rung.
+    //
+    // SO WHAT IS LEFT MID-HOP IS `flee`, WHICH IS PLAYERS-ONLY. A person can follow you to a
+    // wall, swing first and take the pack, so distance is the answer to a person and only to
+    // a person. Death ends a journey by definition. Those are the two.
 
 
     // ---- 3. INSIDE TWO HITS OF DEATH, AND NO WALL TO PUT AT OUR BACK.
@@ -9690,14 +9653,27 @@ export class Autopilot {
     // So the gate moves from `play_dead` to `flee`: it is a flee decision taken at a lower
     // threshold than the flee line, for the case where the flee line cannot see the danger
     // because the danger is not a person.
-    if (this.travelAllows('flee') && wouldPlayDead)
-      return takeBack('two hits from death',
-                      `${v.health.value} health with ${near.length} adjacent, and no wall ` +
-                      `within reach to put at our back`,
-                      { adjacent: near.length,
-                        doomed_below: this.policy.doomedInOpenBelow ?? 0.3,
-                        hands_over_to: 'a town trip or a withdrawal — never a freeze, which ' +
-                                       'off a proven spot recovers vigor and never health' });
+    // `two hits from death` USED TO END THE JOURNEY HERE, AND IT NO LONGER DOES.
+    //
+    // The operator's rule: death or a player are the only two reasons to stop travelling.
+    // Being nearly killed by a monster is neither, and the argument that it is only holds
+    // if stopping helps. It does not — it is the thing that kills:
+    //
+    //     act=idle | hp 3/33 | for 8s | walked 5.4 | net 2.8 | shelter_after None | rooms [598]
+    //
+    // Thirty health in eight seconds while STATIONARY. A character two hits from death that
+    // keeps walking outpaces most of what is chasing it; one that stops is surrounded by all
+    // of it. The rung's own comment argued that ending the journey was safe because what it
+    // handed over to — a town trip or a withdrawal — would MOVE. In practice the hand-over
+    // left the character idle, and the record above is what idle costs.
+    //
+    // The wall it wanted is still taken, as a WAYPOINT: `shelterPolicy` gives the walker a
+    // fuel stop for the whole journey and `walkPivots` splices the next refuge into the
+    // route without stopping. That is shelter that does not cost the crossing.
+    //
+    // The one below this — `dying faster than this journey can finish` — survives, because
+    // it is gated on `worthEnding`, which under the default `travel_flee_from: 'players'` is
+    // a PERSON. That is the PVP half of the rule and it stays exactly as it was.
 
     // ---- 4. BELOW THE LINE THIS KEEPER FLEES AT, WITH SOMETHING ON US.
     //
