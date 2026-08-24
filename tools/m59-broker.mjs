@@ -5390,7 +5390,16 @@ class Session {
       const r = await this.step(next.col, next.row, { beforeMutation, fall: !!next.fall });
       taken += hop;
       if (r.left_room)
-        return { arrived: false, left_room: true, steps: taken, note: 'a step crossed the room edge' };
+        // NAMED, BECAUSE A THIRD OF UKGOTH'S RAIL FAILURES ARRIVED AS A QUESTION MARK.
+        //
+        // `leaveVia` records `could not get on at R,C: ${got?.reason ?? '?'}`, and this
+        // return had no `reason` at all — so 64 of 183 boarding failures in room 599 were
+        // written to the tactics ledger as `?` and could not be told apart from each other
+        // or from anything else. Same gap as the transit book's missing refusal detail, and
+        // that one took one run to crack once it could speak.
+        return { arrived: false, left_room: true, steps: taken,
+                 reason: 'left_room_while_walking',
+                 note: 'a step crossed the room edge' };
       if (isTerminalMovementReason(r.reason))
         return { arrived: false, ...r, steps: taken, replans };
       // ASK BEFORE GIVING UP. This is the site that ended 17 of 21 journeys on one run:
@@ -6475,7 +6484,20 @@ class Session {
           if (!got?.arrived) {
             recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
-                           note: `could not get on at ${rail.from.row},${rail.from.col}: ${got?.reason ?? '?'}` });
+                           // A NET, SO NO BOARDING FAILURE CAN BE SILENT AGAIN. `walkTo`
+                           // returns down several paths and not all of them carry a
+                           // `reason`; 64 of 183 failures in Ukgoth were recorded as `?`
+                           // and were indistinguishable from each other. Whatever is
+                           // present gets written — where it stopped, how far it got,
+                           // whether it left the room — because a third of the evidence
+                           // arriving as one character is how this stayed unexplained.
+                           note: `could not get on at ${rail.from.row},${rail.from.col}: ` +
+                                 (got?.reason
+                                  ?? (got?.left_room ? 'left the room while walking to the rail'
+                                      : got?.note ? String(got.note).slice(0, 60)
+                                      : `no reason given (steps ${got?.steps ?? 0}` +
+                                        `${got?.blocked_at ? `, blocked at ${got.blocked_at.row},${got.blocked_at.col}` : ''}` +
+                                        `${got?.replans != null ? `, replans ${got.replans}` : ''})`)) });
           }
           if (got?.arrived) {
             // 2. FOLLOW.
