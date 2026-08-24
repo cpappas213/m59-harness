@@ -33,9 +33,26 @@ const ok = (what, cond) => { if (cond) pass++; else { fail++; console.log(`  FAI
 // BORROW THE REAL IMPLEMENTATION, NEVER A COPY — `m59-broker.mjs` cannot be imported,
 // importing it takes the fleet lock and starts rejoin timers, so the methods are lifted
 // out of the source by BRACE MATCHING.
-const src = readFileSync(process.env.M59_BROKER_SRC ? new URL('file://' + process.env.M59_BROKER_SRC) : new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+//
+// AND IT HAS TO FOLLOW THE CODE. `Session` moved to m59-game.mjs in the keeper split and
+// this file went on reading m59-broker.mjs, so every lift missed, `lift` returned
+// undefined, and the suite died at the first CALL with "Cannot read properties of
+// undefined (reading 'call')" — a hundred lines from the actual cause, with no counts
+// printed at all. Read both, newest home first.
+const SRC_FILES = process.env.M59_BROKER_SRC
+  ? [new URL('file://' + process.env.M59_BROKER_SRC)]
+  : [new URL('./m59-game.mjs', import.meta.url), new URL('./m59-broker.mjs', import.meta.url)];
+const src = SRC_FILES.map(u => { try { return readFileSync(u, 'utf8'); } catch { return ''; } }).join('\n');
 function lift(signature, name, deps = {}) {
   const start = src.indexOf('  ' + signature);
+  // A GREP THAT CANNOT FIND ITS SUBJECT MUST STOP, NOT HAND BACK A HOLE. `ok(false)` alone
+  // recorded the miss and carried on returning undefined, so the real error arrived later
+  // and somewhere else — and a suite that dies mid-run prints no totals, which reads as an
+  // infrastructure problem rather than as a broken test.
+  if (start < 0)
+    throw new Error(`lift: ${name} not found — looked for "${signature}" in ` +
+                    SRC_FILES.map(u => u.pathname.split('/').pop()).join(' + ') +
+                    '. If it moved, add its new home to SRC_FILES.');
   ok(`the ${name} method was located`, start >= 0);
   const opening = src.indexOf(') {', start);
   let depth = 0, end = -1;
