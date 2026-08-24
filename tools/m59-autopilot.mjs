@@ -5856,7 +5856,48 @@ export class Autopilot {
 
   // The shelter threshold in force RIGHT HERE, which is not a constant. See roomOutranksUs.
   //
-  // ANY DAMAGE AT ALL, AND THE OPERATOR IS RIGHT THAT THIS IS NOW THE CHEAP OPTION.
+  // A SCRATCH DOES NOT STOP A CROSSING. MOVING IS HOW YOU SURVIVE THESE ROOMS.
+  //
+  // ===================== CORRECTED 2026-08-23, WITH EVIDENCE =====================
+  //
+  // This was 1 — shelter at any damage at all — for most of an evening, on the reasoning
+  // below, which was sound about the COST OF A STOP and silent about the cost of stopping
+  // OFTEN. The transit book says what that cost was:
+  //
+  //     587 -> 597  FAIL  movement cancelled by a travel guard rung taking the character back
+  //     598 -> 599  FAIL  movement cancelled by the watchdog pulling us out of a blind walk
+  //     587 -> 597  FAIL  movement cancelled by a travel guard rung taking the character back
+  //
+  // and the journey ledger says it in one number, on every single journey of the evening:
+  //
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //     legs 2, planned_legs 7      hp 20 -> 15
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //
+  // TWO LEGS OF SEVEN, EVERY TIME, having lost four health. Nothing was killing these
+  // characters. Our own guard was ending the crossing over a scratch, and then they stood
+  // idle in a 750-danger room until something did kill them. Measured on one:
+  //
+  //     act=idle | hp 3/33 | for 8s | walked 5.4 | net 2.8 | shelter_after None | rooms [598]
+  //
+  // Thirty health in eight seconds — WHILE STATIONARY. I read that rate as a property of
+  // the Cragged Mountains and concluded the room was unsurvivable. The operator's
+  // correction is the whole of it: twenty-hitpoint mules cross to Castle Victoria daily.
+  // The rate is a property of STANDING STILL. A moving character outpaces most of what
+  // chases it, and a thing that never catches you never hits you.
+  //
+  // So the damage rate is an OUTPUT of stopping, not an input that stopping answers — and a
+  // trigger that stops on any scratch is a machine for producing it.
+  //
+  // Mid-hop is now for real trouble only: half health, a little earlier where the room
+  // outranks the character, and `wouldPlayDead` regardless. Everything above that keeps
+  // walking, and the HOP BOUNDARY — where a pause costs nothing because the mover is
+  // between rooms and the journey pauses rather than ending — is where an ordinary shelter
+  // belongs. That distinction is what TRAVEL_GUARD_CLOCK exists to record, and it was right
+  // before I traded it away for sensitivity.
+  //
+  // The reasoning that produced the 1, kept because the half of it that is true is why the
+  // number is 0.5 rather than back where it started:
   //
   // This has been 1 before and it was a disaster then, so the change of mind needs its
   // reasons written down rather than just its new number. It produced
@@ -5888,8 +5929,8 @@ export class Autopilot {
   // trigger safe rather than the threshold doing that job badly.
   travelShelterBelow() {
     return this.roomOutranksUs()
-      ? (this.policy.travelWallBelowOutranked ?? 1)
-      : (this.policy.travelWallBelow ?? 1);
+      ? (this.policy.travelWallBelowOutranked ?? 0.55)
+      : (this.policy.travelWallBelow ?? 0.5);
   }
 
   /**

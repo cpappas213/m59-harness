@@ -187,9 +187,22 @@ console.log('\nthe guard: what a journey leaves switched on');
   //
   // So what is pinned now is the LOOP GUARD, because that is what carries the load once the
   // threshold stops trying to: a per-room budget, with the doomed case exempt from it.
-  ok('any damage is enough to want a wall — the threshold is not doing the rationing',
-     /travelWallBelowOutranked \?\? 1/.test(AUTOPILOT_SRC)
-     && /travelWallBelow \?\? 1\)/.test(AUTOPILOT_SRC));
+  // CORRECTED AGAIN, AND THIS TIME BY THE TRANSIT BOOK RATHER THAN BY AN ARGUMENT.
+  //
+  // "Any damage is enough" was right about the cost of ONE stop and silent about the cost of
+  // stopping OFTEN. Every journey of that evening ended
+  //
+  //     legs 2, planned_legs 7      hp 33 -> 29
+  //
+  // cancelled by this very rung, four health down, leaving the character idle in a
+  // 750-danger room until something killed it. The room is not unsurvivable — twenty-
+  // hitpoint mules cross to Castle Victoria daily — the difference is that they keep moving.
+  // A stationary character measured thirty health lost in eight seconds; a moving one
+  // outpaces most of what chases it.
+  ok('a scratch does not cancel a crossing',
+     /travelWallBelow \?\? 0\.5\)/.test(AUTOPILOT_SRC), 'mid-hop is for real trouble only');
+  ok('and an outranking room shelters a little earlier, not at full health',
+     /travelWallBelowOutranked \?\? 0\.55/.test(AUTOPILOT_SRC));
   ok('and the per-room budget is what stops a hostile room looping',
      /travelShelterPerRoom \?\? 4/.test(AUTOPILOT_SRC));
   // The split is what keeps "only one thing drives a body" true, so it is pinned rather
@@ -528,7 +541,9 @@ console.log('MID-HOP A WALL IS AN OPTION AGAIN — BECAUSE A CANCEL NO LONGER LO
   // case: entered the Cragged Mountains at full health, killed inside it in twenty-five
   // seconds, and never reached another boundary to be asked at. The room is 2,450 squares.
   // A wall it cannot be offered until the far side of the room is not a wall it has.
-  const hurt = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
+  // 40% — genuinely in trouble, not scratched. At 50% or above the crossing continues,
+  // which is the whole of the correction above.
+  const hurt = withPlan({ health: 24, max: 60, fleeAt: 0.7 });
   ok('a hurt traveller mid-hop DOES stop for a wall now', await sheltered(hurt),
      JSON.stringify(hurt.notes.map(n => n.what)));
 
@@ -536,7 +551,7 @@ console.log('MID-HOP A WALL IS AN OPTION AGAIN — BECAUSE A CANCEL NO LONGER LO
   // stop, it was thirty laps of stop-and-restart in a single leg — so the budget is what
   // makes mid-hop affordable, and the note when it is spent is what keeps the refusal
   // arguable rather than silent.
-  const spent = withPlan({ health: 30, max: 60, fleeAt: 0.7 });
+  const spent = withPlan({ health: 24, max: 60, fleeAt: 0.7 });
   // Keyed on the ROOM the counter belongs to — it resets on entering a new one, so a
   // fixture that omits the room is a fixture whose budget is wiped before it is read.
   spent.shelterStops = { room: spent.s.world.room.num, taken: 99, noted: false };
