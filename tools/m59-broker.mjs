@@ -4300,6 +4300,24 @@ class Session {
         try { plan = geo.path(me.row, me.col, toRow, toCol, {}); } catch { plan = null; }
         const steps = plan?.found ? (plan.steps ?? []) : null;
         if (steps && steps.length > 1) {
+          // THREE WAYS TO WALK THIS WERE MEASURED. THE CORNERS WON, AND NOT BY A LITTLE.
+          //
+          // In Ukgoth, same hop, same character class, one run each:
+          //
+          //     corners, ordinary stride    826 sent,  206 refused   20% refused
+          //     delegated to walkPivots     316 sent,  538 refused   63% refused
+          //     corners, five-square aim    138 sent,  953 refused   87% refused
+          //
+          // The two losers were both attempts to cover more ground per packet, which IS the
+          // remaining gap — 0.29 squares a move against a running client's five. Neither
+          // worked, and for the same reason: a long aim is only safe if the line is proved,
+          // and neither the grid path's corners nor stringPull's pivots describe a corridor
+          // this walker can take in one move from a body standing off-centre in a square.
+          //
+          // Left as the measured best rather than the theoretically tidiest. The ground-per-
+          // packet problem is real and still open; what is settled is that widening the aim
+          // is not the way to it.
+          //
           // The corners only. Every square would be one packet per square, which is the
           // pace this repository already measured as "more packets than a person, less
           // ground"; the pull's own corners are what a running client would aim at.
