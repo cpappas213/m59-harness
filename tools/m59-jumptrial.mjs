@@ -480,10 +480,31 @@ const dm = await import('./m59-dm.mjs');
 
 // ---------------------------------------------------------------- one attempt
 
+// SOMETHING IN THE PIT *IS* IN THE WAY, AND THE MEASUREMENT SAYS SO.
+//
+// This filtered out anything standing on the gulley floor, on the reasoning that a jump which
+// clears the pit passes over their heads. It is wrong, and the experiment that assumed it is
+// what proved it: with pit occupants no longer counted, the jumps that were reclassified as
+// having a "clear line" FAILED — pick_clear went 8/27 to 1/16 and its clear-line rate to 0/9.
+//
+// The reason is the trace rather than the altitude. The line from 36,16 to 38,10 passes
+// directly over 38,13, and a falling body is clipped by an object in a square it passes
+// THROUGH, not merely one it lands on: every such attempt reported `object_blocked` and ended
+// at 38,13, in the pit, on top of the troll that stopped it.
+//
+// So the filter is inert now and the flag it computes is kept only as evidence. If it is ever
+// re-proposed, this is the run that refutes it.
+const LEDGE_FLOOR = () => floorAt(36, 16);
+const SHELF_FLOOR = () => floorAt(38, 10);
+function inFlightPath(o) {
+  return true;                                 // everything counts — see the note above
+}
+
 async function observe(agent) {
   const l = await call('look', { agent });
   if (l._error) return null;
-  return { me: l.you, objects: (l.objects ?? []).filter(o => !o.is_player || o.is_player === false) };
+  const objects = (l.objects ?? []).filter(o => !o.is_player || o.is_player === false);
+  return { me: l.you, objects, atHeight: objects.filter(inFlightPath) };
 }
 
 async function attempt(q, name) {
@@ -499,6 +520,12 @@ async function attempt(q, name) {
   // problem and a DIFFERENT one. This is about the jump. So the body is placed on the square
   // (lab server, DM powers) and `--walk` opts back into walking for anyone who wants to
   // measure the approach instead. Which one happened is recorded either way.
+  // WHOLE BEFORE EVERY ATTEMPT, VIGOR INCLUDED — see the note at the queue placement. A
+  // declared fall-jump requires RUNNING and running is paid for in vigor; a character on
+  // 1/200 cannot make a jump that has nothing to do with its legs being tired in any way the
+  // trial is trying to measure. Recycling five characters six times without this is what took
+  // the success rate from 85% to 0%.
+  await dm.heal([q.character]).catch(() => null);
   out.approach = WALK ? 'walked' : 'placed';
   if (WALK) {
     const walk = await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 120000);
@@ -580,11 +607,14 @@ async function attempt(q, name) {
   // So: look once, and if nothing is near the line, jump NOW. The exposure that costs attempts
   // is the time between arriving and committing, and with a clear line that time is waste.
   const first = at;
-  const nearFirst = (first.objects ?? []).filter(o =>
+  const nearFirst = (first.atHeight ?? first.objects ?? []).filter(o =>
     distToLine({ col: o.col, row: o.row }, st.from, st.to) <= (st.wait ?? 2));
   const second = nearFirst.length ? (await sleep(500), await observe(q.agent)) : first;
-  const near = (second?.objects ?? []).filter(o =>
+  const near = (second?.atHeight ?? second?.objects ?? []).filter(o =>
     distToLine({ col: o.col, row: o.row }, st.from, st.to) <= (st.wait ?? 2));
+  // Recorded even though it does not gate anything: 'the pit was full and we cleared it' is
+  // the sentence that proves the height filter is right, and it would be invisible otherwise.
+  out.in_the_pit = ((second?.objects ?? []).length - (second?.atHeight ?? []).length);
   const movedById = new Map((first.objects ?? []).map(o => [o.id, o]));
   const blockers = near.map(o => {
     const was = movedById.get(o.id);
@@ -607,7 +637,7 @@ async function attempt(q, name) {
     while (Date.now() < until) {
       await sleep(1500);
       const look = await observe(q.agent);
-      const now = (look?.objects ?? []).filter(o =>
+      const now = (look?.atHeight ?? look?.objects ?? []).filter(o =>
         distToLine({ col: o.col, row: o.row }, st.from, st.to) <= st.wait);
       if (!now.length) { blockers.length = 0; break; }
     }
@@ -642,7 +672,7 @@ async function attempt(q, name) {
   //    object to the line, so the best candidate is the one that maximises it; ties go to the
   //    declared landing, which is the one somebody has actually walked.
   if (st.candidates) {
-    const objs = (second?.objects ?? []);
+    const objs = (second?.atHeight ?? second?.objects ?? []);
     let best = null;
     for (const cand of SHELF) {
       const clearance = objs.length
@@ -685,6 +715,31 @@ async function attempt(q, name) {
 }
 
 // ---------------------------------------------------------------- run
+
+// EVERYONE NOT IN THE TRIAL IS TRAFFIC, AND TRAFFIC IS WHAT WE ARE TRYING TO MEASURE
+// AGAINST — not to add to.
+//
+// A queue of sixteen characters waiting their turn on a plateau eight squares from the ledge
+// is sixteen more bodies in a room whose whole difficulty is bodies. It showed up as 45
+// attempts that never reached the ledge and 25 that were pushed off it. The waiting room was
+// the problem it was meant to avoid.
+//
+// So the characters not taking part are sent out of the room entirely and parked there. Five
+// recycled repeatedly is a cleaner experiment than twenty-one queueing, and it is the
+// operator's suggestion.
+const EVACUATE_TO = 52;                       // Familiars, the Tos inn — far, and safe
+const sittingOut = (fleetNow.fleet ?? []).filter(r => r.agent && r.character &&
+                                                 !queue.some(q => q.agent === r.agent));
+if (sittingOut.length) {
+  console.log(`clearing the room: ${sittingOut.length} character(s) not in this trial -> room ${EVACUATE_TO}`);
+  for (const r of sittingOut) {
+    await call('autopilot', { agent: r.agent, mode: 'idle', roam: false, confine_rooms: [EVACUATE_TO] });
+    await dm.relocate([r.character], EVACUATE_TO, { verify: false }).catch(() => null);
+    await call('autopilot', { agent: r.agent, action: 'park', why: 'sitting out a jump trial' });
+    await sleep(150);
+  }
+  console.log('cleared.');
+}
 
 console.log('placing the queue…');
 for (const q of queue) {
@@ -729,11 +784,7 @@ for (let round = 1; round <= ROUNDS; round++) {
       // would otherwise be out of the experiment; one that missed is in the gulley it cannot
       // climb out of. The relocate is the only thing that makes this a LOOP.
       await dm.relocate([q.character], ROOM, { row: q.spot.row, col: q.spot.col, verify: false }).catch(() => null);
-      try {
-        const ids = await dm.resolve([q.character]);
-        if (ids?.[q.character] != null && q.max_health)
-          await dm.dm([...dm.healthCmds(ids[q.character], q.max_health)], { timeoutMs: 30000 });
-      } catch {}
+      await dm.heal([q.character]).catch(() => null);
       await sleep(300);
     }
   }
