@@ -42,6 +42,7 @@ import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, blocksMovement, prepareActTarget } from './m59-parse.mjs';
 import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
+import { renderProjection } from './m59-render-projection.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
   from './m59-map.mjs';
 // UNION OF BOTH SIDES. Ours added loadRoo/buildAllRoomGeometry for the keeper split;
@@ -98,7 +99,7 @@ import { RANK, RANK_NAME, COMMANDS, mayI, commandsIn, validateGuild,
 import { loadSpawns, huntingGrounds, roomThreats, preyFor, scorePrey, PURPOSES,
          knownDrops, whoDrops } from './m59-spawns.mjs';
 // UNION: upstream's shelter helpers plus the book this checkout already used.
-import { safeSpots, safeSpotBook,
+import { safeSpots, safeSpotBook, geometryFor as safeSpotGeometryFor,
          nearestSafeSpot, sheltersAlong, shelterAhead } from './m59-safespots.mjs';
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
@@ -754,12 +755,95 @@ const sessions = new Map();             // agent name -> Session
 const keeperProcesses = new Map();     // agent name -> { pid, port, startedAt }
 const KEEPER_PORT_BASE = 8911;
 
+// A PORT IS NOT A NAME, AND TWO FLEETS ON ONE MACHINE WANTED THE SAME PORTS.
+//
+// This was `KEEPER_PORT_BASE + index` and nothing else, so `prod`'s t10 and `shadow`'s
+// shadow10 are both index 9 and both want 8920. Whichever broker got there first owned it,
+// and the other one then POLLED IT ANYWAY — reading a stranger's keeper and believing the
+// answer. Measured on this machine with both brokers up:
+//
+//     port 8920 -> shadow10  Jjjj   <- the prod broker was reading this as its t10
+//     port 8931 -> shadow21  Uuuu   <- and this as its t21
+//
+// So `fleet` on the production broker reported ten shadow characters, `m59-shadow.mjs
+// snapshot` wrote them into the snapshot as production characters, and for a while it
+// looked exactly like ten production Muppets had been replaced on the live server. They had
+// not — the roster on disk was correct throughout — but ten real characters had no keeper of
+// their own, because their keeper could not bind the port and nothing said so.
+//
+// This is the same failure the whole `m59-which.mjs` doctrine exists for, one layer down:
+// two fleets on one machine are not the same fleet, and identity has to be checked rather
+// than inferred from a number that happens to match.
+//
+// The allocation is remembered per agent so every later call reaches the keeper that was
+// actually started, rather than recomputing a guess.
+const keeperPorts = new Map();
+
 function keeperPort(agent, index) {
+  const known = keeperProcesses.get(agent)?.port ?? keeperPorts.get(agent);
+  if (known) return known;
   return KEEPER_PORT_BASE + (index ?? 0);
 }
 
+// CAN THE KEEPER ACTUALLY BIND IT? That is the only question that matters, and asking it by
+// HTTP got it wrong: "nothing answered in two seconds" was read as "free", so a busy keeper
+// that was slow to reply had its port handed to somebody else, who then died on startup with
+//
+//     Error: listen EADDRINUSE 127.0.0.1:8916
+//
+// — three production characters left without a keeper by the very code written to stop that.
+// A bind attempt is what the keeper does a moment later, so it is the same question asked
+// the same way, and it does not care whether the holder speaks HTTP or how quickly.
+async function canBind(port) {
+  const net = await import('node:net');
+  return await new Promise(resolve => {
+    const probe = net.createServer();
+    probe.once('error', () => resolve(false));
+    probe.once('listening', () => probe.close(() => resolve(true)));
+    try { probe.listen(port, '127.0.0.1'); } catch { resolve(false); }
+  });
+}
+
+// Ours already, or nobody's. `/state` names its own agent, so a keeper of ours that survived
+// a broker restart is reused rather than displaced; anything else has to leave the port
+// bindable to count as free.
+async function portIsOursOrFree(port, agent) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/state`, { signal: AbortSignal.timeout(2000) });
+    if (res.ok) {
+      const s = await res.json();
+      if (s?.agent && String(s.agent) === String(agent)) return true;   // our own, still up
+      return false;                                                     // somebody else's
+    }
+  } catch { /* no answer proves nothing — fall through to the bind test */ }
+  return canBind(port);
+}
+
+async function allocateKeeperPort(agent, index) {
+  const start = KEEPER_PORT_BASE + (index ?? 0);
+  // A PORT THIS BROKER HAS ALREADY PROMISED TO SOMEBODY ELSE IS NOT FREE, even though
+  // nothing answers on it yet. Probing alone has a race the width of a process start: two
+  // agents allocating at once both find the same silent port and both take it. Seen in the
+  // first run of this code — "t11: port 8927 answers for t12" — which is this broker
+  // colliding with itself, one layer in from the collision it was written to fix.
+  const promised = new Set();
+  for (const [who, port] of keeperPorts) if (who !== agent) promised.add(port);
+  for (const [who, rec] of keeperProcesses) if (who !== agent && rec?.port) promised.add(rec.port);
+  for (let port = start; port < start + 200; port++) {
+    if (promised.has(port)) continue;
+    if (await portIsOursOrFree(port, agent)) {
+      keeperPorts.set(agent, port);
+      if (port !== start)
+        console.error(`[keeper] ${agent}: ${start} is held by another fleet's keeper — using ${port}`);
+      return port;
+    }
+  }
+  keeperPorts.set(agent, start);
+  return start;
+}
+
 async function spawnKeeper(agent, index, credentials) {
-  const port = keeperPort(agent, index);
+  const port = await allocateKeeperPort(agent, index);
   const { spawn } = await import('node:child_process');
   const { join } = await import('path');
   const HERE = dirname(fileURLToPath(import.meta.url));
@@ -820,12 +904,22 @@ async function stopKeeper(agent) {
 async function keeperState(agent, index, { fresh = false } = {}) {
   const port = keeperPort(agent, index);
   try {
+    // IDENTITY, NOT JUST REACHABILITY. See keeperPort: a port that answers is not
+    // necessarily ours, and believing one that is not is how the production broker spent an
+    // evening reporting another fleet's characters as its own.
     // `?fresh=1` asks the keeper to do the wire read itself — it owns the socket and is the
     // only thing entitled to. Longer timeout, because a fresh read is paced behind whatever
     // that character is doing, where the cached one is a memory lookup.
     const res = await fetch(`http://127.0.0.1:${port}/state${fresh ? '?fresh=1' : ''}`,
                             { signal: AbortSignal.timeout(fresh ? 15000 : 5000) });
-    if (res.ok) return await res.json();
+    if (res.ok) {
+      const j = await res.json();
+      if (j?.agent && String(j.agent) !== String(agent)) {
+        console.error(`[keeper] ${agent}: port ${port} answers for "${j.agent}" — not ours, ignoring`);
+        return null;
+      }
+      return j;
+    }
   } catch {}
   return null;
 }
@@ -863,6 +957,9 @@ class KeeperProxy {
     this._stateAt = 0;
     this._stateTtl = 2000;
     this._world = null;
+    // One frame of the keeper's room view. See `_roomViewCached`.
+    this._roomView = null;
+    this._roomViewAt = 0;
     // THE PACER IS WHERE A READ IS ASKED FOR, AND REFUSING IT REFUSED THE READ.
     //
     // A Session's read tools all say the same thing: `pacer.submit('read', () =>
@@ -1048,11 +1145,51 @@ class KeeperProxy {
     return this.client;
   }
 
-  // Read-only methods — use cached state
-  async view() { return this._refreshState(); }
-  async perception() { return this._refreshState(); }
+  // THE RENDER PROJECTION, WHICH A KEEPER-BACKED BROKER DID NOT HAVE AT ALL.
+  //
+  // `World.perception()` is the renderer's hot path: where this character is standing and
+  // facing, and every object in the room with its id, square and affordance list. The
+  // broker holds a snapshot rather than a World, so both `view()` and `perception()` used to
+  // answer with the keeper's `/state` — which carries vitals, pack, skills and spells and
+  // NO POSITION AND NO ROOM CONTENTS. Measured on prod with twenty-one characters in game:
+  //
+  //     GET /rts/v1/read        ->  looks: { t1: {}, t2: {}, ... }   all twenty-one
+  //     look agent=t1           ->  no `you`, objects: [], exits: []
+  //
+  // so everything that draws a map — the strategy game's local view, its formation keeper,
+  // its monster overlay — saw an empty room for a fleet standing in it, and reported no
+  // error while doing it. (The `{}` was two faults stacked: this returning the wrong object,
+  // and `brokerRtsRead` not awaiting the promise, so `JSON.stringify` saw a Promise.)
+  //
+  // The reshape itself is `m59-render-projection.mjs`, deliberately not here: this file
+  // cannot be imported without starting a broker, so a rule written in it cannot be tested
+  // offline. `m59-render-test.mjs` pins them.
+  async _renderProjection() {
+    const rv = await this._roomViewCached();
+    const mapRoom = rv?.room_num != null ? worldMap?.rooms?.[rv.room_num] ?? null : null;
+    return renderProjection(rv, mapRoom);
+  }
+
+  // One frame's worth. `view()` is called far more often than a character moves, and each
+  // call is an HTTP round trip to the keeper, so the answer is held for a frame rather than
+  // re-asked per caller. 250ms is four frames a second — faster than the game's own paced
+  // step, and slower than a poll loop can spin.
+  async _roomViewCached() {
+    const now = Date.now();
+    if (this._roomViewAt && now - this._roomViewAt < 250) return this._roomView;
+    const rv = await this.roomView();
+    if (rv) { this._roomView = rv; this._roomViewAt = now; }
+    return this._roomView;
+  }
+
+  // Read-only methods — the cached state, with the render projection folded over it.
+  async view() {
+    return { ...(await this._refreshState() ?? {}), ...(await this._renderProjection()) };
+  }
+  async perception() {
+    return { ...(await this._refreshState() ?? {}), ...(await this._renderProjection()) };
+  }
   async snapshot(note) { return this._refreshState(); }
-  status() { return this._state; }
 
   // Mutation methods — proxy to keeper
   async walkTo(col, row, opts = {}) {
@@ -10309,16 +10446,59 @@ const TOOLS = [
     run: async (a) => {
       const s = session(a.agent);
       s.need();
-      const geo = s.world?.geometry;
-      const room = s.world?.room;
-      if (!geo) return { spots: [], note: 'no geometry for this room' };
+      let geo = s.world?.geometry;
+      let room = s.world?.room;
+      let me = s.world?.self ?? null;
+      let mustReach = a.reachable_only && typeof s.world?.reach === 'function'
+        ? ((col, row) => s.world.reach(col, row)) : null;
+      let geometrySource = geo ? 'the live session' : null;
+      let reachNote;
+
+      // A KEEPER-BACKED SESSION HAS NO WORLD, WHICH IS NOT THE SAME FACT AS A ROOM WITH NO
+      // GEOMETRY — AND THIS ANSWERED WITH THE SECOND ONE.
+      //
+      // Out-of-process keepers are now the default, and `KeeperProxy.world.geometry` is
+      // honestly null: the broker holds a two-second snapshot, not a World. So every call
+      // returned `{ spots: [], note: 'no geometry for this room' }` — measured on prod, for
+      // all twenty-one characters, in rooms whose .roo this repository ships and whose safe
+      // spots the book already records. A consumer reading that reasonably concluded the
+      // fleet was standing in rooms nothing is known about.
+      //
+      // The geometry does not need the live session. It is baked from the .roo and the world
+      // map, which this process has loaded, and the dashboard's 3D view has been computing
+      // safe spots that way for keeper-backed characters all along. Same source, one place.
+      //
+      // `reachable_only` is the one thing that genuinely cannot be honoured from here — it
+      // is an A* from a position this side does not own — so it is REPORTED rather than
+      // silently ignored, because "no spot you can reach" and "we did not check" are
+      // different answers and a caller filtering on the flag deserves to know which it got.
+      if (!geo) {
+        const render = typeof s.perception === 'function'
+          ? await s.perception().catch(() => null) : null;
+        const roomNum = render?.room?.num ?? room?.num ?? null;
+        const mapRoom = roomNum != null ? worldMap?.rooms?.[roomNum] ?? null : null;
+        if (!mapRoom) return { spots: [],
+          note: roomNum == null ? 'this character is not reporting a room yet'
+            : `room ${roomNum} is not in substrate/m59-map.json — rebuild the map` };
+        try { geo = safeSpotGeometryFor(mapRoom); } catch { geo = null; }
+        if (!geo) return { spots: [], note: `no geometry could be built for room ${roomNum}` };
+        room = { num: mapRoom.num, name: mapRoom.name };
+        me = Number.isFinite(render?.you?.col) && Number.isFinite(render?.you?.row)
+          ? { col: render.you.col, row: render.you.row } : null;
+        geometrySource = 'the world map .roo — this character is driven by a keeper process';
+        if (a.reachable_only) {
+          mustReach = null;
+          reachNote = 'reachable_only was NOT applied: pathing from this character belongs to ' +
+            'the keeper process that owns its position, so every geometric spot is listed';
+        }
+      }
+
       const book = safeSpotBook(SAFESPOT_FILE);
       const known = room ? book.list(room.num) : [];
       const spots = safeSpots(geo, {
         limit: num(a.limit, 8),
-        mustReach: a.reachable_only ? ((col, row) => s.world.reach(col, row)) : null,
+        mustReach,
       });
-      const me = s.world.self;
       const rec = me && room ? book.get(room.num, me.col, me.row) : null;
       const pilot = autopilotIfAny(a.agent);
       return {
@@ -10340,6 +10520,11 @@ const TOOLS = [
                                        'the centre and this spot works from a specific place in it' } : {}) };
         }),
         known,
+        // Which grid these scores came off, said out loud. The live session's geometry and
+        // the world map's .roo are the same bake, but a caller comparing two readings should
+        // be able to see that one of them was taken without a live World behind it.
+        geometry_source: geometrySource,
+        ...(reachNote ? { reachable_only_note: reachNote } : {}),
         note: 'walk_to one of these before any fight worth having. `can_reach_you` is how many of the ' +
               'eight surrounding squares a monster can stand on — in the open it is eight — but ' +
               '`tested` is worth more than any of the scores.',
@@ -11938,8 +12123,14 @@ async function brokerRtsRead(url) {
     }
     // Every read below comes from the protocol client's cache. It submits nothing to the
     // pacer and therefore cannot move, speak, fight, refresh inventory, or otherwise act.
+    // AWAITED, BECAUSE A KEEPER-BACKED SESSION ANSWERS THIS OVER HTTP.
+    //
+    // `KeeperProxy.perception()` is async — it reads the keeper's room view — and this line
+    // used to assign the promise. `JSON.stringify` renders a Promise as `{}`, so the
+    // endpoint returned `looks: { t1: {}, ... }` for the whole fleet with status 200 and no
+    // error anywhere: a renderer got a well-formed frame in which nobody had a position.
     try {
-      looks[agent] = s.perception();
+      looks[agent] = await s.perception();
     } catch (error) {
       looks[agent] = { error: String(error?.message || error).slice(0, 240) };
     }
