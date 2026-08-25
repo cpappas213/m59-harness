@@ -195,10 +195,17 @@ export function reachableOpenFightVigorBar(dangerBar, fightFloor) {
 // it at the decision boundary.  False wall entries mean a room was tested and accepted,
 // so only truthy reasons are denials.  Everything here is session-local: this chooses a
 // different room for the current keeper and never blocks the strategic goal.
-export function farmRoomDenials(noWallRooms = null, cappedRooms = null) {
+export function farmRoomDenials(noWallRooms = null, cappedRooms = null,
+                                { useSafeSpots = true } = {}) {
   const denied = new Map();
-  for (const [room, why] of noWallRooms?.entries?.() ?? []) {
-    if (why) denied.set(room, why);
+  // A failed wall search is evidence about the wall strategy, not the room.  When the
+  // operator explicitly chooses open-field fighting, stale session wall evidence must
+  // not defer the assignment or remove the room from prey ranking.  Spawn-cap evidence
+  // still applies because it says the prey cannot spawn, regardless of positioning.
+  if (useSafeSpots) {
+    for (const [room, why] of noWallRooms?.entries?.() ?? []) {
+      if (why) denied.set(room, why);
+    }
   }
   for (const [room, why] of cappedRooms?.entries?.() ?? []) {
     if (why) denied.set(room, why);
@@ -7194,7 +7201,8 @@ export class Autopilot {
   }
 
   status({ full = false } = {}) {
-    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
+    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms,
+      { useSafeSpots: this.policy.useSafeSpots });
     return {
       running: this.running, mode: this.mode, policy: this.policy,
       // Null unless a fleet update is waiting on this character. See park().
@@ -12155,7 +12163,8 @@ export class Autopilot {
         const here = (spawns0?.rooms?.[room.num] || []).filter(x => x.huntable);
         const isPrey0 = huntMatcher(spawns0, this.policy.hunt);
         const preyHere = here.some(x => isPrey0(x.creature));
-        const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
+        const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms,
+          { useSafeSpots: this.policy.useSafeSpots });
         const assignmentDenied = this.policy.assignedRoom != null
           ? deniedFarmRooms.get(this.policy.assignedRoom) : null;
         const offAssignment = shouldRelocateToAssignedRoom(this.policy, room, deniedFarmRooms);
@@ -12291,7 +12300,8 @@ export class Autopilot {
             capped.blocked.map(b => `${b.count}x ${b.name}`).join(', ') +
             ' that this keeper will not safely fight';
           (this.cappedRooms ??= new Map()).set(room.num, reason);
-          this.tally.rooms_denied = farmRoomDenials(this.noWallRooms, this.cappedRooms).size;
+          this.tally.rooms_denied = farmRoomDenials(this.noWallRooms, this.cappedRooms,
+            { useSafeSpots: this.policy.useSafeSpots }).size;
           this.note('this room is capped by things we will not fight', {
             room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
             blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} — ${b.why}`),
@@ -12637,7 +12647,8 @@ export class Autopilot {
       // a room with no wall we can find is a denial of service for that area: recorded,
       // reported, and left alone until better detection earns it back. Under-using the
       // world is recoverable; the alternative is not.
-      if (this.policy.requireSafeWall !== false && !this.hold && room?.num != null) {
+      if (this.policy.useSafeSpots && this.policy.requireSafeWall !== false &&
+          !this.hold && room?.num != null) {
         // Ask once per room, not once per pass. takeSafeSpot is a scan plus pathfinds,
         // and the answer does not change while we stand here — but it DOES change when
         // the book learns something, so this is per session rather than persisted.
@@ -16108,7 +16119,8 @@ export class Autopilot {
     const spawns = loadSpawns(SPAWN_FILE);
     if (!spawns) return [];
     const ceiling = this.threatCeiling();
-    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms);
+    const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms,
+      { useSafeSpots: this.policy.useSafeSpots });
     // Do not truncate before looking for the assignment.  Ranking is global, whereas
     // assignedRoom is an operator/fleet decision and must be allowed to outrank it.
     const rooms = huntingGrounds(spawns, want,
