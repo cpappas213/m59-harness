@@ -48,7 +48,7 @@ const argv = process.argv.slice(2);
 const flag = (n, d = null) => { const i = argv.indexOf('--' + n); return i < 0 ? d : argv[i + 1]; };
 const has = n => argv.includes('--' + n);
 const KNOWN = new Set(['fleet', 'port', 'rounds', 'strategies', 'agents', 'room',
-                       'report', 'dry-run', 'help', 'h']);
+                       'report', 'dry-run', 'walk', 'help', 'h']);
 for (const a of argv) if (a.startsWith('--') && !KNOWN.has(a.slice(2))) {
   console.error(`m59-jumptrial: unknown option ${a}`);
   console.error(`known: ${[...KNOWN].map(k => '--' + k).join(' ')}`);
@@ -59,6 +59,7 @@ const ROOM = Number(flag('room', 599));
 const PORT = Number(flag('port', 8971));
 const ROUNDS = Number(flag('rounds', 3));
 const DRY = has('dry-run');
+const WALK = has('walk');
 const FLEET = flag('fleet', process.env.M59_FLEET
   ?? (() => { try { return readFileSync(sub('fleet-default'), 'utf8').trim(); } catch { return '-'; } })());
 const ONLY = flag('agents') ? String(flag('agents')).split(',').map(x => x.trim()).filter(Boolean) : null;
@@ -118,6 +119,18 @@ function call(name, args, ms = 90000) {
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const dist = (a, b) => Math.max(Math.abs(a.row - b.row), Math.abs(a.col - b.col));
+
+// Same ledge, not merely nearby: two squares a step apart can be a cliff apart. This is the
+// same floor test the `jump` verb's guard uses, and it is what makes "one square over" mean
+// a variation of the jump rather than a different drop.
+function floorAt(row, col) {
+  try { const pt = geo.standPoint(row, col); return pt ? geo.floorBaseAtClient(pt.x, pt.y) : null; }
+  catch { return null; }
+}
+function sameFloorAs(a, b) {
+  const x = floorAt(a.row, a.col), y = floorAt(b.row, b.col);
+  return x != null && y != null && Math.abs(x - y) <= 64;
+}
 
 // Distance from a point to the take-off -> landing segment, in squares. What "on the line"
 // means, and it is the number the collision column is built on.
@@ -216,15 +229,71 @@ if (ONLY) agents = agents.filter(r => ONLY.includes(r.agent) || ONLY.includes(r.
 agents.sort((a, b) => a.agent.localeCompare(b.agent, 'en', { numeric: true }));
 if (!agents.length) { console.error('m59-jumptrial: no characters matched.'); process.exit(1); }
 
-// THE QUEUE. Safe spots ordered by how far back from the take-off they are, so the character
-// whose turn is next is already nearest and the ones waiting are genuinely out of the way.
+// THE QUEUE, AND WHY IT IS NOT MADE OF SAFE SPOTS.
+//
+// The obvious design — and the one this started with — is one character per safe spot, queued
+// back from the take-off. It does not work, and the reason is a property of what a safe spot IS.
+//
+// A safe wall is a square where the two grids DISAGREE: the BSP admits a body, the coarse grid
+// the monsters path on refuses it. That is the whole mechanism. But the strict predicate — the
+// one that matches what a walker can actually do — also requires a coarse-walkable destination.
+// So a safe spot is, by construction, an ISLAND to it. Measured on the ten spots this tool
+// first chose: seven strictly reach exactly ONE square, their own.
+//
+// Parked there, a character cannot walk to the ledge at all. The permissive predicate says it
+// can — `moverStepLands` gates on `standable`, and that is true for all 4,686 squares in this
+// room — so the walker sets off, meets a wall the model does not have, and grinds along it.
+// Watched from the client: bodies hugging the EAST wall while the jump is to the south-west.
+//
+// So the queue is ordinary connected ground that STRICTLY reaches the take-off, and among
+// those the squares with the most walls against them: defensible AND reachable, rather than
+// defensible and marooned.
 const takeoff = STRATEGIES[CHOSEN[0]].from;
-const spots = (safeSpots(geo, { limit: 300 }) || [])
-  .filter(s => s.row && dist(s, takeoff) >= 2 && dist(s, takeoff) <= 14)
-  .sort((a, b) => dist(a, takeoff) - dist(b, takeoff));
-if (spots.length < agents.length)
-  console.error(`  note: ${spots.length} safe spots for ${agents.length} characters — ` +
-                `the tail of the queue will double up, which is itself traffic.`);
+
+function strictReach(from) {
+  const seen = new Set([from.row * 1000 + from.col]);
+  let frontier = [from];
+  const R = room.rows, C = room.cols;
+  while (frontier.length) {
+    const next = [];
+    for (const p of frontier)
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const nr = p.row + dr, nc = p.col + dc;
+        if (nr < 1 || nc < 1 || nr > R || nc > C) continue;
+        const k = nr * 1000 + nc;
+        if (seen.has(k) || geo.walkable(nr, nc) !== true) continue;
+        let ok = false;
+        try { ok = geo._traceMoverStep(p.row, p.col, nr, nc); } catch {}
+        if (!ok) continue;
+        seen.add(k); next.push({ row: nr, col: nc });
+      }
+    frontier = next;
+  }
+  return seen;
+}
+
+const connected = strictReach(takeoff);
+const coverAt = (r, c) => {
+  let n = 0;
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (!dr && !dc) continue;
+    if (geo.walkable(r + dr, c + dc) !== true) n++;
+  }
+  return n;
+};
+const candidates = [];
+for (const k of connected) {
+  const r = Math.floor(k / 1000), c = k % 1000;
+  const d = dist({ row: r, col: c }, takeoff);
+  if (d < 3 || d > 16) continue;
+  candidates.push({ row: r, col: c, d, cover: coverAt(r, c) });
+}
+candidates.sort((a, b) => b.cover - a.cover || a.d - b.d);
+const spots = candidates.slice(0, Math.max(agents.length, 8));
+console.log(`queue: ${connected.size} squares strictly reach the take-off; ` +
+            `${candidates.length} are 3-16 away; taking ${spots.length}`);
+
 const queue = agents.map((a, i) => ({ ...a, spot: spots[i % Math.max(1, spots.length)] }));
 
 console.log(`fleet "${FLEET}" -> ${rostered.host}:${rostered.port}`);
@@ -257,15 +326,52 @@ async function attempt(q, name) {
   const out = { character: q.character, strategy: name,
                 from: `${st.from.row},${st.from.col}`, to: `${st.to.row},${st.to.col}` };
 
-  // 1. get onto the take-off square. A jump from the wrong square is not this strategy.
-  const walk = await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 120000);
+  // 1. GET ONTO THE TAKE-OFF SQUARE, AND DO NOT LET THE WALK BE THE EXPERIMENT.
+  //
+  // The first version walked there and six of fifteen attempts never arrived — so most of
+  // what it measured was Ukgoth's traffic between the queue and the ledge, which is a real
+  // problem and a DIFFERENT one. This is about the jump. So the body is placed on the square
+  // (lab server, DM powers) and `--walk` opts back into walking for anyone who wants to
+  // measure the approach instead. Which one happened is recorded either way.
+  out.approach = WALK ? 'walked' : 'placed';
+  if (WALK) {
+    const walk = await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 120000);
+    if (walk?._error) out.walk_error = walk._error;
+  } else {
+    // RELOCATE PUTS YOU NEAR, NEVER ON. `UtilGoNearSquare` is documented in CLAUDE.md as the
+    // call that never says no; what it does not do is land you on the square you asked for —
+    // measured here at 35,21 / 29,19 / 34,21 for a request of 36,16. So the DM call gets the
+    // body into the neighbourhood and a SHORT walk finishes it. That walk is a few squares on
+    // one ledge rather than a crossing of Ukgoth, which is the confound this avoids.
+    await dm.relocate([q.character], ROOM, { row: st.from.row, col: st.from.col, verify: false }).catch(() => null);
+    await sleep(900);
+    for (let tries = 0; tries < 3; tries++) {
+      const here = await observe(q.agent);
+      if (here?.me && here.me.row === st.from.row && here.me.col === st.from.col) break;
+      await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 60000);
+      await sleep(400);
+    }
+  }
+  // ON THE LEDGE IS GOOD ENOUGH, AND INSISTING ON THE EXACT SQUARE THREW THE EXPERIMENT AWAY.
+  //
+  // The walk reliably gets within one square and reliably fails the last step onto 36,16 —
+  // 37,16 and 36,17 over and over. Demanding the exact square recorded those as "never
+  // reached the take-off", which is fifteen non-attempts and no data.
+  //
+  // A square either side is a real jump: the guard on the `jump` verb already allows the
+  // one-square neighbourhood of a declared jump on the same two floors, precisely because
+  // that is the variation worth measuring. So the attempt proceeds from where the body
+  // actually is and RECORDS it, which is better evidence than the intention was.
   const at = await observe(q.agent);
-  if (!at?.me || at.me.row !== st.from.row || at.me.col !== st.from.col) {
+  const onLedge = at?.me && dist(at.me, st.from) <= 1 && sameFloorAs(at.me, st.from);
+  if (!onLedge) {
     out.made = false;
-    out.note = `never reached the take-off (${at?.me ? at.me.row + ',' + at.me.col : 'no position'})` +
-               (walk?._error ? `: ${walk._error}` : '');
+    out.note = `not on the ledge (${at?.me ? at.me.row + ',' + at.me.col : 'no position'})`;
     return line(out);
   }
+  const takeOffAt = { row: at.me.row, col: at.me.col };
+  out.took_off_from = `${takeOffAt.row},${takeOffAt.col}`;
+  out.exact = takeOffAt.row === st.from.row && takeOffAt.col === st.from.col;
 
   // 2. WHAT IS IN THE WAY, AND IS IT MOVING. Two samples a second apart, because "a troll was
   //    standing on the landing" and "a troll walked into the landing" are different findings
@@ -297,7 +403,20 @@ async function attempt(q, name) {
     return line(out);
   }
 
-  // 4. jump.
+  // 4. STILL ON THE SQUARE? The second of watching costs a second, and a body can be pushed
+  //    or drift in it — one attempt jumped from 35,20 having been checked at 35,16, and the
+  //    guard caught it as "not a declared fall-jump" from a square nobody meant to be on.
+  //    A drifted attempt is not this strategy and is recorded as its own outcome.
+  const still = await observe(q.agent);
+  if (!still?.me || !sameFloorAs(still.me, st.from) || dist(still.me, st.from) > 1) {
+    out.made = false;
+    out.drifted = still?.me ? `${still.me.row},${still.me.col}` : 'unknown';
+    out.note = `left the ledge before jumping (to ${out.drifted})`;
+    return line(out);
+  }
+  out.took_off_from = `${still.me.row},${still.me.col}`;
+
+  // 5. jump.
   const j = await call('jump', { agent: q.agent, to_col: st.to.col, to_row: st.to.row }, 60000);
   out.made = !!j?.made;
   out.landed = j?.landed ? `${j.landed.row},${j.landed.col}` : null;
@@ -306,7 +425,7 @@ async function attempt(q, name) {
   if (j?._error) out.note = j._error;
   else if (j?.reason) out.note = j.reason;
 
-  // 5. WHO WAS IN THE WAY, decided after the fact against where the body ended up. A blocker
+  // 6. WHO WAS IN THE WAY, decided after the fact against where the body ended up. A blocker
   //    that was on the line and a jump that came up short is the collision this exists to
   //    count; a blocker that was on the line and a jump that landed anyway is evidence the
   //    line is survivable, which is just as useful and used to be invisible.
@@ -324,8 +443,21 @@ async function attempt(q, name) {
 console.log('placing the queue…');
 for (const q of queue) {
   if (!q.spot) continue;
+  // DO NOT PARK. It was tried and it is worse than the problem.
+  //
+  // The keeper walking the body off the ledge is a real confound — a Guardian two squares from
+  // the take-off means the survival ladder is doing its job and the jump never happens. But
+  // parking stops the session moving AT ALL, including for this harness: with the fleet parked
+  // every attempt read "not on the ledge (35,21)", which is simply where the relocate dropped
+  // them, unmoved. The harness needs the character driveable and needs the keeper's own
+  // opinions out of the way, and `park` gives it neither.
+  //
+  // So: idle, not roaming, confined to this room, and the attempt records where the body
+  // actually took off from. A keeper that pulls it off the ledge shows up as `left the ledge
+  // before jumping`, which is a finding rather than a failure of the harness — it is the
+  // measurement of how much the survival ladder costs at this particular cliff.
   await call('autopilot', { agent: q.agent, mode: 'idle', roam: false, confine_rooms: [ROOM] });
-  await call('autopilot', { agent: q.agent, action: 'unpark' });
+  await call('autopilot', { agent: q.agent, action: 'unpark', why: 'jump trial: the harness drives, the keeper must not be frozen' });
   await dm.relocate([q.character], ROOM, { row: q.spot.row, col: q.spot.col, verify: false }).catch(() => null);
   try {
     const ids = await dm.resolve([q.character]);
