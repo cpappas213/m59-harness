@@ -915,7 +915,17 @@ async function keeperState(agent, index, { fresh = false } = {}) {
     if (res.ok) {
       const j = await res.json();
       if (j?.agent && String(j.agent) !== String(agent)) {
-        console.error(`[keeper] ${agent}: port ${port} answers for "${j.agent}" — not ours, ignoring`);
+        // AND FORGET THE ALLOCATION, or this repeats for ever. The reservation was made
+        // before the keeper bound the port; if the spawn then lost the race and died with
+        // EADDRINUSE, the stale reservation is what the broker keeps polling — so it reads
+        // a stranger, refuses it, and never tries a different port. t6 sat like that for
+        // twenty minutes, logging "port 8917 answers for shadow07" once a sweep, while a
+        // free port sat four numbers away.
+        console.error(`[keeper] ${agent}: port ${port} answers for "${j.agent}" — ` +
+                      `not ours, dropping that allocation so the next spawn re-picks`);
+        keeperPorts.delete(agent);
+        const rec = keeperProcesses.get(agent);
+        if (rec && rec.port === port) keeperProcesses.delete(agent);
         return null;
       }
       return j;
@@ -1293,7 +1303,16 @@ class KeeperProxy {
       town_service: null, committed: null, watchdog: null,
       did: { kills: 0, deaths_in_safe_spot: 0, deaths_in_proven_safe_spot: 0 },
       stalled: this.live ? false : 'keeper unreachable',
-      time: null, coordination: null, last_death: null,
+      // PASSED THROUGH, NOT NULLED. These three were hardcoded null and `[]` here, which was
+      // honest when the keeper did not send them and a lie the moment it did: the fleet row
+      // reads `st.time`, `st.refusals` and `st.waiting_on` off this, so every activity clock
+      // and every "why is this one idle" answer read empty for the whole fleet. The keeper's
+      // /state publishes them now — see m59-keeper-process.mjs. Still null when it does not,
+      // because "we did not measure" and "it did nothing" are different answers.
+      time: this._state?.time ?? null,
+      refusals: this._state?.refusals ?? [],
+      waiting_on: this._state?.waiting_on ?? null,
+      coordination: null, last_death: null,
       safe_spot: this.activity() === 'holding safe spot',
       goap: g.plan ? { goal: g.plan.goal ?? null, action: g.action ?? null, plan: g.plan.names ?? [], ws: g.plan.ws ?? null, target: g.plan.target ?? null } : { goal: g.goal ?? null, action: g.action ?? null, plan: [], target: g.target ?? null },
     };
