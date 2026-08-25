@@ -409,3 +409,4 @@ _verify2.mjs
 
 # Jump-trial attempts: this machine measuring one cliff, appended to per attempt.
 /substrate/jumptrials.jsonl
+/substrate/circuit-laps.json

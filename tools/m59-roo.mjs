@@ -1509,10 +1509,45 @@ export class RoomGeometry {
    */
   static elideLoops(squares) { return elideLoops(squares); }
 
-  stringPull(points, { arriveWithin = 64, maxProbe = 64 } = {}) {
+  // `onWalkable` IS NOT OPTIONAL FOR A BAKE, AND THE DEFAULT IS OFF ONLY FOR COMPATIBILITY.
+  //
+  // The fine trace answers "does the straight line ARRIVE", which is a question about the
+  // BSP. In 60 of 264 rooms the BSP has no opinion — `standable` is true for every square
+  // in them — so the trace arrives through anything and the pull yanks the line across
+  // whatever the COARSE grid calls rock. The three worst are the three rooms this fleet
+  // dies in:
+  //
+  //     599 Ukgoth    standable all 4686   walkable 1753    8 deaths
+  //     598 Cragged   standable all 2730   walkable  952    4 deaths
+  //     578 Cragged   standable all 2450   walkable 1033    3 deaths
+  //
+  // Measured on 578's north route, 49,12 -> 1,13: the per-square route refuses zero
+  // squares and the PULLED route walks 17 refused ones, including 42,10 -> 36,10, which
+  // is a six-square straight run north with five of its squares solid. The route was
+  // right and the pull broke it.
+  //
+  // So this samples the coarse grid under the line at half-square resolution and requires
+  // every square to be floor. It is the same rule the mover enforces, applied at the one
+  // moment it is cheap — once, offline, per leg. Callers that are not baking a route keep
+  // the old behaviour, because a live caller asking "can I aim here" has the mover behind
+  // it and does not need the pull to be conservative as well.
+  stringPull(points, { arriveWithin = 64, maxProbe = 64, onWalkable = false } = {}) {
     if (!Array.isArray(points) || points.length < 2)
       return { points: points ?? [], unverified: 0, legs: 0 };
+    const F = CLIENT_FINENESS;
+    const sqOf = (x, y) => [Math.round(y / F - 0.5) + 1, Math.round(x / F - 0.5) + 1];
+    // HALF A SQUARE, because a full-square stride can step over a one-square-thick wall
+    // and report a line that is clear on both sides of the thing blocking it.
+    const coarseClear = (a, b) => {
+      const n = Math.max(2, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / (F / 2)));
+      for (let k = 0; k <= n; k++) {
+        const [r, c] = sqOf(a.x + (b.x - a.x) * k / n, a.y + (b.y - a.y) * k / n);
+        if (this.walkable(r, c) !== true) return false;
+      }
+      return true;
+    };
     const clear = (a, b) => {
+      if (onWalkable && !coarseClear(a, b)) return false;
       const t = this.traceFineMoveClient(a.x, a.y, b.x, b.y, { slide: false });
       return !!t && Math.hypot(t.x - b.x, t.y - b.y) <= arriveWithin;
     };

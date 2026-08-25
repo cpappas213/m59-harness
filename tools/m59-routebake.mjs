@@ -342,6 +342,34 @@ export function components(geometry, { collision = true } = {}) {
   return { label, at, count: next, sizes };
 }
 
+
+// A STEP IS NOT ALWAYS ONE SQUARE, AND `coarseFloor` ONLY EVER CHECKED WHERE IT LANDED.
+//
+// `neighbors` returns moves of up to three squares — a mover packet carries distance, so a
+// (-3,3) diagonal is one step, not three. The floor veto asked only whether the DESTINATION
+// was ground, which lets a step take off from floor, fly over rock and land on floor. In a
+// room whose BSP calls every square standable nothing else objects, so this is how a route
+// crosses a wall while every square stored in it is walkable. Measured on 578's east route,
+// after the string-pull was already fixed, four legs and all four of them multi-square:
+//
+//     28,49 -> 28,47   over 28,48
+//     27,46 -> 24,43   over 26,45 25,44
+//     15,29 -> 18,26   over 16,28 17,27
+//     18,16 -> 18,13   over 18,15 18,14
+//
+// So the span is checked, not just the landing. Adjacent steps are unaffected — there is
+// nothing between them — which is why this changes nothing in the 204 rooms whose fine
+// geometry was carrying the veto already.
+function coarseSpanClear(geometry, r, c, nr, nc) {
+  const dr = nr - r, dc = nc - c;
+  const n = Math.max(Math.abs(dr), Math.abs(dc));
+  for (let k = 1; k <= n; k++) {
+    const rr = r + Math.round(dr * k / n), cc = c + Math.round(dc * k / n);
+    if (geometry.walkable(rr, cc) !== true) return false;
+  }
+  return true;
+}
+
 /** Shortest collision-valid path from one square to every other, as a came-from map. */
 // `coarseFloor` adds back the one veto `neighbors` deliberately dropped, and it is NOT the
 // return of "the coarse grid may refuse a step". It is narrower: the destination square has
@@ -372,7 +400,7 @@ function bfs(geometry, fromRow, fromCol,
       const nextFrontier = [];
       for (const [r, c] of frontier) {
         for (const n of geometry.neighbors(r, c, { collision })) {
-          if (coarseFloor && geometry.walkable(n.row, n.col) !== true) continue;
+          if (coarseFloor && !coarseSpanClear(geometry, r, c, n.row, n.col)) continue;
           const k = key(n.row, n.col);
           if (came.has(k)) continue;
           came.set(k, { row: r, col: c, dir: n.dir });
@@ -417,7 +445,7 @@ function bfs(geometry, fromRow, fromCol,
       const [r, c] = bucket.pop();
       if (dist.get(key(r, c)) !== d) continue;      // superseded by a cheaper way here
       for (const n of geometry.neighbors(r, c, { collision })) {
-        if (coarseFloor && geometry.walkable(n.row, n.col) !== true) continue;
+        if (coarseFloor && !coarseSpanClear(geometry, r, c, n.row, n.col)) continue;
         const cost = d + 1 + (roomy(n.row, n.col) ? 0 : clearance);
         const k = key(n.row, n.col);
         const seen = dist.get(k);
@@ -700,7 +728,10 @@ export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = 
         const steps = replay(from.row, from.col, p);
         const pts = [{ row: from.row, col: from.col }, ...steps]
           .map(s => ({ x: (s.col - 0.5) * CLIENT_FINENESS, y: (s.row - 0.5) * CLIENT_FINENESS }));
-        const pulled = geometry.stringPull(pts);
+        // ON THE COARSE GRID TOO. The trace alone proves nothing in a room whose BSP
+        // calls every square standable, and those are exactly the rooms this fleet dies
+        // in. See RoomGeometry.stringPull for the measurement.
+        const pulled = geometry.stringPull(pts, { onWalkable: true });
         pivots[pair] = {
           squares: pulled.points.map(pt => [Math.round(pt.y / CLIENT_FINENESS - 0.5) + 1,
                                             Math.round(pt.x / CLIENT_FINENESS - 0.5) + 1]),
@@ -877,7 +908,20 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   // and same view, or the existing rooms are ignored and it bakes from scratch.
   const resume = argv.includes('--resume');
   const out = {};
-  if (resume) {
+  // `--rooms` MEANS "REBAKE THESE", NOT "THE TABLE IS NOW THESE".
+  //
+  // It used to start from an empty table and write back only what it baked, so
+  // `--rooms 2,38,50,...` turned a 264-room table into a 21-room one and every room
+  // outside the list lost its routes. It set `complete: false`, which is honest and
+  // useless: nothing on the read side refuses an incomplete table, so the broker came up
+  // fine and simply could not plan a journey anywhere it had not been asked to bake.
+  // Caught by counting routes before and after — 16,311 -> 2,748 — and only because the
+  // count was checked, which is not a safety net anybody should rely on twice.
+  //
+  // So a partial bake adopts the rest of the table under exactly the same gate `--resume`
+  // uses, and REFUSES rather than writing a hole when the gate says no.
+  const adopt = resume || !!only;
+  if (adopt) {
     try {
       const prior = JSON.parse(readFileSync(ROUTES_FILE(), 'utf8'));
       const sameMap = prior?.geometryManifestSha256 && manifest
@@ -888,9 +932,16 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
       const samePredicate = (prior?.stepMaskVersion ?? 1) === STEP_MASK_VERSION;
       const sameBake = (prior?.bakeVersion ?? 1) === BAKE_VERSION;
       if (sameMap && sameView && samePredicate && sameBake) {
+        // ADOPT EVERYTHING EXCEPT WHAT WAS ASKED FOR. `--rooms 589` means room 589 is the
+        // one room whose baked copy is NOT to be trusted — adopting it too would make the
+        // flag a no-op that reports success, which is how the first version of this fix
+        // "baked 264 rooms in 0.0s — 0 routes" and changed nothing.
+        const askedFor = only ? new Set(only.map(String)) : null;
         for (const [num, baked] of Object.entries(prior.rooms ?? {}))
-          if (baked && !baked.skipped) out[num] = baked;
-        console.error(`resuming: ${Object.keys(out).length} room(s) already baked from the same map`);
+          if (baked && !baked.skipped && !askedFor?.has(String(num))) out[num] = baked;
+        console.error(only
+          ? `keeping ${Object.keys(out).length} room(s) from the table on disk, rebaking ${only.length}`
+          : `resuming: ${Object.keys(out).length} room(s) already baked from the same map`);
       } else {
         console.error(`ignoring the table on disk — ` +
           (!sameMap ? 'it was baked from different geometry'
@@ -899,6 +950,14 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
            : `it was baked by bake v${prior?.bakeVersion ?? 1}, this build is v${BAKE_VERSION}`));
       }
     } catch { console.error('nothing usable on disk to resume from'); }
+    // A partial bake that could not adopt would silently drop every room it was not asked
+    // for. That is the one outcome worth refusing outright.
+    if (only && Object.keys(out).length === 0) {
+      console.error('refusing to write a table containing only the rooms named by --rooms: ' +
+                    'there is nothing on disk to merge them into, so every other room would ' +
+                    'lose its routes. Bake the whole map once (no --rooms), then use --rooms.');
+      process.exit(1);
+    }
   }
   const todo = rooms.filter(r => !(String(r.num) in out));
   console.error(`baking ${todo.length} room(s)${resume && todo.length !== rooms.length

@@ -2228,6 +2228,32 @@ export class Autopilot {
   // Leaving safety is the one decision that should need POSITIVE EVIDENCE. Waiting a
   // pass for the use list costs a second; being wrong costs the character everything it
   // was carrying.
+  // ARMED, OPTIMISTICALLY — the twin `armedForSure` is named against, and it was missing.
+  //
+  // `known` is false for the first pass after a login, and a resume logs in twenty-one
+  // characters at once, so "no evidence" is the ordinary state for several seconds rather
+  // than a rare one. Which way that resolves has to depend on what the caller DOES with it:
+  //
+  //   armedForSure()  no evidence -> NOT armed.  For a gate that holds a character back.
+  //                   Being wrong costs a few seconds in a sanctuary.
+  //   armed()         no evidence -> armed.      For a rung that TAKES SOMETHING AWAY.
+  //                   Being wrong cancels a crossing that was going fine.
+  //
+  // This one did not exist, and its only caller is the travel guard's first rung — the one
+  // that abandons a journey because the weapon is gone. So every keeper pass inside a
+  // journey threw `this.armed is not a function` before reaching a single defensive rung:
+  // no flee, no rest, no shelter, no cancel. 328 failed passes across 32 postmortems in one
+  // evening, and every death in them reads the same way — `doing: "stalled"`, standing
+  // still for one to fourteen minutes with thirteen to eighteen monsters on the square.
+  // The guard was not deciding to walk on through; it was never asked.
+  armed() {
+    const c = this.s.client;
+    const eq = c?.equipment?.();
+    if (!eq || eq.known === false) return true;   // no evidence is not a MISSING weapon
+    return (eq.equipped || []).some(o =>
+      skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
+  }
+
   armedForSure() {
     const c = this.s.client;
     const eq = c?.equipment?.();

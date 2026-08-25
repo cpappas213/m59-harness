@@ -28,7 +28,7 @@
 // touched, because that can be answered with no broker up and because the answer decides
 // whether it is acceptable to walk characters into a corridor until they die.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import http from 'node:http';
@@ -241,6 +241,39 @@ if (DRY) { rows.forEach(r => console.log(`  ${r.character} (${r.agent})`)); proc
 
 const dm = await import('./m59-dm.mjs');
 const snap = JSON.parse(readFileSync(join(REPO, 'substrate', 'shadow-snapshot.json'), 'utf8'));
+
+// SAYING IT OUT LOUD, IN THE GAME, WHERE THE OPERATOR IS WATCHING.
+//
+// A run that only reports to a terminal is invisible to somebody standing in Castle
+// Victoria watching characters arrive. So each checkpoint is announced on the wire as well
+// as recorded: which lap, which checkpoint, and how long that leg took.
+//
+// THE LAP COUNT LIVES ON DISK BECAUSE THE PROCESS DOES NOT. A continuous circuit is one
+// solo-run invocation per lap, so an in-memory counter would announce "1st lap" for ever
+// and the number would be a lie rather than a measurement. Keyed by character, reset to
+// zero by a death — which is what makes it "since dying" and not "since the script started".
+const LAPFILE = join(REPO, 'substrate', 'circuit-laps.json');
+const readLaps = () => { try { return JSON.parse(readFileSync(LAPFILE, 'utf8')); } catch { return {}; } };
+const writeLaps = o => { try { writeFileSync(LAPFILE, JSON.stringify(o, null, 1)); } catch { /* a lost count is not a lost run */ } };
+const lapsOf = who => Number(readLaps()[who] ?? 0);
+const setLaps = (who, n) => { const o = readLaps(); o[who] = n; writeLaps(o); };
+// 1st, 2nd, 3rd, 4th ... and 11th/12th/13th, which the naive rule gets wrong.
+const ordinal = n => {
+  const t = n % 100;
+  if (t >= 11 && t <= 13) return n + 'th';
+  return n + ({ 1: 'st', 2: 'nd', 3: 'rd' }[n % 10] ?? 'th');
+};
+const ROOM_NAMES = (() => {
+  try {
+    const w = JSON.parse(readFileSync(join(REPO, 'substrate', 'm59-map.json'), 'utf8'));
+    const out = {};
+    for (const [num, room] of Object.entries(w.rooms ?? {})) if (room?.name) out[Number(num)] = room.name;
+    return out;
+  } catch { return {}; }
+})();
+const roomName = n => ROOM_NAMES[Number(n)] ?? ('room ' + n);
+
+
 const maxOf = name => snap.characters.find(c => c.shadow_name === name)?.max_health ?? null;
 
 console.log('  character    outcome     s   from -> ended   low  rest  rooms');
@@ -407,6 +440,17 @@ async function runLeg(r, { from = FROM, to = TO, place = true, heal = true, leg 
   }
   const secs = Math.round((Date.now() - started) / 1000);
   const restSecs = Math.round(restedMs / 1000);
+
+  // ANNOUNCED ON ARRIVAL, AND A DEATH RESETS THE COUNT RATHER THAN INTERRUPTING IT.
+  // `say` is best-effort on purpose: a broadcast that fails must not turn an arrival into
+  // a failed leg, because the leg is the measurement and this is only the commentary.
+  if (died) setLaps(r.character, 0);
+  else if (ended === 'arrived') {
+    const lap = lapsOf(r.character) + 1;
+    const text = `I'm on my ${ordinal(lap)} lap since dying, I've just reached the checkpoint ` +
+                 `${roomName(TO)}. Total travel time since last leg: ${secs} seconds.`;
+    await call('say', { agent: r.agent, text, type: 'broadcast' }, 20000).catch(() => null);
+  }
   const at = await call('status', { agent: r.agent }, 30000);
   results.push({ character: r.character, ended, secs, restSecs, died, low,
                  endedIn: at?.where?.num ?? null, rooms: [...rooms], perRoom, ailments: [...ailments], activity });
@@ -452,7 +496,11 @@ async function runTour(r) {
     legs.push(out);
     if (out.ended !== 'arrived') break;
   }
+  // A LAP IS THE WHOLE CIRCUIT, NOT A LEG. Only a tour that arrived at every checkpoint
+  // advances the count, so "my 3rd lap" means three complete circuits and not three
+  // arrivals somewhere.
   const done = legs.filter(l => l.ended === 'arrived').length;
+  if (done === TOUR.length - 1) setLaps(r.character, lapsOf(r.character) + 1);
   console.log(`  ${String(r.character).padEnd(12)} completed ${done} of ${TOUR.length - 1} leg(s) ` +
               `— ${legs.map(l => `${l.ended}@${l.endedIn ?? '?'}`).join(' -> ')}`);
   return legs;
