@@ -6,6 +6,7 @@
 //   node tools/m59-signal.mjs --wait F5 --timeout 300
 //   node tools/m59-signal.mjs --tail              replay the book, then listen
 //   node tools/m59-signal.mjs --last 20           just the book, no listening
+//   node tools/m59-signal.mjs --windows          the recordings F9 marked, newest first
 //
 // THE PROBLEM THIS SOLVES IS A CLOCK, NOT A FEATURE. Collecting a sample with a human in
 // the loop means an agent starts a recording, the person does the thing, and the person
@@ -79,6 +80,42 @@ export function record(s, file = SIGNAL_FILE) {
   } catch { /* the book is a convenience; losing it must not cost the notification */ }
 }
 
+// THE WINDOWS A PERSON MARKED, PAIRED UP AND HANDED BACK.
+//
+// F9 in the debug client sends `record start ...` and `record stop ...`. Everything that
+// makes those useful is already written down by somebody: the transit ledger, the tactics
+// ledger, the keeper logs, the proxy's packet capture. What was missing was the BRACKET —
+// an agent scraping any of those has to be told which seconds to look at, and until now the
+// only way to say so was for the operator to alt-tab out of a live game and type a time.
+//
+// So this pairs the marks and reports them newest first. A start with no stop is reported as
+// still open rather than dropped, because "I am recording right now" is the commonest state
+// to ask about and an unclosed window is not a broken one.
+//
+// It reads the WHOLE book rather than the tail, because a window worth asking about is often
+// an hour old by the time anybody asks.
+export function recordWindows(file = SIGNAL_FILE) {
+  if (!existsSync(file)) return [];
+  const rows = String(readFileSync(file, 'utf8')).split(/\r?\n/).filter(Boolean)
+    .map(l => { try { return JSON.parse(l); } catch { return null; } })
+    .filter(r => r && String(r.kind) === 'record');
+  const open = [];
+  const out = [];
+  for (const r of rows) {
+    const starting = /^start/.test(String(r.detail ?? ''));
+    if (starting) { open.push(r); continue; }
+    const began = open.pop();
+    out.push({ from: began?.at ?? null, to: r.at,
+               ms: began ? r.at - began.at : null,
+               room: began?.room ?? r.room ?? null,
+               started_at: began?.detail ?? null, stopped_at: r.detail ?? null,
+               closed: !!began });
+  }
+  for (const r of open) out.push({ from: r.at, to: null, ms: null, room: r.room ?? null,
+                                   started_at: r.detail ?? null, stopped_at: null, closed: false });
+  return out.sort((a, b) => (b.from ?? 0) - (a.from ?? 0));
+}
+
 export function readBook(file = SIGNAL_FILE, limit = 20) {
   if (!existsSync(file)) return [];
   const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
@@ -125,6 +162,30 @@ if (process.argv[1]?.endsWith('m59-signal.mjs')) {
   };
 
   const port = Number(flag('port', SIGNAL_PORT));
+
+  // WHAT THE OPERATOR MARKED, SO AN AGENT KNOWS WHICH SECONDS TO READ.
+  if (has('windows')) {
+    const ws = recordWindows();
+    if (!ws.length) {
+      console.log('no recordings marked yet — F9 in the debug client starts and stops one');
+      process.exit(0);
+    }
+    console.log('recordings, newest first (times are UTC)');
+    console.log('');
+    for (const w of ws) {
+      const from = new Date(w.from).toISOString().replace('T', ' ').slice(0, 19);
+      const dur = w.ms == null ? 'still open' : (w.ms / 1000).toFixed(1) + 's';
+      console.log('  ' + from + '  ' + String(dur).padStart(10) +
+                  '  room ' + String(w.room ?? '?').padStart(4) +
+                  '   ' + String(w.started_at ?? ''));
+      if (w.to) console.log('    to ' + new Date(w.to).toISOString().replace('T', ' ').slice(0, 19) +
+                            '   ' + String(w.stopped_at ?? ''));
+    }
+    console.log('');
+    console.log('  scrape a window with the transit/tactics ledgers, the keeper logs, or the');
+    console.log('  proxy capture — this only says WHEN and WHERE, which is the part only a person knew.');
+    process.exit(0);
+  }
 
   if (has('last')) {
     for (const s of readBook(SIGNAL_FILE, Number(flag('last', 20))))
