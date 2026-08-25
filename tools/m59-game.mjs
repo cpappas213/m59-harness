@@ -44,7 +44,7 @@ import { StorageCache } from './m59-storage.mjs';
 import { spawn } from 'node:child_process';
 import { clientToProtocol } from './m59-roo.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
-import { traceMove } from './m59-collision-trace.mjs';
+import { traceMove, traceUnsafeWireMove, traceWireMove } from './m59-collision-trace.mjs';
 import { isMutableGeometry } from './m59-mutable.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
@@ -2194,10 +2194,76 @@ class Session {
       ...trace,
       target: { x: quantizedX, y: quantizedY },
       requested: { x: Math.round(x), y: Math.round(y) },
+      // The verifier must replay the same geometry question the sender answered. These
+      // options are live packet-bound evidence (moving objects, room flags and vertical
+      // state), not defaults that can be reconstructed honestly after the run.
+      trace_options: traceOptions,
       blocked: requestedTrace.blocked || trace.blocked,
       slid: requestedTrace.slid || trace.slid,
       reason: trace.reason ?? requestedTrace.reason,
     };
+  }
+
+  // OUTSIDE queueValidatedMove ON PURPOSE. The collision suite lifts that queue method out
+  // of this module as source text; a module-scope tracer call inside it becomes an undefined
+  // free identifier in the isolated test. The queue therefore calls this instance method,
+  // while this non-lifted boundary owns the import and the schema.
+  //
+  // This is invoked only AFTER M59Client.moveTo returns from its synchronous socket write.
+  // If moveTo throws, no `sent:true` row is emitted. Conversely, a diagnostic failure after
+  // a successful send must never make the queue claim the packet was refused.
+  recordValidatedWireMove({ client, roomId, from, requested, to, speed,
+                            slide = false, fall = false, offMap = false, validation }) {
+    try {
+      traceWireMove({
+        agent: this.name,
+        roomNum: this.world?.room?.num ?? null,
+        roomId,
+        liveSecurity: client?.room?.security ?? null,
+        bakedSecurity: this.world?.geometry?.security ?? null,
+        from,
+        requested,
+        to,
+        speed,
+        slide,
+        fall,
+        offMap,
+        traceOptions: offMap ? null : validation?.trace_options ?? null,
+        validation,
+      });
+    } catch {
+      // A trace is evidence, never movement authority. The packet is already on the socket;
+      // throwing here would falsely report it as unsent and could cause a duplicate retry.
+    }
+  }
+
+  // The keeper and explicit exit fallback deliberately bypass sender geometry. They are
+  // still real synchronous socket writes, so omitting them would make an unsafe capture
+  // look like a complete validated proof. This separate boundary makes it impossible for
+  // either path to accidentally inherit the validated row shape above.
+  recordUnsafeWireMove({ client, roomId, from, requested, to, speed,
+                         offMap = false, unsafeReason, priorValidation = null }) {
+    try {
+      traceUnsafeWireMove({
+        agent: this.name,
+        roomNum: this.world?.room?.num ?? null,
+        roomId,
+        liveSecurity: client?.room?.security ?? null,
+        bakedSecurity: this.world?.geometry?.security ?? null,
+        from,
+        requested,
+        to,
+        speed,
+        slide: false,
+        fall: false,
+        offMap,
+        unsafeReason,
+        priorValidation,
+      });
+    } catch {
+      // The packet has already left. A trace failure cannot turn it into an unsent move or
+      // cause the caller to retry a deliberately unvalidated packet.
+    }
   }
 
   async queueValidatedMove(x, y, { speed = 18, slide = true, fall = false, beforeMutation = null,
@@ -2278,6 +2344,17 @@ class Session {
                                  offMap: true, target };
         const eventSeq = c.evSeq;
         c.moveTo(target.x, target.y, speed, roomId);
+        this.recordValidatedWireMove?.({
+          client: c, roomId,
+          from: { x: before.x, y: before.y },
+          requested: target,
+          to: target,
+          speed,
+          slide: false,
+          fall: false,
+          offMap: true,
+          validation: sentValidation,
+        });
         return { sent: true, roomId, eventSeq, before, target,
                  validation: sentValidation };
       }, minGap);
@@ -2334,6 +2411,17 @@ class Session {
                     to: { x: validation.target.x, y: validation.target.y } });
       if (crumbs.length > 64) crumbs.shift();
       c.moveTo(validation.target.x, validation.target.y, speed, roomId);
+      this.recordValidatedWireMove?.({
+        client: c, roomId,
+        from: { x: before.x, y: before.y },
+        requested: validation.requested,
+        to: validation.target,
+        speed,
+        slide,
+        fall,
+        offMap: false,
+        validation,
+      });
       const destinationFloor = validation.destinationFloor;
       if (Number.isFinite(destinationFloor)) {
         const commandZ = validation.motionZ;
@@ -2888,7 +2976,22 @@ class Session {
         let c2 = null;
         try {
           c2 = this.need();
-          c2.moveTo(Math.round(x), Math.round(y), c2.moveSpeed() ?? 1, c2.room?.id ?? 0);
+          const rawTo = { x: Math.round(x), y: Math.round(y) };
+          const rawSpeed = c2.moveSpeed() ?? 1;
+          const rawRoomId = c2.room?.id ?? 0;
+          const rawFrom = c2.self ? { x: c2.self.x, y: c2.self.y } : null;
+          c2.moveTo(rawTo.x, rawTo.y, rawSpeed, rawRoomId);
+          this.recordUnsafeWireMove?.({
+            client: c2,
+            roomId: rawRoomId,
+            from: rawFrom,
+            requested: rawTo,
+            to: rawTo,
+            speed: rawSpeed,
+            offMap: false,
+            unsafeReason: 'keeper_unvalidated_fallback',
+            priorValidation: validation,
+          });
           await new Promise(r => setTimeout(r, 300));
           const after = c2.self;
           if (after && before && (after.x !== before.x || after.y !== before.y)) {
@@ -6010,9 +6113,23 @@ class Session {
       return { left: false, reason: 'not at the opening',
                note: 'the unvalidated outward step is only taken from the boundary itself — ' +
                      'firing it from mid-room would cross terrain the approach could not' };
+    const fallbackTo = useOutward
+      ? { x: Math.round(outward.x), y: Math.round(outward.y) }
+      : { x, y };
+    const fallbackSpeed = useOutward ? 0 : 18;
+    const wireFrom = c.self ? { x: c.self.x, y: c.self.y } : null;
     try {
-      if (useOutward) c.moveTo(Math.round(outward.x), Math.round(outward.y), 0, startRoom);
-      else c.moveTo(x, y, 18, startRoom);
+      c.moveTo(fallbackTo.x, fallbackTo.y, fallbackSpeed, startRoom);
+      this.recordUnsafeWireMove?.({
+        client: c,
+        roomId: startRoom,
+        from: wireFrom,
+        requested: fallbackTo,
+        to: fallbackTo,
+        speed: fallbackSpeed,
+        offMap: useOutward,
+        unsafeReason: 'exit_unvalidated_fallback',
+      });
     } catch (e) { return { left: false, reason: e.message }; }
     const ev = await c.waitFor({ since: before, kinds: ['room-entered'],
                                  timeoutMs: EDGE_CROSSING_WAIT_MS })

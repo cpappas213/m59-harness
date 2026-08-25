@@ -23,7 +23,9 @@
 //
 // It should fail the day the trace is left on.
 
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -62,6 +64,7 @@ const SRC = readFileSync(join(HERE, 'm59-collision-trace.mjs'), 'utf8');
 // architecture is visible to a test of theirs. Same fix as m59-collision-test's, and the
 // same failure shape: a suite bound to which FILE code lives in goes quiet when it moves.
 const BROKER = readFileSync(join(HERE, 'm59-game.mjs'), 'utf8');
+const BROKER_GATEWAY = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
 
 console.log('');
 console.log('the default is off, in the source');
@@ -92,6 +95,15 @@ console.log('and with it off, tracing costs nothing and writes nothing');
   try { mod.traceMove({ agent: 'nobody', room: 1, sent: false, reason: 'test' }); }
   catch (e) { threw = e.message; }
   ok('traceMove is a silent no-op rather than a throw', threw === null, String(threw));
+  try { mod.traceWireMove(null); }
+  catch (e) { threw = e.message; }
+  ok('the production wire emitter is also a silent no-op before row construction',
+     threw === null, String(threw));
+  const poison = new Proxy({}, { get() { throw new Error('detail object was inspected'); } });
+  try { mod.traceUnsafeWireMove(poison); }
+  catch (e) { threw = e.message; }
+  ok('the unsafe wire emitter is the same cheap no-op before touching its detail object',
+     threw === null, String(threw));
   // Cleared FIRST, then asserted. Reading a file a previous run may have left behind makes
   // this assert on the machine's history rather than on the code, and it fails in the
   // confusing direction — the guard looks broken when what actually happened is that it
@@ -114,10 +126,50 @@ console.log('the broker calls it, and calls it where it is safe to');
   // the broker. Tracing therefore happens at the CALL SITES. This is not hypothetical: the
   // first wiring of this tracer put a call inside `Session.step`'s reach and the dependency
   // map caught it immediately.
-  const inside = BROKER.slice(BROKER.indexOf('async queueValidatedMove'),
-                              BROKER.indexOf('async queueValidatedMove') + 6000);
+  const queueStart = BROKER.indexOf('async queueValidatedMove');
+  const queueEnd = BROKER.indexOf('\n  // ONE SQUARE', queueStart);
+  const inside = BROKER.slice(queueStart, queueEnd);
   ok('but never from inside queueValidatedMove, which is lifted by text elsewhere',
      !/traceMove\(/.test(inside));
+  const sends = [...inside.matchAll(/\bc\.moveTo\(/g)].map(match => match.index);
+  const wireRows = [...inside.matchAll(/this\.recordValidatedWireMove\?\.\(\{/g)]
+    .map(match => match.index);
+  ok('both validated packet branches emit one wire row after their synchronous send',
+     sends.length === 2 && wireRows.length === 2 &&
+       wireRows.every((offset, index) => offset > sends[index]),
+     JSON.stringify({ sends, wireRows }));
+  ok('the non-lifted Session helper owns the production wire emitter import',
+     /recordValidatedWireMove\([\s\S]{0,1600}?traceWireMove\(\{/.test(BROKER));
+  ok('a separate Session helper owns the unsafe emitter and cannot use the validated one',
+     /recordUnsafeWireMove\([\s\S]{0,1800}?traceUnsafeWireMove\(\{/.test(BROKER));
+
+  // SOURCE-WIDE SEND ACCOUNTING. The queue test above protects the two ordinary branches,
+  // but keeper mode and the explicit exit fallback have their own raw socket writes. A new
+  // moveTo anywhere in Session must make this count/pairing fail until its post-send row is
+  // classified. Looking only inside queueValidatedMove is how those two bypasses went dark.
+  const sendSites = [...BROKER.matchAll(/\.moveTo\(/g)]
+    .map(match => ({ offset: match.index, line: BROKER.slice(0, match.index).split('\n').length,
+      call: match[0] }));
+  const emitters = [...BROKER.matchAll(
+    /this\.(recordValidatedWireMove|recordUnsafeWireMove)(?:\?\.)?\(\{/g)]
+    .map(match => ({ offset: match.index,
+      kind: match[1] === 'recordValidatedWireMove' ? 'validated' : 'unsafe' }));
+  const accounting = sendSites.map((send, index) => {
+    const nextSend = sendSites[index + 1]?.offset ?? BROKER.length;
+    const after = emitters.filter(emitter => emitter.offset > send.offset && emitter.offset < nextSend);
+    return { line: send.line, call: send.call, rows: after.map(emitter => emitter.kind) };
+  });
+  ok('every actual moveTo send has exactly one explicit post-send wire row',
+     sendSites.length === 4 && emitters.length === 4 &&
+       accounting.every(entry => entry.rows.length === 1), JSON.stringify(accounting));
+  ok('only the two validator-owned sends claim validation; both raw sends are unsafe',
+     accounting.map(entry => entry.rows[0]).join(',') ===
+       'validated,validated,unsafe,unsafe', JSON.stringify(accounting));
+  ok('raw send rows carry stable machine-rejectable fallback reasons',
+     /c2\.moveTo\([\s\S]{0,900}?unsafeReason:\s*'keeper_unvalidated_fallback'/.test(BROKER) &&
+       /c\.moveTo\([\s\S]{0,900}?unsafeReason:\s*'exit_unvalidated_fallback'/.test(BROKER));
+  ok('successful validation retains the exact dynamic trace options for offline replay',
+     /trace_options:\s*traceOptions/.test(BROKER));
   // Whatever it does record must not be a live object id — those are renumbered on every
   // system save, so a trace keyed on one is unreadable by the time anybody reads it.
   const calls = BROKER.match(/traceMove\(\{[\s\S]{0,220}?\}\)/g) ?? [];
@@ -125,6 +177,162 @@ console.log('the broker calls it, and calls it where it is safe to');
   ok('and every one records the ROOM NUMBER, never the room object id',
      calls.every(c => /room:\s*this\.world\?\.room\?\.num/.test(c)),
      calls.find(c => !/room:\s*this\.world\?\.room\?\.num/.test(c)) ?? '');
+  // A post-run verifier cannot trust a flag typed after the capture.  The broker's
+  // health record must publish the effective process setting so a saved matrix report
+  // can prove the permissive fallback was off while the packets were sent.
+  ok('and health publishes the broker process\'s effective exit-fallback setting',
+     /movement_policy:\s*\{[\s\S]{0,200}exit_fallback_enabled:\s*process\.env\.M59_EXIT_FALLBACK\s*===\s*'1'/.test(BROKER_GATEWAY));
+}
+
+console.log('');
+console.log('the production emitter writes the replayable wire schema');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-wire-'));
+  const traceFile = join(scratch, 'trace.jsonl');
+  writeFileSync(traceFile, '');
+  const mod = await enabledTracer(traceFile, 8);
+  const traceOptions = {
+    slide: true,
+    fall: false,
+    obstacles: [{ id: 901, x: 320, y: 448 }],
+    roomFlags: 17,
+    overrideDepths: [0, 64],
+    motionZ: { min: 128, max: 256 },
+  };
+  const validation = {
+    available: true,
+    moved: true,
+    arrived: true,
+    blocked: false,
+    slid: false,
+    requested: { x: 832, y: 960 },
+    target: { x: 800, y: 960 },
+    trace_options: traceOptions,
+  };
+  const fixture = {
+    agent: 'route-01',
+    roomNum: 587,
+    roomId: 7424,
+    liveSecurity: 0x1234567,
+    bakedSecurity: 0x1234567,
+    from: { x: 704, y: 960 },
+    requested: validation.requested,
+    to: validation.target,
+    speed: 18,
+    slide: true,
+    fall: false,
+    offMap: false,
+    traceOptions,
+    validation,
+  };
+  const built = mod.wireMoveRow(fixture);
+  ok('the pure builder identifies a sent m59-wire-move/1 row',
+     built.schema === 'm59-wire-move/1' && built.kind === 'wire_move' && built.sent === true,
+     JSON.stringify(built));
+  ok('it records the stable room number, transient id, and live/baked security pair',
+     built.room?.num === 587 && built.room?.id === 7424 &&
+       built.room?.live_security === 0x1234567 && built.room?.baked_security === 0x1234567,
+     JSON.stringify(built.room));
+  ok('it records exact from, requested, and wire endpoint coordinates',
+     JSON.stringify([built.from, built.requested, built.to]) ===
+       JSON.stringify([fixture.from, fixture.requested, fixture.to]));
+  ok('it records actual speed, movement mode, dynamic options, and sender validation',
+     built.speed === 18 && built.mode?.off_map === false && built.mode?.slide === true &&
+       built.mode?.fall === false && built.trace_options === traceOptions &&
+       built.validation === validation, JSON.stringify(built));
+
+  mod.traceWireMove(fixture);
+  const rows = readRows(traceFile);
+  ok('the same production emitter used by Session writes that schema to the real tracer',
+     rows.length === 1 && rows[0]?.schema === 'm59-wire-move/1' &&
+       rows[0]?.kind === 'wire_move' && rows[0]?.seq === 1 &&
+       rows[0]?.room?.num === 587 && rows[0]?.room?.id === 7424,
+     JSON.stringify(rows));
+
+  const offMap = mod.wireMoveRow({
+    ...fixture,
+    requested: { x: 0, y: 960 },
+    to: { x: 0, y: 960 },
+    speed: 0,
+    slide: false,
+    offMap: true,
+    traceOptions,
+    validation: {
+      ...validation,
+      requested: { x: 0, y: 960 },
+      target: { x: 0, y: 960 },
+      offMap: true,
+    },
+  });
+  ok('off-map rows expose the fixed zero-speed/no-slide contract and no dynamic options',
+     offMap.speed === 0 && offMap.mode?.off_map === true && offMap.mode?.slide === false &&
+       offMap.mode?.fall === false && offMap.trace_options === null &&
+       offMap.validation?.offMap === true, JSON.stringify(offMap));
+
+  const unsafeFixture = {
+    ...fixture,
+    requested: { x: 0, y: 960 },
+    to: { x: 0, y: 960 },
+    speed: 0,
+    slide: false,
+    offMap: true,
+    unsafeReason: 'exit_unvalidated_fallback',
+    // Even a prior successful-looking object may only be context. It must never become the
+    // packet's validation merely because a caller supplied it.
+    priorValidation: validation,
+  };
+  const unsafe = mod.unsafeWireMoveRow(unsafeFixture);
+  ok('the unsafe builder emits an explicit sent wire row which the verifier rejects',
+     unsafe.schema === 'm59-wire-move/1' && unsafe.kind === 'wire_move' &&
+       unsafe.sent === true && unsafe.unsafe === true && unsafe.unvalidated === true &&
+       unsafe.fallback === true && unsafe.unsafe_reason === 'exit_unvalidated_fallback',
+     JSON.stringify(unsafe));
+  ok('an unsafe row can never inherit a validated label from the bypassed attempt',
+     unsafe.validation?.available === false && unsafe.validation?.moved === false &&
+       unsafe.validation?.arrived === false &&
+       unsafe.validation?.reason === 'exit_unvalidated_fallback' &&
+       unsafe.validation !== validation && unsafe.prior_validation === validation,
+     JSON.stringify(unsafe));
+  ok('the unsafe row preserves the exact packet endpoint, speed, and off-map mode',
+     JSON.stringify(unsafe.from) === JSON.stringify(fixture.from) &&
+       JSON.stringify(unsafe.requested) === JSON.stringify(unsafeFixture.requested) &&
+       JSON.stringify(unsafe.to) === JSON.stringify(unsafeFixture.to) &&
+       unsafe.speed === 0 && unsafe.mode?.off_map === true &&
+       unsafe.mode?.slide === false && unsafe.mode?.fall === false,
+     JSON.stringify(unsafe));
+  mod.traceUnsafeWireMove(unsafeFixture);
+  const unsafeRows = readRows(traceFile);
+  ok('the production unsafe emitter appends that rejecting row after the validated row',
+     unsafeRows.length === 2 && unsafeRows[1]?.seq === 2 &&
+       unsafeRows[1]?.unsafe === true && unsafeRows[1]?.unvalidated === true &&
+       unsafeRows[1]?.fallback === true, JSON.stringify(unsafeRows));
+  rmSync(scratch, { recursive: true, force: true });
+}
+
+console.log('');
+console.log('trace captures are private on POSIX');
+{
+  const scratch = mkdtempSync(join(tmpdir(), 'm59-collision-trace-mode-'));
+  const created = join(scratch, 'created.jsonl');
+  const createTracer = await enabledTracer(created, 2);
+  createTracer.traceMove({ agent: 'created', kind: 'step', sent: true });
+  const createdMode = process.platform === 'win32' ? null : statSync(created).mode & 0o777;
+  ok('a newly created capture is mode 0600 on POSIX',
+     process.platform === 'win32' || createdMode === 0o600,
+     process.platform === 'win32' ? 'POSIX mode bits do not apply on Windows' : createdMode.toString(8));
+
+  const existing = join(scratch, 'existing.jsonl');
+  writeFileSync(existing, '');
+  if (process.platform !== 'win32') chmodSync(existing, 0o666);
+  const appendTracer = await enabledTracer(existing, 2);
+  appendTracer.traceMove({ agent: 'appended', kind: 'step', sent: true });
+  const existingMode = process.platform === 'win32' ? null : statSync(existing).mode & 0o777;
+  ok('appending repairs an existing permissive capture to mode 0600 on POSIX',
+     process.platform === 'win32' || existingMode === 0o600,
+     process.platform === 'win32' ? 'POSIX mode bits do not apply on Windows' : existingMode.toString(8));
+  ok('privacy repair does not lose the appended row',
+     readRows(existing).map(row => row.agent).join(',') === 'appended');
+  rmSync(scratch, { recursive: true, force: true });
 }
 
 console.log('');
