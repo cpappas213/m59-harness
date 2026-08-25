@@ -10263,7 +10263,7 @@ const TOOLS = [
           const k = book.get(room?.num, x.col, x.row);
           return { ...x,
             distance: me ? Math.max(Math.abs(x.col - me.col), Math.abs(x.row - me.row)) : null,
-            tested: k ? (k.held > 0 ? 'holds' : book.discredited(k) ? 'does not work' : 'inconclusive') : 'untested',
+            tested: k ? (book.discredited(k) ? 'does not work' : k.held > 0 ? 'holds' : 'inconclusive') : 'untested',
             ...(k?.x != null ? { exact: { x: k.x, y: k.y },
                                  note: 'stand HERE, not at the middle of the square — walk_to aims at ' +
                                        'the centre and this spot works from a specific place in it' } : {}) };

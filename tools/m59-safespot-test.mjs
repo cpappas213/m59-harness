@@ -1176,8 +1176,7 @@ console.log('\n--- vigor is not shaped like health ---');
 // attackers does not hold six.
 console.log('\n--- a spot that has ever failed is retired ---');
 {
-  const { safeSpotBook } = await import('./m59-safespots.mjs');
-  const b = safeSpotBook(BOOK);
+  const b = new SafeSpotBook(BOOK);
   b.held(900, { col: 1, row: 1, seconds: 60, attackers: 2 });
   ok('a clean square is not discredited', !b.discredited(b.get(900, 1, 1)));
   ok('and it reports as holding', b.list(900).find(r => r.col === 1)?.verdict === 'holds');
@@ -1195,6 +1194,60 @@ console.log('\n--- a spot that has ever failed is retired ---');
   ok('holding three times afterwards does not rehabilitate it',
      b.discredited(b.get(900, 1, 1)),
      `held ${b.get(900,1,1).held}, failed ${b.get(900,1,1).failed}`);
+
+  // Human verification can correct old automatic evidence, but it is an evidence
+  // checkpoint rather than permanent immunity. This is the exact live failure that
+  // made MANIAC repeatedly retake (7,42) while its failure count climbed.
+  b.verify(900, { col: 1, row: 1, by: 'operator' });
+  ok('explicit re-verification accepts the failures already seen',
+     !b.discredited(b.get(900, 1, 1)), JSON.stringify(b.get(900, 1, 1)));
+  b.failed(900, { col: 1, row: 1, damage: 1, attackers: 2 });
+  ok('a hit after verification retires the square again',
+     b.discredited(b.get(900, 1, 1)), JSON.stringify(b.get(900, 1, 1)));
+  ok('the latest failure time is retained for diagnosis',
+     Number.isFinite(b.get(900, 1, 1).failed_at));
+
+  const legacy = { col: 7, row: 42, held: 1, failed: 7, verified: true };
+  ok('legacy verified records with unordered failures fail closed',
+     b.discredited(legacy), JSON.stringify(legacy));
+  ok('a null legacy baseline also fails closed rather than coercing to zero',
+     b.discredited({ ...legacy, verified_failed_count: null }));
+
+  b.verify(900, { col: 1, row: 1, by: 'operator-again' });
+  ok('the operator can explicitly re-verify after the new failure',
+     !b.discredited(b.get(900, 1, 1)) &&
+       b.get(900, 1, 1).verified_failed_count === b.get(900, 1, 1).failed);
+  b.unverify(900, { col: 1, row: 1 });
+  ok('unverifying clears both the override and its failure baseline',
+     b.discredited(b.get(900, 1, 1)) &&
+       b.get(900, 1, 1).verified_failed_count === undefined);
+
+  b.verify(900, { col: 1, row: 1, by: 'persistence-test' });
+  b.save();
+  const reloaded = new SafeSpotBook(BOOK).get(900, 1, 1);
+  ok('the verification epoch and latest failure survive a book reload',
+     reloaded?.verified_failed_count === reloaded?.failed &&
+       Number.isFinite(reloaded?.failed_at), JSON.stringify(reloaded));
+}
+
+console.log('\n--- a newly failed candidate cannot be taken from a stale selection ---');
+{
+  const w = world({ room: 901, col: 2, row: 2 });
+  const p = keeper(w);
+  w.s.world.geometry = { rows: 4, cols: 4 };
+  p.searchSafeSpot = () => {
+    p.book.failed(901, { col: 2, row: 2, damage: 1, attackers: 1 });
+    return { col: 2, row: 2, steps_away: 0, can_reach_you: 1,
+             free_shots: 1, back_cover: 1 };
+  };
+  const result = await p.takeSafeSpot('testing stale selection');
+  ok('takeSafeSpot rechecks the shared book before claiming the square',
+     result.took === false && result.discredited === true && p.hold === null,
+     JSON.stringify(result));
+
+  const broker = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+  ok('broker reporting checks does-not-work before old held evidence',
+     /tested:\s*k\s*\?\s*\(book\.discredited\(k\)\s*\?\s*'does not work'\s*:\s*k\.held/.test(broker));
 }
 
 // --- the newbie zone is a separate world with a one-way door ---

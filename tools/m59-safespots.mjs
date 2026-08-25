@@ -878,7 +878,7 @@ export function nearestSafeSpot(geo, from, {
       quarry_prediction: predictedUnreachable ? quarryPrediction : undefined,
       // Proven means held AND never failed. Discredited squares are already
       // skipped above; this keeps the flag honest for anything reading it.
-      proven: !!seen?.held && !seen?.failed, held_before: seen?.held ?? 0,
+      proven: !!seen?.held && !book.discredited(seen), held_before: seen?.held ?? 0,
       // The fine coordinate is what we actually want to stand on; see SafeSpotBook.
       // The square is only how we get there.
       fine: seen?.x != null ? { x: seen.x, y: seen.y } : null,
@@ -1000,13 +1000,18 @@ export class SafeSpotBook {
   // Valley of Ileria — and a marked square is the one kind of record that was not
   // produced by a model that might be wrong.
   //
-  // Failures are still COUNTED on a verified square, because a human can be wrong too
-  // and the record should say so. They just do not retire it: unmarking is a human's job.
+  // A mark accepts the evidence that exists AT THAT MOMENT. It is not permanent
+  // immunity from later live evidence: if a character is subsequently hit while
+  // standing still there, the new failure retires the square again. Otherwise one
+  // old click can make every keeper repeatedly trust a wall that is visibly hurting
+  // them. Re-verifying deliberately accepts the failures seen so far and starts a new
+  // evidence epoch.
   verify(room, { col, row, by = null, note = null }) {
     const rec = this.touch(room, col, row);
     rec.verified = true;
     rec.verified_by = by;
     rec.verified_at = Date.now();
+    rec.verified_failed_count = Math.max(0, Number(rec.failed) || 0);
     if (note) rec.verified_note = note;
     this.dirty = true;
     return rec;
@@ -1014,7 +1019,8 @@ export class SafeSpotBook {
 
   unverify(room, { col, row }) {
     const rec = this.touch(room, col, row);
-    delete rec.verified; delete rec.verified_by; delete rec.verified_at; delete rec.verified_note;
+    delete rec.verified; delete rec.verified_by; delete rec.verified_at;
+    delete rec.verified_note; delete rec.verified_failed_count;
     this.dirty = true;
     return rec;
   }
@@ -1032,8 +1038,16 @@ export class SafeSpotBook {
   // back out later without having to reconstruct anything.
   discredited(rec) {
     if (!rec) return false;
-    if (rec.verified) return false;             // a person's word beats our arithmetic
-    return (rec.failed || 0) >= 1;
+    const failed = Math.max(0, Number(rec.failed) || 0);
+    if (failed < 1) return false;
+    if (!rec.verified) return true;
+    const accepted = rec.verified_failed_count;
+    // New records say exactly how many failures the operator accepted. Any later
+    // observed hit invalidates that verification. Legacy verified+failed records did
+    // not preserve the ordering, so fail closed; the operator can explicitly verify
+    // the square again if those failures really were already known.
+    return typeof accepted !== 'number' || !Number.isFinite(accepted)
+      || failed > Math.max(0, accepted);
   }
 
   // We stood here under attack and nothing landed while we were not swinging.
@@ -1070,6 +1084,7 @@ export class SafeSpotBook {
       rec.min_settled_ms = Math.min(rec.min_settled_ms ?? Infinity, rec.settled_ms);
     }
     rec.at = Date.now();
+    rec.failed_at = rec.at;
     this.dirty = true;
     return rec;
   }

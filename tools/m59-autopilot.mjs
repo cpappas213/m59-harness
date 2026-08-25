@@ -2890,6 +2890,19 @@ export class Autopilot {
         why: 'the coarse movement grid is useful for ranking, but only repeated pulls can ' +
              'prove that a live quarry cannot fight here' });
 
+    // Selection and taking are separated by awaits above (including a possible
+    // same-room island crossing), and the safe-spot book is shared by every keeper
+    // in this broker. Recheck the live record before reserving or walking so another
+    // keeper's newly observed failure cannot become a stale invitation.
+    const latest = this.book.get(room.num, spot.col, spot.row);
+    if (this.book.discredited(latest)) {
+      return {
+        took: false,
+        discredited: true,
+        why: `safe spot ${spot.col},${spot.row} failed after it was selected`,
+      };
+    }
+
     // CLAIM IT BEFORE WALKING, not after arriving. Choosing and taking are separated
     // by a walk, and a walk is an await: three keepers each looked at the room, each
     // saw (29,15) unclaimed because none of them had got there yet, and all three set
@@ -2958,7 +2971,8 @@ export class Autopilot {
 
     const now = c.self;
     const known = this.book.get(room.num, spot.col, spot.row);
-    const trusted = !!known?.held && !this.book.discredited(known);
+    const discredited = this.book.discredited(known);
+    const trusted = !!known?.held && !discredited;
     this.hold = {
       source,
       room: room.num, col: spot.col, row: spot.row,
@@ -2980,13 +2994,15 @@ export class Autopilot {
     this.note('took a safe spot', {
       where: { col: spot.col, row: spot.row }, why,
       can_reach_you: spot.can_reach_you, free_shots: spot.free_shots, back_cover: spot.back_cover,
-      proven_before: known?.failed ? `DISCREDITED — failed ${known.failed} time(s) here`
-                   : known?.held   ? `held ${known.held} time(s) before`
-                   :                 'never tested',
+      proven_before: discredited ? `DISCREDITED — failed ${known.failed} time(s) here`
+                   : known?.verified ? `operator-verified${known.verified_by ? ` by ${known.verified_by}` : ''}`
+                   : known?.held ? `held ${known.held} time(s) before`
+                   : 'never tested',
       note: trusted
         ? 'this square has held under attack before and never failed, so it is trusted on arrival'
-        : known?.failed
-        ? 'this square has failed before; it is treated as open floor and should not have ' +
+        : discredited
+        ? 'this square has failed since its last verification; it is treated as open floor ' +
+          'and should not have ' +
           'been offered — a failure is permanent'
         : 'unproven: it will be treated as open floor until something stands next to us ' +
           'for ' + Math.round(PROOF_MS / 1000) + 's without landing a blow',
