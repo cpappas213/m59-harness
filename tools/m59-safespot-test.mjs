@@ -1835,22 +1835,24 @@ console.log('\n--- a freeze that changed nothing is not repeated ---');
   ok('freezing is allowed again once health has moved', after === true);
 }
 
-console.log('\n--- nobody calls for rescue from a pub ---');
+console.log('\n--- recovery speech is opt-in ---');
 {
-  // Being hurt is not being in danger. Monsters cannot attack in an inn at all, so a
-  // broadcast from one spends mana and other players' attention on a character that
-  // is in no trouble and can fix itself by moving and sitting down.
+  // Recovery may rearm itself, but deterministic keeper code must not speak for the
+  // character unless an operator explicitly opts into its canned pleas.
   const w = world({ health: 3, max: 25 });
   const p = keeper(w);
   let broadcasts = 0;
+  let inventoryReads = 0;
+  let weaponAttempts = 0;
   w.c.me = { name: 'Tester' };
   w.c.roomNameRsc = 1;
-  w.c.requestInventory = () => {};
+  w.c.requestInventory = () => { inventoryReads++; };
   w.c.waitFor = async () => ({ events: [] });
   w.c.broadcast = async () => { broadcasts++; };
   w.c.say = async () => { broadcasts++; };
   w.s.pacer = { submit: async (_k, fn) => fn() };
   w.s.need = () => w.c;
+  p.makeWeapon = async () => { weaponAttempts++; return false; };
 
   p.sanctuary = () => true;                       // standing in an inn
   await p.askForHelp('badly hurt and out of flasks');
@@ -1862,7 +1864,35 @@ console.log('\n--- nobody calls for rescue from a pub ---');
   p.sanctuary = () => false;                      // out in the world
   p.lastPleaAt = 0;
   await p.askForHelp('badly hurt and out of flasks').catch(() => {});
-  ok('but the same character in the field still asks', broadcasts > 0);
+  ok('the same character in the field is silent by default', broadcasts === 0);
+  ok('silence does not skip self-recovery work', inventoryReads > 0 && weaponAttempts > 0);
+  ok('and the default-off policy is visible in status', p.status().policy.automatedPleas === false);
+
+  p.sanctuary = () => true;                       // the exact post-death inn case
+  p.lastPleaAt = 0;
+  await p.askForHelp().catch(() => {});
+  ok('post-death recovery in an inn cannot bypass the default-off gate', broadcasts === 0);
+
+  p.policy.automatedPleas = true;
+  p.sanctuary = () => false;
+  p.lastPleaAt = 0;
+  await p.askForHelp('badly hurt and out of flasks').catch(() => {});
+  ok('an explicit automated-pleas opt-in restores the old request', broadcasts > 0);
+
+  const sent = broadcasts;
+  const readsBeforeThrottle = inventoryReads;
+  const weaponAttemptsBeforeThrottle = weaponAttempts;
+  p.lastPleaAt = Date.now();
+  await p.askForHelp().catch(() => {});
+  ok('the speech throttle does not suppress later self-rearming',
+     broadcasts === sent && inventoryReads > readsBeforeThrottle &&
+     weaponAttempts > weaponAttemptsBeforeThrottle);
+
+  const broker = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+  ok('the broker publishes the automated_pleas setting',
+     /automated_pleas:\s*\{\s*type:\s*'boolean'/.test(broker));
+  ok('and applies it to the persisted keeper policy',
+     /a\.automated_pleas\s*!==\s*undefined\)\s*p\.policy\.automatedPleas\s*=/.test(broker));
 }
 
 console.log('\n--- no dead zone between "too hurt to fight" and "hurt enough to rest" ---');
