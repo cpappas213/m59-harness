@@ -6035,7 +6035,8 @@ export class Autopilot {
     try {
       ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
                            { maxDetour: planned.maxDetour ?? 4,
-                             unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
+                             unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
+                             exitable: this.exitTest() });
     } catch { ahead = null; }
     if (!ahead) return false;
     this.note('taking the next wall on the route and mending there', {
@@ -6062,6 +6063,25 @@ export class Autopilot {
   // NO OPINION MEANS CARRY ON. A room with no geometry, or a pathfinder that throws, answers
   // reachable — the same rule the step mask follows, because a bake must never be the thing
   // that makes a wall disappear.
+  // CAN WE GET OUT AGAIN. The other half of `reachTest`, and the half that was missing.
+  //
+  // One mover step is the whole bar. Not two, not a path back to the road: a safe spot is
+  // meant to be hemmed in — that is what makes it safe — and demanding room to manoeuvre
+  // would refuse the good ones along with the fatal ones. A square with ZERO ways out is a
+  // different thing from a tight one, and it is the only thing refused here.
+  exitTest() {
+    const geo = this.s?.world?.geometry;
+    if (!geo || typeof geo.moverStepLands !== 'function') return null;
+    const DIRS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [-1, 1], [1, -1], [1, 1]];
+    return (col, row) => {
+      try {
+        for (const [dr, dc] of DIRS)
+          if (geo.moverStepLands(row, col, row + dr, col + dc) === true) return true;
+        return false;
+      } catch { return true; }   // no opinion means carry on
+    };
+  }
+
   reachTest() {
     const geo = this.s?.world?.geometry;
     const me = this.s?.client?.self;

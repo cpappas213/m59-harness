@@ -370,6 +370,23 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
       // is a square that quietly ejects you from the room mid-fight — the opposite of
       // what it is being chosen for.
       if (r <= 1 || c <= 1 || r >= geo.rows || c >= geo.cols) continue;
+      // AND A BODY HAS TO BE ABLE TO LEAVE. One mover step out is the whole bar.
+      //
+      // A safe spot is by definition a square the two grids disagree about, and some of
+      // those cannot be left at all. 45,29 in room 587 is `walkable: false` with ZERO mover
+      // steps out, and it was offered as shelter to character after character: each
+      // diverted there at around 90% health, stopped moving, and was eaten over 65 to 176
+      // seconds by spiders and centipedes while its keeper watched, health trails flat at
+      // full and then falling to 3 without the character moving a square. Fleeing needs
+      // somewhere to flee to.
+      //
+      // Not two steps, and not a path back to the road: being hemmed in is the POINT of a
+      // safe spot, and asking for room to manoeuvre would refuse the good ones along with
+      // the fatal ones. Zero is a different thing from tight, and zero is all that is
+      // refused here. Checked in the scan rather than at one selector because both
+      // `nearestSafeSpot` and `shelterAhead` read this list — fixing only the second one
+      // left characters dying on the same square.
+      if (!RING.some(([dr, dc]) => geo.moverStepLands(r, c, r + dr, c + dc) === true)) continue;
       const blocked = RING.map(([dr, dc]) => !geo.walkable(r + dr, c + dc));
       const open = blocked.filter(b => !b).length;
       // THE NUMBER THAT DECIDES EVERYTHING, and it is not `open`. See MONSTER_DISC.
@@ -624,9 +641,28 @@ export function sheltersAlong(geo, steps, {
  * left, it is a longer way to die.
  */
 export function shelterAhead(shelters, atStep,
-                             { maxDetour = 4, requireDisagreement = true, unreachable = null } = {}) {
+                             { maxDetour = 4, requireDisagreement = true, unreachable = null,
+                               exitable = null } = {}) {
   if (!Array.isArray(shelters) || !shelters.length) return null;
   let ahead = shelters.filter(s => s.atStep >= atStep && s.detour <= maxDetour);
+  // A REFUGE YOU CANNOT LEAVE IS A COFFIN, AND THIS ASKED ONLY WHETHER WE COULD GET IN.
+  //
+  // `unreachable` above is the walk TO the wall failing. Nothing asked about the walk back
+  // out, and a safe spot is BY DEFINITION a square the two grids disagree about — which is
+  // the same property that makes some of them impossible to leave. Measured in 587, three
+  // deaths inside six minutes, all three on the same pair of squares:
+  //
+  //     44,29   walkable false   3 mover steps out
+  //     45,29   walkable false   0 mover steps out
+  //
+  // Each character diverted there at around 90% health, stopped moving, and was eaten over
+  // 65 to 80 seconds by twelve spiders and centipedes while the keeper watched — health
+  // trails that sit flat at full and then fall to 3 without the character ever moving a
+  // square. The guard was armed and fleeing needs somewhere to flee to.
+  //
+  // NULL IS NOT ZERO here either: a caller with no geometry passes nothing and every
+  // candidate stands, because a missing map must never be the thing that empties the list.
+  if (exitable) ahead = ahead.filter(s => exitable(s.col, s.row) !== false);
   // The same exclusion the room search applies: a planned stop we have just failed to walk
   // to is not a stop. Applied before the ranking below rather than after, so a shelter that
   // cannot be reached does not win on disagreement and then fail again.

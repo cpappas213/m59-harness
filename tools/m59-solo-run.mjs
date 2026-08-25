@@ -159,7 +159,15 @@ function call(name, args, ms = 90000) {
       let t = ''; res.setEncoding('utf8');
       res.on('data', c => { t += c; });
       res.on('end', () => {
-        try { done(JSON.parse(JSON.parse(t).result.content[0].text)); }
+        // A TOOL REFUSAL IS PROSE, NOT JSON, AND THE PARSE ERROR HID IT TWICE.
+        // `error: Aaaa is busy: walk to ...` came back as
+        // `Unexpected token 'e', "error: sha"... is not valid JSON`, which reads like a
+        // broken broker and is actually the broker answering clearly. Report what it said.
+        try {
+          const text = JSON.parse(t)?.result?.content?.[0]?.text ?? t;
+          if (typeof text === 'string' && text.startsWith('error: ')) { done({ _error: text.slice(7) }); return; }
+          done(JSON.parse(text));
+        }
         catch (e) { done({ _error: e.message }); }
       });
     });
@@ -297,6 +305,19 @@ async function runLeg(r, { from = FROM, to = TO, place = true, heal = true, leg 
   // ON A TOUR, ONLY THE FIRST LEG IS PLACED AND HEALED. Relocating between legs would throw
   // away the thing the tour is asking about — whether the character is still in a state to
   // go on — and healing between them would turn three legs into three first legs.
+  // STOP WHATEVER THE LAST LAP LEFT RUNNING. A travel job lives in the BROKER, so killing
+  // this script does not end it — the character walks on, and the next lap is refused with
+  // "is busy: walk to ..." before it measures anything. Four laps in a row were lost to
+  // that. Cancel is best-effort and harmless when there is nothing to cancel.
+  if (place) {
+    // `cancel_movement`, NOT `autopilot action=cancel`. The second one returns a healthy
+    // status and leaves the walk running, so the next lap is still refused with
+    // "is busy: walk to Castle Victoria" — a cancel that reports success and cancels
+    // nothing, which is the failure mode this repository keeps meeting.
+    await call('cancel_movement', { agent: r.agent }, 20000).catch(() => null);
+    await call('autopilot', { agent: r.agent, action: 'cancel' }, 20000).catch(() => null);
+    await new Promise(done => setTimeout(done, 1500));
+  }
   if (place) await dm.relocate([r.character], from, { verify: false }).catch(() => null);
   const ids = await dm.resolve([r.character]);
   const max = maxOf(r.character);
