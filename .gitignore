@@ -415,3 +415,8 @@ _verify2.mjs
 # Jump-trial attempts: this machine measuring one cliff, appended to per attempt.
 /substrate/jumptrials.jsonl
 /substrate/circuit-laps.json
+
+# The review queue is this machine's working list of rooms to go and stand in. Derived from
+# the ledgers, regenerated in a second, and an opinion about where to spend the next hour
+# rather than a fact about the map. See m59-review.mjs.
+/substrate/review-queue*.json
