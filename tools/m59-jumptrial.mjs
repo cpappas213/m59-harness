@@ -108,6 +108,47 @@ const STRATEGIES = {
   // front of you.
   pick_clear: { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, candidates: true, wait: 1, patience: 6,
                why: 'raycast every shelf square and jump at whichever line is clearest' },
+  // BOTH LEVERS AT ONCE. The two that work do different things: waiting gets a clear line and
+  // a clear line is worth ~100%, while re-aiming is the only thing that survives a line that
+  // never clears. Neither alone reached both of the operator's targets — patient went 5/5
+  // clean and 0/3 blocked, pick_clear 13/16 clean and 2/3 blocked — so this waits as long as
+  // patient does and then, instead of jumping into whatever is left, re-aims at the clearest
+  // landing the shelf offers.
+  // WAIT AT A WALL, FOR AS LONG AS IT TAKES, AND ONLY THEN STEP OUT AND JUMP.
+  //
+  // The operator's argument, and the arithmetic is plainly right: a missed jump costs a whole
+  // lap of Ukgoth — the pit is one-way, so recovering means walking the cycle round — while
+  // waiting costs seconds. Thirty seconds of standing still is cheap against that, and the
+  // present numbers make the case: with the room crowded, every blind strategy went to ZERO.
+  //
+  // Two details make it work. The character does NOT need line of sight to the pit: `look`
+  // reports every object in the room with coordinates, so it can watch from anywhere. And it
+  // waits at 37,14 — two squares from the take-off, two walls against it and three refused
+  // approaches, the best-covered square on the plateau — rather than on the take-off itself,
+  // which is exposed and is where the survival ladder keeps dragging characters off.
+  //
+  // Only when the line is clear does it step to the ledge and go, so the exposed moment is
+  // one step and one jump instead of a minute of standing in the open.
+  // WAIT ON THE EXTENSION OF THE JUMP LINE, SO THE JUMP IS A RUN THAT NEVER TURNS.
+  //
+  // The operator's refinement, and it is the better idea: `step()` turns to face its
+  // destination before it moves, so a wait square off to one side makes the jump a stop, a
+  // ninety-degree turn and a standing start. Waiting BEHIND the take-off on the same line
+  // makes it one continuous run through the ledge and off it, which is how a person does it.
+  //
+  // Extending the line backward from 36,16 away from 38,10 and measuring every square on it:
+  //
+  //     35,19   0 deg off the line   walkable, plateau, but NO walls — exposed
+  //     34,21   3 deg off the line   walkable, plateau, FOUR walls  <- cover and a straight run
+  //     34,22   0 deg off the line   not walkable, off the plateau
+  //
+  // 34,21 is the one that is both: five squares back, almost exactly in line, and the
+  // best-covered square on the plateau. It waits there until the line clears and then runs.
+  hold_wall: { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, candidates: true,
+               wait: 2, patience: 45, waitAt: { row: 34, col: 21 },
+               why: 'wait behind cover at 34,21, on the jump line, then run through and jump' },
+  hybrid:    { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, candidates: true, wait: 2, patience: 20,
+               why: 'wait up to 20s for a 2-square gap, then re-aim at the clearest shelf square' },
   clear:     { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 3, patience: 0,
                why: 'declines outright unless 3 squares of the line are clear' },
   strafe_n:  { from: { row: 35, col: 16 }, to: { row: 38, col: 10 },
@@ -157,7 +198,7 @@ const SHELF = [
   { row: 39, col: 11 }, { row: 39, col: 12 }, { row: 40, col: 12 },
 ];
 
-const DEFAULT_SET = ['pick_clear', 'baseline', 'clear1', 'patient', 'land_wide'];
+const DEFAULT_SET = ['hold_wall', 'pick_clear', 'baseline'];
 // `sweepStrategies` reads the room geometry, which is loaded further down, so the sweep is
 // applied there rather than here. A const that needs a value that does not exist yet is the
 // kind of ordering bug that reads as an empty strategy list.
@@ -633,6 +674,13 @@ async function attempt(q, name) {
   // earlier edit of this missed its target, so every sweep pair declined rather than waited
   // and threw away 28 of 108 attempts.
   if (st.patience && blockers.length) {
+    // STAND SOMEWHERE WITH A WALL AT YOUR BACK WHILE YOU WAIT. Waiting on the take-off is
+    // waiting in the open on a one-square ledge with Guardians two squares away, which is how
+    // 'left the ledge before jumping' became the commonest outcome of the patient strategies.
+    if (st.waitAt) {
+      await call('walk_to', { agent: q.agent, col: st.waitAt.col, row: st.waitAt.row }, 12000);
+      out.waited_at = `${st.waitAt.row},${st.waitAt.col}`;
+    }
     const until = Date.now() + st.patience * 1000;
     while (Date.now() < until) {
       await sleep(1500);
@@ -642,6 +690,15 @@ async function attempt(q, name) {
       if (!now.length) { blockers.length = 0; break; }
     }
     out.waited_s = Math.round((st.patience * 1000 - Math.max(0, until - Date.now())) / 1000);
+    // Back to the ledge, now that the line is clear. This is the exposed moment and it is one
+    // step long, which is the whole point of having waited elsewhere.
+    if (st.waitAt) {
+      for (let tries = 0; tries < 2; tries++) {
+        const back = await observe(q.agent);
+        if (back?.me && dist(back.me, st.from) <= 1 && sameFloorAs(back.me, st.from)) break;
+        await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 10000);
+      }
+    }
   }
   if (st.wait && !st.patience && blockers.length) {
     out.made = false;
