@@ -46,6 +46,12 @@ const REPO = join(HERE, '..');
 export const DEV_CLIENT = () => process.env.M59_CLIENT ||
   join(process.env.M59_SOURCE || 'C:\\code\\Meridian59', 'run', 'localclient', 'meridian.exe');
 
+
+// WHERE THE ROOM VIEWS ARE SERVED. `m59-roomserve.mjs` listens here, and the patched
+// client's help key opens `<this>/<room>` instead of the public guides. Absent from the
+// client's environment, that key does exactly what the stock client does — see StartHelp
+// in clientd3d/winmsg.c.
+export const MAP_URL = process.env.M59_MAP_URL || 'http://127.0.0.1:8977';
 export function rosterFor(fleet) {
   const file = stateFileFor(fleet);
   if (!existsSync(file)) return { file, entries: [] };
@@ -74,7 +80,7 @@ const matches = (e, want) => [e.agent, e.character, e.account]
  */
 export function launcherText(entry, {
   client = DEV_CLIENT(), overlayDir = OVERLAY_DIR(), signalPort = SIGNAL_PORT,
-  host = null, port = null, title = true,
+  host = null, port = null, title = true, mapUrl = MAP_URL,
 } = {}) {
   const h = host ?? entry.host;
   const p = port ?? entry.port;
@@ -99,6 +105,10 @@ export function launcherText(entry, {
     `set "M59_OVERLAY_DIR=${overlayDir}"`,
     `set "M59_SIGNAL_PORT=${signalPort}"`,
     `set "M59_DEBUG_TITLE=${title ? 1 : 0}"`,
+    'rem And the help key. Stock it opens the public guides, which is a page for somebody',
+    'rem learning to play; here it opens what the HARNESS believes about the room you are',
+    'rem standing in. Needs m59-roomserve.mjs running on that port.',
+    `set "M59_MAP_URL=${mapUrl}"`,
     '',
     `cd /d "${dir}"`,
     `start "" /D "${dir}" "${client}" /H:${h} /P:${p} /U:${entry.account} /W:${entry.password} /Q`,
