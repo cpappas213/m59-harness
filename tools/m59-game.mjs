@@ -1198,6 +1198,17 @@ class Session {
       // it is the count that already includes the death it is supposed to detect — which is
       // exactly the bug this pairs with below.
       const deathsAtStart = Number(keeper?.tally?.deaths ?? NaN);
+      // WHAT THE TRIP COST, FOR THE ANNOUNCEMENT AT THE END OF IT.
+      //
+      // A death is broadcast by the SERVER, so an operator watching from inside the game
+      // sees every failure and no successes — the fleet looks like it does nothing but die
+      // while 96% of hops are arriving. These are the three numbers that make an arrival
+      // worth reading: where it came from, how close it came to not making it, and how many
+      // walls it had to stop at on the way.
+      const restsAtStart = Number(keeper?.tally?.rests ?? 0);
+      const fromRoom = { num: Number(this.world?.room?.num ?? NaN),
+                         name: String(this.world?.room?.name ?? '') };
+      let lowHealth = null, lowMax = null;
       // ERRANDS FIRST, AND ONLY EVER HERE. `passErrand` stands down for the whole of a
       // journey — every branch of it walks the character somewhere and it is already going
       // somewhere — so this is the one moment they get. Default on, because a character
@@ -1226,6 +1237,15 @@ class Session {
       // about somebody else's walk — and reviving that is the two-drivers bug wearing a
       // different hat. Identity is the only question that survives the race.
       const assert_ = () => {
+        // The health low-water mark, sampled on the timer that is already ticking. A
+        // journey is minutes long and the keeper's own frames are not visible from here,
+        // so this is the cheapest honest sample available: every two seconds, whatever the
+        // walk is doing.
+        try {
+          const v = this.client?.vitals?.();
+          const h = v?.health?.value, m = v?.health?.max;
+          if (Number.isFinite(h) && (lowHealth === null || h < lowHealth)) { lowHealth = h; lowMax = m; }
+        } catch { /* a vitals read is never worth ending a journey over */ }
         if (!keeper || keeper.inert) return;
         if (this.movementWasCancelled(movementGeneration)) return;
         keeper.goTravelling(`travelling to ${where}`, { to: dest });
@@ -1273,6 +1293,45 @@ class Session {
           // tries, stale, too hurt, switched off — so all it needed was to be told.
           const arrived = outcome?.arrived === true;
           const here = Number(this.world?.room?.num ?? NaN);
+
+          // SAY SO, WHEN IT WORKED. OFF BY DEFAULT, AND THAT IS NOT TIMIDITY.
+          //
+          // `broadcast` costs a percentage of MAXIMUM MANA per line, and this fleet spends
+          // mana on `create food` at 15 a casting — which is the only way past the vigor
+          // rest cap of 80. A fleet announcing every arrival to the whole server would pay
+          // for the telemetry out of the larder. So the channel is an operator's choice:
+          //
+          //   M59_TRIP_ANNOUNCE=broadcast   the whole server — what a watcher on another
+          //                                 account sees, and the only one that costs mana
+          //   M59_TRIP_ANNOUNCE=yell        this room and its neighbours, free
+          //   M59_TRIP_ANNOUNCE=say         this room only, free
+          //   unset / off                   nothing, which is the committed default
+          //
+          // A FAILED JOURNEY SAYS NOTHING. The server already broadcasts deaths and the
+          // transit ledger already records short trips; a character announcing its own
+          // failures would be the noisiest thing on the server and the least informative.
+          const channel = String(process.env.M59_TRIP_ANNOUNCE ?? '').trim().toLowerCase();
+          const kind = { say: 1, yell: 2, broadcast: 3 }[channel];
+          if (arrived && kind && this.client?.say) {
+            const rests = Math.max(0, Number(keeper?.tally?.rests ?? 0) - restsAtStart);
+            const pct = (lowHealth !== null && lowMax) ? Math.round(100 * lowHealth / lowMax) : null;
+            const toName = String(this.world?.room?.name ?? where);
+            const line =
+              `Arrived: ${fromRoom.name || ('room ' + fromRoom.num)} to ${toName}` +
+              ` in ${outcome?.hops ?? '?'} hop(s)` +
+              (pct === null ? '' : `, health down to ${pct}% (${lowHealth}/${lowMax})`) +
+              `, ${rests} rest stop(s) at safe walls.`;
+            // Never let the announcement be the thing that fails a journey that arrived.
+            // THE PACER FIRST, THE CLIENT IF IT REFUSES. In the broker's proxy Session
+            // `pacer.submit` throws on purpose — "the pacer is in the keeper process" —
+            // so choosing it merely because it EXISTS would mean this line never went out
+            // from that side, silently, which is the failure mode this whole change is
+            // trying to cure.
+            try {
+              try { await this.pacer.submit('say', () => this.client.say(line, kind)); }
+              catch { await this.client.say(line, kind); }
+            } catch { /* said nothing; the trip still happened */ }
+          }
           // ARRIVING SETTLES THE TAB. Otherwise a character that reached Castle Victoria at
           // the cost of one death carries that death into the NEXT objective and is given
           // one fewer try for a road that has not charged it anything.
