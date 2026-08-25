@@ -219,6 +219,23 @@ console.log('\n--- a denied assignment cannot fight its own relocation ---');
      JSON.stringify([...denied.entries()]));
   ok('a cap-blocked assignment is deferred just like a wall-refused assignment',
      shouldRelocateToAssignedRoom({ assignedRoom: 563 }, elsewhere, denied) === false);
+
+  const openFieldDenials = farmRoomDenials(
+    new Map([[557, 'three wall samples failed']]),
+    new Map([[563, 'spawn cap 8/8 is occupied by 1x rebel soldier']]),
+    { useSafeSpots: false });
+  ok('open-field policy does not quarantine a room over failed wall searches',
+     !openFieldDenials.has(557));
+  ok('open-field policy still respects strategy-independent spawn-cap refusals',
+     openFieldDenials.has(563) && openFieldDenials.size === 1);
+
+  const w = world({ room: 566 });
+  const p = keeper(w);
+  p.policy.assignedRoom = 557;
+  p.policy.useSafeSpots = false;
+  p.noWallRooms = new Map([[557, 'three wall samples failed']]);
+  ok('status no longer reports a wall-denied open-field assignment as deferred',
+     p.status().placement?.assignment_deferred === false);
 }
 
 console.log('\n--- proving a spot that works ---');
