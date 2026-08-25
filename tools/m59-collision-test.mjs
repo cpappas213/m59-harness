@@ -988,7 +988,18 @@ function compileSessionMethod(source, signature, name, dependencies = {}) {
   }
 }
 
-const brokerSource = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+// SOURCE PATH IS OURS, EVERYTHING ELSE IS UPSTREAM'S.
+//
+// These methods are lifted out of the PRODUCTION source by brace matching, so this
+// suite is bound to which FILE the code lives in. The keeper split moved Session
+// from m59-broker.mjs to m59-game.mjs here; upstream still has it in the broker.
+// When that path was wrong, validateFineTarget compiled to null, one group skipped
+// politely, and a later assertion dereferenced the null and took the file down --
+// 164 collision assertions went quiet at exactly the moment we established that
+// movement is CLIENT-AUTHORITATIVE and this model is the only collision check.
+//
+// If it moves again, the failure to look for is compileSessionMethod returning null.
+const brokerSource = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
 
 // A PLAIN FUNCTION, LIFTED THE SAME WAY THE METHODS ARE. `provedSquares` is what turns a
 // route into the legs the pull has proved, and stubbing it would leave `walkTo` tested on
@@ -1042,6 +1053,11 @@ const ordinaryStep = compileSessionMethod(brokerSource,
   'async step(col, row, {', 'step', {
     MOVE_INTERVAL_MS: 0, ROOM_RESYNC_MS: Number.POSITIVE_INFINITY,
     KOD_FINENESS, squaresPerSecond: () => 2.5,
+    // THE REAL VALUES FROM m59-game.mjs (:67, :72), not stand-ins. `step` grew these
+    // when combat facing landed, and a compiled method whose constants are invented is
+    // testing a different function from the one that ships. The dependency check below
+    // is what caught them missing, which is the check earning its keep.
+    FACE_EPS: 8, COMBAT_FACE_HOLD_MS: 1500,
     // The movement tracer, stubbed. It is OFF in every real run unless the environment
     // turns it on, but `step` names it unconditionally, and a free identifier here throws
     // ReferenceError in the eval'd copy while working perfectly in the broker — which is

@@ -487,8 +487,29 @@ async function build({ chunk = 300 } = {}) {
 
 // ------------------------------------------------------------------ graph
 
+// MEMOIZED PER FILE (+ mtime/size, so a rewritten fixture still reloads in tests).
+// loadMap() used to JSON.parse on EVERY call, returning a fresh object each time — and
+// every consumer then paid its own lazy builds on that private instance: the reverse-edge
+// table (~11s), the geometry parse, the step-mask attach. The keeper's startup warm built
+// `__reverse` on the map IT loaded, then `new Router({ session })` called loadMap() again,
+// got a different object, and the first route search re-paid the whole build ON THE TICK
+// (the recurring 11s stall). One shared map per process means one build, paid wherever the
+// process chooses to pay it (startup, via the eager warms).
+const _loadMapCache = new Map();
 export function loadMap(file = MAP_FILE) {
-  return JSON.parse(fs.readFileSync(file, 'utf8'));
+  const resolved = path.resolve(file);
+  let st = null;
+  try { st = fs.statSync(resolved); } catch { /* fall through: the read below reports it */ }
+  if (st) {
+    const key = `${resolved}\0${st.mtimeMs}\0${st.size}`;
+    const hit = _loadMapCache.get(key);
+    if (hit) return hit;
+    const map = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+    if (_loadMapCache.size > 8) _loadMapCache.clear();  // a handful of fixtures is the real ceiling
+    _loadMapCache.set(key, map);
+    return map;
+  }
+  return JSON.parse(fs.readFileSync(resolved, 'utf8'));
 }
 
 export function writeMapAtomic(file, map) {
@@ -712,43 +733,63 @@ export function passableExits(map, at) {
     .filter(ex => ex.to != null && !isOneWayBlocked(Number(at), Number(ex.to), ex));
 }
 
-export function inferredExits(map, roomNum) {
-  if (!map.__reverse) {
-    const rev = new Map();
-    for (const r of Object.values(map.rooms)) {
-      for (const e of r.edgeExits || []) {
-        if (e.to == null || e.condition) continue;   // conditional exits are not symmetric
-        if (r.roo && !edgeCandidatesOf(r, e).length) continue;
-        const back = OPPOSITE[e.leave];
-        if (!back) continue;
-        // NEVER infer an edge OUT of a room that declares no edge exits at all.
-        // StandardLeaveDir reads the destination room's own plEdge_Exits; if that
-        // list is empty, walking off any boundary of that room does nothing, and no
-        // amount of the neighbour declaring an edge inward changes it. Marion is
-        // exactly this: plEdge_Exits = $, entered by walking north off the West
-        // Merchant Way, and impossible to walk out of. Inferring the reverse there
-        // does not just fail — it invents an escape route that the router then
-        // trusts, which is how a nine-room pocket passed every safety check.
-        if (!(map.rooms[e.to]?.edgeExits || []).length) continue;
-        // Skip if the destination already declares its own way back to us: a real
-        // exit always beats an inferred one.
-        const declared = (map.rooms[e.to]?.edgeExits || []).some(x => x.to === r.num);
-        if (declared) continue;
-        // A reverse is only actionable where the destination room's own BSP has a
-        // real crossing in that direction. This excludes sealed authored bounds
-        // before route search can repeatedly choose them.
-        if (map.rooms[e.to]?.roo
-            && !edgeCandidatesOf(map.rooms[e.to], LEAVE_NAME[back]).length) continue;
-        if (!rev.has(e.to)) rev.set(e.to, []);
-        if (!rev.get(e.to).some(x => x.to === r.num))
-          rev.get(e.to).push({ kind: 'edge', to: r.num, direction: LEAVE_NAME[back],
-                               leave: back, inferred: true,
-                               how: `walk ${LEAVE_NAME[back]} past the room edge ` +
-                                    `(inferred: ${r.name} declares ${LEAVE_NAME[e.leave]} into here)` });
-      }
+// THE MAP-GLOBAL TABLE OF INFERRED REVERSE-EDGES. Built once, then read forever. The
+// build iterates every room and calls edgeCandidatesOf (which touches geometry), so on a
+// full map it takes ~10s. It was lazy — built on the first inferredExits() call, which
+// landed on a character's first tick and stalled the loop for 24s (the cold-start stall).
+// buildReverseEdges() exists so a caller can pay that cost at STARTUP, off the tick path,
+// where the keeper is already busy loading geometry and the 10s is invisible.
+//
+// It is a pure build: no time budget, no truncation, no dropped edges — the same
+// computation, just scheduled earlier. inferredExits() still calls it lazily as a fallback
+// for any path that reads inferred exits before startup builds them, so nothing depends on
+// the call being made.
+export function buildReverseEdges(map) {
+  if (map.__reverse) return map.__reverse;
+  const rev = new Map();
+  for (const r of Object.values(map.rooms)) {
+    for (const e of r.edgeExits || []) {
+      if (e.to == null || e.condition) continue;   // conditional exits are not symmetric
+      if (r.roo && !edgeCandidatesOf(r, e).length) continue;
+      const back = OPPOSITE[e.leave];
+      if (!back) continue;
+      // NEVER infer an edge OUT of a room that declares no edge exits at all.
+      // StandardLeaveDir reads the destination room's own plEdge_Exits; if that
+      // list is empty, walking off any boundary of that room does nothing, and no
+      // amount of the neighbour declaring an edge inward changes it. Marion is
+      // exactly this: plEdge_Exits = $, entered by walking north off the West
+      // Merchant Way, and impossible to walk out of. Inferring the reverse there
+      // does not just fail — it invents an escape route that the router then
+      // trusts, which is how a nine-room pocket passed every safety check.
+      if (!(map.rooms[e.to]?.edgeExits || []).length) continue;
+      // Skip if the destination already declares its own way back to us: a real
+      // exit always beats an inferred one.
+      const declared = (map.rooms[e.to]?.edgeExits || []).some(x => x.to === r.num);
+      if (declared) continue;
+      // A reverse is only actionable where the destination room's own BSP has a
+      // real crossing in that direction. This excludes sealed authored bounds
+      // before route search can repeatedly choose them.
+      if (map.rooms[e.to]?.roo
+          && !edgeCandidatesOf(map.rooms[e.to], LEAVE_NAME[back]).length) continue;
+      if (!rev.has(e.to)) rev.set(e.to, []);
+      if (!rev.get(e.to).some(x => x.to === r.num))
+        rev.get(e.to).push({ kind: 'edge', to: r.num, direction: LEAVE_NAME[back],
+                             leave: back, inferred: true,
+                             how: `walk ${LEAVE_NAME[back]} past the room edge ` +
+                                  `(inferred: ${r.name} declares ${LEAVE_NAME[e.leave]} into here)` });
     }
-    Object.defineProperty(map, '__reverse', { value: rev, enumerable: false });
   }
+  Object.defineProperty(map, '__reverse', { value: rev, enumerable: false });
+  return rev;
+}
+
+export function inferredExits(map, roomNum) {
+  // READ the reverse table; build it ONCE if it is missing (the standalone/test case where
+  // nothing called buildReverseEdges at startup). The table is stable for the life of the
+  // map, so a per-call rebuild (the old behaviour) re-paid ~13s of edge work on every
+  // inferredExits call — which is exactly the 13s stall that hit the first room the router
+  // ever expanded. buildReverseEdges is idempotent and no-ops when map.__reverse exists.
+  if (!map.__reverse) buildReverseEdges(map);
   return (map.__reverse.get(roomNum) || []).filter(x => !badInferred.has(roomNum + '->' + x.to));
 }
 
@@ -858,8 +899,33 @@ export function roomsWithin(map, fromNum, radius = 2, { avoid = AVOID_IN_TRANSIT
 // The search itself. Unchanged except that it can be told to pretend some rooms are not
 // there — `avoid` is consulted for rooms we would PASS THROUGH, never for where we are or
 // where we are going.
+// bfsPath cache. The room graph is static (264 rooms, fixed exits), so a BFS from
+// (fromNum, toNum) with a given avoid-set has the SAME answer every time it is called.
+// The first call is ~13s (it walks a large fraction of the graph and builds each visited
+// room's passable-exit list), and it was re-paid on the second call for the same pair
+// (tick 1 and tick 2 both cost 13s). Caching by (from, to, avoid) makes every repeat
+// call instant. The graph never changes within a process (the .map is loaded once and
+// never mutated), so the cache is safe for the life of the process. Bounded: the number
+// of distinct (from, to, avoid) pairs the fleet actually routes is small (a few hundred),
+// well under the cap.
+const _bfsPathCache = new Map();
+const _bfsPathCacheCap = 2000;
+function _bfsCacheKey(fromNum, toNum, avoid) {
+  // The default avoid set (AVOID_IN_TRANSIT) and "no avoid" are the only ones the router
+  // uses in practice. Encode the avoid set as a sorted join of its room numbers so any
+  // set of rooms is stably keyed; null when there is no avoid.
+  const av = avoid && avoid.size ? [...avoid].sort((a, b) => a - b).join(',') : '';
+  return `${fromNum}>${toNum}|${av}`;
+}
 function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = null,
                  crossCost = null, availableFirstHops = null) {
+  // Cache only the plain form. `transitOk` and `crossCost` are FUNCTIONS: two
+  // callers can pass different predicates that are textually identical, so they
+  // cannot be keyed, and a wrong hit here would be a route through a room the
+  // caller had just forbidden. Those calls skip the cache entirely.
+  const _cacheable = !transitOk && !crossCost && !blockedHops && !availableFirstHops;
+  const _key = _cacheable ? _bfsCacheKey(fromNum, toNum, avoid) : null;
+  if (_key) { const hit = _bfsPathCache.get(_key); if (hit) return hit; }
   // WITH A TRANSIT PREDICATE THE STATE IS (ROOM, DOOR YOU CAME IN BY), NOT THE ROOM.
   //
   // Whether you can cross a room depends on which side you entered it from, so keying
@@ -951,8 +1017,19 @@ function bfsPath(map, fromNum, toNum, avoid, transitOk = null, blockedHops = nul
       q.push([ex.to, next, at]);
     }
   }
-  if (best) return { found: true, hops: best, walk_cost: routeCost(best) };
-  return { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
+  // STORE ON BOTH PATHS. A "no route" is as stable an answer as a route for a static
+  // graph, and not caching it was how a repeated impossible query re-paid the whole
+  // search every time it was asked.
+  if (best) {
+    const _hit = { found: true, hops: best, walk_cost: routeCost(best) };
+    if (_key) { if (_bfsPathCache.size >= _bfsPathCacheCap) _bfsPathCache.clear();
+                _bfsPathCache.set(_key, _hit); }
+    return _hit;
+  }
+  const _miss = { found: false, hops: [], reason: `no route from ${fromNum} to ${toNum} in the graph` };
+  if (_key) { if (_bfsPathCache.size >= _bfsPathCacheCap) _bfsPathCache.clear();
+              _bfsPathCache.set(_key, _miss); }
+  return _miss;
 }
 
 // HOW DANGEROUS EACH ROOM IS TO WALK THROUGH, FROM THE SPAWN TABLE.
@@ -1137,7 +1214,7 @@ function safestPath(map, fromNum, toNum, avoid, danger, budget, transitOk = null
 // route only when a hazard-free one exists, and falls back to exactly the path it would
 // have returned before. So the worst case is today's behaviour, which is the property
 // worth having in the most load-bearing function in the repository.
-export function findPath(map, fromNum, toNum,
+function _findPathImpl(map, fromNum, toNum,
                          { avoid = AVOID_IN_TRANSIT, danger = true,
                            allowHazardDestination = false,
                            // CAN THIS ROOM BE WALKED FROM THE DOOR I CAME IN BY TO THE ONE
@@ -1310,6 +1387,19 @@ export function findPath(map, fromNum, toNum,
              reason: `${last.reason} without crossing ${[...forbidden]
                .map(r => `${r} (${hazardReason(r)})`).join('; ')}` };
   return last;
+}
+
+// SLOW-CALL CANARY around the load-bearing route search. The first findPath per process
+// was the cold-start stall we hunted for days; this line makes a regression visible in
+// the keeper log the moment it reappears (anything over 1s is a stall worth a look).
+export function findPath(map, fromNum, toNum, opts) {
+  const t0 = Date.now();
+  try {
+    return _findPathImpl(map, fromNum, toNum, opts);
+  } finally {
+    const ms = Date.now() - t0;
+    if (ms > 1000) console.error(`[slow-findpath] ${fromNum}->${toNum} took ${ms}ms`);
+  }
 }
 
 // Name or number in, room number out. Agents think in names.

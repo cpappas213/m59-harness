@@ -61,6 +61,12 @@ function underworld({ resting = false, deaf = false, portals = [], unwalkable = 
     stand() { log.push('stand'); if (!deaf) resting = false; },
     look(id) { log.push(`look ${id}`); c.emit('look', { id, description: descOf(id) }); },
     moveToSquare(col, row) { step(col, row); },
+    // `step()` turns to face its destination before moving — it costs nothing and several
+    // things in this game care about facing. A fixture without it throws where the real
+    // client would simply have turned. Deliberately NOT logged: this log is the ordering
+    // evidence for swings and stands, and putting a turn in it shifts every index the
+    // assertions below count on.
+    face() { return true; },
   };
 
   function step(col, row) {
@@ -351,6 +357,8 @@ function safeSpot({ resting = false, deaf = false, hits = 3 } = {}) {
     stats: async () => {},
     async waitFor() { return { events: [], timedOut: true }; },
     roomContents() {},
+    // See the note on the other fixture's `face`: step() turns before it moves.
+    face() { return true; },
     stand() { log.push('stand'); if (!deaf) resting = false; },
   };
 

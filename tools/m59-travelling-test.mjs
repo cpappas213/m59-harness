@@ -54,8 +54,17 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log('  FAIL ' + name + (extra ? '  ' + extra : '')); }
 };
 
-const AUTOPILOT_SRC = readFileSync('tools/m59-autopilot.mjs', 'utf8');
-const BROKER_SRC = readFileSync('tools/m59-broker.mjs', 'utf8');
+// THE SPLIT MOVED THE CODE, SO A SOURCE GREP HAS TO FOLLOW IT — AND A GREP THAT
+// CANNOT FIND ITS SUBJECT PASSES THE NEGATIVE ASSERTIONS RATHER THAN FAILING THEM.
+// `Session` (travelJob) lives in m59-game.mjs and `pennedIn` in m59-watchdog.mjs since
+// the keeper split. Reading only the two original files left the travelJob assertions
+// searching a file that no longer contains travelJob: the positive ones failed loudly,
+// which is how this was found, but `travelJob does not reach for goInert` sliced from
+// an indexOf of -1 and passed on an empty haystack. Concatenate rather than re-point,
+// so an assertion keeps working whichever side of the split its subject ends up on.
+const read = f => { try { return readFileSync(f, 'utf8'); } catch { return ''; } };
+const AUTOPILOT_SRC = read('tools/m59-autopilot.mjs') + '\n' + read('tools/m59-watchdog.mjs');
+const BROKER_SRC = read('tools/m59-broker.mjs') + '\n' + read('tools/m59-game.mjs');
 
 // A keeper with no session behind it.
 //
@@ -281,8 +290,12 @@ console.log('\nthe damage rate — the instrument that replaces stillness');
   // THE WHOLE POINT. The ring got wider so a rate could be read from it, and the two
   // movement tests must not have widened with it — `pennedIn` gets STRICTER as the ring
   // grows, so a careless edit here switches off the handbrake it feeds.
+  // The ASSERTION is the narrow window, not the spelling of the guard in front of it:
+  // the extracted copy reads `(w?.pulses ?? []).slice(-PULSE_MOVEMENT_SAMPLES)`, which is
+  // the same read done defensively. Pinning the exact text would have forced the harder
+  // form to be un-hardened to satisfy a grep.
   ok('pennedIn still reads only the newest few samples',
-     /w\.pulses\.slice\(-PULSE_MOVEMENT_SAMPLES\)/.test(AUTOPILOT_SRC));
+     /pulses[\s\S]{0,20}\.slice\(-PULSE_MOVEMENT_SAMPLES\)/.test(AUTOPILOT_SRC));
 }
 
 // ---------------------------------------------------------------------------

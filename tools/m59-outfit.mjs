@@ -50,6 +50,7 @@ import { loadMerchants } from './m59-merchants.mjs';
 import { BANKERS, accountOf } from './m59-bank.mjs';
 import { loadoutFor } from './m59-loadout.mjs';
 import { armourKind, armourScore } from './m59-skills.mjs';
+import { armOwnership, brokerDriver } from './m59-atomics.mjs';
 
 const arg = (name, def = null) => {
   const i = process.argv.indexOf('--' + name);
@@ -93,11 +94,12 @@ const LEARN = (arg('learn', null) === true || arg('learn', null) == null)
 const WANT_GEAR = !LEARN.length || !!arg('gear', false);
 
 let id = 0;
-async function call(name, args = {}) {
+async function call(name, args = {}, timeoutMs = 30_000) {
   const r = await fetch(URL, {
     method: 'POST', headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method: 'tools/call',
                            params: { name, arguments: args } }),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const j = await r.json();
   if (j.error) throw new Error(`${name}: ${JSON.stringify(j.error)}`);
@@ -106,6 +108,11 @@ async function call(name, args = {}) {
   try { return JSON.parse(text); } catch { return text; }
 }
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// WHO THIS ERRAND IS, for the ownership lease. `outfit/<pid>` -- the pid makes every
+// run a distinct owner, so a second run (keeper-spawned, GOAP, or a hand-run one) is
+// refused the claim it cannot have and backs off instead of double-driving the same
+// character. The lease fails back to the keeper when this process dies.
+const OWNER = `outfit/${process.pid}`;
 
 // WHAT A CHARACTER GOING TO THE VALLEY NEEDS, WHEN NOBODY HAS SAID OTHERWISE. One line
 // each so the list is the argument: a mace because these characters' proficiency is in
@@ -407,12 +414,15 @@ async function outfit(row) {
   if (DRY) return `${who}: would buy ${[...missing.map(m => m.what),
     ...toLearn.map(a => `${a.name} (${a.price ?? '?'}sh)`)].join(', ')}`;
 
-  // Stop the keeper, and remember EXACTLY what it was running so the errand cannot
-  // quietly re-write a character's orders. Restored in the finally below.
+  // Remember EXACTLY what the keeper was running so the errand cannot quietly re-write a
+  // character's orders. Stopping happens INSIDE the ownership lease, below, so a refused
+  // claim never leaves the keeper stopped. The orders are restored in the finally.
   const was = purchaseStatus ?? await call('autopilot', { agent: row.agent, action: 'status' }).catch(() => null);
-  await call('autopilot', { agent: row.agent, action: 'stop' }).catch(() => {});
   const log = [];
-  // A FAILED READ IS NOT "DOES NOT KNOW IT". Going anyway is right — the merchant will
+  const body = async () => {
+    // Inside the ownership lease now: stop the keeper so this errand drives the character.
+    await call('autopilot', { agent: row.agent, action: 'stop' }).catch(() => {});
+    // A FAILED READ IS NOT "DOES NOT KNOW IT". Going anyway is right — the merchant will
   // decline to offer something already known and the check afterwards will say so — but
   // the log has to distinguish it from a character we actually looked at.
   for (const a of toLearn) if (a.uncertain) log.push(`could not read abilities first, buying ${a.name} blind`);
@@ -922,9 +932,28 @@ async function outfit(row) {
     const still = WANT_GEAR ? missingFor(items, wants)
       .filter(w => w.slot !== 'weapon' || mayBuyWeapons).map(w => w.what) : [];
     return `${who}: ${log.join(', ')}` + (still.length ? ` — STILL MISSING ${still.join(', ')}` : '');
+  } catch (e) {
+    // A shop call failing is a miss on this errand, not a crash of the whole sweep:
+    // report it, put the orders back, and let the next run or the other owners retry.
+    log.push(`FAILED mid-errand: ${e.message}`);
+    return `${who}: ${log.join(', ')}`;
+  }
+};
+  try {
+    // One owner at a time. Wrap the whole errand in the claim/busy/free/yield protocol so
+    // that a concurrent outfit run -- keeper-spawned, GOAP's send_to_town_for_gear, or a
+    // hand run -- is refused the lease this one holds and backs off instead of walking
+    // the same character to a second shop. GOAP reads the busy flag via `busyErrand` and
+    // steps over a character we are driving, which is the guard this was decomposed for.
+    const owned = await armOwnership(brokerDriver(null, call), {
+      agent: row.agent, by: OWNER, kind: 'arm', label: `arming ${who}`,
+      leaseMs: 120_000, heartbeatMs: 60_000, run: body,
+    });
+    if (!owned.ran) return `${who}: skipped -- ${owned.refused}`;
+    return owned.result;
   } finally {
     // Put the orders back exactly as they were, including the strategy and the room
-    // assignment — an errand must not become a re-tasking.
+    // assignment -- an errand must not become a re-tasking.
     if (was?.running) {
       await call('autopilot', {
         agent: row.agent, action: 'start', mode: was.mode, hunt: was.policy?.hunt,

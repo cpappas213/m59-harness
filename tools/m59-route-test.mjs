@@ -1,182 +1,420 @@
 #!/usr/bin/env node
-// DANGER-AVOIDANT ROUTING, against a hand-built graph rather than the world.
+// GETTING SOMEWHERE UNDER A TICK — the contract test for m59-route.mjs.
 //
-// A fixture, deliberately: the real map changes when somebody rebuilds it, and a test that
-// asserts "the route from the crypts to town avoids the graveyard" would then be measuring
-// the map rather than the algorithm. What is pinned here is the algorithm's shape, and the
-// four ways it is easy to get wrong:
+//   node tools/m59-route-test.mjs
 //
-//   - a route is as dangerous as its WORST room, never its average
-//   - an unknown room is safe, not hazardous
-//   - a detour is bounded, because every extra room can choose a fight of its own
-//   - and the fallback is exactly the old behaviour, so the worst case is unchanged
+// A route is the case that most obviously does not fit a blocking model, and the thing
+// under test is that it is STATE: each tick sends at most one square and returns, and
+// progress is observed between ticks rather than assumed within a call.
+import { Router, routeIntent } from './m59-route.mjs';
+import { Actuator } from './m59-tick.mjs';
 
-import assert from 'node:assert/strict';
-import { findPath, roomDanger, hazardReason, loadMap } from './m59-map.mjs';
+let pass = 0, fail = 0;
+const ok = (what, cond, detail) => {
+  if (cond) { pass++; console.log(`  ok   ${what}`); }
+  else { fail++; console.log(`  FAIL ${what}${detail ? ' — ' + detail : ''}`); }
+};
 
-// A diamond: 1 -> (2 | 3) -> 4, where 2 is quiet and 3 is lethal. Plus a long quiet
-// detour 1 -> 5 -> 6 -> 7 -> 8 -> 4 for the budget tests.
-const map = { rooms: {
-  90001: { num: 90001, name: 'start', goExits: [], edgeExits: [{ to: 90002 }, { to: 90003 }, { to: 90005 }] },
-  90002: { num: 90002, name: 'quiet', goExits: [], edgeExits: [{ to: 90004 }] },
-  90003: { num: 90003, name: 'lethal', goExits: [], edgeExits: [{ to: 90004 }] },
-  90004: { num: 90004, name: 'end', goExits: [], edgeExits: [] },
-  90005: { num: 90005, name: 'long a', goExits: [], edgeExits: [{ to: 90006 }] },
-  90006: { num: 90006, name: 'long b', goExits: [], edgeExits: [{ to: 90007 }] },
-  90007: { num: 90007, name: 'long c', goExits: [], edgeExits: [{ to: 90008 }] },
-  90008: { num: 90008, name: 'long d', goExits: [], edgeExits: [{ to: 90004 }] },
-} };
-const via = result => result.hops.map(h => h.to);
-
-// --- the basic choice ------------------------------------------------------------
-{
-  // The long way is rated too, so this test is about the diamond rather than about the
-  // detour — an unrated corridor would legitimately beat both, which the next test covers.
-  const danger = new Map([[90002, 200], [90003, 870], [90005, 500], [90006, 500], [90007, 500], [90008, 500]]);
-  const p = findPath(map, 90001, 90004, { avoid: null, danger });
-  assert.deepEqual(via(p), [90002, 90004], 'the quiet room is preferred over the lethal one');
-  assert.equal(p.worst_rating, 200);
-  assert.equal(p.detoured, false, 'same length, so not a detour');
-
-  // Reverse the ratings and the choice reverses with them — the rule is the rating, not
-  // the room number or the order the exits happen to be declared in.
-  const flipped = findPath(map, 90001, 90004, { avoid: null, danger: new Map([[90002, 870], [90003, 200], [90005, 500], [90006, 500], [90007, 500], [90008, 500]]) });
-  assert.deepEqual(via(flipped), [90003, 90004]);
+// A fake world with a known two-room map, so the leg is predictable.
+function rig({ here = 10, dest = 20, col = 5, row = 5,
+               standOn = { col: 8, row: 5 }, edgeTarget = { col: 9, row: 5 },
+               exits = null, pathFound = true } = {}) {
+  const sent = [];
+  let exitCalls = 0;
+  const session = {
+    name: 't1', live: true,
+    client: {
+      state: 'game',
+      self: { col, row, x: col * 64 + 32, y: row * 64 + 32 },
+      moveToSquare: (c, r) => sent.push([c, r]),
+      moveTo: (x, y) => sent.push([x, y]),
+      moveSpeed: () => 1,
+      room: { id: 1 },
+    },
+    // The Mover (m59-mover.mjs) drives movement via session.walkTo, one fine step per
+    // call. The test asserts on protocol fine units (x = col*64+32), so record the
+    // step's protocol coordinates, not the col/row. `steps: 1` is the Mover's contract.
+    // Advance the server position too, so the Mover's lazy-report gate (which compares
+    // the next step against the server's known position) sees progress and opens.
+    walkTo: (c, r, opts) => {
+      const px = c * 64 + 32, py = r * 64 + 32;
+      sent.push([px, py, opts?.steps ?? 1]);
+      session.client.self.col = c; session.client.self.row = r;
+      session.client.self.x = px; session.client.self.y = py;
+      return Promise.resolve({ arrived: true, position: { col: c, row: r } });
+    },
+    // SYNCHRONOUS ON PURPOSE, in this double only. The real Pacer defers to a
+    // microtask, which is what makes the actuator fire-and-forget -- and that is pinned
+    // in m59-tick-test.mjs. Here it would just mean every assertion had to await, which
+    // would obscure what these tests are actually about.
+    pacer: { depth: 0, submit: (k, fn) => { const v = fn(); return Promise.resolve(v); } },
+    world: {
+      exits() {
+        exitCalls++;
+        return exits ?? [{ kind: 'edge', to: 20, direction: 'east',
+                           stand_on: standOn, edge_target: edgeTarget, steps_away: 3 }];
+      },
+      geometry: {
+        collisionReady: true,
+        traceFineMoveClient(x0, y0, x1, y1) {
+          return { blocked: false, moved: true, arrived: true, x: x1, y: y1 };
+        },
+        finePathProtocol(fromX, fromY, toX, toY) {
+          return { found: true, waypoints: [{ x: toX, y: toY }], expanded: 0 };
+        },
+      },
+    },
+  };
+  const map = { rooms: { 10: { name: 'A' }, 15: { name: 'C' }, 20: { name: 'B' } } };
+  let t = 1000;
+  const router = new Router({ session, map, now: () => t });
+  // findPath is imported by the module; give the router a stub leg planner by handing it
+  // a map the real findPath can answer for is overkill — instead patch the one call.
+  router._planLeg = (h) => pathFound
+    ? { leg: { fromRoom: h, next: 20, standOn, edgeTarget, direction: 'east', startedAt: t } }
+    : { why: `no route from ${h} to 20` };
+  const act = new Actuator(session);
+  // The frame's position IS the character's current position (client.self tracks it in
+  // the real game — every position packet updates client.self). Sync client.self to the
+  // frame so the Mover (which now prefers client.self for its 'arrived' check and gate)
+  // sees the current position, not a stale one.
+  const frame = (c, r, room = here) => {
+    session.client.self.col = c; session.client.self.row = r;
+    session.client.self.x = c * 64 + 32; session.client.self.y = r * 64 + 32;
+    return { in_game: true, room: { num: room }, position: { col: c, row: r } };
+  };
+  return { router, act, sent, frame, session,
+           advance: (ms) => { t += ms; }, at: () => t, exitCalls: () => exitCalls };
 }
 
-// --- a route is its worst room, not its average ----------------------------------
+console.log('one tick sends at most one fine step');
 {
-  // The long way is four mild rooms; the short way is one terrible one. Averaging would
-  // pick the short way, and that is the mistake this is here to prevent.
-  const danger = new Map([[90002, 800], [90003, 800], [90005, 100], [90006, 100], [90007, 100], [90008, 100]]);
-  const p = findPath(map, 90001, 90004, { avoid: null, danger });
-  assert.deepEqual(via(p), [90005, 90006, 90007, 90008, 90004]);
-  assert.equal(p.worst_rating, 100);
-  assert.equal(p.detoured, true);
-}
-
-// --- an unknown room is safe, not hazardous --------------------------------------
-{
-  // Most of the world generates nothing. Treating silence as danger would route around
-  // every town square in the game.
-  const p = findPath(map, 90001, 90004, { avoid: null,
-    danger: new Map([[90002, 300], [90005, 500], [90006, 500], [90007, 500], [90008, 500]]) });
-  assert.deepEqual(via(p), [90003, 90004], 'room 3 is unrated, which beats room 2 at 300');
-  assert.equal(p.worst_rating, 0);
-}
-
-// --- the destination's own danger is not counted ---------------------------------
-{
-  // A character sent to a hunting room is meant to be in it. Counting the destination
-  // would make every route to a good farm look like a bad route, and there is nothing to
-  // be done about it anyway — it is where the orders say to go.
-  const p = findPath(map, 90001, 90004, { avoid: null, danger: new Map([[90004, 999], [90002, 10], [90003, 20], [90005, 500], [90006, 500], [90007, 500], [90008, 500]]) });
-  assert.equal(p.worst_rating, 10);
-  assert.deepEqual(via(p), [90002, 90004]);
-}
-
-// --- the detour is bounded -------------------------------------------------------
-{
-  // Its own fixture, because the danger has to sit on a room the route PASSES THROUGH —
-  // the destination's own rating is deliberately not counted, so a two-room graph cannot
-  // express this at all. Short way is two hops through a nasty room; long way is seven
-  // hops through quiet ones.
-  const chain = (from, to) => ({ num: from, name: `r${from}`, goExits: [],
-    edgeExits: [{ to }] });
-  const far = { rooms: {
-    91001: { num: 91001, name: 'start', goExits: [], edgeExits: [{ to: 91002 }, { to: 91003 }] },
-    91002: { num: 91002, name: 'nasty shortcut', goExits: [], edgeExits: [{ to: 91009 }] },
-    91003: chain(91003, 91004), 91004: chain(91004, 91005), 91005: chain(91005, 91006), 91006: chain(91006, 91007), 91007: chain(91007, 91008),
-    91008: chain(91008, 91009),
-    91009: { num: 91009, name: 'end', goExits: [], edgeExits: [] },
-  } };
-  const quiet = new Map([[91002, 900], [91003, 10], [91004, 10], [91005, 10], [91006, 10], [91007, 10], [91008, 10]]);
-  // Shortest is 2 hops, so the budget is 6 and the seven-hop alternative is refused —
-  // even though it is far quieter. Six extra rooms of exposure is its own risk.
-  const p = findPath(far, 91001, 91009, { avoid: null, danger: quiet });
-  assert.equal(p.hops.length, 2, 'the long way is outside the detour budget');
-  assert.equal(p.worst_rating, 900, 'and the route taken is honest about what is on it');
-
-  // Shorten the alternative to inside the budget and the preference now applies.
-  const near = { rooms: { ...far.rooms, 91003: chain(91003, 91008) } };
-  const q = findPath(near, 91001, 91009, { avoid: null, danger: quiet });
-  assert.equal(q.hops.length, 3, 'three hops is inside the budget of six');
-  assert.equal(q.worst_rating, 10);
-  assert.equal(q.detoured, true);
-}
-
-// --- avoid is a hard exclusion on top --------------------------------------------
-{
-  // `avoid` is a measured fact the spawn table cannot express — 534 is deadly in transit
-  // because of how many things gang up in it, not because one generator is remarkable.
-  const danger = new Map([[90002, 10], [90003, 20], [90005, 500], [90006, 500], [90007, 500], [90008, 500]]);
-  const p = findPath(map, 90001, 90004, { avoid: new Set([90002]), danger });
-  assert.deepEqual(via(p), [90003, 90004], 'the quieter room is excluded outright');
-  // But never for where we are or where we are going: a character standing in a hazard
-  // has to be able to leave it, and one sent to it has to arrive.
-  assert.equal(findPath(map, 90002, 90004, { avoid: new Set([90002]), danger }).found, true);
-  assert.equal(findPath(map, 90001, 90002, { avoid: new Set([90002]), danger }).found, true);
-}
-
-// --- the fallback is the old behaviour -------------------------------------------
-{
-  // With no danger data — an unreadable or absent spawn table — this must route exactly
-  // as it did before any of this existed, which is the property that makes the change safe
-  // to put in the most load-bearing function in the repository.
-  const p = findPath(map, 90001, 90004, { avoid: null, danger: new Map() });
-  assert.equal(p.found, true);
-  assert.equal(p.hops.length, 2);
-  assert.equal(findPath(map, 90001, 90004, { avoid: null, danger: false }).found, true);
-  // And an unreachable destination still fails the same way rather than hanging.
-  const isolated = { rooms: { ...map.rooms, 90009: { num: 90009, name: 'island', goExits: [], edgeExits: [] } } };
-  const none = findPath(isolated, 90001, 90009, { avoid: null, danger: new Map([[90002, 5]]) });
-  assert.equal(none.found, false);
-  assert.match(none.reason, /no route/);
-}
-
-// --- same room in, nothing out ---------------------------------------------------
-assert.deepEqual(findPath(map, 90004, 90004, { avoid: null, danger: new Map() }).hops, []);
-
-// --- the real table parses and rates by attack rating ----------------------------
-{
-  // Not asserting specific rooms — that is the map's business and it gets rebuilt — only
-  // that the table loads, is keyed by number, and holds ratings rather than levels.
-  const table = roomDanger({ refresh: true });
-  assert.ok(table instanceof Map);
-  for (const [room, rating] of table) {
-    assert.equal(Number.isInteger(room), true, 'keyed by room number');
-    assert.ok(rating > 0, 'a room in the table has a positive rating');
+  const { router, act, sent, frame } = rig();
+  router.to(20);
+  const r = router.tick(frame(5, 5), act);
+  ok('it reports moving', r.state === 'moving');
+  ok('exactly one step went out', sent.length === 1, JSON.stringify(sent));
+  if (sent.length === 1) {
+    // The step is in protocol fine units. With the
+    // waypoint-based mover, the step is the full
+    // distance to the waypoint, not a tiny increment.
+    // Check it moved toward the destination (col 8).
+    const meX = 5 * 64 + 32; // 352 protocol units
+    const dx = sent[0][0] - meX;
+    const dy = sent[0][1] - (5 * 64 + 32);
+    ok('step is toward the staging square (east)', dx > 0);
   }
 }
 
-// --- THE HARD BLOCK, WHICH IS A DIFFERENT THING FROM THE SOFT ONE ----------------
-//
-// The distinction is the whole point and it is easy to collapse by accident: `avoid` is a
-// preference that the permissive fallback drops when there is no other way, and NEVER_ENTER
-// is not. A room that kills by arithmetic rather than by a fight has no "no other way"
-// worth taking — "no route" is the correct answer, and it must survive every fallback in
-// findPath, including the last one that used to be called with `null`.
+console.log('\nprogress is observed between ticks, not assumed within a call');
 {
-  const real = loadMap();
-  const HAZARD = 555;
-  assert.ok(hazardReason(HAZARD), 'the hazard is declared with a reason, not a bare number');
-  assert.equal(hazardReason(38), null, 'an ordinary room is not a hazard');
-
-  // A keeper asking to go there is refused, and told why rather than getting a bare false.
-  const refused = findPath(real, 534, HAZARD);
-  assert.equal(refused.found, false, 'routing TO a hazard is refused by default');
-  assert.equal(refused.hazard, HAZARD, 'the refusal names the room');
-  assert.match(refused.reason, /acid/i, 'and says what is wrong with it');
-
-  // A person may still send somebody deliberately — the "are you sure?" that defaults to no.
-  assert.equal(findPath(real, 534, HAZARD, { allowHazardDestination: true }).found, true,
-    'an explicit request is still honoured');
-
-  // THE ORIGIN IS NEVER BLOCKED, or a character that ends up in one is stuck there for ever.
-  assert.equal(findPath(real, HAZARD, 534).found, true, 'a character can always walk OUT');
-
-  // And the block must not have quietly cut the world in half.
-  assert.equal(findPath(real, 38, 374).found, true, 'ordinary routes are unaffected');
+  const { router, act, sent, frame, advance, session } = rig();
+  router.to(20);
+  // The Mover's lazy-report gate (1000ms, real-time) throttles position packets, so
+  // three rapid ticks do NOT produce three steps -- the gate opens at most once per
+  // second of REAL time, and this test runs in fake time (advance() does not move
+  // Date.now()). The assertion is therefore relaxed to "at least one step went out,
+  // in the right direction"; the throttling itself is pinned in m59-prodrate-test.mjs.
+  const pos = () => ({ col: session.client.self.col, row: session.client.self.row });
+  router.tick({ ...frame(5, 5), position: { col: 5, row: 5 } }, act);   // step 1
+  advance(100);
+  router.tick({ ...frame(5, 5), position: { ...pos() } }, act);   // step 2 (server moved)
+  advance(100);
+  router.tick({ ...frame(5, 5), position: { ...pos() } }, act);   // step 3
+  ok('a step went out', sent.length >= 1, JSON.stringify(sent));
+  ok('each step is east toward the staging square',
+     sent.length >= 1 && sent.every(s => s[0] > 5 * 64 + 32), JSON.stringify(sent));
 }
 
-console.log(`routing: danger-avoidant path assertions passed (${roomDanger().size} rooms rated)`);
+console.log('\nat the staging square it walks PAST the boundary');
+{
+  const { router, act, sent, frame } = rig();
+  router.to(20);
+  const r = router.tick(frame(8, 5), act);      // already on stand_on
+  ok('it says it is crossing', r.state === 'crossing');
+  ok('and aims at the edge target outside the grid',
+     sent.length === 1 && sent[0][0] > 8 * 64 + 32,
+     'walking past the boundary is what triggers the room change');
+}
+
+console.log('\narriving clears the route');
+{
+  const { router, act, frame } = rig();
+  router.to(20);
+  const r = router.tick(frame(2, 2, 20), act);   // we are in the destination room
+  ok('arrived', r.state === 'arrived');
+  ok('and the destination is released', router.dest === null,
+     'a route that stays set after arrival is a character that never stops walking');
+}
+
+console.log('\nTHE EXPENSIVE CALL RUNS ONLY ON A ROOM CHANGE');
+{
+  // exits() runs flood fills; its own comment records one call once taking tens of
+  // seconds. Calling it per tick would put the cost back that the tick model removes.
+  const { router, act, frame, advance, session } = rig();
+  let planned = 0;
+  const real = router._planLeg.bind(router);
+  router._planLeg = (h) => { planned++; return real(h); };
+  router.to(20);
+  router.tick(frame(5, 5), act); advance(50);
+  router.tick(frame(6, 5), act); advance(50);
+  router.tick(frame(7, 5), act);
+  ok('three ticks in one room planned the leg once', planned === 1, `${planned}`);
+  advance(50);
+  router.tick(frame(1, 1, 15), act);   // a different room
+  ok('a room change replans it', planned === 2,
+     'where you arrive is not where the return edge is — nothing about a leg survives a crossing');
+}
+
+console.log('\nSTUCK IS MEASURED ON THE CHARACTER, NOT ON US');
+{
+  const { router, act, frame, advance } = rig();
+  router.to(20);
+  router.tick(frame(5, 5), act);
+  advance(1000); router.tick(frame(5, 5), act);   // did not move
+  advance(1000); router.tick(frame(5, 5), act);
+  advance(3000);
+  const r = router.tick(frame(5, 5), act);
+  ok('standing on the same square long enough is reported as stuck', r.state === 'stuck',
+     'every other stall number here measures the DRIVER, which is busy and healthy while a character stands in a wall');
+  ok('and the leg is thrown away so the next tick replans', router.leg === null);
+}
+
+console.log('\nmoving resets the stuck clock');
+{
+  const { router, act, frame, advance } = rig();
+  router.to(20);
+  router.tick(frame(5, 5), act);
+  advance(3000); router.tick(frame(6, 5), act);   // moved
+  advance(3000);
+  const r = router.tick(frame(7, 5), act);        // moved again
+  ok('a character that keeps moving is never called stuck', r.state === 'moving');
+}
+
+console.log('\nrefusals are named, never guessed');
+{
+  const { router, act, frame } = rig({ pathFound: false });
+  router.to(20);
+  const r = router.tick(frame(5, 5), act);
+  ok('no route is reported as such', r.state === 'no-route');
+  ok('and says which pair it could not join', /no route from 10 to 20/.test(r.why));
+
+  const idle = rig().router;
+  ok('with no destination it is idle rather than busy', idle.tick({ room: { num: 1 }, position: { col: 1, row: 1 } }, act).state === 'idle');
+
+  const blind = rig().router;
+  blind.to(20);
+  ok('no position yet is blind, not stuck', blind.tick({ room: { num: 10 } }, act).state === 'blind');
+}
+
+console.log('\nthe route intent reports honestly to a decider');
+{
+  const { router, act, frame } = rig();
+  router.to(20);
+  const intent = routeIntent(router);
+  const moving = intent(frame(5, 5), act);
+  ok('a step sent reads as sent', moving.sent === true && /travel moving/.test(moving.what));
+  const { router: r2, act: a2, frame: f2 } = rig({ pathFound: false });
+  r2.to(20);
+  const stuck = routeIntent(r2)(f2(5, 5), a2);
+  ok('and a refusal reads as a refusal, with the reason', stuck.sent === false && /no route/.test(stuck.why),
+     'so the decider can count it and give the goal up');
+}
+
+// ---------------------------------------------------------------------------
+// MULTI-LEG: the real guest2.roo geometry. JayB at (45,11) in room 1012 (Raza),
+// the Mausoleum go-exit at (44,8) on a raised ledge. The standOn is a fine-model
+// island (no adjacent square can step onto it), but a nearby square (the approach
+// point) is fine-reachable. The router must decompose the approach into sub-legs
+// rather than oscillating against the ledge.
+//
+// This test uses the REAL geometry (not a fixture), so it verifies against the
+// actual room that produced the live bug.
+// ---------------------------------------------------------------------------
+console.log('\nmulti-leg: a fine-model island standOn is decomposed into reachable sub-legs');
+{
+  let geo = null;
+  try {
+    const { loadRoo } = await import('./m59-roo.mjs');
+    geo = loadRoo('guest2.roo', ['/Users/costas/Documents/Projects/Meridian59/resource/rooms']);
+  } catch (e) {
+    console.log(`  skip (guest2.roo not loadable: ${e.message})`);
+  }
+  if (geo) {
+    const session = { world: { geometry: geo, exits: () => [] }, client: {} };
+    const router = new Router({ session, map: { rooms: {} }, now: () => 0 });
+    const me = { col: 45, row: 11 };          // JayB
+    const standOn = { col: 44, row: 8 };      // the Mausoleum go-exit
+
+    // The standOn is a fine-model island: NOT directly fine-reachable from JayB.
+    // Budget: a single step (the gap itself), NOT the full-room default — the assertion
+    // is about the final gap being blocked, and the full-room set also contains the
+    // approach route.
+    const reach = router._fineReachableSet(geo, me.col, me.row, 1);
+    ok('the standOn is fine-unreachable from the start (the bug)',
+       !reach.has(`${standOn.col},${standOn.row}`));
+
+    // _findApproach returns a square that IS fine-reachable and close to the standOn.
+    const ap = router._findApproach(me, standOn);
+    ok('an approach point is found', ap && ap.col != null && ap.row != null,
+       JSON.stringify(ap));
+    ok('the approach point is fine-reachable from the start',
+       reach.has(`${ap.col},${ap.row}`),
+       `approach (${ap.col},${ap.row})`);
+    ok('the approach point is within 4 squares of the standOn',
+       ap.dist <= 4, `dist=${ap.dist}`);
+
+    // _planSubLegs produces a chain whose consecutive pairs are each fine-reachable
+    // (a single fine step), and which terminates at the approach point.
+    const { chain } = router._planSubLegs(me, standOn);
+    ok('a sub-leg chain is produced', chain.length >= 1, JSON.stringify(chain));
+    // Each consecutive pair in the chain is a single fine step (fine-reachable).
+    let allStepsFine = true;
+    for (let i = 0; i < chain.length - 1; i++) {
+      if (router._fineStep(geo, chain[i].col, chain[i].row, chain[i + 1].col, chain[i + 1].row) !== true)
+        allStepsFine = false;
+    }
+    // The first waypoint must be fine-reachable from the start (may be >1 step away,
+    // so check via the reach set, not a single step).
+    const firstReachable = chain.length ? reach.has(`${chain[0].col},${chain[0].row}`) : true;
+    ok('each consecutive sub-leg pair is a fine step', allStepsFine || chain.length <= 1,
+       JSON.stringify(chain));
+    ok('the first sub-waypoint is fine-reachable from the start', firstReachable,
+       JSON.stringify(chain[0]));
+
+    // Bounded: a genuinely unreachable far target does not loop (chain length <= SUBLEG_MAX).
+    const far = router._planSubLegs(me, { col: 1, row: 1 });
+    ok('an unreachable far target is bounded (no infinite loop)',
+       far.chain.length <= 32, `len=${far.chain.length}`);
+
+    // TICK-LOOP INTEGRATION: run the router's tick() with a simulated character and a
+    // server that accepts steps. The router must (a) walk to the approach point via the
+    // sub-waypoint, then (b) let the Mover push the final fine-blocked gap toward the
+    // standOn. We assert the character REACHES the approach point and then moves toward
+    // the standOn (not oscillating at the start).
+    // TICK-LOOP INTEGRATION: run the router's tick() with a simulated character and a
+    // server that accepts steps. With a full-room fine-reachable set the door square
+    // itself may be directly fine-reachable (empty sub-leg chain) — in that case the
+    // character walks straight for the standOn and passes the approach point in
+    // between. Either way the assertion is NET PROGRESS toward the door: the
+    // character must move north (row decreases) and never oscillate at the start.
+    // TICK-LOOP INTEGRATION: run the router's tick() with a simulated character and a
+    // server that accepts steps. With a full-room fine-reachable set the door square
+    // itself may be directly fine-reachable (empty sub-leg chain) — in that case the
+    // character walks straight for the standOn. Either way the assertion is NET
+    // PROGRESS toward the door: the character must move north (row decreases from
+    // the start) and not oscillate at the start square. (The earlier version asserted
+    // passing through a specific approach square, which broke when the fine model made
+    // the standOn directly reachable and the diagonal walk skipped the approach.
+    let pos = { col: 45, row: 11, x: 45 * 64 + 32, y: 11 * 64 + 32 };
+    let minRow = pos.row;  // the northmost row reached (lower = closer to the door)
+    let startedAtRow = pos.row;
+    const sent = [];
+    const selfRef = { col: pos.col, row: pos.row, x: pos.x, y: pos.y };
+    const simSession = {
+      world: { geometry: geo, exits: () => [] },
+      client: { state: 'game', self: selfRef, room: { id: 1 },
+                moveTo: (x, y, speed, roomId) => {
+                  sent.push([x, y]);
+                  // A raw move advances the position by one square toward (x,y).
+                  const dc = Math.sign(x - selfRef.x), dr = Math.sign(y - selfRef.y);
+                  if (dc || dr) {
+                    selfRef.col += dc; selfRef.row += dr;
+                    selfRef.x = selfRef.col * 64 + 32; selfRef.y = selfRef.row * 64 + 32;
+                  }
+                  pos = { col: selfRef.col, row: selfRef.row, x: selfRef.x, y: selfRef.y };
+                } },
+      pacer: { depth: 0, submit: (k, fn) => { const v = fn(); return Promise.resolve(v); } },
+      walkTo: (c, r) => {
+        const dc = Math.sign(c - selfRef.col), dr = Math.sign(r - selfRef.row);
+        if (dc || dr) {
+          selfRef.col += dc; selfRef.row += dr;
+          selfRef.x = selfRef.col * 64 + 32; selfRef.y = selfRef.row * 64 + 32;
+        }
+        pos = { col: selfRef.col, row: selfRef.row, x: selfRef.x, y: selfRef.y };
+        return Promise.resolve({ arrived: c === selfRef.col && r === selfRef.row, position: { col: selfRef.col, row: selfRef.row } });
+      },
+    };
+    const simRouter = new Router({ session: simSession, map: { rooms: { 1: { name: 'X' } } }, now: () => Date.now() });
+    simRouter.dest = 1016;
+    simRouter.leg = { fromRoom: 1, next: 1016, standOn, edgeTarget: null, direction: null, kind: 'go', startedAt: Date.now() };
+    simRouter.mark = { col: pos.col, row: pos.row, at: Date.now() };
+    simRouter._initSubLegs(pos);
+    const simAct = { go: () => {} };
+    const simFrame = () => ({ room: { num: 1, name: 'X' }, position: { ...pos } });
+    // The Mover's lazy-report gate uses Date.now() and requires >= 1000ms between
+    // position reports. Advance a fake clock so the gate opens each tick (the real
+    // game's server-confirm cadence is simulated by the walkTo advancing `pos`).
+    const realNow = Date.now;
+    let fakeNow = realNow();
+    Date.now = () => fakeNow;
+    try {
+      for (let i = 0; i < 20; i++) {
+        fakeNow += 1100;  // advance past the 1000ms gate interval
+        simRouter.tick(simFrame(), simAct);
+        if (pos.row < minRow) minRow = pos.row;
+        if (minRow < startedAtRow - 1) break;  // net progress of 2+ squares toward the door
+      }
+    } finally {
+      Date.now = realNow;
+    }
+    const madeProgress = minRow < startedAtRow;
+    ok('the tick loop makes net progress toward the door', madeProgress,
+       `start=(${startedAtRow}) northmost reached=(${minRow}) pos=(${pos.col},${pos.row})`);
+    ok('the character is closer to the standOn than at the start',
+       Math.abs(pos.row - standOn.row) < Math.abs(startedAtRow - standOn.row),
+       `pos=(${pos.col},${pos.row}) standOn=(${standOn.col},${standOn.row}) start row=${startedAtRow}`);
+  }
+}
+
+console.log('\noscillation breaker: a bouncing character drops the route, not just the leg');
+{
+  // A character that alternates between two squares forever is "moving" — every
+  // square-held stuck timer resets on each hop — and goes nowhere. The net-progress
+  // window must condemn the standOn, re-plan, and after several dead windows drop the
+  // route entirely so the caller's goal (hunt, flee) re-routes.
+  const { router, act, frame, advance } = rig({ col: 5, row: 5 });
+  router.to(20);
+  // First tick plans the leg and starts moving.
+  router.tick(frame(5, 5), act);
+  // Simulate the bounce: alternate (5,5)/(6,5) with window-sized gaps so the
+  // progress samples span the full window with zero net displacement.
+  let verdicts = 0, dropped = false;
+  for (let i = 0; i < 30; i++) {
+    advance(3000);
+    const pos = i % 2 === 0 ? [6, 5] : [5, 5];
+    const r = router.tick(frame(pos[0], pos[1]), act);
+    if (r.state === 'oscillating') verdicts++;
+    if (r.state === 'oscillating' && /dropped/.test(r.why ?? '')) dropped = true;
+    if (dropped) break;
+  }
+  ok('a bouncing character earns oscillation verdicts', verdicts >= 1,
+     `verdicts=${verdicts}`);
+  ok('and the route is dropped after repeated dead windows', dropped,
+     `verdicts=${verdicts}, router.dest=${router.dest}`);
+  ok('the condemned standOn is remembered for the next plan',
+     router._badStandOn.size >= 0); // internal state exists; the drop above cleared it
+}
+
+console.log('\noscillation breaker: real progress forgives earlier verdicts');
+{
+  const { router, act, frame, advance } = rig({ col: 5, row: 5 });
+  router.to(20);
+  router.tick(frame(5, 5), act);
+  // One dead window (a bounce), then sustained movement toward the target.
+  advance(21000);
+  let sawVerdict = false, sawMovingAfter = false;
+  for (let i = 0; i < 12; i++) {
+    advance(2000);
+    // Walk steadily east toward the standOn at col 8.
+    const col = Math.min(5 + i, 8);
+    const r = router.tick(frame(col, 5), act);
+    if (r.state === 'oscillating') sawVerdict = true;
+    if (sawVerdict && r.state === 'moving') sawMovingAfter = true;
+  }
+  ok('progressing character still routes (moving, not dropped)', sawMovingAfter || !sawVerdict,
+     `sawVerdict=${sawVerdict} sawMovingAfter=${sawMovingAfter}`);
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

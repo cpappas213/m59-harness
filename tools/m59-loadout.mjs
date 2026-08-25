@@ -148,8 +148,63 @@ export const POLICY_KEYS = {
 // even when PlayerCanLearn happens to offer a level-3 skill early. Old loadouts without a
 // queue retain their meaning: explicit abilities come first, then school goals, then the
 // weapon goal, with each level forming one inferred stage.
+// ---------------------------------------------------------------------------
+// CROSS-SCHOOL PURCHASES ARE REFUSED, AND `create food` IS THE CASE THAT MATTERS
+// ---------------------------------------------------------------------------
+//
+// `create food` is Kraanan level 1 (compendium/data/planner.json: school Kraanan,
+// 10 mana, 2 ElderBerry + 2 Herbs) -- and so is `create weapon`, which is why the
+// board reads "does not know create weapon" for exactly the characters that are not
+// Kraanan casters.
+//
+// A CHARACTER THAT IS NOT ALREADY A CASTER OF A SCHOOL MUST NOT BUY INTO IT to solve
+// a supply problem. Operator constraint, recorded 2026-08-18: doing so leaves the
+// character confused. This is NOT derived from the kod -- M59_ROOT is unset on this
+// machine and nothing here has read the mechanic -- so it is written down as what it
+// is, a standing instruction, rather than dressed up as a citation.
+//
+// It is worth a guard rather than a note because the pull is real and immediate: the
+// planner's route to `vigor_ok` is `cast create food -> eat`, a character that never
+// learned the spell simply has no plan, and "then buy it the spell" is the obvious
+// next move for anyone reading that dead end. The act layer already refuses BY
+// CONSTRUCTION -- m59-act/cast is built only from spells the client says it knows, so
+// no plan can ever contain a spell the character lacks -- but nothing stopped the
+// purchase path, and that is the one this closes.
+//
+// THE EXPLICIT PLAN IS THE OPT-IN. `plan.schools` naming a school is an operator
+// deciding to start it on purpose, and that is honoured. Everything else -- an
+// inferred queue, an explicit single ability, a future planner reaching for a meal --
+// is refused with a reason, never dropped silently.
+export function knowsSchool(known = [], school) {
+  if (!school) return false;
+  return (known || []).some(r => r?.kind === 'spell' && norm(r.school) === norm(school));
+}
+
+// One predicate, two consumers -- the filter below and the report beside it -- because
+// a rule with two implementations is how this repository gets two answers.
+export function crossSchoolRefusal(row, known = [], plan = null) {
+  if (!row || row.kind !== 'spell') return null;         // skills are not schooled
+  const school = row.school ?? null;
+  if (!school) return null;                              // unknown school: not our call
+  if (knowsSchool(known, school)) return null;           // already a caster of it
+  const chosen = Object.keys(plan?.schools ?? {}).some(k => norm(k) === norm(school));
+  if (chosen) return null;                               // the operator asked for it
+  return `${row.name} is a ${school} spell and this character is not a ${school} ` +
+         `caster. Buying into a school it does not cast leaves it confused. Name ` +
+         `"${school}" in the loadout's plan.schools if that is genuinely intended.`;
+}
+
+// What the guard WOULD refuse, for a report, without building a queue.
+export function crossSchoolRefusals(plan, abilities = [], known = []) {
+  return (abilities || [])
+    .map(row => ({ row, why: crossSchoolRefusal(row, known, plan) }))
+    .filter(x => x.why)
+    .map(x => ({ name: x.row.name, school: x.row.school ?? null, why: x.why }));
+}
+
 export function plannedAbilities(plan, abilities = [], known = []) {
   const out = [];
+  const refusals = [];
   const key = row => `${row?.kind ?? ''}:${norm(row?.name)}`;
   const knownKeys = new Set((known || []).map(key));
   const outKeys = new Set();
@@ -157,6 +212,11 @@ export function plannedAbilities(plan, abilities = [], known = []) {
   const add = (row, why) => {
     const exact = `${row.kind ?? ''}:${norm(row.name)}`, generic = `:${norm(row.name)}`;
     if (!row.name || knownKeys.has(exact) || outKeys.has(exact) || outKeys.has(generic)) return;
+    // A school this character does not cast is refused here, at the one place every
+    // purchase path passes through. Reported on the row rather than dropped, so a
+    // queue that came back short says why it did.
+    const refused = crossSchoolRefusal(row, known, plan);
+    if (refused) { refusals.push({ name: row.name, school: row.school ?? null, why: refused }); return; }
     out.push({ ...row, why: row.why ?? why ?? null, queue_stage: stage });
     outKeys.add(exact);
   };
@@ -188,7 +248,7 @@ export function plannedAbilities(plan, abilities = [], known = []) {
       if (entry?.name) addAbility(entry);
       else if (entry?.track && entry?.level) addTrackLevel(entry.track, entry.level);
     }
-    return out;
+    return withRefusals(out, refusals);
   }
 
   for (const entry of (plan?.abilities ?? [])) addAbility(entry);
@@ -199,6 +259,14 @@ export function plannedAbilities(plan, abilities = [], known = []) {
   if (Number(plan?.weapon_level) > 0) {
     for (let level = 1; level <= Number(plan.weapon_level); level++) addTrackLevel('weaponcraft', level);
   }
+  return withRefusals(out, refusals);
+}
+
+// The queue is still a plain array -- every existing caller iterates it and must keep
+// working -- so what the guard turned away rides along as a non-enumerable property.
+// A queue that came back short can then say why without anybody having to ask.
+function withRefusals(out, refusals) {
+  Object.defineProperty(out, 'refusals', { value: refusals, enumerable: false });
   return out;
 }
 

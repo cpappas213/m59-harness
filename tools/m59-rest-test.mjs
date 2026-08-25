@@ -15,7 +15,7 @@
 // blind behaviour is still reachable on purpose.
 
 import { readFileSync } from 'node:fs';
-import { restUntil } from './m59-skills.mjs';
+import { restUntil, isArmed } from './m59-skills.mjs';
 
 // A session whose stats reads walk down a scripted list of health values.
 function fakeSession(seq) {
@@ -230,13 +230,13 @@ const ok = (name, cond, extra = '') => {
   const holdingBread = { known: true, equipped: [{ id: 1, name: 'bread' }] };
 
   ok('armed() still says yes on an unread use list — it must not stop a fight',
-     keeper(unknown).armed() === true);
+     isArmed({ equipment: () => unknown, rsc: { get: () => null } }) === true);
   ok('armedForSure() says no on the same reading',
      keeper(unknown).armedForSure() === false);
   ok('both say no to a confirmed empty hand',
-     keeper(emptyHanded).armed() === false && keeper(emptyHanded).armedForSure() === false);
+     isArmed({ equipment: () => emptyHanded, rsc: { get: () => null } }) === false && keeper(emptyHanded).armedForSure() === false);
   ok('both say yes to a mace',
-     keeper(holdingMace).armed() === true && keeper(holdingMace).armedForSure() === true);
+     isArmed({ equipment: () => holdingMace, rsc: { get: () => null } }) === true && keeper(holdingMace).armedForSure() === true);
   ok('a loaf of bread is not a weapon',
      keeper(holdingBread).armedForSure() === false);
 }

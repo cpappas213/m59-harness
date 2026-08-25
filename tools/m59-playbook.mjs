@@ -1,4 +1,4 @@
-// WHAT TO DO AT THE MOMENTS THE KEEPER HAS NO OPINION ABOUT — declared in advance by
+// WHAT TO DO AT THE MOMENTS THE KEEPER HAS NO OPINION ABOUT -- declared in advance by
 // whoever is directing the fleet, executed by the keeper.
 //
 // THE KEEPER ASKS, IT DOES NOT CALL. This is the whole design and getting it wrong would
@@ -13,13 +13,13 @@
 // the strategy" is a lookup, not a request.
 //
 // (`ask_for_orders` is the one verb that DOES wait, and it exists so that the escape
-// hatch is explicit, time-boxed, and something a doctrine opts into per trigger — rather
+// hatch is explicit, time-boxed, and something a doctrine opts into per trigger -- rather
 // than being the default nobody noticed they had chosen.)
 //
 // SILENCE MEANS THE BEHAVIOUR THAT WAS ALREADY THERE, NEVER PARALYSIS. This is the same
 // rule as a loadout and it is the one most easily got backwards. With no playbook, or a
 // playbook with nothing for this trigger, `decide` returns null and the keeper does
-// exactly what it did before this file existed — which for `attacked_by_player` means the
+// exactly what it did before this file existed -- which for `attacked_by_player` means the
 // ordinary survival ladder: flee when losing, rest when hurt and safe, escape the
 // Underworld if killed. A playbook ADDS a response. It can never remove the floor, and
 // there is deliberately no verb for "stand still".
@@ -44,7 +44,7 @@ export const PLAYBOOK_DIR = () => process.env.M59_PLAYBOOK_DIR || join(HERE, 'su
 // obviously the fleet's rather than the character's. Adding one is a deliberate act: it
 // means finding the spot in the keeper where the fact is already known and asking there.
 export const TRIGGERS = {
-  // A PLAYER IS HITTING US. The keeper is structurally blind to this — `inReachOfUs()`
+  // A PLAYER IS HITTING US. The keeper is structurally blind to this -- `inReachOfUs()`
   // filters `OF.PLAYER` out, so an attacking player is never a bystander, never
   // retaliated against, and never noticed at all. That filter is CORRECT and stays: this
   // fleet must not start swinging at people on a shared server. What was missing is that
@@ -55,8 +55,8 @@ export const TRIGGERS = {
          'same problem: a monster cannot follow you to a different town and will not ' +
          'wait five minutes',
   },
-  // WE DIED. The keeper handles its own recovery — that is `mortality` and it stays
-  // here — but what the FLEET does about a death is not a one-second decision and the
+  // WE DIED. The keeper handles its own recovery -- that is `mortality` and it stays
+  // here -- but what the FLEET does about a death is not a one-second decision and the
   // keeper has no way to express it. Somebody rich enough to re-arm the corpse is the
   // obvious case.
   died: {
@@ -65,7 +65,7 @@ export const TRIGGERS = {
          'about it is nobody\'s decision today',
   },
   // SOMETHING IMPROVED. Max health is the level here, so a gain can invalidate the
-  // entire reason the character is standing where it is standing — a kill only pays
+  // entire reason the character is standing where it is standing -- a kill only pays
   // when the creature's level is STRICTLY above base max health, so the prey that was
   // paying five minutes ago may now be worth nothing.
   improved: {
@@ -111,11 +111,25 @@ export const VERBS = {
   call_for_help: { args: ['message', 'guild_message', 'stay_off_s'], outward: true,
                    why: 'shout for help, tell the guild, then log off and stay off' },
   // THE ESCAPE HATCH, and the only verb that waits. Marks the character busy and hands
-  // the decision to whoever holds it, time-boxed. Explicit, per trigger, opt-in — so
+  // the decision to whoever holds it, time-boxed. Explicit, per trigger, opt-in -- so
   // that "we blocked on a bot while being attacked" is always something somebody chose.
   ask_for_orders: { args: ['wait_s'], why: 'hand this decision to whoever is directing' },
   // Go inert and let the bot drive. Not `stop`: the instruments stay on.
   stand_down: { args: [], why: 'stop driving and wait to be told' },
+  // ANSWER A PLAYER WHO IS HITTING US. The attacker name comes from facts.who in the
+  // attacked_by_player trigger. The keeper engages THAT named target with the same
+  // fight() it would use against a creature, except includePlayers:true and the
+  // resolved object id are passed through so a name match cannot drift to somebody
+  // else. The inReachOfUs() OF.PLAYER filter STAYS as the ordinary combat loop's
+  // bystander check -- fight_back is a one-shot against a name the playbook
+  // declared, not the everyday retaliation branch.
+  fight_back: { args: [], why: 'fight back against the attacking player' },
+  // SIGNAL THE FLEET. One-shot broadcast that the caller is under attack in this room
+  // by this player, so any healthy nearby keeper travels here and engages too. The
+  // broker keeps a conflicts table for this and the keeper's own respondToConflict
+  // already does the converging -- what this verb does is DECLARE that conflict so
+  // the rest of the fleet can see it.
+  fleet_alert: { args: [], why: 'broadcast that we are under attack so nearby members come to help' },
 };
 
 const num = v => (typeof v === 'number' && Number.isFinite(v)) ? v : null;
@@ -139,7 +153,7 @@ export function playbookFor(character) {
       const raw = JSON.parse(readFileSync(file, 'utf8'));
       value = (raw && typeof raw === 'object' && !Array.isArray(raw)) ? raw : null;
     } catch {
-      // A PLAYBOOK THAT WILL NOT PARSE IS NO PLAYBOOK, NOT AN EMPTY ONE — and those are
+      // A PLAYBOOK THAT WILL NOT PARSE IS NO PLAYBOOK, NOT AN EMPTY ONE -- and those are
       // the same thing here only because "no playbook" already means "carry on as
       // before". If that ever stops being true this has to become an error instead.
       value = null;
@@ -159,7 +173,7 @@ export function playbooksOnDisk() {
 
 // ---------------------------------------------------------------- the decision
 //
-// PURE. Facts in, one action or null out. No clock, no I/O, no randomness — which is
+// PURE. Facts in, one action or null out. No clock, no I/O, no randomness -- which is
 // what lets the whole table be tested against fixtures, and what makes an action
 // reproducible from the journal line that recorded the facts it was given.
 
@@ -168,7 +182,7 @@ function holds(when, facts) {
   if (!when || typeof when !== 'object') return true;
   for (const [k, want] of Object.entries(when)) {
     // Two forms, and the suffix is the comparison. Anything else is UNRECOGNISED and
-    // fails closed — a condition nobody evaluates must not read as a condition that was
+    // fails closed -- a condition nobody evaluates must not read as a condition that was
     // met, or a typo in a doctrine silently promotes a rule to unconditional.
     if (k.endsWith('_below')) {
       const got = num(facts[k.slice(0, -6)]);
@@ -209,7 +223,7 @@ export function decide(trigger, playbook, facts = {}) {
     const spec = VERBS[r.do];
     // AN UNRECOGNISED VERB IS SKIPPED, NOT GUESSED AT AND NOT FATAL. A playbook written
     // against a newer harness than this one is the ordinary case as this list grows, and
-    // the right behaviour is to fall through to the next rule — which is why the caller
+    // the right behaviour is to fall through to the next rule -- which is why the caller
     // is handed `unknown` to journal rather than left to wonder.
     if (!spec) continue;
     if (!holds(r.when, facts)) continue;
@@ -258,8 +272,8 @@ export function validate(pb) {
       }
       // THE TWO THAT PUT TEXT IN FRONT OF REAL PEOPLE. `prod` is a shared server; a
       // message is visible to strangers and attributable to whoever owns the account.
-      // So the text must be WRITTEN DOWN IN THE PLAYBOOK — a literal a person chose in
-      // advance — and never assembled from anything the world said back to us.
+      // So the text must be WRITTEN DOWN IN THE PLAYBOOK -- a literal a person chose in
+      // advance -- and never assembled from anything the world said back to us.
       if (spec.outward) {
         if (typeof r.message !== 'string' || !r.message.trim())
           say(`${at}.message`, `"${r.do}" speaks to other players and needs a literal ` +
@@ -267,7 +281,7 @@ export function validate(pb) {
                                `fleet says something nobody chose`);
         else if (/[{}$]|\bundefined\b/.test(r.message))
           say(`${at}.message`, 'looks like a template. This is sent verbatim to a shared ' +
-                               'server — write the sentence you mean');
+                               'server -- write the sentence you mean');
         else if (r.message.length > 160)
           say(`${at}.message`, 'over 160 characters; the game truncates and the tail is lost');
       }
@@ -297,12 +311,12 @@ export function validate(pb) {
         // waiting on a bot is a keeper not deciding, and the trigger it is most tempting
         // to use this on is the one where waiting is most expensive.
         else if (s > 30) say(`${at}.wait_s`, 'over 30s. This BLOCKS the keeper while it waits ' +
-                                             'for a bot to answer — on attacked_by_player that ' +
+                                             'for a bot to answer -- on attacked_by_player that ' +
                                              'is most of a fight');
         else if (trigger === 'attacked_by_player' && s > 5)
           say(`${at}.wait_s`, 'on attacked_by_player, waiting more than 5s for a bot means ' +
                               'the answer arrives after the fight. Put the decision in the ' +
-                              'playbook instead — that is what it is for');
+                              'playbook instead -- that is what it is for');
       }
       if (r.when && typeof r.when !== 'object') say(`${at}.when`, 'must be a map of conditions');
       for (const k of Object.keys(r.when ?? {})) {

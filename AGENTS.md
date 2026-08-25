@@ -147,6 +147,17 @@ the checkpoints went; do not delete old ones unasked.
 - **`[Channel] Flush` defaults to `No`**, and with it off every server log stays
   at 0 bytes for ever — which looks exactly like a hook not firing. The container
   turns it on; a native build may not have.
+- **Hunt bands are scaled by level.** `floor(level/2)` when armed, `floor(level/4)`
+  when unarmed. Ceiling = level + band. A lv21 character has ceiling 31, so lv30
+  giant rats are "in band" — but they are still too tough, and each death drops
+  max HP by 1–2, starting a death spiral. Baby spiders (lv25) in the Deep Woods
+  (rooms 534, 535, 545, 554, 568, 574, 575, 593, 603) are the safe target for
+  lv20–24. Giant rats (lv30) in the Sewers (room 377/600) are the target for
+  lv25+. See `docs/GOAP-HANDOFF.md` § "Scaled hunt bands" for the full table.
+- **`nearestHuntRoom` uses the engagement ceiling, not the raw level.** A
+  character in the Sewers sees giant rats as in-band even when they are
+  over-level. If a character is losing HP over successive passes, route them
+  to a weaker-mob room — do not raise the ceiling.
 
 ## Working here
 

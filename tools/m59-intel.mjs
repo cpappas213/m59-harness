@@ -354,6 +354,117 @@ export function knownPlayers() {
 // `pathToFileURL`, not a hand-built `file://` string — see m59-path-test.mjs: a manual
 // URL leaves spaces percent-encoded and needs drive-letter repair on Windows, so the tool
 // silently stops being a CLI on any path with a space in it.
+
+// ---------------------------------------------------------------------------
+// READ-ONLY ANALYTICS over the sighting trail, carried across from the other
+// checkout's /players page. Every one of these reads readHistory() and nothing
+// else — none of them touches the fleetmate question, which is why they could
+// be lifted onto this file's corrected recordSightings without adjustment.
+// ---------------------------------------------------------------------------
+export const ZONE_MAP = {
+  // Ileria (barrows/clearing)
+  534: 'Ileria', 535: 'Ileria', 536: 'Ileria', 544: 'Ileria',
+  545: 'Ileria', 556: 'Ileria', 557: 'Ileria',
+  // Raza
+  1016: 'Raza', 1017: 'Raza', 1018: 'Raza',
+  // Tos-area
+  586: 'Tos', 596: 'Tos', 597: 'Tos',
+  // Graveyard
+  623: 'Graveyard', 624: 'Graveyard', 625: 'Graveyard', 626: 'Graveyard',
+  // Marion / main areas
+  301: 'Marion', 302: 'Marion', 303: 'Marion', 304: 'Marion',
+  // Haven
+  1: 'Haven', 2: 'Haven', 3: 'Haven',
+  // Underworld
+  900: 'Underworld', 901: 'Underworld', 902: 'Underworld',
+};
+
+// Hourly sighting distribution from per-player history. UTC hours 0..23.
+// Returns a 24-element array of counts. Empty histories yield all zeros.
+export function timeOfDayPattern(name) {
+  const hist = readHistory(name).filter(r => r.at != null);
+  const hours = new Array(24).fill(0);
+  for (const r of hist) {
+    const d = new Date(r.at);
+    if (Number.isNaN(d.getTime())) continue;
+    hours[d.getUTCHours()] += 1;
+  }
+  return hours;
+}
+
+// Per-zone frequency, derived from history and a room -> zone map.
+// Rooms not present in zoneMap fall into "Other".
+// Returns: { zone_name: count, ... } sorted by frequency desc.
+export function zonePattern(name, zoneMap = ZONE_MAP) {
+  const hist  = readHistory(name).filter(r => r.room != null);
+  const freq  = {};
+  for (const r of hist) {
+    const zone = zoneMap[r.room] ?? 'Other';
+    freq[zone] = (freq[zone] ?? 0) + 1;
+  }
+  return Object.fromEntries(
+    Object.entries(freq).sort((a, b) => b[1] - a[1])
+  );
+}
+
+// Detect whether `name` may be following a fleet member. Compares their histories
+// and counts cases where this player entered the same room within 60s of the fleet
+// member doing the same. Confidence = matches / total_fleet_moves_in_window.
+// fleetHistory may be:
+//   - an array of history records (preferred), or
+//   - a name whose history file we will read ourselves.
+// Returns: { following, confidence, matches, fleet_moves, evidence: [...] }
+// evidence is capped at 10 entries.
+export function followingDetection(name, fleetHistory) {
+  let fleet;
+  if (Array.isArray(fleetHistory)) {
+    fleet = fleetHistory;
+  } else if (typeof fleetHistory === 'string') {
+    fleet = readHistory(fleetHistory);
+  } else {
+    return { following: false, confidence: 0, matches: 0, fleet_moves: 0, evidence: [] };
+  }
+
+  const player = readHistory(name);
+  if (!player.length || !fleet.length) {
+    return { following: false, confidence: 0, matches: 0, fleet_moves: 0, evidence: [] };
+  }
+
+  // Index player room changes by room for quick lookup.
+  const playerByRoom = {};
+  for (const r of player) {
+    if (r.room == null || r.at == null) continue;
+    (playerByRoom[r.room] ??= []).push(r.at);
+  }
+  for (const room of Object.keys(playerByRoom)) playerByRoom[room].sort((a, b) => a - b);
+
+  let matches = 0;
+  const evidence = [];
+  for (const f of fleet) {
+    if (f.room == null || f.at == null) continue;
+    const candidates = playerByRoom[f.room];
+    if (!candidates) continue;
+    // Find a player entry within +/- 60s of the fleet entry.
+    const hit = candidates.find(t => Math.abs(t - f.at) <= 60_000);
+    if (hit != null) {
+      matches += 1;
+      if (evidence.length < 10) evidence.push({ at: hit, room: f.room, fleet_at: f.at });
+    }
+  }
+
+  const fleet_moves  = fleet.filter(f => f.room != null && f.at != null).length;
+  const confidence   = fleet_moves > 0 ? matches / fleet_moves : 0;
+  return {
+    following:   confidence > 0.3 && matches >= 3,
+    confidence:  Number(confidence.toFixed(3)),
+    matches,
+    fleet_moves,
+    evidence,
+  };
+}
+
+// All known player names from the history directory.
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const args = process.argv.slice(2);
 
@@ -445,3 +556,4 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
   }
 }
+

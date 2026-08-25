@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// THE PLAYBOOK — what the keeper does at the moments it has no opinion about. Offline,
+// THE PLAYBOOK -- what the keeper does at the moments it has no opinion about. Offline,
 // no server, no broker, safe any time:
 //
 //   node tools/m59-playbook-test.mjs
@@ -12,8 +12,8 @@
 // What is pinned, in order of how expensive being wrong would be:
 //
 //   1. AN ABSENT PLAYBOOK CHANGES NOTHING. Silence resolves to null and the keeper does
-//      what it did before this file existed. Getting this backwards — silence meaning
-//      "do nothing" rather than "carry on" — would replace the survival ladder with
+//      what it did before this file existed. Getting this backwards -- silence meaning
+//      "do nothing" rather than "carry on" -- would replace the survival ladder with
 //      paralysis at exactly the moments it is most needed.
 //   2. AN UNKNOWN CONDITION NEVER HOLDS, and a typo therefore disables a rule rather
 //      than promoting it to unconditional.
@@ -74,6 +74,70 @@ console.log('\nattacked by a player');
 
   // FIRST MATCH WINS, so a doctrine reads top to bottom.
   ok('and the first matching rule is the one that runs', hurt.rule === 0);
+}
+
+console.log('\nattacked by a player -- fight_back and fleet_alert');
+{
+  // THE PvP RESPONSE. When the keeper is healthy and alone against one attacker the
+  // doctrine for the level-30+ fleet members is: signal the fleet, then fight back.
+  // fleet_alert is declared first so the conflict row is in the broker's table BEFORE
+  // the keeper engages -- a fight that starts a second earlier than the call still
+  // gets help on the way.
+  const pb = { on: { attacked_by_player: [
+    { when: { health_pct_below: 0.4 }, do: 'logoff', stay_off_s: 300,
+      why: 'genuinely losing and cannot escape' },
+    { when: { health_pct_below: 0.7 }, do: 'leave_room',
+      why: 'hurt enough that fighting back is not a win' },
+    { when: { attackers_at_least: 2 }, do: 'leave_room',
+      why: 'outnumbered -- leave, do not log off back into the same fight' },
+    { when: { health_pct_at_least: 0.7 }, do: 'fleet_alert',
+      why: 'call the fleet so nearby members converge' },
+    { when: { health_pct_at_least: 0.7 }, do: 'fight_back',
+      why: 'healthy and alone -- fight back' },
+  ] } };
+  ok('the new policy is valid', clean(pb), problems(pb));
+
+  // Both verbs must be in the closed set -- a closed set is the safety property, and
+  // adding a verb here is the only place they get into the harness.
+  ok('fight_back is in VERBS', !!VERBS.fight_back);
+  ok('fleet_alert is in VERBS', !!VERBS.fleet_alert);
+  ok('neither takes arguments', VERBS.fight_back.args.length === 0 && VERBS.fleet_alert.args.length === 0);
+
+  const hurt = decide('attacked_by_player', pb,
+    { who: 'griefer', health_pct: 0.3, attackers: 1, room: 71, in_safe_spot: false });
+  ok('badly hurt still logs off (the floor survives the new policy)', hurt.verb === 'logoff');
+
+  const ganged = decide('attacked_by_player', pb,
+    { who: 'griefer', health_pct: 0.9, attackers: 3, room: 71, in_safe_spot: false });
+  ok('outnumbered still leaves the room, not logs off', ganged.verb === 'leave_room');
+
+  // FIRST MATCH WINS, so the fleet_alert rule must precede the fight_back rule or the
+  // signal would never be declared -- the test below locks that ordering in.
+  const fine = decide('attacked_by_player', pb,
+    { who: 'griefer', health_pct: 0.9, attackers: 1, room: 71, in_safe_spot: false });
+  ok('healthy and alone against one attacker signals the fleet first', fine.verb === 'fleet_alert');
+  ok('and the rule index points at the fleet_alert rule, not fight_back', fine.rule === 3);
+
+  // FIRST MATCH WINS. The fleet_alert rule precedes the fight_back rule, so under
+  // identical `when` clauses the signal is what fires. A doctrine that wants
+  // fight_back alone drops the signal rule; the closed-set guard ensures neither
+  // ever invents a third verb.
+  const two = { on: { attacked_by_player: [
+    { when: { health_pct_at_least: 0.7 }, do: 'fleet_alert' },
+    { when: { health_pct_at_least: 0.7 }, do: 'fight_back' },
+  ] } };
+  ok('the first matching rule is the one that runs (fleet_alert before fight_back)',
+     decide('attacked_by_player', two,
+            { who: 'griefer', health_pct: 0.9, attackers: 1, room: 71, in_safe_spot: false }).rule === 0);
+  ok('and a doctrine that omits the signal drops straight to fight_back',
+     decide('attacked_by_player',
+            { on: { attacked_by_player: [{ when: { health_pct_at_least: 0.7 }, do: 'fight_back' }] } },
+            { who: 'griefer', health_pct: 0.9, attackers: 1, room: 71, in_safe_spot: false }).verb === 'fight_back');
+
+  // Unknown verbs stay unknown -- the closed-set guard must not have a back door.
+  ok('a made-up verb is still skipped, not guessed at',
+     decide('attacked_by_player', { on: { attacked_by_player: [{ do: 'fight_everyone' }] } },
+            { who: 'x', health_pct: 1, attackers: 1, room: 71, in_safe_spot: false }) === null);
 }
 
 console.log('\nconditions that nobody can evaluate');
@@ -141,7 +205,7 @@ console.log('\nspeaking to a shared server');
 console.log('\nthe one verb that blocks');
 {
   // `ask_for_orders` is the escape hatch and its whole cost is latency. It has to be
-  // possible — that is what makes hands-on LLM supervision work at all — and it has to
+  // possible -- that is what makes hands-on LLM supervision work at all -- and it has to
   // be impossible to reach for by accident at the moment it is most expensive.
   ok('a short wait on a slow trigger is fine',
      clean({ on: { improved: [{ do: 'ask_for_orders', wait_s: 20 }] } }));
@@ -160,7 +224,7 @@ console.log('\nlogging off is not free');
 {
   ok('a stay-off window is required', validate({ on: { attacked_by_player: [{ do: 'logoff' }] } })
        .some(p => /stay_off_s/.test(p.where)));
-  ok('and an absurd one is refused — a character that is off is not being defended, ' +
+  ok('and an absurd one is refused -- a character that is off is not being defended, ' +
      'not earning, and not on the board',
      validate({ on: { attacked_by_player: [{ do: 'logoff', stay_off_s: 7200 }] } })
        .some(p => /stay_off_s/.test(p.where)));
@@ -182,7 +246,7 @@ console.log('\nthe three moments');
        .some(p => /can never run/.test(p.why)));
 
   // The worked case for `improved`: max health IS the level, and a kill only pays when
-  // the creature's level is strictly above it — so a gain can make the current prey
+  // the creature's level is strictly above it -- so a gain can make the current prey
   // worthless without anything else changing.
   const retask = { on: { improved: [
     { when: { what_is: 'max_health', to_at_least: 50 }, do: 'ask_for_orders', wait_s: 20,

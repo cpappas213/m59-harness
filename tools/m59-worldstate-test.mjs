@@ -1,0 +1,197 @@
+#!/usr/bin/env node
+// m59-worldstate-test.mjs -- the closed vocabulary, and the direction it fails in.
+//
+// Offline, no server:  node tools/m59-worldstate-test.mjs
+//
+// Two things are pinned here and they are the whole point of the module:
+//
+//   THE SET IS CLOSED. An action naming a symbol nobody produces is reported by
+//   name. Without this a plan can be unsatisfiable because of a typo and the
+//   planner reports only "no plan" -- the same shape as `policy.purpose` being
+//   absent from a schema for a year while every keeper ran with the yield audit
+//   silently switched off.
+//
+//   UNKNOWN FAILS SAFE, AND SAFE IS PER SYMBOL. There is no single right default.
+//   `armed` unknown must read TRUE or one timed-out inventory request idles the
+//   fleet mid-fight; `target_in_band` unknown must read FALSE because a ceiling
+//   that defaults open is the one that kills somebody. Those are opposite, both
+//   deliberate, and inverting either is a bug no ordinary test would notice.
+
+import { SYMBOLS, SYMBOL_NAMES, evaluate, unknowns, validate, validateAll, MELEE_REACH }
+  from './m59-worldstate.mjs';
+import { fakeClient } from './m59-fake-client.mjs';
+
+let pass = 0, fail = 0;
+const ok = (name, cond, extra = '') => {
+  if (cond) { pass++; console.log('  ok   ' + name); }
+  else { fail++; console.log('  FAIL ' + name + (extra ? '  ' + extra : '')); }
+};
+
+console.log('\nthe registry is well formed');
+{
+  ok('there are symbols', SYMBOL_NAMES.length > 0);
+  for (const [n, s] of Object.entries(SYMBOLS)) {
+    ok(`${n} describes itself`, typeof s.describe === 'string' && s.describe.length > 0);
+    ok(`${n} has a producer`, typeof s.produce === 'function');
+    ok(`${n} states its unknown answer`, typeof s.whenUnknown === 'boolean');
+    ok(`${n} says WHY that is the safe direction`,
+       typeof s.why_unknown === 'string' && s.why_unknown.length > 0);
+  }
+}
+
+console.log('\nthe set is closed — a name nobody produces is reported, not dropped');
+{
+  ok('a known symbol validates', validate({ name: 'a', pre: ['armed'] }).length === 0);
+  ok('and so does its negation', validate({ name: 'a', pre: ['!armed'] }).length === 0);
+
+  const bad = validate({ name: 'fight', pre: ['armed', 'has_ammo'], effects: ['target_dead'] });
+  ok('an invented precondition is caught', bad.some(p => p.includes('has_ammo')));
+  ok('an invented effect is caught too', bad.some(p => p.includes('target_dead')));
+  ok('the problem names the action and the symbol',
+     bad[0].includes('fight') && bad[0].includes('has_ammo'), bad[0]);
+  ok('and it lists what IS known, so the fix is obvious',
+     bad[0].includes('armed'), bad[0]);
+
+  ok('validateAll checks a whole action set',
+     validateAll([{ name: 'x', pre: ['nope'] }, { name: 'y', effects: ['also_nope'] }]).length === 2);
+}
+
+console.log('\nunknown fails SAFE, and safe is per symbol');
+{
+  // Nothing readable at all: no client, no party, no policy.
+  const blind = evaluate({});
+
+  ok('armed unknown reads ARMED — a failed read must not stop a fight',
+     blind.armed === true);
+  ok('target_in_band unknown reads REFUSE — a ceiling that defaults open kills',
+     blind.target_in_band === false);
+  ok('has_target unknown reads NO — no evidence of a target is not a target',
+     blind.has_target === false);
+  ok('in_reach unknown reads NO — swinging at nothing costs us the round',
+     blind.in_reach === false);
+  ok('hurt unknown reads HURT — costs a rest, the other way costs a death',
+     blind.hurt === true);
+  // CORRECTED BY THE FIRST LIVE RUN. A real character's vitals() carried health and
+  // mana and no vigor at all -- it arrives as a BP_STAT and had not yet -- so this
+  // read true on no evidence, the goal was already satisfied, the plan came back
+  // EMPTY and a hungry character would never have eaten. Wrong `false` costs a meal;
+  // wrong `true` costs a character, at six times the death rate below 85 vigor.
+  ok('vigor_ok unknown reads NO — an absent vigor must not satisfy a provisioning goal',
+     blind.vigor_ok === false);
+  ok('and it fails the OPPOSITE way to armed, which stops a fight already happening',
+     blind.armed === true && blind.vigor_ok === false);
+  ok('pack_room unknown reads ROOM — refusing to loot on an unread pack is a silent no',
+     blind.pack_room === true);
+  ok('has_reagents unknown reads NO — do not plan a cast we cannot pay for',
+     blind.has_reagents === false);
+
+  ok('has_mana unknown reads NO — do not plan a cast we cannot pay for',
+     blind.has_mana === false);
+  ok('has_food unknown reads NO — believing in food we cannot see sends a character out hungry',
+     blind.has_food === false);
+
+  // The two that must be opposites. If a refactor ever makes these agree, one of
+  // them is wrong and it is not obvious which.
+  ok('armed and target_in_band fail in OPPOSITE directions, deliberately',
+     blind.armed === true && blind.target_in_band === false);
+}
+
+console.log('\nunknowns() says what was guessed, so a plan built on nothing can be seen');
+{
+  const u = unknowns({});
+  ok('it reports the symbols it could not answer', u.length > 0);
+  ok('each carries what it assumed', u.every(x => typeof x.assumed === 'boolean'));
+  ok('and why that was the safe direction', u.every(x => x.why && x.why.length > 0));
+  const armed = u.find(x => x.symbol === 'armed');
+  ok('armed is among them when there is no client', !!armed && armed.assumed === true);
+}
+
+console.log('\nproducers read the pushed state, and get it right');
+{
+  const mace = fakeClient({ equipped: [{ id: 1, name: 'mace' }], hp: 20, hpMax: 20, vigor: 150 });
+  const s = evaluate({ client: mace, policy: {} });
+  ok('a wielded mace is armed', s.armed === true);
+  ok('full health is healthy', s.healthy === true);
+  ok('and not hurt', s.hurt === false);
+  ok('150 vigor clears the fight floor of 100', s.vigor_ok === true);
+  ok('but cannot be raised further by RESTING — the cap is 80', s.can_rest_higher === false);
+
+  const empty = fakeClient({ equipped: [], hp: 4, hpMax: 20, vigor: 40 });
+  const t = evaluate({ client: empty, policy: {} });
+  ok('an empty use list is not armed', t.armed === false);
+  ok('4 of 20 is hurt', t.hurt === true);
+  ok('and not healthy', t.healthy === false);
+  ok('40 vigor is under the fight floor', t.vigor_ok === false);
+  ok('and CAN still be raised by resting', t.can_rest_higher === true);
+}
+
+console.log('\ncastings are min(elderberry, herbs)/2 — never the sum');
+{
+  const both = fakeClient({ inventory: [{ id: 1, name: 'elderberry', amount: 2 },
+                                        { id: 2, name: 'herbs', amount: 2 }] });
+  ok('two of each is a casting', evaluate({ client: both }).has_reagents === true);
+
+  // THE MEASURED FAILURE: a fleet rich in one half of the recipe reads as well
+  // supplied to anything that sums. 61 elderberry and 160 herbs across twenty-one
+  // characters, and twenty of them could cast zero times.
+  const lopsided = fakeClient({ inventory: [{ id: 1, name: 'herbs', amount: 94 },
+                                            { id: 2, name: 'elderberry', amount: 1 }] });
+  ok('NINETY-FOUR HERBS AND ONE ELDERBERRY IS NOT A CASTING',
+     evaluate({ client: lopsided }).has_reagents === false);
+  ok('and the singular "herb" still counts — the item is named "herbs"',
+     evaluate({ client: fakeClient({ inventory: [
+       { id: 1, name: 'herb', amount: 4 }, { id: 2, name: 'elderberry', amount: 4 }] })
+     }).has_reagents === true);
+}
+
+console.log('\nreach is a disc on SQUARE coordinates');
+{
+  ok('the reach constant is the server\'s own bound', MELEE_REACH === 3);
+  const at = (col, row) => {
+    const c = fakeClient({ selfId: 1, col: 10, row: 10,
+      room: { num: 1, objects: [{ id: 9, name: 'mummy', col, row }] } });
+    return evaluate({ client: c, ws: { _targetId: 9 } }).in_reach;
+  };
+  ok('directly adjacent is in reach', at(11, 10) === true);
+  ok('three squares away is still in reach — the disc is radius 3', at(13, 10) === true);
+  ok('a diagonal inside the radius counts', at(12, 12) === true);
+  ok('four squares away is not', at(14, 10) === false);
+  // 28 squares can hit you, not the 8 that touch you. A test that only checked the
+  // touching ring would pass while the keeper walked into everything.
+  ok('the diagonal corner of the bounding box is OUTSIDE the disc',
+     at(13, 13) === false, 'that corner is distance sqrt(18) > 3');
+}
+
+console.log('\na target that has left the room is not a target');
+{
+  const c = fakeClient({ room: { num: 1, objects: [{ id: 9, name: 'mummy', col: 1, row: 1 }] } });
+  ok('present means has_target', evaluate({ client: c, ws: { _targetId: 9 } }).has_target === true);
+  ok('absent means not', evaluate({ client: c, ws: { _targetId: 77 } }).has_target === false);
+  ok('and no selection at all means not', evaluate({ client: c, ws: {} }).has_target === false);
+}
+
+console.log('\nthe engagement ceiling, in the vocabulary');
+{
+  const inBand  = evaluate({ ws: { _targetLevel: 25, _threatCeiling: 30 } });
+  const over    = evaluate({ ws: { _targetLevel: 70, _threatCeiling: 30 } });
+  ok('a level 25 target under a ceiling of 30 is in band', inBand.target_in_band === true);
+  ok('a faction soldier at 70 is not', over.target_in_band === false);
+  ok('and an unknown ceiling REFUSES rather than permitting',
+     evaluate({ ws: { _targetLevel: 25 } }).target_in_band === false);
+  ok('as does an unknown target level',
+     evaluate({ ws: { _threatCeiling: 30 } }).target_in_band === false);
+}
+
+console.log('\na producer that throws is "cannot tell", never a crash and never a yes');
+{
+  const exploding = { get equipment() { throw new Error('boom'); } };
+  let threw = false;
+  let s;
+  try { s = evaluate({ client: exploding }); } catch { threw = true; }
+  ok('evaluate does not propagate a broken producer', !threw);
+  ok('and the symbol falls back to its safe answer, not to true-because-convenient',
+     s.armed === SYMBOLS.armed.whenUnknown);
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

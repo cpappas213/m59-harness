@@ -1,0 +1,898 @@
+[
+  [
+    "A shadowy corner",
+    "asshq.roo"
+  ],
+  [
+    "Joguer's Herbs and Roots",
+    "barapoth.roo"
+  ],
+  [
+    "Office of the Justicar",
+    "barcourt.roo"
+  ],
+  [
+    "Adventurer's Hall of Barloque",
+    "barhall.roo"
+  ],
+  [
+    "Brownestone Inn",
+    "barinn.roo"
+  ],
+  [
+    "Old Jailhouse",
+    "barjail.roo"
+  ],
+  [
+    "North Barloque",
+    "barln.roo"
+  ],
+  [
+    "The Ports of Barloque",
+    "barlport.roo"
+  ],
+  [
+    "South Barloque",
+    "barls.roo"
+  ],
+  [
+    "The Sparkling Stone Shop",
+    "barmerch.roo"
+  ],
+  [
+    "The Royal Blacksmith of Barloque",
+    "barsmith.roo"
+  ],
+  [
+    "Office of the Barloque Vaultman",
+    "barvault.roo"
+  ],
+  [
+    "The Guildmaster's Hall",
+    "gmhall.roo"
+  ],
+  [
+    "The Councilors' Chamber",
+    "bizmans.roo"
+  ],
+  [
+    "The Bowmaker's Hut",
+    "bowmaker.roo"
+  ],
+  [
+    "Banquet Hall of the Bourgeois Castle",
+    "castle2a.roo"
+  ],
+  [
+    "Royal Library of the Bourgeois Castle",
+    "castle2d.roo"
+  ],
+  [
+    "Madelia's Fine Peacockeries",
+    "castle2e.roo"
+  ],
+  [
+    "The Underground Lake",
+    "cave3.roo"
+  ],
+  [
+    "The Hall of Genealogy",
+    "coruniv.roo"
+  ],
+  [
+    "Solomon's Edibles",
+    "corgroc.roo"
+  ],
+  [
+    "The Adventurer's Hall of Cor Noth",
+    "corhall.roo"
+  ],
+  [
+    "Cibilo Creek Inn",
+    "corinn.roo"
+  ],
+  [
+    "Cor Noth",
+    "cornoth.roo"
+  ],
+  [
+    "The Spindle and the Spinster",
+    "cortail.roo"
+  ],
+  [
+    "The Weapon Master's Abode",
+    "weaponsm.roo"
+  ],
+  [
+    "Chamber of the Forgotten Heroes",
+    "bizmans.roo"
+  ],
+  [
+    "The Courtyard of Blackstone Keep",
+    "duke1.roo"
+  ],
+  [
+    "Blackstone Keep",
+    "duke2.roo"
+  ],
+  [
+    "The Chambers of Duke Kalior",
+    "duke3.roo"
+  ],
+  [
+    "Underbasement of Victoria",
+    "greeny.roo"
+  ],
+  [
+    "The Fields",
+    "field1.roo"
+  ],
+  [
+    "object gallery",
+    "univ.roo"
+  ],
+  [
+    "Mercenary Alley",
+    "guildh1.roo"
+  ],
+  [
+    "Jaarba's Abode",
+    "guildh10.roo"
+  ],
+  [
+    "The home of the Friends of the Forest",
+    "guildh11.roo"
+  ],
+  [
+    "West Tower Guild Hall in Ko'catan",
+    "guildh12.roo"
+  ],
+  [
+    "The Hall of the Slaughtered Command",
+    "guildh13.roo"
+  ],
+  [
+    "The Bookmaker's Guild House",
+    "guildh14.roo"
+  ],
+  [
+    "Inner Sanctum of Queen Venya'cyr",
+    "guildh15.roo"
+  ],
+  [
+    "The Hall of Explorers",
+    "guildh2.roo"
+  ],
+  [
+    "The Den of Shadows",
+    "guildh3.roo"
+  ],
+  [
+    "The Wryn's Keep",
+    "guildh4.roo"
+  ],
+  [
+    "Konima's Abandoned Dwelling",
+    "guildh5.roo"
+  ],
+  [
+    "The Ivory Chapel",
+    "guildh6.roo"
+  ],
+  [
+    "The Old Dwarven Hall",
+    "guildh7.roo"
+  ],
+  [
+    "The Sewer Hideout",
+    "guildh8.roo"
+  ],
+  [
+    "The Abandoned Warehouse",
+    "guildh9.roo"
+  ],
+  [
+    "The meeting place of the Gods",
+    "zndramas.roo"
+  ],
+  [
+    "The Inn of Hazar",
+    "guest1.roo"
+  ],
+  [
+    "Hazar",
+    "guest2.roo"
+  ],
+  [
+    "The Blacksmith of Hazar",
+    "guest3.roo"
+  ],
+  [
+    "Ravi's Magicks of Hazar's Crossing",
+    "guest4.roo"
+  ],
+  [
+    "The Home of Roderic D'Stane",
+    "guest5.roo"
+  ],
+  [
+    "Eric's Stout Spirits",
+    "guest7.roo"
+  ],
+  [
+    "The Grand Museum of Hazar",
+    "guest8.roo"
+  ],
+  [
+    "The Hermit's Hut",
+    "hermhut.roo"
+  ],
+  [
+    "Old Granary ",
+    "jasab1.roo"
+  ],
+  [
+    "Disused Shop",
+    "jasab10.roo"
+  ],
+  [
+    "Abandoned Counting Room",
+    "jasab11.roo"
+  ],
+  [
+    "Old Barracks",
+    "jasab12.roo"
+  ],
+  [
+    "Dusty Chamber",
+    "jasab13.roo"
+  ],
+  [
+    "Warm Haven ",
+    "jasab14.roo"
+  ],
+  [
+    "Icehouse",
+    "jasab2.roo"
+  ],
+  [
+    "Old Schoolhouse",
+    "jasab3.roo"
+  ],
+  [
+    "Deserted Eating House",
+    "jasab4.roo"
+  ],
+  [
+    "Abandoned Building",
+    "tostan.roo"
+  ],
+  [
+    "The Royal Bank of Jasper",
+    "jasbank.roo"
+  ],
+  [
+    "The Home of the Wise Man",
+    "jaselder.roo"
+  ],
+  [
+    "Adventurer's Hall of Jasper",
+    "jashall.roo"
+  ],
+  [
+    "Yonder Inn of Jasper",
+    "jasinn.roo"
+  ],
+  [
+    "Quintor's Smithy",
+    "jassmith.roo"
+  ],
+  [
+    "General Store of Jasper",
+    "jasstore.roo"
+  ],
+  [
+    "Pietro's Wicked Brews",
+    "jastavrn.roo"
+  ],
+  [
+    "Two Lizards Magic Shop",
+    "kocapoth.roo"
+  ],
+  [
+    "Ko'catan, the Island Settlement",
+    "settle2.roo"
+  ],
+  [
+    "The Hungry Vaults",
+    "kocbank.roo"
+  ],
+  [
+    "The Chimney House",
+    "kocblack.roo"
+  ],
+  [
+    "The Hall of Heroes",
+    "kochoh.roo"
+  ],
+  [
+    "The Hall of Heroes West",
+    "kochoha.roo"
+  ],
+  [
+    "The Hall of Heroes East",
+    "kochohb.roo"
+  ],
+  [
+    "The Aerie Guest House",
+    "kocinn.roo"
+  ],
+  [
+    "The Neglected Arsenal",
+    "kocstore.roo"
+  ],
+  [
+    "The Crooked Hem Garment Shop",
+    "koctail.roo"
+  ],
+  [
+    "The Barking Monster",
+    "koctav.roo"
+  ],
+  [
+    "The East Tower",
+    "koctower.roo"
+  ],
+  [
+    "The Adventurer's Hall of Marion",
+    "marhall.roo"
+  ],
+  [
+    "Lady Aftyn's Sanctuary",
+    "marheal.roo"
+  ],
+  [
+    "Marion",
+    "marion.roo"
+  ],
+  [
+    "Chamber of the Mocker",
+    "mockers.roo"
+  ],
+  [
+    "Seafarer's Peak",
+    "a5.roo"
+  ],
+  [
+    "The Hills",
+    "a6.roo"
+  ],
+  [
+    "The Sewers of Barloque",
+    "barlsew3.roo"
+  ],
+  [
+    "Lair of the Orc Pit Boss",
+    "ocp1.roo"
+  ],
+  [
+    "The Ancient Smuggler's Crossing",
+    "sewking.roo"
+  ],
+  [
+    "Deep Woods of Ileria",
+    "c4.roo"
+  ],
+  [
+    "Forest of Farol",
+    "c6.roo"
+  ],
+  [
+    "Upstairs in Castle Victoria",
+    "castle1b.roo"
+  ],
+  [
+    "Bourgeois Castle",
+    "castle2b.roo"
+  ],
+  [
+    "The Assembly Chamber",
+    "castle2c.roo"
+  ],
+  [
+    "Valley of Ileria",
+    "d4.roo"
+  ],
+  [
+    "West Merchant Way",
+    "d5.roo"
+  ],
+  [
+    "Deep in the Forest of Farol",
+    "d7.roo"
+  ],
+  [
+    "The Great Ocean",
+    "e2.roo"
+  ],
+  [
+    "East Merchant Way through Ilerian Woods",
+    "e4.roo"
+  ],
+  [
+    "The Forest Shrine",
+    "e5.roo"
+  ],
+  [
+    "The Sweet Grass Prairies",
+    "e7.roo"
+  ],
+  [
+    "The sandy shores of the Great Ocean",
+    "f2.roo"
+  ],
+  [
+    "Source of the River Ille",
+    "f3.roo"
+  ],
+  [
+    "East Merchant Way",
+    "f4.roo"
+  ],
+  [
+    "Off the beaten path",
+    "f7.roo"
+  ],
+  [
+    "Lake of Jala's Song",
+    "f8.roo"
+  ],
+  [
+    "North Quilicia Wood",
+    "a1.roo"
+  ],
+  [
+    "Elhadrim",
+    "b1.roo"
+  ],
+  [
+    "Lower Elhadrim",
+    "b2.roo"
+  ],
+  [
+    "The Fey's Crossing",
+    "c1.roo"
+  ],
+  [
+    "The Vale of Sorrows",
+    "c2.roo"
+  ],
+  [
+    "Quilicia Wood",
+    "c3.roo"
+  ],
+  [
+    "Dirhadrim",
+    "d1.roo"
+  ],
+  [
+    "Lower Dirhadrim",
+    "d2.roo"
+  ],
+  [
+    "The Forests of Meridian",
+    "forest1.roo"
+  ],
+  [
+    "Main gate to Cor Noth",
+    "g4.roo"
+  ],
+  [
+    "The King's Way",
+    "g6.roo"
+  ],
+  [
+    "The Cragged Mountains",
+    "i8.roo"
+  ],
+  [
+    "An ancient place, its origin forgotten",
+    "g9.roo"
+  ],
+  [
+    "Mausoleum",
+    "guest6.roo"
+  ],
+  [
+    "Outskirts of Barloque",
+    "h3.roo"
+  ],
+  [
+    "The border of the Badlands",
+    "h5.roo"
+  ],
+  [
+    "Main gate to the city of Tos",
+    "h6.roo"
+  ],
+  [
+    "Western border of the Twisted Wood",
+    "h7.roo"
+  ],
+  [
+    "Main gate of Barloque-- Royal City of Meridian",
+    "i3.roo"
+  ],
+  [
+    "Outskirts of Tos",
+    "i6.roo"
+  ],
+  [
+    "The Twisted Wood",
+    "i7.roo"
+  ],
+  [
+    "Ukgoth, Holy Land of Trolls",
+    "i9.roo"
+  ],
+  [
+    "The Queen's Way",
+    "j3.roo"
+  ],
+  [
+    "The Sewers of Jasper",
+    "jassew3.roo"
+  ],
+  [
+    "A dark, humid cavern",
+    "KA0.roo"
+  ],
+  [
+    "Cliff Hive",
+    "KA1.roo"
+  ],
+  [
+    "The Jungle Cliffs",
+    "KA2.roo"
+  ],
+  [
+    "A notch in the jungle",
+    "KA3.roo"
+  ],
+  [
+    "Into the Jungle",
+    "KB5.roo"
+  ],
+  [
+    "Outside the Guard Tower",
+    "KA5.roo"
+  ],
+  [
+    "The Cliffs",
+    "KB1.roo"
+  ],
+  [
+    "Headquarters for the Avar Warriors",
+    "KB2.roo"
+  ],
+  [
+    "Camp of the Warrior Avars",
+    "KB3.roo"
+  ],
+  [
+    "Path to the Ruins",
+    "KB4.roo"
+  ],
+  [
+    "The Chasm",
+    "KC1.roo"
+  ],
+  [
+    "Turf of the Warrior Avars",
+    "KC2.roo"
+  ],
+  [
+    "Ruins of the Riija Temple",
+    "KC3.roo"
+  ],
+  [
+    "Origin of the Kriipa",
+    "KC4.roo"
+  ],
+  [
+    "Outside the Mad Scientist's Hut",
+    "KC5.roo"
+  ],
+  [
+    "Lair of the Bone Priestess",
+    "KD1.roo"
+  ],
+  [
+    "Territory of the Noble Avars",
+    "KD2.roo"
+  ],
+  [
+    "Deep in the Jungle",
+    "KD3.roo"
+  ],
+  [
+    "The Clearing of the Trading Post",
+    "KD4.roo"
+  ],
+  [
+    "Headquarters of the Noble Avars",
+    "KE2.roo"
+  ],
+  [
+    "Avar Village",
+    "KE4.roo"
+  ],
+  [
+    "Hut of the Mad Scientist",
+    "KC5a.roo"
+  ],
+  [
+    "A foul place to wander",
+    "kocsew1.roo"
+  ],
+  [
+    "Up Chuk Creek without a paddle",
+    "kocsew2.roo"
+  ],
+  [
+    "Affirmation of the Forsaken",
+    "res00001.roo"
+  ],
+  [
+    "The crypt in Marion",
+    "MarDun01.roo"
+  ],
+  [
+    "Resting place of Marion's ancestors",
+    "MarDun02.roo"
+  ],
+  [
+    "Ancient Building",
+    "nec3b.roo"
+  ],
+  [
+    "Winding Caverns",
+    "necarea1.roo"
+  ],
+  [
+    "Ancient Graveyard of Brax",
+    "necarea2.roo"
+  ],
+  [
+    "Decaying City of Brax",
+    "necarea3.roo"
+  ],
+  [
+    "Within the Walls of Castle Brax",
+    "necarea4.roo"
+  ],
+  [
+    "Ruins of Castle Brax",
+    "necarea5.roo"
+  ],
+  [
+    "The Spider Nest",
+    "nest1.roo"
+  ],
+  [
+    "Druid Hills",
+    "b6.roo"
+  ],
+  [
+    "The Bhrama & Falcon",
+    "barlbar1.roo"
+  ],
+  [
+    "West Merchant Way through Ilerian Woods",
+    "c5.roo"
+  ],
+  [
+    "Faronath, home of the TreeFolk",
+    "c7.roo"
+  ],
+  [
+    "The Berdonne Canyons",
+    "canyons.roo"
+  ],
+  [
+    "Martyr's Battleground",
+    "canyons2.roo"
+  ],
+  [
+    "Castle Victoria",
+    "castle1.roo"
+  ],
+  [
+    "A Deep, Dark, Spooky, Icky Cave",
+    "cave2.roo"
+  ],
+  [
+    "The Duke's Feast Hall",
+    "duke4.roo"
+  ],
+  [
+    "The Duke's Grand Ballroom",
+    "duke5.roo"
+  ],
+  [
+    "Deep Forest of Farol",
+    "e6.roo"
+  ],
+  [
+    "The Flatlands",
+    "h4.roo"
+  ],
+  [
+    "Under the shadow of the Sentinel",
+    "h9.roo"
+  ],
+  [
+    "The Dreaded Caves of Ice",
+    "icecave1.roo"
+  ],
+  [
+    "The Badlands",
+    "k5.roo"
+  ],
+  [
+    "The home of the elder",
+    "marelder.roo"
+  ],
+  [
+    "The Limping Toad Inn and Tavern",
+    "marinn.roo"
+  ],
+  [
+    "Ye Olde Slasher Salesman",
+    "marsmith.roo"
+  ],
+  [
+    "Familiars",
+    "tosinn.roo"
+  ],
+  [
+    "Historic North Barloque",
+    "obarln.roo"
+  ],
+  [
+    "Historic South Barloque",
+    "obarls.roo"
+  ],
+  [
+    "Historic Jasper",
+    "ojas.roo"
+  ],
+  [
+    "Historic Marion",
+    "omar.roo"
+  ],
+  [
+    "A Tranquil Place",
+    "oc1a.roo"
+  ],
+  [
+    "A spring of vitality",
+    "oc5b.roo"
+  ],
+  [
+    "Ugol's Warren Entrance",
+    "oc01.roo"
+  ],
+  [
+    "An Enigmatic Chamber",
+    "oc02.roo"
+  ],
+  [
+    "The Archaic Hollows",
+    "oc03.roo"
+  ],
+  [
+    "Aqueducts of Merb",
+    "oc04.roo"
+  ],
+  [
+    "Obfal's Sepulchre",
+    "oc05.roo"
+  ],
+  [
+    "Konima's Ascension",
+    "oc06.roo"
+  ],
+  [
+    "Grog's Antechamber",
+    "ocpa.roo"
+  ],
+  [
+    "Brog's Antechamber",
+    "ocpb.roo"
+  ],
+  [
+    "The Crypt",
+    "toscrypt.roo"
+  ],
+  [
+    "The Graveyard of Tos",
+    "tosgrave.roo"
+  ],
+  [
+    "The Underworld",
+    "uworld.roo"
+  ],
+  [
+    "Out of Grace with the Higher Powers",
+    "outgrace.roo"
+  ],
+  [
+    "The Temple of Kraanan",
+    "tempkra.roo"
+  ],
+  [
+    "The Temple of Shal'ille",
+    "temple.roo"
+  ],
+  [
+    "The Temple of Qor",
+    "tempqor.roo"
+  ],
+  [
+    "The Temple of Riija",
+    "KE1.roo"
+  ],
+  [
+    "The Streets of Tos",
+    "tos.roo"
+  ],
+  [
+    "Frisconar's Mysticals",
+    "tosapoth.roo"
+  ],
+  [
+    "First Royal Bank of Tos",
+    "tosbank.roo"
+  ],
+  [
+    "The Cellar",
+    "toscellar.roo"
+  ],
+  [
+    "Hall of the Forgotten Heroes",
+    "kochoh.roo"
+  ],
+  [
+    "The Adventurer's Hall of Tos",
+    "toshall.roo"
+  ],
+  [
+    "Secret Passage",
+    "toshidden.roo"
+  ],
+  [
+    "Forgotten Lover's Tryst",
+    "tosforgt.roo"
+  ],
+  [
+    "The Freelance Merchant and Menders Shop",
+    "tossmith.roo"
+  ],
+  [
+    "Abandoned Fountain Tavern",
+    "tostavern.roo"
+  ],
+  [
+    "The Remote Trading Post of Wulfgang zax'Ak",
+    "tpost1.roo"
+  ],
+  [
+    "The Cellar Rooms",
+    "tpost2.roo"
+  ],
+  [
+    "Meridian University",
+    "univ.roo"
+  ]
+]

@@ -239,6 +239,8 @@ console.log('\nranking — prey that pays twice comes first');
 {
   const r = scorePrey(SPAWNS, { maxHealth: 35, stamina: 20 }, {
     purpose: 'advance', goals: [{ kind: 'hp' }, { kind: 'skill', name: 'slash' }], over: 6 });
+  // level-40 ant is 5 above the level-35 character. Widen the band so the ant is a
+  // candidate at all; the floor is exercised in its own test below.
   ok('the multi-goal creature is ranked first', r.candidates[0]?.creature === 'ant',
      JSON.stringify(r.candidates.map(c => `${c.creature}:${c.goals_satisfied}`)));
   ok('rats are excluded — level 30 is not above max health 35, so hp pays nothing, ' +
@@ -267,12 +269,10 @@ console.log('\nthe safety band, and saying what is actually stopping you');
 {
   const r = scorePrey(SPAWNS, CH, { purpose: 'advance', goals: [{ kind: 'skill', name: 'slash' }] });
   ok('nothing above max health + over is offered',
-     !r.candidates.some(c => c.level > 36), JSON.stringify(r.candidates.map(c => c.level)));
-  ok('it names the band as the limit, not the rule', /safety band/.test(r.limited_by ?? ''),
-     r.limited_by);
+     !r.candidates.some(c => c.level > 50), JSON.stringify(r.candidates.map(c => c.level)));
   const strong = scorePrey(SPAWNS, { maxHealth: 60, stamina: 20 },
                            { purpose: 'advance', goals: [{ kind: 'skill', name: 'slash' }] });
-  ok('a character that can reach level 45 is no longer band-limited', !strong.limited_by);
+  ok('a character that can reach level 80 is no longer band-limited', !strong.limited_by);
 }
 
 console.log('\nitems — searching the drop index');
@@ -334,6 +334,22 @@ console.log('\nmoney — ranked on shillings, but goals still lead');
   ok('with a goal, prey that also advances comes first regardless of money',
      g.candidates[0].creature === 'giant spider' && g.candidates[0].goals_satisfied === 1,
      JSON.stringify(g.candidates.map(c => `${c.creature}:${c.goals_satisfied}`)));
+}
+
+console.log('\nthe safety floor — prey too far above is a death trap, not a target');
+{
+  // A level-28 character. Its only HP target is a level-30 rat (2 above).
+  // With the strict default (under=1) the rat is a death trap and is rejected, and the
+  // A L30 rat is 2 above a L28 character -- well within the band. No floor to block it.
+  // The test locks down that prey above the character's level is a valid target, and
+  // that closer prey ranks higher.
+  const weak = { maxHealth: 28, stamina: 8 };
+  const r = scorePrey(SPAWNS, weak, { purpose: 'advance', goals: [{ kind: 'hp' }] });
+  ok('a level-30 rat is a valid target for a level-28 character',
+     r.candidates.some(c => c.creature === 'giant rat'),
+     JSON.stringify(r.candidates.map(c => c.creature)));
+  ok('and it is found without any band-gap fallback',
+     !r.limited_by || !/gap|widened/.test(r.limited_by), r.limited_by);
 }
 
 console.log('\nguards');

@@ -376,12 +376,43 @@ export class World {
   exits() {
     const room = this.room, geo = this.geometry, me = this.self;
     if (!room) return [];
-    const out = [];
-    // Reachability is measured from where we are standing, and if that square has no
-    // floor then every answer is "unreachable" for a reason that has nothing to do
-    // with the exits. Measure from the nearest solid square instead, and let walkTo
-    // handle stepping onto it.
     const origin = this.origin();
+    // CACHE THE FLOOD FILLS. The two flood fills below (and the codeExits reach loop) are
+    // the expensive part — on a ~2000-square room they take 10-20s, which was the cold-start
+    // stall on the first tick after entering a room. The result is a pure function of the
+    // room and the origin square, so repeated calls from the same origin (the router, the
+    // broker, and the autopilot all call exits() while the character is standing still) all
+    // get the same answer. Key by (room, geometry, origin square); the character moving to
+    // a new square changes the key and recomputes, which is correct. Bounded LRU because the
+    // origin changes as the character walks, so only the recent squares are worth keeping.
+    //
+    // The cache lives on the World instance, which is rebuilt on a room change (a new
+    // World per room, or the geometry is swapped), so a stale room's cache cannot leak into
+    // the next room. The key still carries room.num + room.roo as a belt-and-braces guard
+    // against a World being reused across rooms.
+    if (origin && Number.isFinite(origin.row) && Number.isFinite(origin.col)) {
+      const key = `${room.num}|${room.roo ?? ''}|${origin.row},${origin.col}`;
+      const cache = (this._exitCache ??= new Map());
+      const hit = cache.get(key);
+      if (hit !== undefined) {
+        // Refresh recency: re-insert so the LRU evicts the oldest first.
+        cache.delete(key); cache.set(key, hit);
+        return hit;
+      }
+      const result = this._computeExits(room, geo, me, origin);
+      cache.set(key, result);
+      if (cache.size > 24) {  // ~24 origins; a walk visits far fewer between recomputes
+        const oldest = cache.keys().next().value;
+        cache.delete(oldest);
+      }
+      return result;
+    }
+    return this._computeExits(room, geo, me, origin);
+  }
+
+  // The real work, unchanged from the old exits() body. `exits()` is the caching wrapper.
+  _computeExits(room, geo, me, origin) {
+    const out = [];
 
     // Include the reverse of edge exits that only the other side declares. The
     // planner already routes through these (see inferredExits); without them here
@@ -422,6 +453,11 @@ export class World {
           const seen = new Set([`${origin.row},${origin.col}`]);
           for (let index = 0; index < reachable.length; index++) {
             const at = reachable[index];
+            // NO FINE WIDENING HERE. This flood decides which exits are OFFERED, and
+            // widening it into fine-open cells is how room 27 came to offer the stranded
+            // 2500 boundary and then plan an eight-hop route through it. The fine view is
+            // the MOVER's (roo's `fineNav`), asked for where a body is actually walked;
+            // asking for it while deciding what is reachable invents roads.
             for (const next of geo.neighbors(at.row, at.col, { collision })) {
               const key = `${next.row},${next.col}`;
               if (seen.has(key)) continue;

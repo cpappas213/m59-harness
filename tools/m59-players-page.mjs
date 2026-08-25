@@ -1,11 +1,12 @@
-// m59-players-page.mjs — /players dashboard tab
+// m59-players-page.mjs -- /players dashboard tab
 // Shows sightings, targets, active conflicts, per-player movement trails and heatmaps.
 
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NAV, STYLE, esc, ago } from './m59-page-chrome.mjs';
-import { readHistory, roomHeatmap, playerStats, movementTrail } from './m59-intel.mjs';
+import { readHistory, roomHeatmap, playerStats, movementTrail,
+         timeOfDayPattern, zonePattern, followingDetection, ZONE_MAP } from './m59-intel.mjs';
 
 const HERE      = dirname(fileURLToPath(import.meta.url));
 const SUBSTRATE = join(HERE, '..', 'substrate');
@@ -71,7 +72,7 @@ export function renderPlayers(query = '') {
     <tbody>${liveConflicts.map(cf => `
     <tr>
       <td><strong style="color:var(--bad)">${esc(cf.target)}</strong></td>
-      <td class="dim">${cf.room_name ? `${esc(cf.room_name)} (${cf.room})` : (cf.room ?? '—')}</td>
+      <td class="dim">${cf.room_name ? `${esc(cf.room_name)} (${cf.room})` : (cf.room ?? '--')}</td>
       <td class="dim">${esc(cf.reporter)}</td>
       <td class="dim">${ago(cf.started_at)}</td>
       <td class="dim">${ago(cf.updated_at)}</td>
@@ -84,7 +85,7 @@ export function renderPlayers(query = '') {
     .sort((a, b) => (b.added_at ?? 0) - (a.added_at ?? 0))
     .map(t => {
       const s = seen[t.name];
-      const loc = s?.last_room_name ? `${esc(s.last_room_name)} (${s.last_room})` : (s?.last_room ?? '—');
+      const loc = s?.last_room_name ? `${esc(s.last_room_name)} (${s.last_room})` : (s?.last_room ?? '--');
       return `
     <tr>
       <td><strong>${esc(t.name)}</strong></td>
@@ -117,12 +118,12 @@ export function renderPlayers(query = '') {
       ? `<span style="color:var(--bad);font-weight:600">TARGET${tEntry?.auto_attack ? ' ⚔' : ''}</span>`
       : threat === 'suspicious'
         ? `<span style="color:var(--edge)">suspicious</span>`
-        : `<span style="color:var(--dim)">—</span>`;
+        : `<span style="color:var(--dim)">--</span>`;
 
     const recent = (s.recent ?? []).filter(x => now - x.at < SUSPICIOUS_WINDOW_MS).length;
     const loc = s.last_room_name
       ? `${esc(s.last_room_name)} <span class="dim">(${s.last_room})</span>`
-      : String(s.last_room ?? '—');
+      : String(s.last_room ?? '--');
 
     return `
     <tr class="player-row" data-name="${esc(s.name)}" style="cursor:pointer" onclick="toggleDetail('${esc(s.name.replace(/'/g, "\\'"))}')">
@@ -131,8 +132,8 @@ export function renderPlayers(query = '') {
       <td style="text-align:right">${s.total_sightings ?? 0}${recent > 0 ? ` <span class="dim">(${recent} recent)</span>` : ''}</td>
       <td class="dim">${ago(s.last_seen)}</td>
       <td>${loc}</td>
-      <td class="dim">${esc(s.last_seen_by ?? '—')}</td>
-      <td style="text-align:right;color:${kills>0?'var(--good)':'var(--dim)'}">${kills > 0 ? kills : '—'}</td>
+      <td class="dim">${esc(s.last_seen_by ?? '--')}</td>
+      <td style="text-align:right;color:${kills>0?'var(--good)':'var(--dim)'}">${kills > 0 ? kills : '--'}</td>
     </tr>
     <tr class="detail-row" id="detail-${esc(s.name)}" style="display:none">
       <td colspan="7" style="background:var(--panel);padding:.5rem 1rem">
@@ -158,7 +159,7 @@ export function renderPlayers(query = '') {
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Meridian 59 — Players</title>
+<title>Meridian 59 -- Players</title>
 <meta http-equiv="refresh" content="30">
 <style>
 ${STYLE}
@@ -247,11 +248,76 @@ function renderPlayerDetail(name, index) {
 
   const stats = playerStats(name);
   const meta = `<div style="font-size:.8rem;color:var(--dim);margin-bottom:.5rem">
-    First seen: ${fmtAgoShort(stats.first_seen)} &nbsp;·&nbsp;
-    ${stats.unique_rooms} unique rooms &nbsp;·&nbsp;
+    First seen: ${fmtAgoShort(stats.first_seen)} &nbsp;*&nbsp;
+    ${stats.unique_rooms} unique rooms &nbsp;*&nbsp;
     ${stats.total_sightings} total sightings
-    ${stats.confirmed_kills ? ` &nbsp;·&nbsp; <span style="color:var(--good)">${stats.confirmed_kills} fleet kill${stats.confirmed_kills !== 1 ? 's' : ''}</span>` : ''}
+    ${stats.confirmed_kills ? ` &nbsp;*&nbsp; <span style="color:var(--good)">${stats.confirmed_kills} fleet kill${stats.confirmed_kills !== 1 ? 's' : ''}</span>` : ''}
   </div>`;
+
+  // ---- Time-of-day sparkline (24 hourly bars, peak labelled)
+  const hours   = timeOfDayPattern(name);
+  const hourMax = Math.max(1, ...hours);
+  const hourTotal = hours.reduce((a, b) => a + b, 0);
+  const peakHour = hours.indexOf(hourMax);
+  const sparkHtml = hourTotal === 0
+    ? `<p class="dim" style="font-size:.8rem">No timed history yet.</p>`
+    : hours.map((c, h) => {
+        const hPx  = Math.round(c / hourMax * 32);
+        const mark = h === peakHour && c > 0 ? ' <span style="font-weight:600;color:var(--edge)">*</span>' : '';
+        return `<span title="${h}:00 → ${c}" style="display:inline-block;width:14px;margin-right:1px;vertical-align:bottom;text-align:center;font-size:.6rem;color:var(--dim)">`
+             + `<span style="display:block;height:${hPx}px;background:var(--accent);margin-bottom:1px;border-radius:1px"></span>`
+             + `${h % 6 === 0 ? h : ''}${mark}`
+             + `</span>`;
+      }).join('');
+
+  // ---- Zone breakdown (top zones, sorted)
+  const zones = zonePattern(name);
+  const zoneTotal = Object.values(zones).reduce((a, b) => a + b, 0);
+  const zonesHtml = Object.keys(zones).length === 0
+    ? `<p class="dim" style="font-size:.8rem">No zone data.</p>`
+    : Object.entries(zones).map(([zone, count]) => {
+        const pct = zoneTotal > 0 ? Math.round(count / zoneTotal * 100) : 0;
+        return `<div class="trail-entry">
+          <span style="display:inline-block;width:120px;font-size:.8rem">${esc(zone)}</span>
+          <span style="display:inline-block;width:60px;font-size:.75rem;color:var(--dim);text-align:right">${count}</span>
+          <span class="heatmap-bar" style="width:${pct * 1.6}px"></span>
+          <span class="dim" style="font-size:.75rem;margin-left:.3rem">${pct}%</span>
+        </div>`;
+      }).join('');
+
+  // ---- Following detection (compare against fleet members in seen index / state)
+  // We try every known fleet name whose history exists. Show the strongest match.
+  let fleetCandidates = [];
+  try {
+    const statePath = join(SUBSTRATE, 'fleet-state.json');
+    const fleetState = existsSync(statePath) ? readJSON(statePath) : {};
+    const seenIndex  = readJSON(SEEN_PATH);
+    // Prefer fleet-state roster; fall back to any player name whose history file exists.
+    const fromState = Object.values(fleetState)
+      .map(e => e?.credentials?.character ?? e?.name ?? null)
+      .filter(Boolean);
+    const fromHistory = existsSync(HISTORY_DIR)
+      ? readdirSync(HISTORY_DIR).filter(f => f.endsWith('.jsonl')).map(f => f.slice(0, -6).replace(/_/g, ' '))
+      : [];
+    const all = [...new Set([...fromState, ...fromHistory])].filter(n => n !== name && seenIndex[n] === undefined);
+    fleetCandidates = all;
+  } catch { /* leave empty */ }
+
+  const followChecks = fleetCandidates
+    .map(fc => ({ name: fc, ...followingDetection(name, fc) }))
+    .sort((a, b) => b.matches - a.matches);
+  const follower = followChecks.find(r => r.following);
+
+  const followHtml = follower
+    ? `<div style="color:var(--bad);font-weight:600;padding:.4rem .6rem;background:rgba(255,80,80,.08);border-left:3px solid var(--bad);border-radius:2px;font-size:.85rem">
+        ⚠ Possible follower of <strong>${esc(follower.name)}</strong>
+        &mdash; ${follower.matches} matches / ${follower.fleet_moves} moves (${Math.round(follower.confidence * 100)}% correlation)
+      </div>`
+    : (followChecks.length === 0
+        ? `<p class="dim" style="font-size:.8rem">No fleet history available to compare against.</p>`
+        : `<p class="dim" style="font-size:.8rem">No following detected against ${followChecks.length} fleet member${followChecks.length !== 1 ? 's' : ''}.
+            Best match: ${followChecks[0]?.name ?? '--'} ${followChecks[0]?.matches ?? 0}/${followChecks[0]?.fleet_moves ?? 0}.
+          </p>`);
 
   return `${meta}<div class="detail-grid">
     <div>
@@ -262,11 +328,25 @@ function renderPlayerDetail(name, index) {
       <h3>Top rooms (${total} recorded moves)</h3>
       ${heatHtml}
     </div>
+  </div>
+  <div class="detail-grid">
+    <div>
+      <h3>Activity by hour (UTC) -- peak: ${peakHour}:00 (${hours[peakHour]} sig)</h3>
+      <div style="margin:.4rem 0;font-family:monospace">${sparkHtml}</div>
+    </div>
+    <div>
+      <h3>Zone breakdown (${zoneTotal} moves)</h3>
+      ${zonesHtml}
+    </div>
+  </div>
+  <div>
+    <h3>Following analysis</h3>
+    ${followHtml}
   </div>`;
 }
 
 function fmtAgoShort(t) {
-  if (!t) return '—';
+  if (!t) return '--';
   const s = Math.round((Date.now() - t) / 1000);
   if (s < 60)    return `${s}s ago`;
   if (s < 3600)  return `${Math.round(s/60)}m ago`;

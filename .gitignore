@@ -1,3 +1,11 @@
+# Server credentials — IP, port, account names and password. Never commit.
+.env
+
+# Per-agent keeper state (live runtime: character name, HP, pack, room) — one
+# server's characters, rewritten by a running keeper. Same class as the sheets.
+/substrate/keeper-*.json
+/substrate/keeper-*.log
+
 # The client's own art: 5,355 PNGs decoded from its .bgf files, 40 MB of it, and
 # not ours to redistribute. Regenerate from any local client with
 #     python tools/pull-client-assets.py
@@ -25,6 +33,7 @@ node_modules/
 # which is other players' speech as well as combat text, so it is one server's
 # transcript and not reference material.
 /substrate/postmortems/
+/substrate/deaths.jsonl
 # One JSON per character: how good it is at each skill and spell, and every change
 # since it was first read. One server's characters, and the history is theirs — the
 # same reason the roster and the post-mortems are not here.
@@ -290,6 +299,28 @@ __pycache__/
 # local fleet and characters and exist only to prevent a restart from charging twice.
 /substrate/guild-tithes/
 
+# Player observation logs — sightings of other players on the live server (name, room,
+# object_id, timestamps). One server's data, not reference material, and identifying
+# to the players observed.
+/substrate/player-history/
+/substrate/players-seen.json
+
+# Runtime state files written by swarm agents or director processes.
+/substrate/ai-director-status.json
+/substrate/targets.json
+
+# Local machine config files. .mcp.json carries the broker port (a local choice) and
+# start-broker.sh carries the full server host — both are regenerated per machine.
+# The initial-commit .mcp.json template uses 127.0.0.1 and is the only committed form.
+start-broker.sh
+
+# Swarm agent working artifacts — not part of the project.
+PROJECT_CLOSURE.md
+.claude/worktrees/
+goap-cooldowns.json
+goap-gear-dispatch.json
+m59-nav-learned.json
+
 # TEST-BED SCENARIOS ARE CREDENTIALS. A tools/m59-testbed.mjs spec carries an account and
 # a password per character — it has to, because creating the account is the one step that
 # cannot go over the game protocol — so a real scenario is as secret as a roster and stays
@@ -346,6 +377,12 @@ __pycache__/
 /substrate/hoptests.json
 /substrate/hoptest-*.log
 /substrate/walktrials.json
+.DS_Store
+.pi/
+
+# Scratch verification scripts and one-run verification outputs — not reference.
+_verify2.mjs
+/substrate/phase3-health-verification.txt
 
 # The shadow-fleet tool. Dry-runs a prod operation against a local copy of the
 # roster, so it reads live production characters and writes their stats, position

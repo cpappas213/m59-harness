@@ -87,7 +87,74 @@ const STYLE = `
   .warn { color:var(--edge); font-size:.82rem; max-width:62ch; }
   .free { height:6px; background:var(--line); border-radius:3px; overflow:hidden; margin-top:.35rem; }
   .free span { display:block; height:100%; background:var(--accent); }
+  .goap-step { display:inline-block; background:var(--line); border-radius:4px;
+    padding:.15rem .55rem; font-family:ui-monospace,monospace; font-size:.85rem; }
+  .goap-arrow { color:var(--accent); margin:0 .4rem; font-weight:700; }
+  .room-grid { display:grid; gap:1px; background:var(--line); border:1px solid var(--line);
+    border-radius:4px; padding:2px; margin-top:.4rem; }
+  .room-cell { width:8px; height:8px; background:var(--bg); border-radius:1px; }
+  .room-cell.self { background:#4a9; }
+  .room-cell.npc { background:#a75; }
+  .room-cell.player { background:#a44; }
 `;
+
+// Render the GOAP plan: the goal the planner is chasing, the chain of
+// actions it found (or the reason it found none), and the world state it
+// saw when it planned. A visible plan is the only plan you can argue with.
+function renderGoap(g) {
+  if (!g) return '<p class="dim">No plan yet.</p>';
+  const chain = (g.names && g.names.length)
+    ? g.names.map((n, i) =>
+        `<span class="goap-step">${esc(n)}</span>` +
+        (i < g.names.length - 1 ? '<span class="goap-arrow">&rarr;</span>' : '')).join('')
+    : '<span class="dim">no plan</span>';
+  const status = g.found
+    ? '<span class="good">found</span>'
+    : `<span class="bad">${esc(g.reason ?? 'no plan')}</span>`;
+  const age = g.at ? Math.max(0, Math.round((Date.now() - g.at) / 1000)) : null;
+  return `<div class="cards">
+    <div class="card"><div class="k">goal</div>
+      <div class="val" style="font-size:1.1rem">${esc(g.goal ?? '—')}</div>
+      <div class="sm">${status}${age != null ? ` · ${age}s ago` : ''}</div></div>
+    <div class="card" style="grid-column:span 2"><div class="k">plan</div>
+      <div class="val" style="font-size:1rem;margin-top:.2rem">${chain}</div></div>
+    <div class="card" style="grid-column:span 3"><div class="k">world state when it planned</div>
+      <div class="sm" style="margin-top:.3rem;font-family:ui-monospace,monospace">${esc(g.ws ?? '—')}</div></div>
+  </div>`;
+}
+
+// Render a top-down room view: a grid of cells with colored markers.
+// Green = self, orange = NPC, red = player. Shows where the character
+// is standing relative to everything else in the room.
+function renderRoomView(rv, name) {
+  if (!rv || !rv.objects || !rv.objects.length) return '';
+  const { cols, rows, self, objects } = rv;
+  if (!cols || !rows) return '';
+  // Build a set of positions for O(1) lookup.
+  const cells = new Map();
+  for (const o of objects) {
+    if (o.col == null || o.row == null) continue;
+    const key = `${o.col},${o.row}`;
+    if (o.is_self) cells.set(key, 'self');
+    else if (o.is_player && !cells.has(key)) cells.set(key, 'player');
+    else if (!cells.has(key)) cells.set(key, 'npc');
+  }
+  let grid = `<div class="room-grid" style="grid-template-columns:repeat(${cols},8px)">`;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cls = cells.get(`${c},${r}`) ?? '';
+      grid += `<div class="room-cell ${cls}" title="${c},${r}${cls ? ' ' + cls : ''}"></div>`;
+    }
+  }
+  grid += '</div>';
+  const count = (type) => objects.filter(o => o.is_self ? type === 'self' : o.is_player ? type === 'player' : type === 'npc').length;
+  const legend = `<div class="sm" style="margin-top:.3rem">
+    <span class="room-cell self" style="display:inline-block;vertical-align:middle"></span> self${self ? ` (${self.col},${self.row})` : ''} ·
+    <span class="room-cell npc" style="display:inline-block;vertical-align:middle"></span> ${count('npc')} npc ·
+    <span class="room-cell player" style="display:inline-block;vertical-align:middle"></span> ${count('player')} player ·
+    ${cols}×${rows} grid</div>`;
+  return `<h2>Room <a href="/room3d/${esc(name ?? 'character')}" style="font-size:.7rem;font-weight:normal">3D view</a></h2>${grid}${legend}`;
+}
 
 export function renderHero(h, { localhost = false } = {}) {
   if (!h) {
@@ -213,6 +280,7 @@ export function renderHero(h, { localhost = false } = {}) {
   <div class="sub">${esc(h.agent ?? '')} · ${esc(h.strategy ?? 'no strategy')} ·
     ${h.in_game ? 'in game' : '<span class="bad">not in game</span>'} ·
     ${roomLink(h.room?.name, h.room?.num)}
+    ${h.room ? `<a href="/room3d/${esc(h.name)}" style="font-size:.75rem;margin-left:8px">3D view</a>` : ''}
     ${h.position ? `<span class="dim">(col ${h.position.col}, row ${h.position.row})</span>` : ''}</div>
 
   <section class="faction-priority ${factionNeutral ? 'missing' : factionKnown ? 'member' : 'unknown'}"
@@ -240,6 +308,11 @@ export function renderHero(h, { localhost = false } = {}) {
     <div class="card"><div class="k">stamina</div><div class="val">${h.stamina ?? '—'}</div>
       <div class="sm">${h.ceiling != null ? `lifetime cap ${h.ceiling} health` : ''}</div></div>
   </div>
+
+  ${h.room_view ? renderRoomView(h.room_view, h.name) : ''}
+
+  <h2>GOAP plan</h2>
+  ${h.goap ? renderGoap(h.goap) : '<p class="dim">Not running the GOAP keeper.</p>'}
 
   <h2>Safe spot</h2>
   ${h.safe_spot ? `<div class="cards">

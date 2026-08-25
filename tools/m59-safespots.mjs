@@ -38,6 +38,7 @@
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { RoomGeometry } from './m59-roo.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 // The eight neighbours, in clockwise order, so that a run of blocked ones can be
 // recognised as a contiguous arc rather than eight independent facts.
@@ -381,6 +382,17 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
       // as good as open floor, which is what the caller already has.
       if (attackers >= MAX_ATTACKERS) continue;
       const cover = backCover(blocked);
+      // LEDGE EDGE: if any orthogonal neighbour is a drop (floor falls more than one
+      // step), a spot here is one mistimed step from a fall. That is the wrong kind
+      // of cover to fight from. Penalise hard; a clifftop corner must not score well.
+      // Only matters in multi-level rooms; flat rooms have no height data or all-equal
+      // heights, so this is a no-op there.
+      let ledge = false;
+      if (typeof geo.heightStepOk === 'function') {
+        if (!geo.heightStepOk(r, c, r + 1, c) || !geo.heightStepOk(r, c, r - 1, c) ||
+            !geo.heightStepOk(r, c, r, c + 1) || !geo.heightStepOk(r, c, r, c - 1))
+          ledge = true;
+      }
       // WHICH WAY THE WALL IS, so a character can be put against it rather than in the
       // middle of the square.
       //
@@ -435,7 +447,8 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
         // Exposure dominates, and a free shot is worth about three squares of it: it is
         // not merely safer, it is the only arrangement that lets a fight be won without
         // taking a hit. Cover stays in as a tie-break — it is cheap and it correlates.
-        score: (MAX_ATTACKERS - attackers) + free_shots * 3 + cover * 0.5,
+        score: (MAX_ATTACKERS - attackers) + free_shots * 3 + cover * 0.5 - (ledge ? 50 : 0),
+        ledge,
       });
     }
   }

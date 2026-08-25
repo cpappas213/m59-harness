@@ -576,7 +576,7 @@ export const STEP_MASK_DIRS = DIRS;
 //      `_traceMoverStep`, without which the rule is inert: a square can straddle a cliff
 //      face, and the mover was landing on the low half while `walkTo` counted the square
 //      as reached. See `enforceStepHeight`.
-export const STEP_MASK_VERSION = 4;
+export const STEP_MASK_VERSION = 5;
 const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies
@@ -1023,6 +1023,11 @@ export class RoomGeometry {
     const count = Math.max(1, Math.ceil(distance / Math.max(1, maxMicrostep)));
     const dx = (x1 - x0) / count, dy = (y1 - y0) / count;
     let at = { x: x0, y: y0, sectorNum: this.leafAtClient(x0, y0)?.sectorNum };
+    // The ORIGIN square, so the per-microstep fineWalkable check can exempt it — see the
+    // note at the check. Computed once here because it is the trace's own start, not the
+    // character's reported square (a slid or respawned character can start off-centre).
+    const startSqCol = Math.floor(clientToProtocol(x0) / KOD_FINENESS);
+    const startSqRow = Math.floor(clientToProtocol(y0) / KOD_FINENESS);
     let blocked = false, slid = false, reason = null, wallIndex = null;
     for (let i = 0; i < count; i++) {
       const next = this._resolveClientMicrostep(at, { x: at.x + dx, y: at.y + dy },
@@ -1040,6 +1045,47 @@ export class RoomGeometry {
       if (!resolved.moved) break;
       const stepFrom = at;
       at = { x: resolved.x, y: resolved.y, sectorNum: resolved.sectorNum };
+      // PER-MICROSTEP WALL CHECK: after each microstep,
+      // verify the new position is in a fineWalkable
+      // square. The BSP collision pass can miss thin
+      // wall segments when the microstep lands on the
+      // edge. An explicit square check catches it.
+      //
+      // ONLY ON SQUARES WE ENTER, NOT THE ONE WE LEAVE. A character can be standing on
+      // a fine-unwalkable square — the server is client-authoritative and accepts any
+      // position, and the fine grid is stricter than the server's own coarse grid, so
+      // respawns and slid steps land on squares fineWalkable calls false. Blocking the
+      // first microstep because the ORIGIN square is fine-unwalkable refuses all eight
+      // edges from that square (every trace dies with fine_wall_edge on microstep one)
+      // and traps the character in place for ever: JayB at Raza Inn (4,7), standing on
+      // fineWalkable=false in an otherwise open room, unable to move in any direction
+      // while the step mask and the coarse grid both said every step was legal. The
+      // check keeps its purpose — a path that CROSSES a fine-unwalkable square in the
+      // middle is still blocked — it just no longer vetoes the square the character
+      // is already standing on and needs to walk off of.
+      // A CELL-CENTRE TEST MAY NOT VETO A FINE TRACE, AND A DOORWAY IS WHY.
+      //
+      // This block used to reject the whole trace whenever a microstep TRANSITED a
+      // square whose centre was `fineWalkable === false`. But fineWalkable tests the
+      // CELL CENTRE against wall segments within the player radius (248), and a doorway
+      // is exactly a cell whose centre sits close to its own frame. So every narrow
+      // passage in the game became impassable.
+      //
+      // Measured on the shipped geometry for room 106, the Brownestone Inn -- the narrow
+      // strip a character has to cross to leave the 300-unit pocket, which
+      // m59-collision-test has guarded by name for a long time:
+      //
+      //   with this block:     arrived: false, blocked: true, reason: 'fine_wall_edge'
+      //   without it:          arrived: true,  blocked: false
+      //
+      // And it was not buying anything: with the block removed, m59-mover-test's
+      // "the mover did NOT cross the wall segment" still passes, because SEGMENT
+      // crossing is caught by _blockingWall, which is the right test and was already
+      // there. This was a coarse approximation vetoing a physics trace.
+      //
+      // Since movement is client-authoritative, our model is the only collision check
+      // there is -- so a false refusal here is not a conservative choice, it is a
+      // character that cannot leave a room.
       const leaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
       const floor = this.floorBaseAtClient(at.x, at.y, leaf, { roomFlags, overrideDepths });
       // A CLIFF IS NOT A WALL, AND ONLY WALLS CAN REFUSE A CLIMB. OFF BY DEFAULT — THIS IS
@@ -1128,6 +1174,31 @@ export class RoomGeometry {
     }
     const moved = Math.hypot(at.x - x0, at.y - y0) > GEOMETRY_EPSILON;
     const arrived = Math.hypot(at.x - x1, at.y - y1) <= GEOMETRY_EPSILON;
+    // STANDABLE, NOT WALKABLE. The coarse grid is a 1-byte-per-square projection that
+    // lags the BSP on ledge edges and door alcoves — the Raza Blacksmith's door square is
+    // coarse-blocked but fine-standable, and this check (the only coarse veto in the trace)
+    // was the thing pinning a character at the room edge: every fine path to the door
+    // crossed a coarse-walled square, so A* found nothing and the character sat down. The
+    // client is AUTHORITATIVE for movement — nothing server-side consults the coarse grid
+    // for a player move — so a square the BSP says holds somebody must not be vetoed by a
+    // coarse byte that says otherwise. `standable` is exactly "coarse-walkable OR fine-
+    // occupiable", which is what the mover's step predicate already uses.
+    // A DESTINATION OFF THE MAP IS NOT A WALL, AND THIS TEST COULD NOT TELL THE DIFFERENCE.
+    //
+    // This rejected any trace whose destination square was not `standable`. But
+    // `edgeCrossingRanges` traces from INSIDE a room to a point deliberately OUTSIDE the
+    // grid -- that is what crossing a boundary IS -- so the destination is never standable
+    // and EVERY crossing was rejected. Measured on room 536 north: 4 open ranges upstream,
+    // ZERO here, and with the ranges empty edgeCrossingCandidates returns nothing, which
+    // is why six assertions about edge approaches went red and, more to the point, why a
+    // character could not find the way out of a room.
+    //
+    // It is the same mistake as the cell-centre veto removed from this trace earlier: a
+    // COARSE standable test overruling a fine physics trace. The trace already knows
+    // whether the move lands; `standable` only knows whether the server's one-byte grid
+    // has floor there, and outside the room it has nothing at all.
+    //
+    // Added by 624e29a. Upstream has no such check.
     const destinationLeaf = this.leafAtClient(at.x, at.y, { preferSectorNum: at.sectorNum });
     const destinationFloor = this.floorBaseAtClient(at.x, at.y, destinationLeaf,
       { roomFlags, overrideDepths });
@@ -1177,7 +1248,19 @@ export class RoomGeometry {
     return frozen;
   }
 
-  edgeCrossingCandidates(direction) {
+  // THE FINE FALLBACK IS OPT-IN, AND UPSTREAM'S COARSE ANSWER IS THE DEFAULT.
+  //
+  // Wherever this file consults the server's coarse grid, a MOVER wants to fall back to
+  // the BSP when the grid says wall: the grid is not authoritative for players (see
+  // _occupiable), and 137 of 2164 recorded client positions sit in squares it calls
+  // unwalkable. That is right for walking and WRONG FOR ROUTING, which is a different
+  // question — "may a route be planned through here", where being generous invents roads.
+  //
+  // Applied everywhere it cost 12 assertions in m59-routing-test: room 27 began offering
+  // the stranded 2500 boundary and planning an eight-hop route through it. So the fine
+  // view is now asked for by the caller that wants it, and every caller that does not ask
+  // gets exactly the upstream answer.
+  edgeCrossingCandidates(direction, { fineNav = false } = {}) {
     const name = String(direction ?? '').toLowerCase();
     const horizontal = name === 'north' || name === 'south';
     if (!['north', 'south', 'west', 'east'].includes(name)) return [];
@@ -1249,8 +1332,24 @@ export class RoomGeometry {
     // their door tile is routinely unwalkable by design (the Royal Bank of Jasper) and
     // they are reached by fine positioning rather than by occupying the square.
     ;
-    const grounded = all.filter(c => this.walkable(c.row, c.col));
-    return grounded.length ? grounded : all;
+    // THE GATE IS COARSE-FIRST, FINE-SECOND, ALL-LAST. The coarse grid is the server's own
+    // map, so a candidate it calls walkable is the most trustworthy — it is what the server
+    // will actually let the character stand on. But the coarse grid also holds a silent veto
+    // over fine-open cells (coarse-wall/fine-open), and in a pocket the staging square can be
+    // coarse-unwalkable while the fine geometry has real floor there. A filter must never be
+    // the reason a doorway disappears, so a candidate the coarse grid vetoes is still offered
+    // when the fine grid (the actual wall segments the game collides against) says it is open.
+    //
+    // Order of preference: coarse-walkable (server authority) > fine-walkable (geometry open)
+    // > everything (the existing safe fallback — being wrong about a wall costs a walk, and
+    // offering the whole crossing lets leaveViaAny try each square and report what happened).
+    const coarseOk = all.filter(c => this.walkable(c.row, c.col));
+    if (coarseOk.length) return coarseOk;
+    if (fineNav) {
+      const fineOk = all.filter(c => this.fineWalkable(c.row, c.col) === true);
+      if (fineOk.length) return fineOk;
+    }
+    return all;
   }
 
   // A boundary opening is useful only when the character can approach it from a
@@ -1258,7 +1357,7 @@ export class RoomGeometry {
   // trace alone over-advertises decorative slits on the outside of a wall (Cor Noth
   // is the concrete counterexample). Resolve that question while baking and keep
   // the live exits() hot path to one coarse flood fill.
-  edgeApproachCandidates(direction) {
+  edgeApproachCandidates(direction, { fineNav = false } = {}) {
     const name = String(direction ?? '').toLowerCase();
     if (!['north', 'south', 'west', 'east'].includes(name) || !this.collisionReady) return [];
     if (this._edgeApproachCache.has(name)) return this._edgeApproachCache.get(name);
@@ -1304,7 +1403,7 @@ export class RoomGeometry {
 
     const approaches = [];
     const MAX_STAGE_RADIUS = 4;
-    for (const crossing of this.edgeCrossingCandidates(name)) {
+    for (const crossing of this.edgeCrossingCandidates(name, { fineNav })) {
       const stages = [];
       const seen = new Set();
       let firstStageRadius = null;
@@ -1443,118 +1542,56 @@ export class RoomGeometry {
     return { points: out, unverified, legs: out.length - 1, proved };
   }
 
-  // A bounded local A* for sub-square approaches that need to round a corner. This
-  // is deliberately not the room router: the coarse grid gets us near the exit,
-  // then this resolves only the final BSP-scale gap with locally validated segments.
-  finePathProtocol(fromX, fromY, toX, toY, {
-    step = 8,
-    margin = 12 * KOD_FINENESS,
-    maxNodes = 20000,
-  } = {}) {
-    if (!this.collisionReady || ![fromX, fromY, toX, toY].every(Number.isFinite))
-      return { found: false, reason: 'collision_geometry_unavailable', waypoints: [] };
-    const clear = (ax, ay, bx, by) => this.traceFineMoveClient(
-      protocolToClient(ax), protocolToClient(ay), protocolToClient(bx), protocolToClient(by),
-      { slide: false }).arrived;
-    if (clear(fromX, fromY, toX, toY))
-      return { found: true, waypoints: [{ x: toX, y: toY }], expanded: 0 };
 
-    const minX = Math.max(KOD_FINENESS, Math.floor(Math.min(fromX, toX) - margin));
-    const minY = Math.max(KOD_FINENESS, Math.floor(Math.min(fromY, toY) - margin));
-    const maxX = Math.min((this.cols + 1) * KOD_FINENESS - 1,
-      Math.ceil(Math.max(fromX, toX) + margin));
-    const maxY = Math.min((this.rows + 1) * KOD_FINENESS - 1,
-      Math.ceil(Math.max(fromY, toY) + margin));
-    const key = (x, y) => `${x},${y}`;
-    const heuristic = (x, y) => Math.hypot(toX - x, toY - y);
-    const open = [{ x: Math.round(fromX), y: Math.round(fromY), g: 0,
-                    f: heuristic(fromX, fromY) }];
-    const best = new Map([[key(open[0].x, open[0].y), 0]]);
-    const came = new Map();
-    const closed = new Set();
-    const push = node => {
-      open.push(node);
-      let i = open.length - 1;
-      while (i > 0) {
-        const parent = (i - 1) >> 1;
-        if (open[parent].f <= node.f) break;
-        open[i] = open[parent]; i = parent;
-      }
-      open[i] = node;
-    };
-    const pop = () => {
-      const root = open[0], tail = open.pop();
-      if (open.length && tail) {
-        let i = 0;
-        while (true) {
-          let child = i * 2 + 1;
-          if (child >= open.length) break;
-          if (child + 1 < open.length && open[child + 1].f < open[child].f) child++;
-          if (open[child].f >= tail.f) break;
-          open[i] = open[child]; i = child;
-        }
-        open[i] = tail;
-      }
-      return root;
-    };
-    const moves = [-1, 0, 1].flatMap(dy => [-1, 0, 1]
-      .filter(dx => dx || dy).map(dx => ({ dx: dx * step, dy: dy * step,
-                                          cost: (dx && dy) ? step * Math.SQRT2 : step })));
-    let goalKey = null, expanded = 0;
-    while (open.length && expanded < maxNodes) {
-      const cur = pop(), ck = key(cur.x, cur.y);
-      if (closed.has(ck)) continue;
-      closed.add(ck); expanded++;
-      if (heuristic(cur.x, cur.y) <= step * Math.SQRT2
-          && clear(cur.x, cur.y, toX, toY)) {
-        goalKey = key(toX, toY);
-        came.set(goalKey, { key: ck, point: { x: cur.x, y: cur.y } });
-        break;
-      }
-      for (const move of moves) {
-        const x = cur.x + move.dx, y = cur.y + move.dy;
-        if (x < minX || x > maxX || y < minY || y > maxY) continue;
-        const nk = key(x, y);
-        if (closed.has(nk) || !clear(cur.x, cur.y, x, y)) continue;
-        const g = cur.g + move.cost;
-        if (g >= (best.get(nk) ?? Infinity)) continue;
-        best.set(nk, g);
-        came.set(nk, { key: ck, point: { x: cur.x, y: cur.y } });
-        push({ x, y, g, f: g + heuristic(x, y) });
-      }
-    }
-    if (!goalKey) return { found: false,
-      reason: expanded >= maxNodes ? 'fine path search budget exhausted' : 'no fine path',
-      waypoints: [], expanded };
-    const raw = [{ x: toX, y: toY }];
-    let at = goalKey;
-    while (came.has(at)) {
-      const prior = came.get(at);
-      raw.push(prior.point); at = prior.key;
-    }
-    raw.reverse();
-    if (raw.length && raw[0].x === Math.round(fromX) && raw[0].y === Math.round(fromY)) raw.shift();
 
-    // Collapse the 8-KOD search lattice into the longest legal straight segments so
-    // execution spends packets at turns, not at every search node.
-    const waypoints = [];
-    let ax = fromX, ay = fromY, index = 0;
-    while (index < raw.length) {
-      let chosen = index;
-      for (let j = Math.min(raw.length - 1, index + 96); j >= index; j--) {
-        if (clear(ax, ay, raw[j].x, raw[j].y)) { chosen = j; break; }
-      }
-      const point = raw[chosen];
-      waypoints.push(point); ax = point.x; ay = point.y; index = chosen + 1;
-    }
-    return { found: true, waypoints, expanded };
-  }
+
 
   // Is there floor on this square? kod-style 1-based.
   walkable(row, col) {
     if (!this.inBounds(row, col)) return false;
     return (this.flags[(row - 1) * this.cols + (col - 1)] & ROOM_FLAG_WALKABLE) !== 0;
   }
+
+
+
+
+
+
+
+  // Fine-grid collision: is the centre of cell (r, c) inside an impassable wall
+  // segment? This is the ground truth the game's collision actually uses (the wall
+  // segments), NOT the coarse grid (this.walkable), which is a coarser approximation
+  // that can mark open space as wall or vice versa.
+  //
+  // Why it matters: a player character moves on the fine grid (any direction, through
+  // gaps the coarse grid calls wall), but monsters path NSEW on the coarse grid and
+  // cannot enter a cell the grid marks as wall. So a cell that is coarse-WALL but
+  // fine-open is a one-way safe spot: we can stand in it, a monster cannot step into it.
+  //
+  // Returns: true if walkable on the fine grid, false if inside a wall, null if the
+  // geometry has no wall data (can't decide).
+  fineWalkable(r, c) {
+    const walls = this.walls;
+    if (!walls || !walls.length) return null;
+    const blocked = walls.filter(w => w.passable === false);
+    if (!blocked.length) return true;
+    const fx = (c + 0.5) * CLIENT_FINENESS, fy = (r + 0.5) * CLIENT_FINENESS;
+    // A cell centre is blocked if it is within a quarter cell (256 fine units) of an
+    // impassable segment. 256 is the player radius in fine units (the client collides
+    // the character circle, not a point).
+    const R = 256;
+    for (const w of blocked) {
+      const dx = w.x1 - w.x0, dy = w.y1 - w.y0;
+      const L2 = dx * dx + dy * dy;
+      let t = 0;
+      if (L2 > 0) t = Math.max(0, Math.min(1, ((fx - w.x0) * dx + (fy - w.y0) * dy) / L2));
+      const cx = w.x0 + t * dx, cy = w.y0 + t * dy;
+      if (Math.hypot(fx - cx, fy - cy) < R) return false;
+    }
+    return true;
+  }
+
+
 
   /**
    * Could a player be at this exact point? Floor under it, and a sector with an INTERIOR.
@@ -2092,7 +2129,7 @@ export class RoomGeometry {
   // purpose: a step is refused by the wall BETWEEN two squares, and blaming the square
   // removes a perfectly good place to stand that other neighbours can still reach.
   neighbors(row, col, { fine = true, collision = false, blockedEdges = null,
-                        allowInto = null } = {}) {
+                        allowInto = null, fineWiden = false } = {}) {
     const out = [];
     // WHICH MAP GETS TO SAY A STEP IS IMPOSSIBLE — and it must not be both.
     //
@@ -2132,11 +2169,44 @@ export class RoomGeometry {
     // as permissive as it likes; if `neighbors` never OFFERS the square, the router never
     // asks. Measured: converting only the mover moved room 587's region count not at all.
     const authoritative = collision && this.hasStepMask;
-    const dirs = authoritative ? DIRS : this.openDirections(row, col, { fine });
+    // FINE-GRID FALLBACK: when the room has wall data but no baked step mask, the coarse
+    // grid (openDirections) holds a silent veto over fine-open cells. The player moves on
+    // the fine grid (any direction, through gaps the grid calls wall), so for unbaked
+    // rooms we consider all eight directions and let fineWalkable(via wall-segment test)
+    // decide per-destination. This is much cheaper than the full BSP trace in
+    // moverStepLands (it is a point-near-segment test, not a raycast), so it is affordable
+    // in a keeper pass even without a precomputed mask.
+    //
+    // It is a PERMISSIVE widening: a step the coarse grid already allows is kept (we do
+    // not re-veto it); a step the coarse grid vetoes is reconsidered against the fine grid
+    // and kept only if the destination is actually open in the wall segments. This means
+    // a room whose coarse grid and walls agree behaves exactly as before.
+    // `fineWiden` forces the fine fallback on even in the coarse (collision: false) path.
+    // This is how exits()'s reachability flood can see past the coarse grid's silent veto
+    // into fine-open cells (pockets), WITHOUT changing the coarse path for every other
+    // caller — they simply don't pass fineWiden, and behave exactly as before.
+    const fineFallback = !authoritative && fineWiden && (this.walls?.length > 0);
+    const coarseDirs = fineFallback ? new Set(this.openDirections(row, col, { fine }).map(d => `${d.dr},${d.dc}`)) : null;
+    const dirs = authoritative || fineFallback ? DIRS : this.openDirections(row, col, { fine });
     for (const d of dirs) {
       const r = row + d.dr, c = col + d.dc;
       if (!this.inBounds(r, c)) continue;          // leaving the room is a separate act
-      if (!this.standable(r, c)) continue;
+      // A cell is walkable if EITHER grid says so. The coarse grid is
+      // the server's 1-byte-per-cell projection (what monsters use);
+      // the fine grid is the BSP wall segments (what the player's
+      // collision circle uses). For PATHFINDING we want the more
+      // permissive option: if the coarse grid says a cell is open, the
+      // server will accept a step there even if the BSP has a
+      // no-collision decoration (tree, flagpole) in it. The fine grid
+      // only blocks when the BSP actually has an impassable wall.
+      if (fineFallback) {
+        const fine = this.fineWalkable(r, c);
+        const coarse = this.standable(r, c);
+        if (fine === false && !coarse) continue;  // both say wall
+        // fine === true OR coarse === true: allow the step
+      } else {
+        if (!this.standable(r, c)) continue;             // no wall data: use coarse grid
+      }
       // AN OBSERVATION OUTRANKS A MODEL, AND THE GOAL IS EXEMPT FROM ONLY ONE OF THEM.
       // `blockedEdges` is a step we actually asked for and were actually refused, so it
       // applies everywhere including the last one — exempting the goal there is how a
@@ -2332,7 +2402,7 @@ export class RoomGeometry {
 
   path(fromRow, fromCol, toRow, toCol,
        { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
-         blockedEdges = null,
+         blockedEdges = null, extraCost = null, fineNav = false,
          // How hard to prefer the open side of a gap — see clearanceField.
          //
          // OFF BY DEFAULT, AND THAT IS THE SAFE DIRECTION. A preference that shapes a long
@@ -2430,7 +2500,14 @@ export class RoomGeometry {
     const clearanceCost = this.clearanceField({ weight: clearance });
     if (!this.inBounds(fromRow, fromCol)) return { found: false, reason: 'start is outside the room grid' };
     if (!this.inBounds(toRow, toCol)) return { found: false, reason: 'goal is outside the room grid' };
-    if (!this.standable(toRow, toCol)) return { found: false, reason: 'goal square has no floor' };
+    if (!this.standable(toRow, toCol)) {
+      // THE MOVER'S VIEW, ON REQUEST ONLY — see the note on edgeCrossingCandidates.
+      // With fineNav the BSP overrules the coarse grid for the goal square; without it
+      // the coarse grid is final, which is upstream's answer and the router's.
+      const fine = fineNav && this.walls?.length > 0 ? this.fineWalkable(toRow, toCol) : null;
+      if (!fineNav || fine === false)
+        return { found: false, reason: 'goal square has no floor' };
+    }
     if (fromRow === toRow && fromCol === toCol) return { found: true, steps: [] };
 
     // STANDING ON A SQUARE IS PROOF THAT IT IS STANDABLE, whatever the grid says.
@@ -2461,11 +2538,16 @@ export class RoomGeometry {
     // floor" and had its route start somewhere else — every walk, from a square it was
     // legitimately on.
     if (!this.standable(fromRow, fromCol)) {
-      const near = this.nearestWalkable(fromRow, fromCol);
-      if (!near) return { found: false, reason: 'no floor anywhere near the starting square', stuck: true };
-      start = near;
-      lead = { row: near.row, col: near.col, dir: null, recovered: true };
-      if (near.row === toRow && near.col === toCol) return { found: true, steps: [lead] };
+      // Fine grid is the source of truth. If the fine grid says the start
+      // is walkable, the character is fine — don't drag it to nearestWalkable.
+      const fine = fineNav && this.walls?.length > 0 ? this.fineWalkable(fromRow, fromCol) : null;
+      if (fine !== true) {
+        const near = this.nearestWalkable(fromRow, fromCol);
+        if (!near) return { found: false, reason: 'no floor anywhere near the starting square', stuck: true };
+        start = near;
+        lead = { row: near.row, col: near.col, dir: null, recovered: true };
+        if (near.row === toRow && near.col === toCol) return { found: true, steps: [lead] };
+      }
     }
     fromRow = start.row; fromCol = start.col;
 
@@ -2552,6 +2634,12 @@ export class RoomGeometry {
                    + (n.fall ? (n.distance ?? 2) : n.diagonal ? 1.4142 : 1)
                    + (threatCost ? threatCost(n.row, n.col) : 0)
                    + (clearanceCost && !atGoal ? clearanceCost(n.row, n.col) : 0)
+                   // BOTH TERMS, because they are different questions that happened to
+                   // land on the same line. `extraCost` is this checkout's caller-supplied
+                   // penalty; `clipCost` is upstream's charge for a square the coarse grid
+                   // calls unwalkable. Taking either side alone silently drops a cost the
+                   // other half of the merge depends on.
+                   + (extraCost && !atGoal ? extraCost(n.row, n.col) : 0)
                    + (clipCost && !atGoal && !this.walkable(n.row, n.col) ? clipCost : 0);
         if (cost >= (gScore.get(nk) ?? Infinity)) continue;
         gScore.set(nk, cost);
@@ -2882,7 +2970,8 @@ export class RoomGeometry {
         collisionSides = decodeCollisionWallSides(j.collision.wallSides, j.walls.length,
           collisionSectors, collisionNodes);
         collisionValid = true;
-      } catch {
+      } catch (e) {
+        if (process.env.M59_FROMJSON_DEBUG) console.error(`[fromJSON] ${j?.file}: ${e.message}`);
         // A malformed or truncated generated payload is not permission to move.
         // Keep the minimap usable and make fine movement fail closed.
       }
@@ -3007,6 +3096,23 @@ export function sharedRoomGeometry(roomOrRoo) {
   // declares nothing, which is the safe direction.
   if (g && g.roomNum == null && Number.isFinite(Number(roomOrRoo?.num))) g.roomNum = Number(roomOrRoo.num);
   return g;
+}
+
+// EAGERLY PARSE EVERY ROOM'S GEOMETRY. sharedRoomGeometry is lazy — the first access to a
+// room parses its .roo (BSP, walls, sectors) via RoomGeometry.fromJSON, which is ~tens of
+// ms per room. The route search (findPath) visits many rooms and each first access pays
+// that parse, which is the ~12s half of the cold-start stall (the other half was the
+// inferred-reverse build). Calling this at startup populates SHARED_ROOM_GEOMETRY for all
+// rooms so the first tick does no geometry parsing — the cost is paid at startup, off the
+// tick path, while the keeper is already busy. It is idempotent (the cache is checked), so
+// a room already built is untouched.
+export function buildAllRoomGeometry(map) {
+  const built = [];
+  for (const room of Object.values(map?.rooms ?? {})) {
+    if (room?.roo) built.push(room.num);
+    sharedRoomGeometry(room);
+  }
+  return built.length;
 }
 
 // The wall list — the minimap, properly. clientd3d/map.c:294 draws exactly this:

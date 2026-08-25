@@ -43,7 +43,11 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log('  FAIL ' + name + (extra ? '  ' + extra : '')); }
 };
 
-const SRC = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+// Session moved to m59-game.mjs; the mover verbs went with it. Read BOTH, because a
+// suite that greps one file for code living in the other does not fail — it matches an
+// empty haystack and passes, which is worse.
+const SRC = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8')
+          + '\n' + readFileSync(join(HERE, 'm59-game.mjs'), 'utf8');
 
 // Lifted by brace matching from its signature, so the test runs the REAL body — a
 // reimplementation here would pass forever while the broker did something else.

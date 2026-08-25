@@ -34,6 +34,7 @@ import {
   PLAYER_HEIGHT, PLAYER_RADIUS, PLAYER_WIDTH,
   heightKodToClient, DEFAULT_ROO_DIRS,
 } from './m59-roo.mjs';
+import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 
 let pass = 0, fail = 0, skipped = 0;
 const ok = (label, cond, detail = '') => {
@@ -388,7 +389,8 @@ console.log('\nstanding where the grid says there is no floor');
 // Everything above runs anywhere. This part needs the game's own room files, so it
 // SKIPS rather than fails when they are absent — a clone without M59_ROOT is not a
 // broken checkout.
-const roomsDir = DEFAULT_ROO_DIRS.find(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } });
+const roomsDir = DEFAULT_ROO_DIRS.find(d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } })
+  || (process.env.M59_ROOT ? process.env.M59_ROOT + '/resource/rooms' : null);
 console.log('\nagainst the real rooms');
 if (!roomsDir) {
   skip('every room parses', 'no resource/rooms directory on this machine');
@@ -483,6 +485,158 @@ if (!roomsDir) {
       for (const nb of g.neighbors(r, c)) { const k = `${nb.row},${nb.col}`; if (!seen.has(k)) { seen.add(k); q.push([nb.row, nb.col]); } } }
     ok('the coarse grid still strands part of the room', walkable.length - seen.size > 0,
        `${walkable.length - seen.size} of ${walkable.length} walkable squares unreachable from (8,8)`);
+  }
+}
+
+console.log('\nheight map from BSP leaves');
+if (!roomsDir) {
+  skip('floorHeightAtCell / heightMap / heightStepOk', 'no resource/rooms directory');
+} else {
+  // Flat room: every resolved cell has the same height, all steps legal.
+  const flat = parseRoo(fs.readFileSync(path.join(roomsDir, 'c4.roo')), 'c4.roo');
+  const fhm = flat.heightMap();
+  const fvals = [...new Set(fhm)].filter(v => v >= 0);
+  ok('flat room has a single floor height', fvals.length === 1, `${fvals.length} unique`);
+  // Pick two adjacent resolved cells; a step between them must be legal.
+  let flatPair = null;
+  outer: for (let r = 1; r < flat.rows; r++) for (let c = 1; c < flat.cols; c++) {
+    if (fhm[(r-1)*flat.cols + (c-1)] >= 0 && fhm[(r-1)*flat.cols + c] >= 0) { flatPair = [r, c]; break outer; }
+  }
+  if (flatPair) {
+    const [r, c] = flatPair;
+    ok('flat adjacent step is legal', flat.heightStepOk(r, c, r, c + 1) === true);
+    ok('same-cell step is legal', flat.heightStepOk(r, c, r, c) === true);
+  }
+  // Multi-level room: more than one height, and some adjacent steps are ledges (illegal).
+  const multi = parseRoo(fs.readFileSync(path.join(roomsDir, 'KA1.roo')), 'KA1.roo');
+  const mhm = multi.heightMap();
+  const mvals = [...new Set(mhm)].filter(v => v >= 0);
+  ok('multi-level room has several floor heights', mvals.length > 3, `${mvals.length} unique`);
+  let legal = 0, ledge = 0, voidPair = 0;
+  for (let r = 1; r < multi.rows; r++) for (let c = 1; c < multi.cols; c++) {
+    const a = mhm[(r-1)*multi.cols + (c-1)];
+    const b = mhm[(r-1)*multi.cols + c];
+    if (a >= 0 && b >= 0) {
+      if (multi.heightStepOk(r, c, r, c + 1)) legal++; else ledge++;
+    } else if (a >= 0 || b >= 0) voidPair++;
+  }
+  ok('multi-level room has at least one ledge between resolved neighbours', ledge > 0, `${ledge} ledges, ${legal} steps`);
+  // A void neighbour is never a legal step.
+  let voidChecked = false;
+  for (let r = 1; r < multi.rows && !voidChecked; r++) for (let c = 1; c < multi.cols; c++) {
+    const a = mhm[(r-1)*multi.cols + (c-1)], b = mhm[(r-1)*multi.cols + c];
+    if (a >= 0 && b < 0) { ok('step into a void is illegal', multi.heightStepOk(r, c, r, c + 1) === false); voidChecked = true; break; }
+  }
+}
+
+// FINE-GRID WALKABILITY + HIDDEN CELLS.
+// The coarse grid is a coarser approximation of the wall segments. A cell the coarse
+// grid calls WALL but the fine grid is open in is an asymmetric safe spot: the player
+// (fine-grid, any direction) can stand there, a monster (NSEW on the coarse grid)
+// cannot step in. hiddenCells() must return exactly those interior, reachable cells.
+{
+  const { loadRoo } = await import('./m59-roo.mjs');
+  const m59Root = process.env.M59_ROOT || '/Users/costas/Documents/Projects/Meridian59';
+  const dir = m59Root + '/resource/rooms';
+  // Valley of Ileria (d4.roo) is a multi-level room whose coarse grid is coarser than
+  // the wall segments, so it has hidden cells. Deep Woods (c4.roo) is flat and aligned.
+  const d4 = loadRoo('d4.roo', [dir]);
+  ok('fineWalkable is a function', typeof d4.fineWalkable === 'function');
+  ok('hiddenCells is a function', typeof d4.hiddenCells === 'function');
+  // A coarse-wall cell that is fine-open must be reported fineWalkable=true.
+  let foundHidden = false, foundCoarseOpen = false;
+  const hidden = d4.hiddenCells();
+  for (const [c, r] of hidden) {
+    ok(`hidden cell (${c},${r}) is coarse-wall`, d4.walkable(r, c) === false);
+    ok(`hidden cell (${c},${r}) is fine-open`, d4.fineWalkable(r, c) === true);
+    ok(`hidden cell (${c},${r}) is interior`, r > 0 && c > 0 && r < d4.rows - 1 && c < d4.cols - 1);
+    foundHidden = true;
+  }
+  // There must be at least one hidden cell in d4 (the coarse/fine mismatch is real).
+  ok('d4 has at least one hidden safe cell', hidden.length > 0, `${hidden.length}`);
+  // A coarse-walkable cell must never be in the hidden list.
+  ok('no coarse-walkable cell is hidden', hidden.every(([c, r]) => d4.walkable(r, c) === false));
+
+  // FINE-GRID FALLBACK ROUTING: when the room has wall data but no baked step mask, the
+  // coarse grid (openDirections) used to hold a silent veto over fine-open cells. With the
+  // fallback, a step the coarse grid vetoes is reconsidered against the fine grid and kept
+  // if the destination is open. Verify a route can now be planned INTO a hidden cell from
+  // a coarse-walkable neighbour (the goal-exempt path would find it anyway, but the
+  // neighbour->hidden step must be offered by the fine fallback, not the coarse grid).
+  const [hc, hr] = hidden[0];
+  // find a coarse-walkable neighbour of the hidden cell
+  let nb = null;
+  for (const [dr, dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+    const nr = hr + dr, nc = hc + dc;
+    if (d4.walkable(nr, nc) && d4.standable(nr, nc)) { nb = [nc, nr]; break; }
+  }
+  if (nb) {
+    const [bc, br] = nb;
+    // The neighbour must itself be offered a step toward the hidden cell by the fine grid.
+    // ASK FOR THE FINE FALLBACK, because it is opt-in now. Every fine tolerance moved
+    // behind `fineNav` and it defaults OFF — the router is deliberately stricter than the
+    // mover, since being generous about a road invents one. This section is named for the
+    // fallback, so it has to request it; without the flag it was asserting that the strict
+    // planner does the lenient planner's job, which it is not supposed to.
+    const p = d4.path(br, bc, hr, hc, { collision: true, fineNav: true });
+    ok(`fine-fallback routes into hidden cell (${hc},${hr})`, p.found === true, p.reason ?? 'found');
+    // GETTING IN DOES NOT IMPLY GETTING OUT, AND REQUIRING IT ASSERTS SOMETHING FALSE.
+    //
+    // This used to demand a route back and call the cell "a trap" otherwise. A cell you can
+    // enter and not leave is ordinary geometry in this game: you can run off a ledge you
+    // cannot climb. Ukgoth is the worked example — miss the declared fall-jump at 36,16 and
+    // you land on a floor 640 units below a 384 step limit, in a pocket from which the strict
+    // geometry reaches 681 squares and neither Castle Victoria nor the Cragged Mountains is
+    // among them. That is not a bug in the map or the router; it is a cliff.
+    //
+    // So the asymmetry is REPORTED rather than failed on. The thing this section is actually
+    // for — that the fine fallback offers the neighbour->hidden step the coarse grid vetoes —
+    // is the assertion above, and it still holds.
+    const p2 = d4.path(hr, hc, br, bc, { collision: true, fineNav: true });
+    console.log(`  ..   hidden cell (${hc},${hr}) is ` +
+                (p2.found ? 'two-way' : `ONE-WAY — ${p2.reason ?? 'no route back'}`));
+  }
+  // Regression: a normal route through the room body still works.
+  const pnorm = d4.path(10, 10, 20, 20, { collision: true });
+  ok('normal route still works with fine fallback', pnorm.found === true, pnorm.reason ?? 'found');
+
+  // FINE-AWARE EXIT GATE: edgeCrossingCandidates prefers coarse-walkable staging squares,
+  // but when the coarse grid vetoes every candidate (a pocket) it falls back to fine-walkable
+  // ones, and only then to everything. The key property: a fine-open but coarse-unwalkable
+  // candidate is never DROPPED when it is the only option — a filter must not delete a door.
+  if (typeof d4.edgeCrossingCandidates === 'function' && d4.walls?.length) {
+    for (const dir of ['north', 'south', 'west', 'east']) {
+      const ranges = d4.edgeCrossingRanges(dir);
+      if (!ranges.length) continue; // no crossing this way, nothing to gate
+      const cands = d4.edgeCrossingCandidates(dir);
+      ok(`${dir}: exit candidates are all in-bounds`, cands.every(c => d4.inBounds(c.row, c.col)));
+      // Every candidate the gate returns must be at least fine-walkable OR coarse-walkable
+      // (never a square that is both coarse-wall AND fine-wall — that would be a dead door).
+      const viable = cands.filter(c => d4.walkable(c.row, c.col) || d4.fineWalkable(c.row, c.col) === true);
+      ok(`${dir}: all ${cands.length} exit candidates are viable (coarse or fine)`, viable.length === cands.length, `viable=${viable.length}`);
+    }
+  }
+
+  // fineWiden: the coarse flood (collision: false) can widen into fine-open cells when asked,
+  // but NOT by default. Verify a hidden cell is reachable from a coarse neighbour WITH
+  // fineWiden but the option does not change the default coarse path for non-pocket callers.
+  { const [hc, hr] = hidden[0];
+    let nb = null;
+    for (const [dr, dc] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+      const nr = hr + dr, nc = hc + dc;
+      if (d4.walkable(nr, nc) && d4.standable(nr, nc)) { nb = [nc, nr]; break; }
+    }
+    if (nb) {
+      const [bc, br] = nb;
+      // Default coarse neighbours (no fineWiden) — record what is offered.
+      const plain = d4.neighbors(br, bc, { collision: false });
+      // fineWiden coarse neighbours — must be a SUPERSET (permissive: only adds, never removes).
+      const widened = d4.neighbors(br, bc, { collision: false, fineWiden: true });
+      const plainKeys = new Set(plain.map(n => `${n.row},${n.col}`));
+      const widenedKeys = new Set(widened.map(n => `${n.row},${n.col}`));
+      ok('fineWiden is permissive: coarse neighbours are a subset of widened neighbours',
+         [...plainKeys].every(k => widenedKeys.has(k)), `plain=${plainKeys.size} widened=${widenedKeys.size}`);
+    }
   }
 }
 

@@ -33,9 +33,26 @@ const ok = (what, cond) => { if (cond) pass++; else { fail++; console.log(`  FAI
 // BORROW THE REAL IMPLEMENTATION, NEVER A COPY — `m59-broker.mjs` cannot be imported,
 // importing it takes the fleet lock and starts rejoin timers, so the methods are lifted
 // out of the source by BRACE MATCHING.
-const src = readFileSync(process.env.M59_BROKER_SRC ? new URL('file://' + process.env.M59_BROKER_SRC) : new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+//
+// AND IT HAS TO FOLLOW THE CODE. `Session` moved to m59-game.mjs in the keeper split and
+// this file went on reading m59-broker.mjs, so every lift missed, `lift` returned
+// undefined, and the suite died at the first CALL with "Cannot read properties of
+// undefined (reading 'call')" — a hundred lines from the actual cause, with no counts
+// printed at all. Read both, newest home first.
+const SRC_FILES = process.env.M59_BROKER_SRC
+  ? [new URL('file://' + process.env.M59_BROKER_SRC)]
+  : [new URL('./m59-game.mjs', import.meta.url), new URL('./m59-broker.mjs', import.meta.url)];
+const src = SRC_FILES.map(u => { try { return readFileSync(u, 'utf8'); } catch { return ''; } }).join('\n');
 function lift(signature, name, deps = {}) {
   const start = src.indexOf('  ' + signature);
+  // A GREP THAT CANNOT FIND ITS SUBJECT MUST STOP, NOT HAND BACK A HOLE. `ok(false)` alone
+  // recorded the miss and carried on returning undefined, so the real error arrived later
+  // and somewhere else — and a suite that dies mid-run prints no totals, which reads as an
+  // infrastructure problem rather than as a broken test.
+  if (start < 0)
+    throw new Error(`lift: ${name} not found — looked for "${signature}" in ` +
+                    SRC_FILES.map(u => u.pathname.split('/').pop()).join(' + ') +
+                    '. If it moved, add its new home to SRC_FILES.');
   ok(`the ${name} method was located`, start >= 0);
   const opening = src.indexOf(') {', start);
   let depth = 0, end = -1;
@@ -115,6 +132,26 @@ function fakeSession({ at = { col: 5, row: 5 }, roomId = 587, legal = () => true
     cancelledMovement(extra) { return { cancelled: true, ...extra }; },
     threatsHere() { return null; },
     async stepFine() { return { moved: true }; },
+    // WHAT THE FINE WALKER CAN AND CANNOT DO IN THIS FIXTURE.
+    //
+    // `walkTo` delegates to `walkFine` when the coarse plan fails, so a fixture without one
+    // throws where the real walker would simply try harder — which is what made this suite
+    // error rather than fail after Session moved to m59-game.mjs.
+    //
+    // It is modelled as failing exactly where the coarse grid fails, and that is deliberate
+    // rather than lazy. `routable` is this fixture's whole model of CONNECTEDNESS; the real
+    // fine walker reads collision directly and can find lines the coarse grid cannot see,
+    // but it cannot invent a connection that does not exist. Letting it succeed from a cut
+    // off square would make the two breadcrumb cases below pass without the breadcrumbs
+    // ever running, which is the one thing this suite exists to check.
+    async walkFine(destX, destY) {
+      const here = client.self;
+      if (!here || !found(here.row, here.col))
+        return { arrived: false, steps: 0, reason: 'fine walk found no route either' };
+      const to = sq({ x: destX, y: destY });
+      client.moveTo(destX, destY);
+      return { arrived: true, steps: 1, position: { ...to, x: destX, y: destY } };
+    },
     world: { geometry: {
       walkable: () => true,
       // walkTo asks `standable` now — the BSP question rather than the server grid's.

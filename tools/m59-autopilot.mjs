@@ -21,6 +21,7 @@
 //     find itself somewhere else can find out why.
 
 import * as skills from './m59-skills.mjs';
+import * as watchdog from './m59-watchdog.mjs';
 import { OF, affordances, dropSpec as dropSpecFor,
          playerClassName, flaggedAggressor } from './m59-parse.mjs';
 import * as grudge from './m59-grudge.mjs';
@@ -312,17 +313,14 @@ const HOLD_WHILE_HURT_MAX_MS = 3 * 60_000;
 // The tick is fast because it is free: it reads `client.vitals()`, which the server
 // pushes, and writes nothing to the wire. 500ms is well inside the ~1s pace at which
 // damage can arrive, so nothing lands between two ticks unseen.
-const WATCHDOG_MS = Number(process.env.M59_WATCHDOG_MS || 500);
 // How long a pass may be inside one await before the watchdog will interrupt it. Three
 // seconds is three normal passes — long enough that an ordinary slow call is not treated
 // as a stall, short enough that a character bleeding out is not left to it.
-const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000);
 // The longest the record may go without a frame while nothing is changing. Matches the
 // keeper's own resync interval, which is the same number the deaths page uses to decide
 // whether a keeper counts as having been watching (`WATCH_MS` in m59-postmortems.mjs).
 // Deliberately the same: the thing that reports blindness and the thing that prevents it
 // should not disagree about what it is.
-const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 
 // THE POSITION PULSE — "IS THE CHARACTER MOVING", ASKED OF THE CHARACTER.
 //
@@ -344,8 +342,10 @@ const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 // status, writes one frame, and counts. The debugging this exists for — "the board said
 // travelling and nobody moved" — needs a record, not another actor. The handbrake below
 // is the thing that acts, and it acts on health, which is a different question.
-const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
-// SIX SAMPLES, AND THE MOVEMENT TESTS STILL ONLY READ THREE OF THEM.
+// Two samples, one second apart, per the shape of the question: has it moved since last
+// time, and the time before that. A third would only delay the alert.
+
+// RESTING AT A WALL PART-WAY THROUGH A JOURNEY — 'ab' | 'observe' | 'off'.
 //
 // Two questions share this ring and they want different windows. "Has it moved since last
 // time, and the time before that" is answered by three samples and a fourth would only
@@ -665,6 +665,48 @@ export const CONTINUE = Symbol('pass:continue');
 // in danger or hurt, then whoever else is driving, then an errand, then the actual job.
 // `m59-passorder-test.mjs` pins this array and the short-circuit — see the note there
 // about what to do when the order genuinely needs to change.
+// THE WATCHDOG'S THREE NUMBERS. See startWatchdog() for what it is for.
+//
+// The tick is fast because it is free: it reads `client.vitals()`, which the server
+// pushes, and writes nothing to the wire. 500ms is well inside the ~1s pace at which
+// damage can arrive, so nothing lands between two ticks unseen.
+const WATCHDOG_MS = Number(process.env.M59_WATCHDOG_MS || 500);
+// How long a pass may be inside one await before the watchdog will interrupt it. Three
+// seconds is three normal passes — long enough that an ordinary slow call is not treated
+// as a stall, short enough that a character bleeding out is not left to it.
+const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000);
+// The longest the record may go without a frame while nothing is changing. Matches the
+// keeper's own resync interval, which is the same number the deaths page uses to decide
+// whether a keeper counts as having been watching (`WATCH_MS` in m59-postmortems.mjs).
+// Deliberately the same: the thing that reports blindness and the thing that prevents it
+// should not disagree about what it is.
+const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
+
+// THE POSITION PULSE — "IS THE CHARACTER MOVING", ASKED OF THE CHARACTER.
+//
+// Every stall number this repository already has measures the KEEPER. `ms_since_moved` is
+// when the keeper last moved somebody, so it climbs while an errand walks the character
+// perfectly well — which is exactly how a post-mortem came to read `doing: "stalled", 8
+// minutes since it last moved` about a character the frames put in three different rooms.
+// Read naively it manufactures stalls that are not there, and it is silent about the one
+// that is: a character wedged in a pocket is *frantically busy*, replanning, and the
+// keeper is moving it constantly — at the same two squares, forever.
+//
+// So: sample the POSITION on a clock, independently of the pass. Two consecutive samples
+// a second apart at the same square, while the character is supposed to be going
+// somewhere, is a stall in the only sense that matters — the body is not moving. It costs
+// nothing: `client.self` is already maintained from pushed packets, so this reads memory
+// and writes nothing to the wire, and it is exactly what a person watching the screen sees.
+//
+// It DECIDES NOTHING and interrupts nothing. It is an instrument: it raises `!` on the
+// status, writes one frame, and counts. The debugging this exists for — "the board said
+// travelling and nobody moved" — needs a record, not another actor. The handbrake below
+// is the thing that acts, and it acts on health, which is a different question.
+const PULSE_MS = Number(process.env.M59_PULSE_MS || 1_000);
+// SIX SAMPLES, AND THE MOVEMENT TESTS STILL ONLY READ THREE OF THEM.
+//
+// Two questions share this ring and they want different windows. "Has it moved since last
+
 export const PASS_STAGES = [
   'passUnderworld',
   'passArm',
@@ -861,6 +903,8 @@ const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 // holding out for it idles the character for ever — so an empty larder drops it to what
 // resting alone can actually deliver. This is a SUPPLY failure and is counted as one.
 const STARVED_FIGHT_VIGOR = 70;
+// The game's own ceiling: `eat` refuses anything that would carry vigor past it.
+const VIGOR_CAP = 200;
 
 // WHERE THE MONEY GOES. Jasper and Tos share one banking system, so either counter
 // pays into the same balance and the only question is which is nearer — which really
@@ -957,7 +1001,7 @@ export function townDestinations({ needsCashFirst = false, supplyTrip = false, s
   return BANKS;
 }
 
-export const MODES = ['survive', 'farm', 'idle'];
+export const MODES = ['survive', 'farm', 'idle', 'tick'];
 
 // Farming patterns, as a table rather than scattered conditionals, so that adding a
 // sixth is a row and so that the differences between them are readable side by side.
@@ -1046,6 +1090,27 @@ export function applyFightAboveVigor(policy, value) {
   policy.fightAboveVigor = threshold;
   policy.vigorFloor = threshold;
   return policy;
+}
+
+// A FLOOR THE CHARACTER CANNOT REACH IS NOT A THRESHOLD, IT IS A DEADLOCK.
+//
+// Resting stops awarding vigor at REST_VIGOR_CAP of the bar — 80 of 200 — and everything
+// above that has to be EATEN. So a fighting floor above `rest cap + what is in the pack` is
+// a number no action available to the keeper can satisfy, and holding out for it idles the
+// character for ever.
+//
+// `fightFloor` already had an escape hatch for this and it was BINARY: empty larder, drop to
+// the starved floor. That misses the case the operator hit — the larder is not empty, it is
+// just too small. Baseline floor 140, one mushroom worth 50, resting caps at 80: 130 is
+// everything the character can reach and the hatch never fires because the pack is not bare.
+// It sat there repeating "too tired to start a fight" against a number it could not make.
+//
+// Returns what is actually reachable, never raising a floor that was already low enough.
+// The cap scales with the bar rather than assuming 200, because the same arithmetic has to
+// hold for a character whose maximum is not 200.
+export function reachableFightFloor(floor, maxVigor = 200, foodVigor = 0) {
+  const restCeiling = REST_VIGOR_CAP * maxVigor;
+  return Math.min(floor, restCeiling + Math.max(0, Number(foodVigor) || 0));
 }
 
 export class Autopilot {
@@ -1547,11 +1612,19 @@ export class Autopilot {
     // out for it would idle the character for ever. Fall back to what resting can
     // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
     // and it should show up as a supply number rather than as a quiet slowdown.
-    if (!this.larder(this.s.client).length) {
+    const larder = this.larder(this.s.client);
+    if (!larder.length) {
       this.vigor.starved_passes++;
       return Math.min(want, STARVED_FIGHT_VIGOR);
     }
-    return want;
+    // A LARDER THAT IS NOT EMPTY CAN STILL BE TOO SMALL. See reachableFightFloor: resting
+    // stops at 80 and the rest has to be eaten, so one mushroom against a floor of 140 is
+    // still a floor nothing can reach. Counted the same way, because it is the same fact
+    // about supply rather than a fighting decision.
+    const carried = larder.reduce((n, item) => n + (Number(item?.nutrition) || 0), 0);
+    const reachable = reachableFightFloor(want, VIGOR_CAP, carried);
+    if (reachable < want) this.vigor.starved_passes++;
+    return reachable;
   }
 
   // TELL THE REST OF THE FLEET WHAT WE ARE SHORT OF AND WHAT WE CAN SPARE.
@@ -2065,25 +2138,9 @@ export class Autopilot {
     return false;
   }
 
-  safety() {
-    const v = this.s.client?.vitals?.();
-    const max = v?.health?.max ?? 0;
-    if (!max) return { fleeAt: this.policy.fleeBelow, engageAt: 0.85, maxHit: null };
-    const maxHit = Math.min(30, Math.floor((max + 2) / 3));
-    // Two hits of margin, not three. (base+2)/3 is the CAP on a single blow rather
-    // than what a giant rat typically lands, so budgeting three of them leaves so
-    // little of the bar to fight in that the character spends its life healing.
-    // Two is the number that survives the realistic bad case — one hit landing as
-    // the withdraw begins, and one more before it is out of reach — while still
-    // leaving a usable window to actually fight in.
-    const fleeAt = Math.max(this.policy.fleeBelow, Math.min(0.7, (2 * maxHit) / max));
-    return {
-      maxHit, fleeAt,
-      // Do not start a fight that cannot be finished. Below this, heal or rest
-      // first — going in at half health is how a survivable creature kills you.
-      engageAt: max < 30 ? 0.9 : 0.75,
-    };
-  }
+  // The arithmetic moved to skills.safetyFor(client, policy) so the GOAP keeper's
+  // watchdog reads the same withdraw line this one does. A move, not a fix.
+  safety() { return skills.safetyFor(this.s.client, this.policy); }
 
   // ------------------------------------------------------------- safe spots
   //
@@ -2153,14 +2210,6 @@ export class Autopilot {
   // cannot answer is treated as ARMED, because refusing to fight on a failed read would
   // idle the whole fleet the first time an inventory request timed out — the guard is
   // meant to catch the empty hand, not to become a new way to stop.
-  armed() {
-    const c = this.s.client;
-    const eq = c?.equipment?.();
-    if (!eq || eq.known === false) return true;
-    return (eq.equipped || []).some(o =>
-      skills.weaponScore(o.name ?? c.rsc?.get?.(o.nameRsc) ?? '') > 0);
-  }
-
   // THE SAME QUESTION, FAILING THE OTHER WAY.
   //
   // armed() treats "cannot answer" as armed, and that is right where it is used: a
@@ -6215,6 +6264,28 @@ export class Autopilot {
       const stamp = new Date(record.at).toISOString().replace(/[:.]/g, '-');
       const file = `${POSTMORTEM_DIR}/${who}-${stamp}.json`;
       writeFileSync(file, JSON.stringify(record, null, 2));
+      // Also append a one-line summary to a single death log for easy grepping.
+      try {
+        const logLine = {
+          character: record.character ?? record.agent ?? 'unknown',
+          agent: record.agent ?? null,
+          at: new Date(record.at).toISOString(),
+          reason: record.reason ?? 'died',
+          room: record.where?.room ?? null,
+          room_num: record.where?.num ?? null,
+          col: record.where?.col ?? null,
+          row: record.where?.row ?? null,
+          level: record.vitals?.level ?? null,
+          last_health: record.vitals?.last_health ?? null,
+          was_doing: record.was?.doing ?? null,
+          hunting: record.was?.hunting ?? null,
+          in_safe_spot: record.was?.in_safe_spot ?? false,
+          nearby_threats: record.threats?.present_at_the_end ?? [],
+          players_present: record.threats?.players_present ?? [],
+        };
+        const { appendFileSync } = require('node:fs');
+        appendFileSync(POSTMORTEM_DIR + '/../deaths.jsonl', JSON.stringify(logLine) + '\n');
+      } catch { /* non-fatal */ }
       return file;
     } catch (e) {
       // A failed write must not take the keeper down on the one pass where it is
@@ -7240,6 +7311,11 @@ export class Autopilot {
       // disagree with a specific one. Discards are here too and are the interesting
       // half: a window wrongly thrown away is how this would be quietly broken.
       trials: this.trials.slice(-12),
+      // THE GOAP PLAN, if this character is running the GOAP keeper.
+      // A visible plan is the only plan you can argue with: what goal
+      // it's chasing, the chain of actions it found, and the world
+      // state it saw when it planned. Null when not on GOAP.
+      goap: this._goapKeeper?.state() ?? null,
       ...(full ? { journal: this.journal, all_trials: this.trials } : {}),
     };
   }
@@ -8082,6 +8158,29 @@ export class Autopilot {
   // ordinary pass — which already knows how to flee, rest and find a wall — does the rest.
   // A second decision-maker running concurrently with the first is how you get two
   // keepers arguing over one body.
+  // ── THE WATCHDOG ────────────────────────────────────────────────────────
+  // The guard itself now lives in m59-watchdog.mjs, over a HOST rather than a keeper,
+  // so the GOAP keeper can run the same one instead of going without. These four are
+  // thin delegations on purpose: `this` already satisfies the host interface (s, watch,
+  // inert, hold, doing, passes, passStartedAt, lastFrameAt, tally, safety, recordFrame,
+  // note, progress), and keeping the method NAMES here means every existing caller and
+  // m59-combat-test's direct ticks carry on untouched.
+  // THE HOOKS THE WATCHDOG'S INERT RESCUE ASKS FOR. Optional by design -- the tick driver
+  // supplies none of them and still gets the cancel -- but this keeper can do all three,
+  // and the reason they exist is that reviving alone was measured to be worse than the
+  // stall: the destination went with the driver, the ordinary ladder had nothing to offer
+  // in a bad room, and the character stood there until it died.
+  suspendJourney(trigger) {
+    const journey = this.travelling;
+    if (journey?.to == null) return false;
+    this.suspendedJourney = {
+      to: journey.to, why: journey.why ?? 'travelling', at: Date.now(), trigger,
+      attempts: (journey.attempts ?? 0) + 1, deaths_at: this.tally?.deaths ?? 0,
+    };
+    return true;
+  }
+  wantForwardShelter(why) { this.wantsForwardShelter = why; }
+
   startWatchdog() {
     if (this.watchTimer) return;
     this.watch = { ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
@@ -8581,6 +8680,65 @@ export class Autopilot {
     // loadout-driven policy fields) are live on the first pass after a restart.
     this.applyLoadoutPolicyOverlay();
     // ------------------------------------------------------------------
+    // GOAP KEEPER (opt-in via policy.useGOAP)
+    //
+    // When policy.useGOAP is true, hand control to the GOAP planner for this
+    // pass. The planner reads the world state, plans toward the goal, and
+    // executes one step. The next pass() re-plans from the new world state.
+    //
+    // The safety ladder (Underworld, arming) still runs first: the GOAP
+    // planner cannot plan a character out of the Underworld or into a
+    // weapon, because those are preconditions, not goals.
+    // ------------------------------------------------------------------
+    if (this.policy && this.policy.useGOAP === true) {
+      const room = s.world?.room ?? c?.room;
+      // Underworld: check the CLIENT's room first. The broker's s.world.room
+      // can be stale (it lags behind room changes), so the client's wire
+      // object is the source of truth. The client reports id: 6 for the
+      // Underworld, and roomNameRsc resolves to "The Underworld".
+      const clientRoomName = c?.roomNameRsc ? (c.rsc?.get?.(c.roomNameRsc) ?? '') : '';
+      const clientRoomId = c?.room?.id;
+      const isUnderworld = /underworld/i.test(clientRoomName) || clientRoomId === 6;
+
+      if (c && typeof c.armed === 'function' && !c.armed() && !isUnderworld) {
+        const r = await this.passArm({ s, c, room, v: c.vitals?.() ?? {} });
+        if (r) return;
+      }
+
+      if (!this._goapKeeper) {
+        const { GOAPKeeper } = await import('./m59-keeper-goap.mjs');
+        this._goapKeeper = new GOAPKeeper({
+          client: c,
+          session: s,  // the broker session (has the pacer), not the autopilot
+          policy: this.policy,
+          goal: this.policy.goapGoal ?? 'vigor_ok',
+          note: (msg, data) => this.note(msg, data),
+        });
+      }
+      // Override in_underworld when the broker's room tracking says
+      // Underworld but the client's room is stale (e.g. right after
+      // a reconnect). The GOAP keeper's goal stack picks !in_underworld
+      // and plans the escape_underworld atomic.
+      const wsOverride = isUnderworld ? { in_underworld: true } : null;
+      let r;
+      try {
+        // Attach the autopilot to the broker session so atomics can
+        // call session.ap.fight() etc. The broker session itself has
+        // no fight method — that lives on the autopilot.
+        s.ap = this;
+        r = await this._goapKeeper.pass(wsOverride);
+      } catch (e) {
+        console.error(`[goap-debug] ${this.name ?? '?'} GOAP pass threw: ${e?.message ?? e}\n${e?.stack?.split('\n').slice(0, 5).join('\n')}`);
+        return;
+      }
+      if (r.acted) { this.progress('goap: ' + r.action); return; }
+      // No plan: the GOAP planner could not find a way to reach the goal.
+      // This is an answer, not a failure: something the plan needs is
+      // absent (no food, no reagents, no merchant in the room). The
+      // character falls through to the legacy path, which handles
+      // farming, provisioning, and the rest of the lifecycle.
+    }
+    // ------------------------------------------------------------------
     // BEHAVIOR-TREE GET-ARMED SUBTREE (opt-in via policy.useBT)
     //
     // When policy.useBT is true and the character is NOT yet wielding a weapon at
@@ -8870,7 +9028,10 @@ export class Autopilot {
     const { s, c, room, v } = ctx;
     // 1. Dead. The Underworld has no graph exits, so a character left there stays
     //    there forever unless something walks it onto a portal.
-    if (room && /underworld/i.test(room.name)) {
+    // Check both the map room (nameRsc) and the client room (name, num).
+    const roomName = room?.name ?? c?.room?.name ?? '';
+    const roomNum  = room?.num  ?? c?.room?.num  ?? room?.objId;
+    if (/underworld/i.test(roomName) || roomNum === 6) {
       this.tally.deaths++;
       this.deathsThisRun = (this.deathsThisRun || 0) + 1;
       // WHAT THE PURSE WAS WORTH WHEN IT HIT THE FLOOR. Recorded from the last frame
@@ -9147,7 +9308,27 @@ export class Autopilot {
       // unrecoverable one. The room is in the post-mortem we just wrote, which is
       // deliberately taken before the Underworld overwrites the frames.
       const diedIn = this.lastPostMortem?.where?.num ?? null;
-      const e = await skills.escapeUnderworld(s, { maxSeconds: 120, nearestTo: diedIn });
+      let e = await skills.escapeUnderworld(s, { maxSeconds: 60, nearestTo: diedIn });
+      console.error(`[autopilot] ${this.policy?.agent ?? '?'} escapeUnderworld result: left=${e.left} reason=${e.reason ?? 'none'} tried=${JSON.stringify(e.tried ?? [])}`);
+      // If the legacy escape failed with a pathfinding error, try a
+      // direct walk to the nearest portal, bypassing the pathfinder.
+      if (!e.left) {
+        const pathFail = (e.tried ?? []).some(t => /kept ending up|never got onto/.test(t.why ?? ''));
+        if (pathFail) {
+          try {
+            const { directWalkToPortal } = await import('./m59-act/escape-underworld.mjs');
+            const direct = await directWalkToPortal(c, s);
+            if (direct.left) {
+              e = { left: true, arrived_in: direct.arrived_in, via: direct.via };
+              console.error(`[autopilot] ${this.policy?.agent ?? '?'} DIRECT WALK SUCCEEDED: ${direct.via} -> ${direct.arrived_in}`);
+            } else {
+              console.error(`[autopilot] ${this.policy?.agent ?? '?'} direct walk failed: ${direct.reason}`);
+            }
+          } catch (de) {
+            console.error(`[autopilot] ${this.policy?.agent ?? '?'} direct walk threw: ${de.message}`);
+          }
+        }
+      }
       if (e.left) {
         this.reportedDeath = false;
         this.tally.rooms_moved++;
@@ -9846,9 +10027,9 @@ export class Autopilot {
     //
     // Ahead of the danger and rest branches on purpose: being unarmed is WHY the fight
     // is going badly, and the shortest way out is to be holding something.
-    if (!this.armed()) {
+    if (!skills.isArmed(this.s.client)) {
       const ok = await this.armSelf().catch(() => false);
-      if (ok && this.armed()) { this.progress('armed itself'); return HANDLED; }
+      if (ok && skills.isArmed(this.s.client)) { this.progress('armed itself'); return HANDLED; }
       // makeWeapon refreshes the spell list before reporting failure when mana is
       // sufficient. Below 15 mana it cannot do that, so refresh once in sanctuary
       // before deciding whether mana recovery can ever produce a weapon.
@@ -10447,7 +10628,7 @@ export class Autopilot {
     // and 15 mana, against a character that otherwise farms nothing until someone
     // notices. See armed() for why the server's own use list is the only acceptable
     // evidence here.
-    const unarmed = !this.armed();
+    const unarmed = !skills.isArmed(this.s.client);
     const wantsToFight = this.mode === 'farm' && !!this.policy.hunt && !recovering && !unarmed;
     const restAt = Math.max(
       this.policy.restBelow,

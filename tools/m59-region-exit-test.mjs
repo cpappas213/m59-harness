@@ -150,5 +150,44 @@ function harness() {
   ok('no old-room coordinates are sent after that transition', secondTried === false);
 }
 
+// The exits() cache: repeated calls from the same origin return the cached result
+// (the flood fills are the expensive part and were the cold-start stall); a different
+// origin recomputes; and the cached result is correct (matches an uncached compute).
+{
+  const map = JSON.parse(readFileSync(new URL('../substrate/m59-map.json', import.meta.url), 'utf8'));
+  const room = map.rooms['587'];
+  const makeClient = (row, col) => ({
+    roomNameRsc: room.nameRsc,
+    roomRsc: room.roomRsc,
+    room: { id: room.objId, objects: new Map() },
+    self: { row, col },
+    rsc: { get: () => '?' },
+  });
+  const world = new World(makeClient(45, 6), map);
+  const first = world.exits();
+  ok('exits() returns a result', Array.isArray(first) && first.length > 0, `len=${first?.length}`);
+  // Same origin, same world: the second call is the cached object (reference-identical).
+  const second = world.exits();
+  ok('same origin returns the cached result', second === first);
+  // A different origin (the character moved) recomputes: a fresh array, possibly different
+  // stand_on squares, but still a valid exits list.
+  world.c.self = { row: 20, col: 30 };
+  const third = world.exits();
+  ok('a different origin recomputes (not the same cached object)', third !== first);
+  ok('the recomputed result is still a valid exits list', Array.isArray(third) && third.length > 0);
+  // Correctness: the cached result and a fresh compute from the same origin agree.
+  world.c.self = { row: 45, col: 6 };
+  world._exitCache = null;  // clear to force a fresh compute
+  const fresh = world.exits();
+  ok('a fresh compute from the same origin matches the cached answer (same exits)',
+     JSON.stringify(fresh.map(e => ({ to: e.to, kind: e.kind }))) ===
+     JSON.stringify(first.map(e => ({ to: e.to, kind: e.kind }))),
+     `fresh=${fresh?.length} cached=${first?.length}`);
+  // The cache is bounded: more distinct origins than the cap evict the oldest without error.
+  for (let i = 0; i < 30; i++) { world.c.self = { row: (i % 30) + 1, col: (i % 40) + 1 }; world.exits(); }
+  ok('the origin cache is bounded (no unbounded growth)', world._exitCache.size <= 24,
+     `size=${world._exitCache.size}`);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exitCode = fail ? 1 : 0;
