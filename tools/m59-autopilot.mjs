@@ -3603,9 +3603,19 @@ export class Autopilot {
         : 'fled more than twice with neither the vigor nor the food to fight — the ' +
           'wilderness cannot fix that, and a town can: resting is safe there and the ' +
           'counters sell bread, which is the only way past the resting cap of 80' });
-    const t = await this.travel(best.room, { maxHops: 6 }).catch(e => ({ arrived: false, reason: e.message }));
-    this.fledInARow = 0;
+    const t = await this.guardedRetreatTravel(best.room, { maxHops: 6 })
+      .catch(e => ({ arrived: false, reason: e.message }));
+    if (t.cancelled) {
+      this.retreatCancelledPass = this.passes;
+      this.note('refuge journey was cancelled — leaving the next move to a fresh pass', {
+        to_room: best.room, reason: t.reason ?? null,
+        why: 'a player or operator cancellation outranks this stale recovery call; it must ' +
+             'not arm a second journey before the ordinary ladder observes the new state',
+      });
+      return false;
+    }
     if (!t.arrived) { this.noProgress('could not reach town: ' + (t.reason || 'refused')); return false; }
+    this.fledInARow = 0;
     this.progress(best.preferred ? 'reached a monster-free retreat' : 'reached town to resupply');
     await this.hibernate(best.preferred
       ? 'resting outside Castle Victoria after being driven out'
@@ -8771,6 +8781,33 @@ export class Autopilot {
     // 2. THE HANDBRAKE.
     const blockedFor = this.passStartedAt ? now - this.passStartedAt : 0;
     if (blockedFor > w.longest_block_ms) w.longest_block_ms = blockedFor;
+    // guardedRetreatTravel owns cancellation while a monster-driven refuge route is
+    // making progress. Keep recording frames/pulses above, but do not let elapsed pass
+    // time cancel the survival response itself. A nearby player remains the explicit
+    // exception: player danger is allowed to end a journey and must be reconsidered by
+    // the ordinary ladder immediately.
+    if (this.emergencyRetreat) {
+      let playerThreat = false;
+      try { playerThreat = (this.strangersInReach?.() ?? []).length > 0; } catch { /* observe only */ }
+      if (playerThreat) {
+        this.emergencyRetreat.cancellationKind = 'player';
+        this.emergencyRetreat.active = false;
+        if (!this.emergencyRetreat.playerCancelIssued) {
+          this.emergencyRetreat.playerCancelIssued = true;
+          const stopped = (() => {
+            try {
+              return s.cancelMovement(null, 'a nearby player ended the guarded retreat');
+            } catch (e) { return { cancelled: false, why: e.message }; }
+          })();
+          this.note('nearby player ended the guarded retreat', {
+            interrupted: stopped.interrupted ?? null,
+            why: 'player danger may end a journey immediately; health and elapsed pass ' +
+                 'time do not make the stale monster-recovery route authoritative',
+          });
+        }
+        return;
+      } else if (this.emergencyRetreat.active) return;
+    }
     if (blockedFor < WATCHDOG_BLOCKED_MS) return;
     w.blockedSince ??= this.passStartedAt;
 
@@ -10344,6 +10381,12 @@ export class Autopilot {
       // no meeting.
       if (!this.sanctuary()) {
         const went = await this.townTripIfCornered().catch(() => false);
+        if (this.retreatCancelledPass === this.passes) {
+          this.note('unarmed refuge movement was cancelled — waiting for a fresh pass', {
+            why: 'do not replace a player or operator cancellation with a settle, nudge or second walk',
+          });
+          return HANDLED;
+        }
         this.note('unarmed and in a room that spawns — leaving to regain mana', {
           mana: this.s.client?.vitals?.()?.mana?.value ?? null,
           needs: 15, went_to_town: !!went,
@@ -10726,7 +10769,14 @@ export class Autopilot {
           why: 'a freeze recovers no health and leaves us exactly where we were, in reach ' +
                'of everything that put us here. Only distance changes this fight' });
         this.doing = 'travelling';
-        if (await this.townTripIfCornered().catch(() => false)) return HANDLED;
+        const went = await this.townTripIfCornered().catch(() => false);
+        if (went) return HANDLED;
+        if (this.retreatCancelledPass === this.passes) {
+          this.note('open-field refuge movement was cancelled — waiting for a fresh pass', {
+            why: 'do not replace a player or operator cancellation with a wall or second walk',
+          });
+          return HANDLED;
+        }
 
         // AND WHEN THERE IS NO TOWN TO RUN TO, IT STILL DOES NOT FREEZE. REVERSED
         // 2026-08-21, by measurement, and the history is kept because it is the argument.
@@ -11014,6 +11064,12 @@ export class Autopilot {
     // exhausted characters walking instead of resting.
     const vigorNow2 = vigorOf(v);
     const restCeiling = REST_VIGOR_CAP * skills.VIGOR_MAX;      // 0.4 * 200 = 80
+    if (this.retreatCancelledPass === this.passes) {
+      this.note('recovery movement was cancelled — waiting for a fresh pass', {
+        why: 'the room, players and health must be observed again before any replacement route',
+      });
+      return HANDLED;
+    }
     if (hurt && combatZone && !sheltered && !testing && !this.hold &&
         vigorNow2 != null && vigorNow2 > restCeiling) {
       this.note('not waiting this out — moving to somewhere I can heal', {
@@ -11114,35 +11170,14 @@ export class Autopilot {
           room: s.world?.room?.num ?? null, via: 'leave-to-recover',
         });
       }
-      const out = ways.sort((a, b) => (a.steps_away ?? 999) - (b.steps_away ?? 999))[0];
-      this.note('leaving the room to recover safely', {
+      this.note('running to a refuge to recover safely', {
         health: hp === null ? null : Math.round(hp * 100) + '%', vigor: vigorNow2,
-        monsters_in_room: hostiles.length, leaving_via: out?.to_name ?? 'nothing reachable',
+        monsters_in_room: hostiles.length,
         retreat_below: Math.round(this.policy.restBelow * 100) + '%',
         why: 'health is below the configured recovery line and there is no proven wall here. ' +
-             'Resting where a monster can reach us is unsafe; vigor alone never triggers this trip',
-        then: 'recover health outside the monster room, then return' });
-      // TRY EVERY WAY OUT, AND THEN STOP BEING SURROUNDED.
-      //
-      // THIS IS WHAT IS KILLING THE FLEET. Of 37 deaths since the reach model went in,
-      // 33 decided to leave and 13 recorded "could not leave" — and every single death
-      // was slow attrition: median -0.03 health per second, nothing worse than -0.22.
-      // Nobody was killed in a fight. They chose correctly, failed to get out, and then
-      // bled to death over minutes at 10-12 attackers, standing exactly where they were.
-      //
-      // Two things were wrong here and both are one-liners:
-      //
-      //   ONE EXIT. This picked the nearest and tried it once, so the boundary-wide
-      //   candidates from world.exits() were never used. leaveViaAny walks the whole
-      //   wall and every other exit besides.
-      //
-      //   NO FALLBACK. When the walk out failed it gave up and returned, and the pass
-      //   ended with the character still standing in the room. But a walk failing while
-      //   surrounded is the EXPECTED case — that is what being surrounded does — and
-      //   there is already a tool for it: a reconnect hands back the entry grace period,
-      //   so we come back with about one of them aware of us instead of twelve. It was
-      //   only ever wired to stepping off a safe spot, which is the same problem in a
-      //   politer setting.
+             'Resting where a monster can reach us is unsafe; an arbitrary adjacent room can ' +
+             'spawn the same monsters and send us straight back here',
+        then: 'keep one guarded route aimed at a real refuge, recover there, then return' });
       // A CONFINED CHARACTER WITH NO PERMITTED EXIT TAKES A WALL, IT DOES NOT STAND THERE.
       //
       // The operator's rule, and it is a better one than "leave the room": a genuine safe
@@ -11151,11 +11186,9 @@ export class Autopilot {
       // walking is only the answer when there is no wall to be had. So when the
       // confinement closes every exit, the fallback is the spot, not the bleeding.
       //
-      // This is also where my own first patch was wrong and would have leaked: `tryOut`
-      // below falls back to `s.world.exits()` — EVERY exit — whenever `ways` is empty, so
-      // filtering the list down to nothing did not close the door, it opened all of them.
-      // Both the primary list and that fallback have to be filtered, which is why the
-      // confinement is applied inside `tryOut` rather than only to `ways`.
+      // The immediate exits are inspected only to enforce that special case. Unconfined
+      // recovery no longer chooses among them; it keeps one refuge objective across every
+      // intermediate room, and guardedRetreatTravel checks every hop when confined.
       if (confineOut?.length && !ways.length) {
         const took = await this.takeSafeSpot(
           'confined to this room and hurt — a wall is the way to rest here', null,
@@ -11172,58 +11205,82 @@ export class Autopilot {
       }
 
       const tryOut = async () => {
-        let cands = ways.length ? ways : (s.world?.exits() || []).filter(e => e.to != null);
-        // The fallback above is the whole-room exit list, so re-apply the confinement to it.
-        if (confineOut?.length)
-          cands = cands.filter(e => confineOut.map(Number).includes(Number(e.to)));
-        if (!cands.length) return { left: false, reason: 'no exit from this room at all' };
-        return await s.leaveViaAny(cands).catch(e => ({ left: false, reason: e.message }));
+        // DO NOT LET EACH HOSTILE ROOM CHOOSE THE OTHER ONE AS ITS NEAREST EXIT.
+        //
+        // That made a perfectly deterministic 562 -> 552 -> 562 loop: leaving either
+        // room succeeded, so every individual pass looked healthy, but neither landing
+        // was a place where resting was safe. Aim the first movement at the refuge and
+        // keep that destination through every intermediate room instead.
+        const retreat = await this.retreatToSafety(
+          {
+            because: 'health is below the recovery line in a room that cannot be rested in',
+            health: hp, vigor: vigorNow2, monsters_in_room: hostiles.length,
+          },
+          // Low vigor made the old one-room escape attractive for a reason. Keep the
+          // replacement bounded while admitting the 4-hop Brownestone route from 552.
+          { maxHops: 6 },
+        ).catch(e => ({ arrived: false, reason: e.message }));
+        return {
+          left: !!retreat?.arrived,
+          reason: retreat?.reason || retreat?.why ||
+                  (retreat?.fell_back ? 'the refuge route failed and recovery fell back to a local wall'
+                                          : 'could not reach a refuge'),
+          retreat,
+        };
       };
       const gotOut = async (r) => {
         this.tally.fled_rooms = (this.tally.fled_rooms || 0) + 1;
-        this.fledInARow = (this.fledInARow || 0) + 1;
-        await skills.restUntil(s, { health: 0.95, vigor: REST_VIGOR_CAP, maxSeconds: 90 })
-                    .catch(() => {});
-        await this.cookSomething('got out of a bad room and need food before going back')
-                  .catch(() => {});
-        this.progress('left a room I could neither fight nor rest in');
-        // FLEEING TWICE IS A SUPPLY PROBLEM WEARING A TACTICS PROBLEM'S CLOTHES.
-        //
-        // Leaving one bad room is a decision. Leaving three is a character that cannot
-        // fight anywhere, and walking to a fourth wilderness room will not change that.
-        // Animal proved it: 168 flees and 2 kills, because the supervisor graduates a
-        // pair with fight_above_vigor 180 and a character at the resting cap of 80 can
-        // never meet it — so it refused every fight, fled every room, earned nothing,
-        // and therefore never got the food that would have let it fight. The loop is
-        // closed and nothing inside the wilderness opens it.
-        //
-        // Town does open it: it is a sanctuary, so resting is legal and safe, and it
-        // has counters that sell bread — which is the only route past 80 vigor.
-        //
-        // The exemption is for a character that is merely having a bad room: plenty of
-        // vigor and food in the pack means the fleeing is tactical, not structural, and
-        // sending it to town would be throwing away a working session.
-        await this.townTripIfCornered().catch(() => {});
+        // retreatToSafety clears the consecutive-flee counter only after it reaches a
+        // stable refuge. Do not increment it again here, and do not start a second town
+        // journey from inside the completed one. The next ordinary pass owns resting,
+        // eating and returning, with the current room freshly observed.
+        this.progress('reached a refuge from a room I could neither fight nor rest in');
         return r;
+      };
+      const retreatEndedPass = (r) => {
+        const cancelledByOwner = r.retreat?.cancelled_for_player ||
+          r.retreat?.cancelled_externally ||
+          ['player', 'external'].includes(r.retreat?.cancellation_kind);
+        if (r.retreat?.cancelled && (!r.retreat?.retreat_guard || cancelledByOwner)) {
+          this.retreatCancelledPass = this.passes;
+          this.note('refuge movement was cancelled — not re-arming it in this pass', {
+            why: r.reason,
+            next: 'observe players, health and position again on the next pass',
+          });
+          return true;
+        }
+        // retreatToSafety already took the best local wall after its route guard failed.
+        // Reconnecting here would throw that fallback away and wake the crowd again.
+        if (r.retreat?.fell_back) {
+          this.note('the refuge route failed — keeping the local survival fallback', {
+            why: r.reason,
+            next: 'the next pass observes the wall and retries recovery with fresh state',
+          });
+          return true;
+        }
+        return false;
       };
 
       let r = await tryOut();
       if (r.left) { await gotOut(r); return HANDLED; }
-      this.note('could not leave', { why: r.reason, tried: r.tried?.length ?? 1,
-        next: 'reconnecting to shed the crowd, then trying again' });
+      if (retreatEndedPass(r)) return HANDLED;
+      this.note('could not reach a refuge', { why: r.reason,
+        next: 'reconnecting to shed the crowd, then trying the same refuge again' });
 
-      // Being unable to walk out IS the crowd. Reset it and try once more.
-      const broke = await this.breakOut('cannot walk out of a room that is killing us')
+      // Being unable to set out can still be the crowd. Reset it and retry the SAME
+      // destination; never turn the reconnect into permission to choose a local bounce.
+      const broke = await this.breakOut('cannot set out for a refuge from a room that is killing us')
                               .catch(() => ({ did: false }));
       if (broke.did) {
         r = await tryOut();
         if (r.left) {
-          this.note('got out after reconnecting', { crowd_before: broke.crowd,
+          this.note('reached a refuge after reconnecting', { crowd_before: broke.crowd,
             why: 'the walk failed because twelve things were already swinging; after a ' +
                  'reconnect only about one of them has noticed' });
           await gotOut(r);
           return HANDLED;
         }
+        if (retreatEndedPass(r)) return HANDLED;
       }
       // EAT BEFORE DECLARING YOURSELF TRAPPED — IT IS USUALLY THE WHOLE PROBLEM.
       //
@@ -11238,9 +11295,8 @@ export class Autopilot {
       // The comment above this branch already names the loop, in Animal's case: refuse
       // every fight for want of vigor, flee every room, earn nothing, and therefore never
       // get the food that would have let it fight. Eating is the one move that opens it
-      // from inside the wilderness, and the escape path already reaches for it AFTER a
-      // successful walk (`gotOut` calls cookSomething) — which is precisely the case that
-      // did not need it.
+      // from inside the wilderness. After a successful refuge walk the next ordinary
+      // pass can do that safely; this fallback is for the case where no walk succeeded.
       //
       // So try the pack first, and only then say nobody can help. If it eats, the next
       // pass re-decides with more vigor and the fight gate may simply open.
@@ -16459,13 +16515,17 @@ export class Autopilot {
   // A configured quiet retreat wins for its own rooms, then the nearest CITY_INNS entry
   // the router will accept. If travel cannot get us there we fall back to the local
   // withdraw, because a wall we can reach beats a refuge we cannot.
-  async guardedRetreatTravel(room) {
-    // A route that has stopped changing room or square is not an escape. The ordinary
-    // pass watchdog cannot safely solve this by firing repeatedly: the first interrupt
-    // is what gets us INTO the retreat branch, and cancelling every walk merely because
-    // health is already below fleeAt would also cancel a healthy escape. Guard this
-    // specific journey on actual movement progress instead.
+  async guardedEmergencyMovement(work, {
+    room = null,
+    why = 'emergency movement made no room or square progress',
+    cancelWhy = why,
+  } = {}) {
     const s = this.s;
+    // Composite movement helpers do not all preserve a cancelled leaf result. Capture
+    // the Session generation as well, so an operator/newer owner remains terminal even
+    // when (for example) takeSafeSpot turns the cancelled walk into `took:false` and
+    // withdraw consequently returns only `withdrawn:false`.
+    const movementGeneration = s.movementGeneration;
     const noProgressMs = this.retreatNoProgressMs ?? 3_000;
     const guardMs = this.retreatGuardMs ?? 250;
     const position = () => {
@@ -16473,24 +16533,46 @@ export class Autopilot {
       return `${s.world?.room?.num ?? '?'}:${me?.col ?? '?'}:${me?.row ?? '?'}`;
     };
     let lastPosition = position();
+    // "Moving" and "making progress" are not the same thing. A two-square bounce
+    // changes position on every sample and therefore kept the old clock fresh for ever,
+    // even though the retreat was no closer to leaving the room. A genuinely advancing
+    // route keeps discovering new room/square positions; a short cycle only revisits
+    // positions it has already spent. Count only the former as progress for this scoped
+    // guard. The set lives for one bounded emergency operation and is discarded with it.
+    const visitedPositions = new Set([lastPosition]);
     let lastProgressAt = Date.now();
     let guard = null;
+    // Scoped ownership token: the ordinary low-health watchdog must not cancel the
+    // escape it just handed control to. The token is disarmed before the local guard
+    // cancels, so a mover that ignores that cancellation becomes watchdog-visible again.
+    const marker = {
+      active: true,
+      room: room == null ? null : Number(room),
+      since: Date.now(),
+      cancellationKind: null,
+    };
+    this.emergencyRetreat = marker;
     const timer = setInterval(() => {
       const now = Date.now();
       const currentPosition = position();
       if (currentPosition !== lastPosition) {
         lastPosition = currentPosition;
-        lastProgressAt = now;
-        return;
+        if (!visitedPositions.has(currentPosition)) {
+          visitedPositions.add(currentPosition);
+          lastProgressAt = now;
+          return;
+        }
+        // A revisited position may be one side of A<->B. Do not return here: once the
+        // novel-progress window has elapsed, this very sample should trip the guard.
       }
       if (now - lastProgressAt < noProgressMs || guard) return;
       const hp = s.client?.vitals?.()?.health;
       // This guard is itself the last-resort escape path, so diagnostic
-      // enrichment must never prevent it from cancelling a stuck route.
+      // enrichment must never prevent it from cancelling a stuck movement.
       let maxHit = null;
       try { maxHit = this.safety()?.maxHit ?? null; } catch { /* optional telemetry */ }
       guard = {
-        why: 'retreat route made no room or square progress',
+        why,
         stalled_ms: now - lastProgressAt,
         room: s.world?.room?.num ?? null,
         col: s.client?.self?.col ?? null,
@@ -16500,25 +16582,158 @@ export class Autopilot {
         one_hit_reserve: maxHit != null && hp?.value != null
           ? hp.value <= maxHit : null,
       };
-      try { s.cancelMovement?.(); } catch { /* the failed result below is enough */ }
+      marker.cancellationKind ??= 'progress';
+      marker.active = false;
+      try { s.cancelMovement?.(null, cancelWhy); } catch { /* the result below is enough */ }
     }, guardMs);
     try {
-      // An emergency retreat must keep moving toward the sanctuary. Ordinary journeys
-      // may deliberately hold an intermediate wall for up to 90 seconds, but the retreat
-      // guard would correctly see that as no route progress and cancel it. Keep those
-      // experimental holds out of this last-resort path rather than teaching the guard
-      // to ignore a long period in which a genuinely blocked exit could kill us.
-      const result = await this.travel(room, { reason: 'retreat', holdBetweenRooms: false });
-      return { ...(result ?? {}), retreat_guard: guard };
+      let result;
+      try {
+        result = await work();
+      } catch (error) {
+        result = {
+          arrived: false,
+          error: String(error),
+          reason: error?.message ?? String(error),
+        };
+      }
+      // A cancellation not issued by our position guard or player watchdog came from
+      // the operator/a newer movement owner. It is terminal to this stale decision.
+      // Check both the leaf result and the generation: nested fallback helpers may have
+      // already translated `{cancelled:true}` into an ordinary unsuccessful result.
+      let generationCancelled = false;
+      if (movementGeneration != null) {
+        try {
+          generationCancelled = typeof s.movementWasCancelled === 'function'
+            ? !!s.movementWasCancelled(movementGeneration)
+            : s.movementGeneration !== movementGeneration;
+        } catch { /* the explicit result below is still usable */ }
+      }
+      if ((result?.cancelled || generationCancelled) && marker.cancellationKind == null)
+        marker.cancellationKind = 'external';
+      return {
+        result,
+        retreat_guard: guard,
+        cancellation_kind: marker.cancellationKind,
+      };
     } finally {
       clearInterval(timer);
+      if (this.emergencyRetreat === marker) this.emergencyRetreat = null;
     }
   }
 
-  async retreatToSafety(why = {}) {
+  async guardedRetreatTravel(room, opts = {}) {
+    // A route that has stopped changing room or square is not an escape. The ordinary
+    // pass watchdog cannot safely solve this by firing repeatedly: the first interrupt
+    // is what gets us INTO the retreat branch, and cancelling every walk merely because
+    // health is already below fleeAt would also cancel a healthy escape. Guard this
+    // specific journey on actual movement progress instead.
+    const s = this.s;
+    // A permitted destination is not enough: a route can leave the confinement and
+    // re-enter it. Emergency travel gets the same operator boundary on every hop.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    if (confine?.length) {
+      const allowed = new Set(confine.map(Number));
+      let route = null;
+      try { route = s.world?.route?.(room) ?? null; } catch { route = null; }
+      const outside = (route?.hops ?? [])
+        .map(h => Number(h?.to ?? h))
+        .filter(to => Number.isFinite(to) && !allowed.has(to));
+      if (outside.length) {
+        this.note('retreat route refused by the confinement', {
+          wanted: Number(room), confined_to: [...allowed], outside,
+          why: 'the refuge is permitted but reaching it would cross rooms the operator excluded',
+        });
+        recordEvent(this.who(), 'confinement_refused_travel', {
+          wanted: Number(room), confined_to: [...allowed], outside,
+          room: s.world?.room?.num ?? null, via: 'guarded-retreat',
+        });
+        return { arrived: false, refused: true, confined: true,
+                 reason: `retreat route crosses room ${outside[0]} outside the confinement` };
+      }
+    }
+    // An emergency retreat must keep moving toward the sanctuary. Ordinary journeys
+    // may deliberately hold an intermediate wall for up to 90 seconds, but the retreat
+    // guard would correctly see that as no route progress and cancel it. Keep those
+    // experimental holds out of this last-resort path rather than teaching the guard
+    // to ignore a long period in which a genuinely blocked exit could kill us.
+    const guarded = await this.guardedEmergencyMovement(
+      () => this.travel(room, {
+        ...opts,
+        reason: opts.reason ?? 'retreat',
+        holdBetweenRooms: false,
+        // Session.travel has a separate unconditional wall-heal after each hop.
+        // At low health that can sit for 90 seconds, which the three-second escape
+        // guard correctly reads as no route progress and cancels. Recovery belongs
+        // at the destination; do not create an intentional stall inside the route.
+        healBetweenRooms: false,
+        ...(confine?.length ? { allowedRooms: confine.map(Number) } : {}),
+      }),
+      {
+        room,
+        why: 'retreat route made no room or square progress',
+        cancelWhy: 'the guarded retreat route made no room or square progress',
+      },
+    );
+    return {
+      ...(guarded.result ?? {}),
+      retreat_guard: guarded.retreat_guard,
+      cancellation_kind: guarded.cancellation_kind,
+      cancelled_for_player: guarded.cancellation_kind === 'player',
+      cancelled_externally: guarded.cancellation_kind === 'external',
+    };
+  }
+
+  async guardedRetreatFallback(threats) {
+    const guarded = await this.guardedEmergencyMovement(
+      () => this.withdraw(threats),
+      {
+        room: this.s.world?.room?.num ?? null,
+        why: 'retreat fallback made no room or square progress',
+        cancelWhy: 'the guarded retreat fallback made no room or square progress',
+      },
+    );
+    const terminalKind = ['player', 'external'].includes(guarded.cancellation_kind);
+    return {
+      ...(guarded.result ?? {}),
+      retreat_guard: guarded.retreat_guard,
+      cancellation_kind: guarded.cancellation_kind,
+      // takeSafeSpot historically turns a cancelled child walk into `took:false`, and
+      // withdraw then returns `withdrawn:false`. The scoped marker is therefore the
+      // authoritative evidence that a player/operator took ownership, even when the
+      // nested helper no longer carries its original `cancelled` bit.
+      ...(terminalKind ? {
+        cancelled: true,
+        cancelled_for_player: guarded.cancellation_kind === 'player',
+        cancelled_externally: guarded.cancellation_kind === 'external',
+      } : {}),
+    };
+  }
+
+  async retreatToSafety(why = {}, { maxHops = null } = {}) {
     const s = this.s, c = s.client;
     const here = s.world?.room?.num ?? null;
     const inns = Object.entries(CITY_INNS).map(([city, v]) => ({ city, ...v }));
+    const finishFallback = (fallback = {}, extra = {}) => {
+      const kind = fallback?.cancellation_kind ?? null;
+      const terminalCancellation = ['player', 'external'].includes(kind) ||
+        (!!fallback?.cancelled && !fallback?.retreat_guard);
+      if (terminalCancellation) this.retreatCancelledPass = this.passes;
+      return {
+        arrived: false,
+        fell_back: !terminalCancellation && fallback?.withdrawn === true,
+        fallback_attempted: true,
+        ...extra,
+        ...fallback,
+        ...(terminalCancellation ? {
+          arrived: false,
+          fell_back: false,
+          cancelled: true,
+          cancelled_for_player: kind === 'player' || !!fallback?.cancelled_for_player,
+          cancelled_externally: kind === 'external' || !!fallback?.cancelled_externally,
+        } : {}),
+      };
+    };
 
     // A WORKING SAFE SPOT IS ALREADY SAFETY, AND RUNNING FROM ONE IS THE WORST MOVE
     // AVAILABLE. This guard lived inside withdraw(), and swapping callers over to this
@@ -16567,7 +16782,8 @@ export class Autopilot {
     // last and is skipped.
     const rankedInns = inns
       .map(i => ({ ...i, hops: s.world?.route?.(i.inn)?.hops?.length ?? Infinity }))
-      .filter(i => Number.isFinite(i.hops))
+      .filter(i => Number.isFinite(i.hops) &&
+        (maxHops == null || i.hops <= maxHops))
       .sort((a, b) => a.hops - b.hops)
       .map(i => ({ ...i, preferred: false, safety: 'true sanctuary', playerSafe: true }));
     // This explicit exception wins over a farther inn. From upstairs the route is
@@ -16611,12 +16827,15 @@ export class Autopilot {
 
     if (!ranked.length) {
       this.note('no refuge is routable from here — falling back to a local wall', why);
-      await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
-      return { arrived: false, fell_back: true, no_route: true };
+      const fallback = await this.guardedRetreatFallback(this.inReachOfUs() ?? [])
+        .catch(e => ({ error: String(e) }));
+      return finishFallback(fallback, { no_route: true });
     }
-    // Two attempts, not six. A retreat that keeps trying is a character walking while
-    // being hit; if the two nearest both refuse, the wall here is the better bet.
-    for (const dest of ranked.slice(0, 2)) {
+    // Two attempts for an ordinary fit retreat, but only one for a low-vigor caller
+    // carrying a hop budget. Giving each destination a fresh budget would turn a
+    // six-hop ceiling into twelve exposed hops in one stale pass.
+    const attempts = maxHops == null ? ranked.slice(0, 2) : ranked.slice(0, 1);
+    for (const dest of attempts) {
       this.note('running all the way to safety', {
         to: dest.innName, room: dest.inn, hops: dest.hops, ...why,
         safety: dest.safety,
@@ -16630,13 +16849,34 @@ export class Autopilot {
                          ? 'crossing the Castle Victoria door leaves every monster behind'
                          : 'an inn is a sanctuary and ends the fight'),
       });
-      const r = await this.guardedRetreatTravel(dest.inn)
+      const r = await this.guardedRetreatTravel(dest.inn,
+        maxHops == null ? {} : { maxHops })
         .catch(e => ({ arrived: false, error: String(e) }));
       if (r?.arrived) {
         this.progress(`reached ${dest.preferred ? 'monster-free retreat' : 'safety'} at ${dest.innName}`);
         this.fledInARow = 0;
         return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops,
                  preferred: dest.preferred, player_safe: dest.playerSafe };
+      }
+      const terminalCancellation = r?.cancelled && (
+        r.cancelled_for_player || r.cancelled_externally ||
+        ['player', 'external'].includes(r.cancellation_kind) || !r.retreat_guard
+      );
+      if (terminalCancellation) {
+        this.retreatCancelledPass = this.passes;
+        this.note('retreat was cancelled — not choosing another refuge in this pass', {
+          to: dest.innName, room: dest.inn, reason: r.reason ?? null,
+          cancellation_kind: r.cancellation_kind ?? null,
+          why: 'a player, operator or newer movement owner is a decision boundary, not ' +
+               'a failed route to work around with another movement command',
+        });
+        return {
+          arrived: false, cancelled: true,
+          cancelled_for_player: !!r.cancelled_for_player,
+          cancelled_externally: !!r.cancelled_externally,
+          cancellation_kind: r.cancellation_kind ?? null,
+          reason: r.reason ?? 'movement cancelled',
+        };
       }
       if (r?.retreat_guard) {
         this.note('aborted a retreat route that was not moving', {
@@ -16646,18 +16886,30 @@ export class Autopilot {
         });
         break;
       }
+      if (r?.confined) {
+        this.note('retreat replan was refused by the confinement', {
+          to: dest.innName, room: dest.inn,
+          outside: r.outside_rooms ?? null, reason: r.reason ?? null,
+          consequence: 'fall back to a local wall without trying another multihop journey',
+        });
+        break;
+      }
     }
     // Nothing reachable. A wall here is better than nothing, so fall through to the
     // behaviour that at least gets our back covered.
     this.note('could not reach any refuge — falling back to a local wall', why);
-    await this.withdraw(this.inReachOfUs() ?? []).catch(() => {});
-    return { arrived: false, fell_back: true };
+    const fallback = await this.guardedRetreatFallback(this.inReachOfUs() ?? [])
+      .catch(e => ({ error: String(e) }));
+    return finishFallback(fallback);
   }
 
   async withdraw(threats) {
     const s = this.s, c = s.client;
     const me0 = c.self, geo0 = s.world?.geometry;
-    if (!me0 || !geo0) { this.note('cannot withdraw', { why: 'no geometry' }); return; }
+    if (!me0 || !geo0) {
+      this.note('cannot withdraw', { why: 'no geometry' });
+      return { withdrawn: false, declined: 'no geometry' };
+    }
 
     // A WALL WE ALREADY HOLD IS NOT SOMETHING TO RUN FROM. We normally reach here
     // because the spot stopped working, but the rest of the loop can send us here
@@ -16668,7 +16920,7 @@ export class Autopilot {
         spot: { col: this.hold.col, row: this.hold.row }, threats: threats.length,
         why: 'this square has held under attack, so nothing here can land a blow — walking ' +
              'off it to gain distance would trade the one thing keeping us alive for space' });
-      return;
+      return { withdrawn: true, held: true };
     }
 
     // Somewhere defensible to run TO. Aim it at whatever is hitting us so the square
@@ -16683,7 +16935,7 @@ export class Autopilot {
         to: { col: this.hold?.col, row: this.hold?.row }, threats: threats.length,
         why: 'a spot that holds ends the fight on our terms and makes the logoff-and-turn ' +
              'heal available, which open ground does not' });
-      return;
+      return { withdrawn: true, spot: true };
     }
 
     // NO CORNER, AND NO PERSON — SO THERE IS NOTHING HERE WORTH WALKING AWAY FOR.

@@ -152,6 +152,55 @@ console.log('a clean journey arrives, and counts its hops');
   ok('already there is instant', (await travel.call(fakeSession({ startAt: 3 }), 4, {})).hops === 0);
 }
 
+console.log('an emergency journey can forbid the session-level between-room heal');
+{
+  const s = fakeSession({ rooms: [1, 2, 3] });
+  let healChecks = 0;
+  s.need = () => { healChecks++; throw new Error('fixture has no health UI'); };
+  const r = await travel.call(s, 3, { healBetweenRooms: false });
+  ok('the emergency journey still arrives', r.arrived === true);
+  ok('and Session.travel never enters its independent wall-heal path', healChecks === 0);
+}
+
+console.log('confinement is enforced on every replan and on the actual landing');
+{
+  const s = fakeSession({ rooms: [1, 2, 3], script: [false], detour: 9 });
+  const r = await travel.call(s, 3, {
+    allowedRooms: [1, 2, 3], maxStumbles: 3, healBetweenRooms: false,
+  });
+  ok('a stumble cannot replan the journey through an excluded room',
+     r.confined === true && r.outside_rooms?.includes(9) && s.at === 0);
+
+  const drift = fakeSession({ rooms: [1, 2, 9], script: ['overshoot'] });
+  const landed = await travel.call(drift, 2, {
+    allowedRooms: [1, 2], healBetweenRooms: false,
+  });
+  ok('an unexpected crossing outside the confinement ends movement immediately',
+     landed.confined === true && landed.outside_rooms?.includes(9) && drift.at === 2);
+
+  const trackDrift = fakeSession({ rooms: [1, 2, 9] });
+  let ordinaryExits = 0;
+  trackDrift.rideTrack = async () => {
+    trackDrift.at = 2;
+    return { rode: true, left_room: true, reached: 2, blocked: 0 };
+  };
+  trackDrift.leaveViaAny = async () => { ordinaryExits++; return { left: true }; };
+  const ridden = await travel.call(trackDrift, 2, {
+    allowedRooms: [1, 2], healBetweenRooms: false,
+  });
+  ok('a learned ride cannot bypass the actual-landing confinement check',
+     ridden.confined === true && ridden.outside_rooms?.includes(9) &&
+       trackDrift.at === 2 && ordinaryExits === 0);
+
+  const nudged = fakeSession({ rooms: [1, 2, 9] });
+  nudged.stepInland = async () => { nudged.at = 2; return false; };
+  const afterNudge = await travel.call(nudged, 2, {
+    allowedRooms: [1, 2], healBetweenRooms: false,
+  });
+  ok('a post-crossing doorway nudge cannot drift outside confinement unnoticed',
+     afterNudge.confined === true && afterNudge.outside_rooms?.includes(9) && nudged.at === 2);
+}
+
 // ---------------------------------------------------------------------------
 console.log('a current baked rail suppresses the learned-track prelude');
 {
