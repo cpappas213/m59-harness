@@ -6852,8 +6852,24 @@ class Session {
     movementGeneration = this.movementGeneration,
     controlToken,
     onHop = null,
+    healBetweenRooms = true,
+    allowedRooms = null,
   } = {}) {
     const log = [];
+    const allowedRoomSet = allowedRooms == null
+      ? null
+      : new Set([...allowedRooms].map(Number));
+    const confinementFailure = (roomNum, note) => {
+      const landed = Number(roomNum ?? NaN);
+      if (!allowedRoomSet || !Number.isFinite(landed) || allowedRoomSet.has(landed))
+        return null;
+      log.push({ confinement_refusal: true, landed_in: landed, note });
+      return {
+        arrived: false, refused: true, confined: true,
+        outside_rooms: [landed], log,
+        reason: `crossing landed in room ${landed} outside the confinement`,
+      };
+    };
     // TIME EXPOSED, PER MAP. See m59-transits.mjs for why this is the number worth having
     // and why "damage taken in transit" is not: there is no safe travel in this game and
     // there is not meant to be. Every second inside a map is a second something can reach
@@ -7065,6 +7081,19 @@ class Session {
         return arrivedIfHere({ arrived: false, log, reason: route.reason || 'no route', stumbles: totalStumbles,
                  ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
       }
+      if (allowedRoomSet) {
+        const outside = (route.hops ?? [])
+          .map(h => Number(h?.to ?? h))
+          .filter(to => Number.isFinite(to) && !allowedRoomSet.has(to));
+        if (outside.length) {
+          log.push({ confinement_refusal: true, outside,
+                     note: 'the replanned route crosses a room outside allowedRooms' });
+          return arrivedIfHere({
+            arrived: false, refused: true, confined: true, outside_rooms: outside,
+            log, reason: `route crosses room ${outside[0]} outside the confinement`,
+          });
+        }
+      }
       const nextHop = route.hops[0];
 
       // A room often publishes SEVERAL squares for the same doorway — the Royal
@@ -7125,6 +7154,11 @@ class Session {
       if (ridden.cancelled)
         return arrivedIfHere({ ...ridden, arrived: false, log, stumbles: totalStumbles });
       if (ridden.left_room) {
+        const confined = confinementFailure(
+          this.world?.room?.num,
+          'the learned ride landed outside allowedRooms; no replacement movement is armed',
+        );
+        if (confined) return confined;
         hops++; stumbles = 0;
         cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
         log.push({ from: this.world?.room?.name ?? String(nextHop.from), to: nextHop.to_name,
@@ -7179,6 +7213,11 @@ class Session {
       // the book back, "OK then FAIL at the same timestamp" is one event wearing two hats,
       // and it inflated every count taken from it since the check was added.
       const landedNow = Number(this.world?.room?.num ?? NaN);
+      const confinedLanding = confinementFailure(
+        landedNow,
+        'the crossing landed outside allowedRooms; no replacement movement is armed',
+      );
+      if (confinedLanding) return confinedLanding;
       // A ROOM NUMBER READ ONCE IS NOT A ROOM YOU ARE IN.
       //
       // This check used to believe a single reading, and the reading blinks. From the
@@ -7414,8 +7453,13 @@ class Session {
       // Guarded: `travel` is lifted out of this file by text and evaluated against a fake
       // session elsewhere, and a bare call there is a TypeError rather than a no-op.
       if (typeof this.stepInland === 'function') await this.stepInland().catch(() => false);
+      const confinedAfterInland = confinementFailure(
+        this.world?.room?.num,
+        'the doorway nudge crossed outside allowedRooms; no replacement movement is armed',
+      );
+      if (confinedAfterInland) return confinedAfterInland;
       cameFromRoom = Number.isFinite(leavingRoom) ? leavingRoom : null;
-      await healAtAWall().catch(() => false);
+      if (healBetweenRooms) await healAtAWall().catch(() => false);
 
       // Arriving brings a fresh BP_PLAYER, and with it the identity the world model
       // needs; give the room contents a moment to land as well.

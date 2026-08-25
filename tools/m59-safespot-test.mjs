@@ -30,15 +30,16 @@ const ok = (label, cond, detail = '') => {
 //
 // Only as much world as observe() reads: where we are, what our health is, and what
 // is standing next to us.
-function world({ col = 5, row = 5, health = 30, max = 30, room = 999 } = {}) {
+function world({ col = 5, row = 5, health = 30, max = 30, vigor = 150, room = 999 } = {}) {
   const objects = new Map();
   const names = new Map([[1, 'giant rat'], [2, 'baby spider'], [3, 'Varuka']]);
   const c = {
     selfId: 99,
     room: { id: room, objects },
     rsc: { get: n => names.get(n) || `rsc${n}` },
-    vitals: () => ({ health: { value: c._health, max }, vigor: { value: 150, max: 200 } }),
+    vitals: () => ({ health: { value: c._health, max }, vigor: { value: c._vigor, max: 200 } }),
     _health: health,
+    _vigor: vigor,
     inventory: [],
     // The real client resolves this out of room contents on every read, which is why
     // a save-game renumber makes a live character look dead. Same shape here.
@@ -427,6 +428,611 @@ console.log('\n--- the live keeper watchdog escalates a same-pass re-arm ---');
   ok('but does not cancel a survival retreat that replaced the interrupted pull',
      cancels === 2 && p.watch.repeatInterrupts === 1,
      JSON.stringify({ cancels, watch: p.watch }));
+}
+
+console.log('\n--- survival recovery keeps one refuge objective instead of bouncing rooms ---');
+{
+  // This is the exact live dead zone: 27/38 is above the farm rest line (70%) but
+  // below the survival flee line (75%). Survival now raises its recovery line; once
+  // it does, room 562 must not choose hostile room 552 merely because it is nearest.
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.mode = 'survive';
+  Object.assign(p.policy, {
+    hunt: '', restBelow: 0.95, fleeBelow: 0.75, useSafeSpots: false,
+  });
+  p.sanctuary = () => false;
+  p.hold = null;
+  w.addMonster(1, 1, 0, MONSTER);
+  w.s.world.exits = () => [{
+    to: 552, to_name: 'The Great Ocean', steps_away: 1, reachable: true,
+  }];
+  let localLeaves = 0;
+  w.s.leaveViaAny = async () => {
+    localLeaves++;
+    return { left: true, room: 552 };
+  };
+  const retreats = [];
+  p.retreatToSafety = async why => {
+    retreats.push(why);
+    return { arrived: true, room: 106, at: 'Brownestone Inn' };
+  };
+  p.progress = () => {};
+
+  const v = w.c.vitals();
+  await p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  ok('the 70-75% survival gap is treated as recovery work',
+     retreats.length === 1 && p.tally.fled_rooms === 1,
+     JSON.stringify({ retreats, tally: p.tally }));
+  ok('recovery does not take the nearest arbitrary hostile-room exit',
+     localLeaves === 0, `leaveViaAny calls=${localLeaves}`);
+}
+{
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.mode = 'survive';
+  Object.assign(p.policy, {
+    hunt: '', restBelow: 0.95, fleeBelow: 0.75, useSafeSpots: false,
+  });
+  p.sanctuary = () => false;
+  w.addMonster(1, 1, 0, MONSTER);
+  w.s.world.exits = () => [{ to: 552, reachable: true }];
+  p.retreatToSafety = async () => ({ arrived: false, fell_back: true });
+  let reconnects = 0;
+  p.breakOut = async () => { reconnects++; return { did: true }; };
+  const v = w.c.vitals();
+  await p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  ok('a local-wall fallback is kept instead of being destroyed by a reconnect',
+     reconnects === 0, `breakOut calls=${reconnects}`);
+}
+{
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.mode = 'survive';
+  Object.assign(p.policy, {
+    hunt: '', restBelow: 0.95, fleeBelow: 0.75, useSafeSpots: false,
+  });
+  p.sanctuary = () => false;
+  w.addMonster(1, 1, 0, MONSTER);
+  w.s.world.exits = () => [{ to: 552, reachable: true }];
+  p.retreatToSafety = async () => ({
+    arrived: false,
+    fell_back: false,
+    fallback_attempted: true,
+    withdrawn: false,
+    declined: 'no wall here',
+  });
+  let reconnects = 0;
+  p.breakOut = async () => { reconnects++; return { did: false }; };
+  p.provision = async () => false;
+  p.declareInterest = () => {};
+  p.noProgress = () => {};
+  const v = w.c.vitals();
+  await p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  ok('no refuge and no wall restores the bounded breakout path instead of claiming safety',
+     reconnects === 1, `breakOut calls=${reconnects}`);
+}
+{
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.mode = 'survive';
+  p.passes = 12;
+  Object.assign(p.policy, {
+    hunt: '', restBelow: 0.95, fleeBelow: 0.75, useSafeSpots: false,
+  });
+  p.sanctuary = () => false;
+  w.addMonster(1, 1, 0, MONSTER);
+  w.s.world.exits = () => [{ to: 552, reachable: true }];
+  w.s.world.route = to => {
+    if (to === 106) return { found: true, hops: [{ to: 108 }, { to: 101 }, { to: 106 }] };
+    if (to === 370) return { found: true, hops: [{ to: 1 }, { to: 2 }, { to: 370 }] };
+    return null;
+  };
+  const refugeTrips = [];
+  p.guardedRetreatTravel = async to => {
+    refugeTrips.push(to);
+    return { arrived: false, cancelled: true, reason: 'nearby player cancelled travel' };
+  };
+  let withdrawals = 0, reconnects = 0;
+  p.withdraw = async () => { withdrawals++; };
+  p.breakOut = async () => { reconnects++; return { did: true }; };
+  p.progress = () => {};
+  const v = w.c.vitals();
+  await p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  ok('player/operator cancellation ends the whole recovery decision for this pass',
+     refugeTrips.length === 1 && withdrawals === 0 && reconnects === 0 &&
+       p.retreatCancelledPass === p.passes,
+     JSON.stringify({ refugeTrips, withdrawals, reconnects,
+                      cancelledPass: p.retreatCancelledPass, pass: p.passes }));
+}
+{
+  const w = world({ room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.passes = 13;
+  p.sanctuary = () => false;
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: [{ to: 108 }, { to: 101 }, { to: 106 }] }
+    : null;
+  let attempts = 0, fallbacks = 0;
+  p.guardedRetreatTravel = async () => {
+    attempts++;
+    return {
+      arrived: false,
+      cancelled: true,
+      retreat_guard: { why: 'retreat route made no room or square progress' },
+      cancellation_kind: 'player',
+      cancelled_for_player: true,
+    };
+  };
+  p.guardedRetreatFallback = async () => { fallbacks++; return {}; };
+  const result = await p.retreatToSafety();
+  ok('player cancellation outranks a simultaneous local-guard result',
+     result.cancelled === true && result.cancelled_for_player === true &&
+       attempts === 1 && fallbacks === 0,
+     JSON.stringify({ result, attempts, fallbacks }));
+}
+{
+  const w = world({ room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.sanctuary = () => false;
+  p.retreatNoProgressMs = 40;
+  p.retreatGuardMs = 5;
+  p.safety = () => ({ fleeAt: 0.75, maxHit: 12 });
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: [{ to: 108 }, { to: 101 }, { to: 106 }] }
+    : null;
+  let rejectTravel, attempts = 0, fallbacks = 0;
+  p.travel = async () => {
+    attempts++;
+    return await new Promise((_resolve, reject) => { rejectTravel = reject; });
+  };
+  w.s.cancelMovement = () => {
+    rejectTravel?.(new Error('transport rejected after guard cancellation'));
+    return { cancelled: true };
+  };
+  p.guardedRetreatFallback = async () => { fallbacks++; return { withdrawn: true }; };
+  const result = await p.retreatToSafety({}, { maxHops: 6 });
+  ok('a transport rejection after the local guard cannot trigger a second refuge',
+     attempts === 1 && fallbacks === 1 && result.fell_back === true,
+     JSON.stringify({ attempts, fallbacks, result }));
+}
+{
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  w.c.state = 'game';
+  p.mode = 'survive';
+  p.passes = 14;
+  Object.assign(p.policy, {
+    hunt: '', restBelow: 0.95, fleeBelow: 0.75, useSafeSpots: false,
+  });
+  p.sanctuary = () => false;
+  w.addMonster(1, 1, 0, MONSTER);
+  w.s.world.exits = () => [{ to: 552, reachable: true }];
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: [{ to: 108 }, { to: 101 }, { to: 106 }] }
+    : null;
+  let routeAttempts = 0;
+  p.guardedRetreatTravel = async () => {
+    routeAttempts++;
+    return {
+      arrived: false,
+      cancelled: true,
+      retreat_guard: { why: 'retreat route made no room or square progress' },
+      cancellation_kind: 'progress',
+    };
+  };
+  let playerNear = false, finishWall, wallAttempts = 0, cancelCalls = 0;
+  p.strangersInReach = () => playerNear ? [{ id: 7, name: 'nearby player' }] : [];
+  p.recordFrame = () => { p.lastFrameAt = Date.now(); };
+  p.watch = {
+    ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
+    lastHealth: 27, blockedSince: null, interruptedPass: null,
+    lastInterruptAt: null, interruptedDoing: null, repeatInterrupts: 0,
+    pulses: [], lastPulseAt: Date.now(), wedged: null, wedges: 0,
+  };
+  p.withdraw = async () => {
+    wallAttempts++;
+    return await new Promise(resolve => { finishWall = resolve; });
+  };
+  w.s.cancelMovement = () => {
+    cancelCalls++;
+    // Reproduce the real composite's historical shape: the cancelled child walk is
+    // swallowed and withdraw reports only that no wall was taken.
+    finishWall?.({ withdrawn: false, declined: 'cancelled child was not taken' });
+    return { cancelled: true };
+  };
+  let reconnects = 0;
+  p.breakOut = async () => { reconnects++; return { did: true }; };
+  const v = w.c.vitals();
+  const pending = p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  await new Promise(resolve => setTimeout(resolve, 10));
+  const markerWasActive = p.emergencyRetreat?.active === true;
+  playerNear = true;
+  p.watchdogTick();
+  const fixtureTimeout = setTimeout(() => {
+    finishWall?.({ withdrawn: false, fixture_timeout: true });
+  }, 300);
+  await pending;
+  clearTimeout(fixtureTimeout);
+  ok('player cancellation during the local fallback ends the whole recovery pass',
+     markerWasActive && cancelCalls === 1 && routeAttempts === 1 && wallAttempts === 1 &&
+       reconnects === 0 && p.retreatCancelledPass === p.passes &&
+       p.emergencyRetreat === null,
+     JSON.stringify({ markerWasActive, cancelCalls, routeAttempts, wallAttempts,
+                      reconnects, cancelledPass: p.retreatCancelledPass,
+                      pass: p.passes, marker: p.emergencyRetreat }));
+}
+{
+  const w = world({ room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.passes = 15;
+  p.sanctuary = () => false;
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: [{ to: 108 }, { to: 101 }, { to: 106 }] }
+    : null;
+  p.guardedRetreatTravel = async () => ({
+    arrived: false,
+    cancelled: true,
+    retreat_guard: { why: 'retreat route made no room or square progress' },
+    cancellation_kind: 'progress',
+  });
+  w.s.movementGeneration = 4;
+  w.s.movementWasCancelled = generation => generation !== w.s.movementGeneration;
+  p.withdraw = async () => {
+    // The operator invalidates movement while a composite wall helper is active, but
+    // the composite returns only its ordinary unsuccessful shape.
+    w.s.movementGeneration++;
+    return { withdrawn: false, declined: 'cancelled child was not taken' };
+  };
+  const result = await p.retreatToSafety();
+  ok('a swallowed operator cancellation during fallback remains terminal',
+     result.cancelled === true && result.cancelled_externally === true &&
+       result.fell_back === false && result.cancellation_kind === 'external' &&
+       p.retreatCancelledPass === p.passes,
+     JSON.stringify({ result, cancelledPass: p.retreatCancelledPass, pass: p.passes }));
+}
+{
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.mode = 'survive';
+  p.passes = 16;
+  Object.assign(p.policy, {
+    hunt: '', restBelow: 0.95, fleeBelow: 0.75, useSafeSpots: false,
+  });
+  p.sanctuary = () => false;
+  w.addMonster(1, 1, 0, MONSTER);
+  w.s.world.exits = () => [{ to: 552, reachable: true }];
+  let retreatAttempts = 0;
+  p.retreatToSafety = async () => ++retreatAttempts === 1
+    ? { arrived: false, fell_back: false, reason: 'fixture first attempt failed' }
+    : {
+        arrived: false, fell_back: false, fallback_attempted: true,
+        cancelled: true, cancelled_externally: true, cancellation_kind: 'external',
+        reason: 'operator cancelled the retry fallback',
+      };
+  let reconnects = 0, provisions = 0, declarations = 0;
+  p.breakOut = async () => { reconnects++; return { did: true }; };
+  p.provision = async () => { provisions++; return false; };
+  p.declareInterest = () => { declarations++; };
+  p.noProgress = () => {};
+  const v = w.c.vitals();
+  await p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  ok('fallback cancellation on the post-reconnect retry is terminal too',
+     retreatAttempts === 2 && reconnects === 1 && provisions === 0 &&
+       declarations === 0 && p.retreatCancelledPass === p.passes,
+     JSON.stringify({ retreatAttempts, reconnects, provisions, declarations,
+                      cancelledPass: p.retreatCancelledPass, pass: p.passes }));
+}
+
+console.log('\n--- cancelled refuge work cannot re-arm elsewhere in the same pass ---');
+{
+  const w = world({ room: 562, health: 27, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.passes = 14;
+  p.armSelf = async () => false;
+  p.knowsCreateWeapon = () => true;
+  p.sanctuary = () => false;
+  p.townTripIfCornered = async () => {
+    p.retreatCancelledPass = p.passes;
+    return false;
+  };
+  let settles = 0;
+  p.settle = async () => { settles++; return { settled: true }; };
+  await p.passArm({ s: w.s, c: w.c });
+  ok('unarmed recovery does not replace a cancelled town trip with a settle or nudge',
+     settles === 0, `settle calls=${settles}`);
+}
+{
+  const w = world({ room: 562, health: 5, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.passes = 15;
+  p.policy.useSafeSpots = true;
+  p.sanctuary = () => false;
+  w.addMonster(1, 1, 0, MONSTER);
+  p.townTripIfCornered = async () => {
+    p.retreatCancelledPass = p.passes;
+    return false;
+  };
+  let walls = 0, retreats = 0;
+  p.takeSafeSpot = async () => { walls++; return { took: true }; };
+  p.retreatToSafety = async () => { retreats++; return { arrived: true }; };
+  const v = w.c.vitals();
+  await p.passFleeAndRest({
+    s: w.s, c: w.c, room: w.s.world.room, v,
+    hp: v.health.value / v.health.max,
+  });
+  ok('doomed open-field recovery does not replace a cancelled town trip with another movement',
+     walls === 0 && retreats === 0,
+     JSON.stringify({ walls, retreats }));
+}
+
+console.log('\n--- a guarded retreat owns cancellation only while it is progressing ---');
+{
+  const w = world({ room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  w.c.state = 'game';
+  p.passes = 9;
+  p.doing = 'travelling';
+  p.passStartedAt = Date.now() - 5_000;
+  p.retreatNoProgressMs = 40;
+  p.retreatGuardMs = 5;
+  p.safety = () => ({ fleeAt: 0.75, maxHit: 12 });
+  p.strangersInReach = () => [];
+  p.recordFrame = () => { p.lastFrameAt = Date.now(); };
+  p.progress = () => {};
+  p.watch = {
+    ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
+    lastHealth: 23, blockedSince: null, interruptedPass: null,
+    lastInterruptAt: null, interruptedDoing: null, repeatInterrupts: 0,
+    pulses: [], lastPulseAt: Date.now(), wedged: null, wedges: 0,
+  };
+
+  const cancels = [];
+  let finishTravel;
+  w.s.cancelMovement = (_generation, why) => {
+    cancels.push(why);
+    // Deliberately ignore the retreat guard's first cancel. Once its ownership token
+    // is disarmed, the ordinary watchdog must be able to take a second shot.
+    if (cancels.length === 2) finishTravel?.({ arrived: false, cancelled: true });
+    return { cancelled: true, interrupted: cancels.length };
+  };
+  let travelArgs = null;
+  p.travel = async (to, opts) => {
+    travelArgs = { to, opts };
+    return await new Promise(resolve => { finishTravel = resolve; });
+  };
+
+  const pending = p.guardedRetreatTravel(106);
+  await new Promise(resolve => setTimeout(resolve, 10));
+  p.watchdogTick();
+  ok('the generic watchdog does not cancel a fresh guarded refuge route',
+     cancels.length === 0 && p.emergencyRetreat?.active === true,
+     JSON.stringify({ cancels, marker: p.emergencyRetreat }));
+
+  await new Promise(resolve => setTimeout(resolve, 60));
+  ok('the route guard cancels after three seconds worth of configured no-progress time',
+     cancels.length === 1 && p.emergencyRetreat?.active === false,
+     JSON.stringify({ cancels, marker: p.emergencyRetreat }));
+  p.watchdogTick();
+  const retreat = await pending;
+  ok('an ignored local cancel becomes visible to the generic watchdog again',
+     cancels.length === 2 && p.watch.interrupts === 1,
+     JSON.stringify({ cancels, watch: p.watch }));
+  ok('the scoped marker clears and the result retains the local-guard diagnosis',
+     p.emergencyRetreat === null &&
+       retreat.retreat_guard?.why === 'retreat route made no room or square progress',
+     JSON.stringify({ marker: p.emergencyRetreat, retreat }));
+  ok('the guarded route preserves the refuge destination and disables intermediate holds',
+     travelArgs?.to === 106 && travelArgs?.opts?.reason === 'retreat' &&
+       travelArgs?.opts?.holdBetweenRooms === false &&
+       travelArgs?.opts?.healBetweenRooms === false,
+     JSON.stringify(travelArgs));
+}
+
+console.log('\n--- a short retreat cycle is movement, but it is not progress ---');
+{
+  const w = world({ col: 1, row: 1, room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.retreatNoProgressMs = 40;
+  p.retreatGuardMs = 5;
+  p.safety = () => ({ fleeAt: 0.75, maxHit: 12 });
+
+  let finishTravel;
+  p.travel = async () => await new Promise(resolve => { finishTravel = resolve; });
+  let cancels = 0;
+  w.s.cancelMovement = () => {
+    cancels++;
+    finishTravel?.({ arrived: false, cancelled: true });
+    return { cancelled: true };
+  };
+
+  // Keep changing the observed position more often than the no-progress deadline. The
+  // old guard refreshed on every change and could never fire; revisiting the same two
+  // positions must now exhaust the bounded window.
+  const startedAt = Date.now();
+  const cycle = setInterval(() => {
+    const me = w.me();
+    me.col = me.col === 1 ? 2 : 1;
+  }, 4);
+  // Make a future regression fail as an assertion instead of hanging the entire suite.
+  const fixtureTimeout = setTimeout(() => {
+    finishTravel?.({ arrived: false, fixture_timeout: true });
+  }, 300);
+  let retreat;
+  try {
+    retreat = await p.guardedRetreatTravel(106);
+  } finally {
+    clearInterval(cycle);
+    clearTimeout(fixtureTimeout);
+  }
+  const elapsedMs = Date.now() - startedAt;
+  ok('an A-to-B-to-A retreat is cancelled within one bounded guard window',
+     cancels === 1 && !!retreat?.retreat_guard && elapsedMs < 500,
+     JSON.stringify({ cancels, elapsedMs, retreat }));
+}
+{
+  const w = world({ col: 1, row: 1, room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.retreatNoProgressMs = 40;
+  p.retreatGuardMs = 5;
+  p.safety = () => ({ fleeAt: 0.75, maxHit: 12 });
+
+  let finishTravel;
+  p.travel = async () => await new Promise(resolve => { finishTravel = resolve; });
+  let cancels = 0;
+  w.s.cancelMovement = () => { cancels++; return { cancelled: true }; };
+
+  // Run for several no-progress windows while continually discovering new squares.
+  // This is the shape of a real crossing and must retain ownership until it completes.
+  const advance = setInterval(() => { w.me().col++; }, 8);
+  const pending = p.guardedRetreatTravel(106);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  finishTravel?.({ arrived: true, room: 106 });
+  const retreat = await pending;
+  clearInterval(advance);
+  ok('genuine directional progress may outlive the guard window without cancellation',
+     retreat.arrived === true && !retreat.retreat_guard && cancels === 0,
+     JSON.stringify({ cancels, retreat }));
+}
+
+console.log('\n--- guarded recovery respects confinement on every route hop ---');
+{
+  const w = world({ room: 562, health: 23, max: 38 });
+  const p = keeper(w);
+  p.policy.confineRooms = [562, 106];
+  w.s.world.route = () => ({ found: true, hops: [{ to: 108 }, { to: 106 }] });
+  let travels = 0;
+  p.travel = async () => { travels++; return { arrived: true }; };
+  const refused = await p.guardedRetreatTravel(106);
+  ok('an allowed refuge reached through an excluded room is refused',
+     refused.confined === true && refused.arrived === false && travels === 0,
+     JSON.stringify({ refused, travels }));
+}
+
+console.log('\n--- the local-wall fallback keeps emergency movement ownership ---');
+{
+  const w = world({ room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  w.c.state = 'game';
+  p.passes = 10;
+  p.doing = 'travelling';
+  p.passStartedAt = Date.now() - 5_000;
+  p.retreatNoProgressMs = 1_000;
+  p.retreatGuardMs = 5;
+  p.safety = () => ({ fleeAt: 0.75, maxHit: 12 });
+  p.strangersInReach = () => [];
+  p.recordFrame = () => { p.lastFrameAt = Date.now(); };
+  p.progress = () => {};
+  p.sanctuary = () => false;
+  p.watch = {
+    ticks: 0, frames: 0, interrupts: 0, longest_block_ms: 0,
+    lastHealth: 23, blockedSince: null, interruptedPass: null,
+    lastInterruptAt: null, interruptedDoing: null, repeatInterrupts: 0,
+    pulses: [], lastPulseAt: Date.now(), wedged: null, wedges: 0,
+  };
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: [{ to: 108 }, { to: 101 }, { to: 106 }] }
+    : null;
+  // The route obeyed its own no-progress cancellation and unwound normally.
+  p.guardedRetreatTravel = async () => ({
+    arrived: false,
+    cancelled: true,
+    retreat_guard: { why: 'retreat route made no room or square progress' },
+  });
+  let finishWall;
+  p.withdraw = async () => await new Promise(resolve => { finishWall = resolve; });
+  let genericCancels = 0;
+  w.s.cancelMovement = () => { genericCancels++; return { cancelled: true }; };
+
+  const pending = p.retreatToSafety();
+  await new Promise(resolve => setTimeout(resolve, 10));
+  ok('the fallback wall walk receives a fresh emergency ownership token',
+     p.emergencyRetreat?.active === true, JSON.stringify(p.emergencyRetreat));
+  p.watchdogTick();
+  ok('the generic watchdog does not cancel the fresh fallback wall movement',
+     genericCancels === 0, `generic cancels=${genericCancels}`);
+  finishWall?.();
+  await pending;
+  ok('the fallback ownership token clears when the wall attempt completes',
+     p.emergencyRetreat === null, JSON.stringify(p.emergencyRetreat));
+}
+
+console.log('\n--- low-vigor refuge travel has one bounded exposure budget ---');
+{
+  const w = world({ room: 552, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.sanctuary = () => false;
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: Array.from({ length: 10 }, (_, i) => ({ to: 600 + i })) }
+    : null;
+  let travels = 0, fallbacks = 0;
+  p.guardedRetreatTravel = async () => { travels++; return { arrived: true }; };
+  p.guardedRetreatFallback = async () => { fallbacks++; return {}; };
+  const result = await p.retreatToSafety({}, { maxHops: 6 });
+  ok('a refuge beyond the low-vigor ceiling is never attempted',
+     travels === 0 && fallbacks === 1 && result.no_route === true &&
+       result.fell_back === false,
+     JSON.stringify({ travels, fallbacks, result }));
+}
+{
+  const w = world({ room: 552, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.sanctuary = () => false;
+  w.s.world.route = to => {
+    if (to === 106) return { found: true, hops: Array.from({ length: 4 }, (_, i) => ({ to: 700 + i })) };
+    if (to === 370) return { found: true, hops: Array.from({ length: 5 }, (_, i) => ({ to: 800 + i })) };
+    return null;
+  };
+  const attempts = [];
+  p.guardedRetreatTravel = async (to, opts) => {
+    attempts.push({ to, opts });
+    return { arrived: false, hops: 4, reason: 'fixture doorway failed' };
+  };
+  p.guardedRetreatFallback = async () => ({});
+  await p.retreatToSafety({}, { maxHops: 6 });
+  ok('the live four-hop class of route gets one guarded attempt with the ceiling enforced',
+     attempts.length === 1 && attempts[0].to === 106 && attempts[0].opts.maxHops === 6,
+     JSON.stringify(attempts));
+}
+
+console.log('\n--- cornered escalation forgets the incident only after arrival ---');
+{
+  const w = world({ room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.fledInARow = 3;
+  p.larder = () => [];
+  p.sanctuary = () => false;
+  p.nearestSanctuary = () => ({
+    room: 106, hops: 3, preferred: false, safety: 'true sanctuary', playerSafe: true,
+  });
+  p.noProgress = () => {};
+  p.guardedRetreatTravel = async () => ({ arrived: false, reason: 'fixture blocked' });
+  ok('a failed refuge journey leaves the cornered counter armed',
+     await p.townTripIfCornered() === false && p.fledInARow === 3,
+     `fledInARow=${p.fledInARow}`);
+  p.guardedRetreatTravel = async () => ({ arrived: true, room: 106 });
+  p.hibernate = async () => true;
+  ok('a successful refuge arrival clears the cornered counter',
+     await p.townTripIfCornered() === true && p.fledInARow === 0,
+     `fledInARow=${p.fledInARow}`);
 }
 
 console.log('\n--- a denied assignment cannot fight its own relocation ---');
