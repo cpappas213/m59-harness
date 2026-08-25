@@ -331,6 +331,30 @@ export function tick(host) {
   // 2. THE HANDBRAKE.
   const blockedFor = host.passStartedAt ? now - host.passStartedAt : 0;
   if (blockedFor > w.longest_block_ms) w.longest_block_ms = blockedFor;
+  // A progressing emergency retreat has its own position-based guard. The generic
+  // low-health handbrake would otherwise cancel the very escape it just enabled.
+  // Player danger remains able to end the journey and return control to the playbook.
+  if (host.emergencyRetreat) {
+    let playerThreat = false;
+    try { playerThreat = (host.strangersInReach?.() ?? []).length > 0; } catch { /* optional hook */ }
+    if (playerThreat) {
+      host.emergencyRetreat.cancellationKind = 'player';
+      host.emergencyRetreat.active = false;
+      if (!host.emergencyRetreat.playerCancelIssued) {
+        host.emergencyRetreat.playerCancelIssued = true;
+        const stopped = (() => {
+          try { return s.cancelMovement(null, 'a nearby player ended the guarded retreat'); }
+          catch (e) { return { cancelled: false, why: e.message }; }
+        })();
+        host.note('nearby player ended the guarded retreat', {
+          interrupted: stopped.interrupted ?? null,
+          why: 'player danger may end a journey immediately, independently of health ' +
+               'or how long the current pass has been blocked',
+        });
+      }
+      return;
+    } else if (host.emergencyRetreat.active) return;
+  }
   if (blockedFor < WATCHDOG_BLOCKED_MS) return;
   w.blockedSince ??= host.passStartedAt;
 
