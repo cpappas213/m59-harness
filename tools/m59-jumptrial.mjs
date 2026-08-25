@@ -475,7 +475,7 @@ async function attempt(q, name) {
   // that is the variation worth measuring. So the attempt proceeds from where the body
   // actually is and RECORDS it, which is better evidence than the intention was.
   const at = await observe(q.agent);
-  const onLedge = at?.me && dist(at.me, st.from) <= 1 && sameFloorAs(at.me, st.from);
+  const onLedge = at?.me && dist(at.me, st.from) <= 2 && sameFloorAs(at.me, st.from);
   if (!onLedge) {
     out.made = false;
     out.outcome = 'no_approach';
@@ -506,7 +506,23 @@ async function attempt(q, name) {
 
   // 3. `clear` is the only strategy that may decline. It is a strategy, not a safety rail —
   //    the others jump into whatever is there on purpose, so the difference is measurable.
-  if (st.wait && blockers.length) {
+  // PATIENCE: WAIT FOR THE ROOM, THEN GO ANYWAY. A strategy with `patience` re-looks until
+  // the line clears or the clock runs out and then jumps regardless; one without it declines.
+  // Those are different questions — 'is waiting worth it' and 'is refusing worth it' — and an
+  // earlier edit of this missed its target, so every sweep pair declined rather than waited
+  // and threw away 28 of 108 attempts.
+  if (st.patience && blockers.length) {
+    const until = Date.now() + st.patience * 1000;
+    while (Date.now() < until) {
+      await sleep(1500);
+      const look = await observe(q.agent);
+      const now = (look?.objects ?? []).filter(o =>
+        distToLine({ col: o.col, row: o.row }, st.from, st.to) <= st.wait);
+      if (!now.length) { blockers.length = 0; break; }
+    }
+    out.waited_s = Math.round((st.patience * 1000 - Math.max(0, until - Date.now())) / 1000);
+  }
+  if (st.wait && !st.patience && blockers.length) {
     out.made = false;
     out.declined = true;
     out.collided = blockers[0] ? { name: blockers[0].name, moving: blockers[0].moving,
@@ -522,7 +538,7 @@ async function attempt(q, name) {
   //    guard caught it as "not a declared fall-jump" from a square nobody meant to be on.
   //    A drifted attempt is not this strategy and is recorded as its own outcome.
   const still = await observe(q.agent);
-  if (!still?.me || !sameFloorAs(still.me, st.from) || dist(still.me, st.from) > 1) {
+  if (!still?.me || !sameFloorAs(still.me, st.from) || dist(still.me, st.from) > 2) {
     out.made = false;
     out.drifted = still?.me ? `${still.me.row},${still.me.col}` : 'unknown';
     out.outcome = 'left_ledge';
