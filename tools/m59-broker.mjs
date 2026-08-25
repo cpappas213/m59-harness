@@ -817,10 +817,14 @@ async function stopKeeper(agent) {
   console.error(`[keeper] stopped ${agent} (pid=${kp.pid})`);
 }
 
-async function keeperState(agent, index) {
+async function keeperState(agent, index, { fresh = false } = {}) {
   const port = keeperPort(agent, index);
   try {
-    const res = await fetch(`http://127.0.0.1:${port}/state`, { signal: AbortSignal.timeout(5000) });
+    // `?fresh=1` asks the keeper to do the wire read itself — it owns the socket and is the
+    // only thing entitled to. Longer timeout, because a fresh read is paced behind whatever
+    // that character is doing, where the cached one is a memory lookup.
+    const res = await fetch(`http://127.0.0.1:${port}/state${fresh ? '?fresh=1' : ''}`,
+                            { signal: AbortSignal.timeout(fresh ? 15000 : 5000) });
     if (res.ok) return await res.json();
   } catch {}
   return null;
@@ -859,7 +863,30 @@ class KeeperProxy {
     this._stateAt = 0;
     this._stateTtl = 2000;
     this._world = null;
-    this.pacer = { submit: async () => { throw new Error('keeper-backed: pacer is in the keeper process'); } };
+    // THE PACER IS WHERE A READ IS ASKED FOR, AND REFUSING IT REFUSED THE READ.
+    //
+    // A Session's read tools all say the same thing: `pacer.submit('read', () =>
+    // c.requestInventory())`, then wait for the reply, then shape it. This threw, so on a
+    // keeper-backed broker `inventory`, `equipment`, `status` and `abilities` all failed
+    // with "keeper-backed: pacer is in the keeper process" — four of the tools an operator
+    // uses most, dead, on the architecture that is now the default. It also silently broke
+    // `m59-shadow.mjs snapshot`, which recorded null coordinates and null wielding for all
+    // twenty-one production characters and reported success.
+    //
+    // The refusal was right about the mechanism and wrong about the conclusion. The broker
+    // must not touch the wire — but the keeper can, and the plan says the broker PROXIES
+    // tool calls to it. So a submitted read forces a fresh snapshot out of the keeper and
+    // then runs the caller's callback against the emulated client, which is now built from
+    // that snapshot. The wire is still only ever touched by the process that owns it.
+    //
+    // Mutations do NOT come through here — they go over /action as they always have — so
+    // this staying read-only is deliberate rather than incidental.
+    this.pacer = {
+      submit: async (kind, fn) => {
+        await this._refreshState({ fresh: true }).catch(() => null);
+        return typeof fn === 'function' ? fn() : null;
+      },
+    };
     this.movementGeneration = 0;
     this._client = null;
     this._pollTimer = null;
@@ -891,18 +918,65 @@ class KeeperProxy {
       },
       rsc: { get: (key) => { if (typeof key === 'string' && key.length > 0) return key; return null; } },
       get: (key) => null,
-      equipment: () => [],
+      // THE SHAPE THE CALLERS ACTUALLY USE. `c.equipment().equipped` is read by the
+      // `equipment` and `inventory` tools and by `armedForSure()`; returning a bare `[]`
+      // meant `.equipped` was undefined and every one of them either threw or decided the
+      // character was unarmed. `known` is false when we have no snapshot at all, because
+      // "no evidence" and "nothing equipped" are the distinction this whole file keeps
+      // insisting on.
+      equipment: () => ({
+        known: Array.isArray(s.equipment),
+        equipped: (s.equipment ?? []).map((name, i) => ({ id: -1 - i, name, nameRsc: name })),
+      }),
+      // THE READS A TOOL ASKS FOR BEFORE IT LOOKS. On a real Session these put a request on
+      // the wire and the answer arrives as an event; here the fresh snapshot has already
+      // been fetched by `pacer.submit` before the callback runs, so there is nothing left to
+      // ask for and these resolve. They exist so the callers do not have to know which kind
+      // of session they hold — which is the entire point of a proxy.
+      // The same shape `m59-abilities.mjs` reads off a live client. Built from the snapshot's
+      // skill and spell lists, with `known` true only because the keeper sent them — an
+      // empty list from a keeper that has not read them yet must not read as "knows
+      // nothing", which is the distinction `read_at` carries on the real client.
+      abilitiesKnown: () => {
+        const rows = k => (k === 'skill' ? (s.skills ?? []) : (s.spells ?? []))
+          .map(a => ({ kind: k, name: a.name, ability: a.ability ?? null,
+                       school: a.school ?? null, mana: a.mana ?? null }))
+          .filter(a => a.name);
+        const skills = rows('skill'), spells = rows('spell');
+        return {
+          skills, spells,
+          read_at: { skills: Array.isArray(s.skills) ? Date.now() : null,
+                     spells: Array.isArray(s.spells) ? Date.now() : null },
+          age_ms: { skills: s.as_of_ms ?? null, spells: s.as_of_ms ?? null },
+          known: { skills: Array.isArray(s.skills), spells: Array.isArray(s.spells) },
+          unnamed: 0,
+          source: 'keeper snapshot — the process that owns the socket read these',
+        };
+      },
+      requestInventory: () => null,
+      requestSpells: () => null,
+      requestSkills: () => null,
+      stats: () => null,
+      waitFor: async () => null,
       stat: () => null,
       statsById: new Map(),
       spells: (s.spells ?? []).map(p => ({ nameRsc: p.name, school: p.school, mana: p.mana })),
       skills: (s.skills ?? []).map(p => ({ nameRsc: p.name })),
-      inventory: [
-        ...(s.equipment ?? []).map(name => ({ nameRsc: name, amount: 1, flags: 0x04 })),
-        ...(s.pack ?? []).map(entry => {
-          const m = entry.match(/^(.*) \(x(\d+)\)$/);
-          return m ? { nameRsc: m[1], amount: parseInt(m[2]), flags: 0 } : { nameRsc: entry, amount: 1, flags: 0 };
-        }),
-      ],
+      // STRUCTURED IF THE KEEPER SENT IT, PARSED FROM PROSE IF NOT.
+      //
+      // `pack` is formatted for a human — "elderberry (x30)" — and reconstructing an item
+      // list by regex out of English is the kind of thing that works until an item has a
+      // bracket in its name. The keeper now sends `items` with real ids and amounts; the
+      // parse stays as the fallback so a keeper running older code still answers.
+      inventory: Array.isArray(s.items) && s.items.length
+        ? s.items.map(o => ({ id: o.id, nameRsc: o.name, amount: o.amount ?? 1, flags: o.flags ?? 0 }))
+        : [
+            ...(s.equipment ?? []).map(name => ({ nameRsc: name, amount: 1, flags: 0x04 })),
+            ...(s.pack ?? []).map(entry => {
+              const m = entry.match(/^(.*) \(x(\d+)\)$/);
+              return m ? { nameRsc: m[1], amount: parseInt(m[2]), flags: 0 } : { nameRsc: entry, amount: 1, flags: 0 };
+            }),
+          ],
       abilitiesAt: { skills: 0, spells: 0 },
       self: null,
       selfId: null,
@@ -954,10 +1028,10 @@ class KeeperProxy {
     return { promise: started, keeper: true };
   }
 
-  async _refreshState() {
+  async _refreshState({ fresh = false } = {}) {
     const now = Date.now();
-    if (this._state && now - this._stateAt < this._stateTtl) return this._state;
-    const s = await keeperState(this.name, this._index);
+    if (!fresh && this._state && now - this._stateAt < this._stateTtl) return this._state;
+    const s = await keeperState(this.name, this._index, { fresh });
     if (s) {
       this._state = s;
       this._stateAt = now;
@@ -13278,6 +13352,24 @@ async function supplyBetween(a) {
       const handed = items.map(nameOf);
       const before = (r.inventory || []).length;
 
+      // WHAT EACH SIDE HELD BEFORE, BY QUANTITY.
+      //
+      // The check at the bottom of this function used to ask whether the receiver's
+      // inventory CONTAINED A NAME, which is trivially true for anything it already
+      // carries. So handing 1,498 shillings to a character holding 10,261 of them
+      // reported `supplied: true` with nothing moved; so did every reagent delivery to
+      // somebody who already had one herb. A name cannot answer "did this trade happen",
+      // and an amount can. Snapshot both sides here and diff them after the accept.
+      const countsOf = (c) => {
+        const m = new Map();
+        for (const o of c.inventory || []) {
+          const n = c.rsc.get(o.nameRsc) || '';
+          m.set(n, (m.get(n) || 0) + (o.amount || 1));
+        }
+        return m;
+      };
+      const recvBefore = countsOf(r), giveBefore = countsOf(g);
+
       // offer -> counter with NOTHING (that is how a gift is accepted, and it is what
       // grants the giver permission to accept) -> giver accepts.
       // OFFER THE WHOLE STACK, NOT ONE OF IT.
@@ -13303,19 +13395,45 @@ async function supplyBetween(a) {
       await rs.pacer.submit('read', () => r.requestInventory());
       await r.waitFor({ kinds: ['inventory'], timeoutMs: 4000 }).catch(() => {});
       const now = (r.inventory || []).map(o => r.rsc.get(o.nameRsc) || '');
-      const got = handed.filter(n => now.includes(n));
+      // READ THE GIVER BACK TOO. The receiver alone is not proof: a character that is
+      // farming picks shillings and gems off the floor between the offer and this check,
+      // so its totals rise for reasons that have nothing to do with this trade. The giver
+      // LOSING the stack is the corroborating half, and it costs one read.
+      await gs.pacer.submit('read', () => g.requestInventory());
+      await g.waitFor({ kinds: ['inventory'], timeoutMs: 4000 }).catch(() => {});
+      const recvAfter = countsOf(r), giveAfter = countsOf(g);
 
+      // ONE VERDICT PER ITEM, ON ARITHMETIC. `asked` is what this call tried to move,
+      // `received` is what the receiver's own count rose by, `giver_lost` is what left the
+      // giver. The two can disagree honestly — the giver may be eating reagents while we
+      // look — so the receiver's gain decides and the giver's loss is reported beside it
+      // rather than folded into the verdict.
+      const moved = [], missed = [];
+      for (const o of items) {
+        const n = nameOf(o);
+        const received = (recvAfter.get(n) || 0) - (recvBefore.get(n) || 0);
+        const giver_lost = (giveBefore.get(n) || 0) - (giveAfter.get(n) || 0);
+        (received > 0 ? moved : missed).push({ name: n, asked: o.amount ?? 1, received, giver_lost });
+      }
+      // SUPPLIED MEANS ALL OF IT. A partial hand-over is something the caller has to know
+      // about and retry: the almoner cooks immediately after a delivery, and a half-filled
+      // one makes it cast a spell that fails silently for want of the other half. So
+      // anything short of everything asked for is false, with `partial` saying which.
+      const allMoved = items.length > 0 && missed.length === 0;
       return {
-        supplied: got.length > 0,
+        supplied: allMoved,
+        partial: moved.length > 0 && missed.length > 0,
         from: g.me?.name, to: r.me?.name,
-        handed_over: got,
-        amounts: items.map(o => ({ name: nameOf(o), amount: o.amount ?? 1 })),
-        not_received: handed.filter(n => !got.includes(n)),
+        handed_over: moved.map(m => m.name),
+        amounts: moved,
+        not_received: missed,
         receiver_carrying: now.length, was_carrying: before,
         travelled: who !== 'neither' ? who : null,
-        note: got.length
-          ? 'confirmed in the receiver\'s inventory, not merely offered'
-          : 'the trade did not complete — nothing moved',
+        note: allMoved
+          ? 'verified BY AMOUNT: every item asked for rose in the receiver\'s own count'
+          : moved.length
+            ? 'PARTIAL — some items moved and some did not; see not_received'
+            : 'the trade did not complete — no count rose on the receiver',
       };
       } finally {
         // PUT THE KEEPERS BACK, on every path out — the returns above, and any throw.

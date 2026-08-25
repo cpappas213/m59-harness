@@ -238,10 +238,30 @@ function state() {
     vigor: v.vigor ? { value: v.vigor.value, max: v.vigor.max } : null,
     mana: v.mana ? { value: v.mana.value, max: v.mana.max } : null,
     gold: me?.gold ?? null,
-    equipment: c?.inventory ? c.inventory
-      .filter(o => o.flags & 0x04)
-      .map(o => c.rsc?.get?.(o.nameRsc) ?? '')
-      .filter(Boolean) : [],
+    // WHAT YOU ARE WEARING IS NOT A FILTER ON WHAT YOU CARRY, and this was.
+    //
+    // `client.equipment()` is the only answer — it is the first line of the protocol traps
+    // note and it was being ignored here in favour of `flags & 0x04` over the pack. The
+    // result: Kermit wielding a mace reported `equipment: []` with "mace" listed under
+    // `pack`, so every consumer of this snapshot believed the fleet was unarmed. The broker
+    // proxy builds its whole emulated client from this object, so one wrong list here is
+    // wrong everywhere the broker looks.
+    equipment: (() => {
+      try {
+        const eq = c?.equipment?.();
+        return (eq?.equipped ?? []).map(o => o.name ?? c?.rsc?.get?.(o.nameRsc) ?? '').filter(Boolean);
+      } catch { return []; }
+    })(),
+    // STRUCTURED, BECAUSE `pack` IS PROSE. "elderberry (x30)" is for a human reading a
+    // dashboard; a tool that wants to know whether twenty elderberry are aboard has to
+    // parse English out of it. Both are kept: `pack` is unchanged for everything already
+    // reading it, `items` is what the proxy's `client.inventory` is built from.
+    items: c?.inventory ? c.inventory.map(o => ({
+      id: o.id,
+      name: c.rsc?.get?.(o.nameRsc) ?? '',
+      amount: o.amount ?? 1,
+      flags: o.flags ?? 0,
+    })).filter(o => o.name) : [],
     pack: c?.inventory ? c.inventory
       .filter(o => !(o.flags & 0x04))
       .map(o => {
@@ -312,8 +332,32 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'GET' && path === '/state') {
-      // Use cached state to avoid blocking on the live session
-      json(cachedState || state());
+      // CACHED BY DEFAULT AND RE-READ ON DEMAND, WITH THE AGE SAID OUT LOUD.
+      //
+      // The cache exists so a dashboard poll cannot block a character mid-swing, and that
+      // is right. But the broker proxies READS here too, and a tool asking what a character
+      // is carrying wants an answer about now — the old contract offered only the cache, so
+      // the broker's `inventory` and `equipment` tools had to reach for the wire themselves
+      // and hit `keeper-backed: pacer is in the keeper process`.
+      //
+      // `?fresh=1` asks this process — the one that owns the socket — to do the read it is
+      // the only thing entitled to do. Everything else still gets the cache, and every
+      // answer now carries `as_of_ms` so a caller can tell how old its evidence is rather
+      // than assuming it is current.
+      const wantFresh = url.searchParams.get('fresh') === '1';
+      if (wantFresh && inGame) {
+        try {
+          await session.pacer.submit('read', () => session.client.requestInventory());
+          await session.client.waitFor({ kinds: ['inventory', 'equipment'], timeoutMs: 3000 })
+                     .catch(() => null);
+        } catch { /* a refused read still answers from the cache below */ }
+        const fresh = state();
+        json({ ...fresh, as_of_ms: 0, fresh: true });
+        return;
+      }
+      const snap = cachedState || state();
+      json({ ...snap, as_of_ms: cachedStateAt ? Date.now() - cachedStateAt : 0,
+             fresh: !cachedState });
       return;
     }
 
