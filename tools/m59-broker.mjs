@@ -1007,6 +1007,44 @@ class KeeperProxy {
     return { error: `unknown autopilot action: ${action}` };
   }
 
+  // THE REST OF THE SESSION SURFACE THE TOOLS ACTUALLY USE.
+  //
+  // Found by listing every `s.<method>(` the tools call, intersecting with what a real
+  // Session has, and subtracting what this class had — eleven methods, and the FIRST of them
+  // took the whole `fleet` tool down the moment the catch-all stopped hiding it. Doing them
+  // one crash at a time would have meant eleven restarts of a fleet that takes four minutes
+  // to come up.
+  //
+  // Each answers honestly rather than plausibly. The keeper owns the body, the job slot and
+  // the movement generation; this side owns a snapshot. Where the truthful answer is "not
+  // here", it says so, because a proxy that invents a comfortable answer is how the recorder
+  // guard above got defeated in the first place.
+
+  // The job lives in the keeper. Callers spread this with `?? {}`, so null is the shape that
+  // means "nothing to add" rather than "no job".
+  jobReport() { return null; }
+  startJob() { throw new Error(`${this.name}: the job slot is in the keeper process`); }
+  travelExclusive(dest, opts = {}) { return this.travelJob(dest, opts); }
+
+  // Movement is generated in the keeper, so nothing this side issued can have been
+  // cancelled. False is the true answer, not a convenient one.
+  movementWasCancelled() { return false; }
+
+  // A keeper process joins the game itself, from its own credentials, as its first act.
+  // A broker-side join would open a SECOND connection for one character, and the server
+  // allows one — the existing session would be dropped.
+  join() { throw new Error(`${this.name}: the keeper process owns the connection; it joins itself`); }
+  joinAsNewCharacter() { throw new Error(`${this.name}: keeper-backed sessions cannot create a character`); }
+
+  // Reads: answer from the snapshot, and refresh it rather than pretending it is current.
+  async refresh() { return this._refreshState(); }
+  abilityBook() { return this._state?.abilities ?? null; }
+  recordAbilities() { return null; }
+
+  // Actions: the keeper executes them, for the same reason travel does.
+  async lootFloor(opts = {}) { return keeperAction(this.name, this._index, 'loot', opts); }
+  async standBeforeGo(opts = {}) { return keeperAction(this.name, this._index, 'stand', opts); }
+
   // Start a background poller that keeps state fresh
   _startPoller() {
     const poll = async () => {

@@ -373,6 +373,16 @@ const server = createServer(async (req, res) => {
             json({ cancelled: true, ...(r ?? {}) });
             return;
           }
+          case 'loot': {
+            const r = await session.lootFloor?.(args);
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'stand': {
+            const r = await session.standBeforeGo?.(args);
+            json(r ?? { ok: true });
+            return;
+          }
           case 'pass': {
             const r = await autopilot?.pass?.();
             json({ passed: true, ...(r ?? {}) });
