@@ -6325,12 +6325,24 @@ class Session {
     // square the bake proved walkable is a better first guess than a square the edge scan
     // merely found floor on.
     const spread = spreadEdges(candidates);
+    // SAY WHY, WHEN IT DOES NOT HAPPEN. Two attempts at this fix looked applied and were not —
+    // the injection ran and the transit log still showed the same four eastern squares — so
+    // the reasons are named out loud rather than inferred from a count that did not move.
+    const anchorTrace = [];
     for (const e of candidates || []) {
-      if (e?.to == null) continue;
-      let anchor = null;
-      try { anchor = anchorFor(activeRoutes(), Number(this.world?.room?.num), Number(e.to)); }
-      catch { anchor = null; }
-      if (!anchor || anchor.row == null) continue;
+      if (e?.to == null) { anchorTrace.push('candidate with no `to`'); continue; }
+      let anchor = null, why = null;
+      try {
+        const table = activeRoutes();
+        const from = Number(this.world?.room?.num);
+        if (!table) why = 'no routing table loaded';
+        else if (!Number.isFinite(from)) why = `current room unknown (${this.world?.room?.num})`;
+        else {
+          anchor = anchorFor(table, from, Number(e.to));
+          if (!anchor) why = `no baked anchor ${from} -> ${e.to}`;
+        }
+      } catch (err) { why = `anchorFor threw: ${err.message}`; }
+      if (!anchor || anchor.row == null) { anchorTrace.push(why ?? `anchor had no row for ${e.to}`); continue; }
       const already = spread.some(x => Number(x.to) === Number(e.to) &&
                                        x.stand_on?.row === anchor.row && x.stand_on?.col === anchor.col);
       if (already) continue;
@@ -6338,7 +6350,10 @@ class Session {
       spread.unshift({ ...e, stand_on: { col: anchor.col, row: anchor.row },
                        steps_away: me ? Math.max(Math.abs(anchor.row - me.row), Math.abs(anchor.col - me.col)) : 0,
                        alternates: undefined, from_anchor: true });
+      anchorTrace.push(`injected ${anchor.row},${anchor.col} for ${e.to}`);
     }
+    if (process.env.M59_EXIT_DEBUG !== '0' && anchorTrace.length)
+      console.error(`[exit] room ${this.world?.room?.num}: ${anchorTrace.join('; ')}`);
     const stagingSquares = new Set(spread.map(e => `${e.stand_on?.col},${e.stand_on?.row}`));
     const isNeedle = stagingSquares.size <= 1 && spread.length > 0;
     let waited = 0;
