@@ -462,6 +462,17 @@ const arrivalReport = (s) => {
 
 const orderExits = (candidates) => candidates.slice().sort((a, b) =>
   (a.reachable === false) - (b.reachable === false) ||
+  // THE BAKED ANCHOR GOES FIRST, AND DISTANCE MUST NOT OUTRANK IT.
+  //
+  // leaveViaAny puts the anchor at the head of the list; this used to sort it straight back
+  // down again, because the anchor is frequently the FURTHEST crossing square — in Ukgoth the
+  // door to Castle Victoria is at 1,27 and the edge scan's squares are at 1,62 and beyond, so
+  // the real doorway sorted last and the four-candidate budget never reached it. Unshifting it
+  // achieved nothing at all, which is the kind of fix that looks applied and is not.
+  //
+  // Nearest-first is right among squares that are equally good guesses. An anchor is a better
+  // guess: the bake planned a walkable line to it, while a scanned square only has floor on it.
+  (b.from_anchor === true) - (a.from_anchor === true) ||
   // AN EXIT WITH NO SQUARE TO STAND ON GOES LAST. Without a stand_on, leaveVia falls
   // back to scanning the whole boundary line for somewhere walkable — and when that
   // line has no floor it fails outright, which is the "no floor anywhere on the west
