@@ -301,6 +301,16 @@ async function cmdStart() {
   const args = [join(HERE, 'm59-broker.mjs'), '--http', String(HTTP_PORT),
                 '--dashboard', String(DASH_PORT)];
   if (FLEET) args.push('--fleet', FLEET);
+  // WHICH KEEPER ARRANGEMENT, PASSED THROUGH RATHER THAN ASSUMED.
+  //
+  // The broker runs one keeper PROCESS per character by default, which is what took the
+  // event loop's p99 from 500ms to 17ms. `--in-process` puts them back inside the broker.
+  // That is not merely a preference yet: the keeper proxy is incomplete — the keeper serves
+  // /health and /state but has no /action, and the proxy's `world` is a cached snapshot
+  // rather than a World — so a broker tool that drives a character (`travel` is the one that
+  // bites) fails with `s.world.route is not a function`. Until that is finished, a COMMANDED
+  // fleet needs this flag and a self-driving one does not.
+  if (process.argv.includes('--in-process')) args.push('--in-process');
   // Setup's server-matched local map remains authoritative across ordinary service
   // restarts. An explicit M59_MAP still wins; otherwise selection is local-then-reference.
   const env = { ...process.env, M59_MAP: mapFile };
