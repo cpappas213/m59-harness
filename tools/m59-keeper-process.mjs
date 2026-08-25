@@ -256,6 +256,41 @@ function state() {
     // dashboard; a tool that wants to know whether twenty elderberry are aboard has to
     // parse English out of it. Both are kept: `pack` is unchanged for everything already
     // reading it, `items` is what the proxy's `client.inventory` is built from.
+    // WHAT `view()` NEEDS, BECAUSE THE BROKER CANNOT BUILD IT.
+    //
+    // `arrivalReport` — used by `travel`, `go_through` and `leave` — calls `s.view()` and
+    // then `v.objects.filter(...)`. The proxy returned this raw state object, which has no
+    // `objects` and no `exits`, so every one of those tools died with
+    // "Cannot read properties of undefined (reading 'filter')" on a keeper-backed broker.
+    // That is the whole of "twenty-one of twenty-one travels refused": not a movement bug,
+    // a shape bug, one property deep.
+    //
+    // Compact on purpose. The full object list is what `/room-view` is for; this is polled
+    // every two seconds for every character, so it carries what the report actually reads —
+    // where we are, what is here and what it can do — and nothing else.
+    you: (() => {
+      const me = c?.self;
+      return me ? { col: me.col, row: me.row, x: me.x, y: me.y, facing: me.facing ?? null } : null;
+    })(),
+    objects: (() => {
+      try {
+        const me = c?.self;
+        return [...(c?.room?.objects?.values?.() ?? [])]
+          .filter(o => o.id !== c.selfId)
+          .map(o => ({
+            id: o.id,
+            name: c.rsc?.get?.(o.nameRsc) ?? '',
+            is_player: !!(o.flags & 0x00000001),
+            can: [
+              (o.flags & 0x04) ? 'attack' : null,
+            ].filter(Boolean),
+          }));
+      } catch { return []; }
+    })(),
+    exits: (() => {
+      try { return (session.world?.exits?.() ?? []).map(e => ({ to: e.to, direction: e.direction })); }
+      catch { return []; }
+    })(),
     items: c?.inventory ? c.inventory.map(o => ({
       id: o.id,
       name: c.rsc?.get?.(o.nameRsc) ?? '',
@@ -302,6 +337,41 @@ function state() {
         : null,
     } : null,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
+    // WHERE THIS CHARACTER'S TIME WENT, WHICH LEFT THE BUILDING WITH THE KEEPER.
+    //
+    // The fleet row carries `time` straight off the keeper's status, and `KeeperProxy`
+    // hardcodes it to null — honestly, because the broker holds a snapshot. But the
+    // ACCUMULATORS are right here, on the autopilot this process is running, and nothing
+    // was sending them. So every activity clock downstream read zero: the strategy game's
+    // Harness tab showed 0s in all eight buckets for twenty-one characters, and
+    // `history time=true` filed `active_s: null` on every sample, which is why its numbers
+    // are older than the fleet they describe.
+    //
+    // Read off `autopilot.time` rather than `autopilot.status().time`, and that is not
+    // micro-optimisation: `status()` calls `threat()`, which scans the room, and this runs
+    // once every two seconds per character. The keeper process exists to keep work off a
+    // shared event loop; a status poll that walks the room contents would put it back.
+    //
+    // Absent rather than zeroed when there is no autopilot to ask — a tick-driven keeper
+    // has no such buckets, and "we did not measure" must not read as "it did nothing".
+    ...(autopilot?.time ? { time: (() => {
+      const t = autopilot.time, r = n => Math.round(n || 0);
+      const active = r(t.fighting) + r(t.pulling) + r(t.waiting) + r(t.recovering) +
+                     r(t.zoning) + r(t.travelling) + r(t.trading);
+      const total = active + r(t.stalled);
+      return { fighting_s: r(t.fighting), pulling_s: r(t.pulling), waiting_s: r(t.waiting),
+               recovering_s: r(t.recovering), zoning_s: r(t.zoning),
+               travelling_s: r(t.travelling), trading_s: r(t.trading),
+               stalled_s: r(t.stalled), active_s: active,
+               stalled_pct: total ? +((100 * r(t.stalled)) / total).toFixed(1) : 0 };
+    })() } : {}),
+    // WHY IT IS NOT WORKING, AS DATA. Both of these are already on the autopilot and both
+    // are one read: `refusals` is a Map of the decisions it declined to make and
+    // `waiting_on` is what it is blocked behind. The broker's fleet row publishes them for
+    // in-process keepers and published `[]` and `null` for every keeper-backed one, which
+    // is the difference between "nothing is refusing" and "nobody asked".
+    refusals: [...(autopilot?.refusals?.values?.() ?? [])],
+    waiting_on: autopilot?.waitingOn ?? null,
   };
 }
 
@@ -589,12 +659,25 @@ const server = createServer(async (req, res) => {
           // which made the combat controller skip all of them.
           is_player: !!(o.flags & 0x0004),
           can_attack: !!(o.flags & 0x0008),
+          // THE RAW FLAGS, SO NOBODY DOWNSTREAM HAS TO GUESS THE REST OF THEM.
+          //
+          // `is_player` and `can_attack` are two bits out of a word, and every consumer
+          // that wanted a third had to either re-derive it from a hex constant of its own
+          // or go without. The broker's render projection wants `affordances(flags)` — the
+          // same closed list `World.objects()` publishes — so that a renderer can tell a
+          // mummy from a bar stool. It cannot compute that from two booleans, which is why
+          // /rts/v1/read had to collapse everything that was not a player into one bucket.
+          // Sent as the word, parsed by the one function that owns its meaning.
+          flags: o.flags ?? 0,
+          degrees: o.degrees ?? null,
+          ...(o.amount ? { amount: o.amount } : {}),
         });
       }
       json({
         cols: room.cols ?? 50,
         rows: room.rows ?? 48,
-        self: me ? { col: me.col, row: me.row, degrees: me.degrees ?? null } : null,
+        self: me ? { col: me.col, row: me.row, degrees: me.degrees ?? null,
+                     object_id: c?.selfId ?? null } : null,
         objects,
         room_name: c?.rsc?.get?.(c.roomNameRsc) ?? null,
         // The MAP room number (session.world.room.num), NOT the runtime room id

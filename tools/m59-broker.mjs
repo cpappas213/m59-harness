@@ -1192,14 +1192,44 @@ class KeeperProxy {
     return this._roomView;
   }
 
-  // Read-only methods — the cached state, with the render projection folded over it.
-  async view() {
-    return { ...(await this._refreshState() ?? {}), ...(await this._renderProjection()) };
+  // SYNCHRONOUS, BECAUSE `arrivalReport` CALLS IT THAT WAY AND ALWAYS HAS.
+  //
+  //     const v = s.view();          // not awaited — on a real Session view() is sync
+  //     v.objects.filter(...)
+  //
+  // Returning a promise made `v.objects` undefined, so `travel`, `go_through` and `leave`
+  // all died with "Cannot read properties of undefined (reading 'filter')" on every
+  // keeper-backed broker. That is the whole of "twenty-one of twenty-one travels refused":
+  // not a movement bug, a shape bug one property deep, in the half of the proxy that reads.
+  //
+  // The state and the render projection are both already CACHED by the poller, so nothing
+  // here needs to await anything — it composes what is in hand. A caller that wants better
+  // than a two-second-old answer asks through the pacer, which forces a fresh read; the
+  // projection refreshes on its own clock and `as_of_ms` says how old the rest is.
+  //
+  // `refresh()` is the awaitable one, for callers that have a moment.
+  view() {
+    const s = this._state ?? {};
+    return {
+      ...s,
+      ...(this._roomView ?? {}),
+      room: s.room ? { num: s.room.num, name: s.room.name } : null,
+      you: s.you ?? null,
+      vitals: { health: s.hp ?? null, mana: s.mana ?? null, vigor: s.vigor ?? null },
+      objects: Array.isArray(s.objects) ? s.objects : [],
+      exits: Array.isArray(s.exits) ? s.exits : [],
+      scenery: { total: 0 },
+      as_of_ms: s.as_of_ms ?? null,
+      source: 'keeper snapshot — /room-view on the keeper has the full contents',
+    };
   }
-  async perception() {
-    return { ...(await this._refreshState() ?? {}), ...(await this._renderProjection()) };
+  perception() { return this.view(); }
+  snapshot(note) { return this.view(); }
+  async refresh(opts = {}) {
+    await this._refreshState({ fresh: true }).catch(() => null);
+    await this._renderProjection().catch(() => null);
+    return this.view();
   }
-  async snapshot(note) { return this._refreshState(); }
 
   // Mutation methods — proxy to keeper
   async walkTo(col, row, opts = {}) {
