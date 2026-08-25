@@ -168,18 +168,33 @@ async function reclaim(site, courier) {
     //
     // So retreat to the nearest room nothing huntable spawns in before the keeper resumes.
     // travel picks the route; sanctuary is what makes the destination worth reaching.
-    if (took.length) {
-      const safe = await call('hunting_grounds', { agent: courier.agent, creature: 'inn' }, 60_000)
-                         .catch(() => null);
-      // Prefer the character's own home room — it is an inn by construction and the
-      // routes to it are the ones this character has already walked.
-      const home = courier.home_room ?? courier.assigned_room ?? null;
-      const dest = home ?? (safe?.rooms || [])[0]?.room_num ?? null;
-      if (dest != null) {
-        const r = await call('travel', { agent: courier.agent, to: dest, max_hops: 20 }, 180_000)
-                        .catch(() => ({ arrived: false }));
-        return { ok: true, took, retreated: !!r?.arrived, to: dest };
-      }
+    // AN EMPTY SITE IS STILL A DEATH SITE, AND THE RETREAT USED TO BE GATED ON LOOT.
+    //
+    // The reasoning above is right and was applied to the wrong half of the outcomes: the
+    // walk home only happened `if (took.length)`, so a courier that found something left
+    // and a courier that found nothing STAYED. Empty is the common case — the pile decays,
+    // another player takes it, or the death was recent enough that nothing dropped — so
+    // most reclaim trips ended with a character parked on the square where a fleetmate had
+    // just been killed, holding whatever it set out with.
+    //
+    // Watched live: the supervisor sent Kkkk to Aaaa's site in 589 ("Under the shadow of
+    // the Sentinel"), it reported `empty (1 in a row)`, and Kkkk stood there — full health,
+    // 192 vigor, `activity: "waiting"`, nothing committed, no journey — in the room where
+    // Bbbb had been eaten by fifteen creatures an hour earlier. The operator spotted it
+    // from inside the game before any counter did.
+    //
+    // Whether the trip paid has nothing to do with whether the room is dangerous. Retreat
+    // either way; only the reporting distinguishes them.
+    const safe = await call('hunting_grounds', { agent: courier.agent, creature: 'inn' }, 60_000)
+                       .catch(() => null);
+    // Prefer the character's own home room — it is an inn by construction and the
+    // routes to it are the ones this character has already walked.
+    const home = courier.home_room ?? courier.assigned_room ?? null;
+    const dest = home ?? (safe?.rooms || [])[0]?.room_num ?? null;
+    if (dest != null) {
+      const r = await call('travel', { agent: courier.agent, to: dest, max_hops: 20 }, 180_000)
+                      .catch(() => ({ arrived: false }));
+      return { ok: true, took, retreated: !!r?.arrived, to: dest };
     }
     return { ok: true, took };
   } finally {
