@@ -64,6 +64,36 @@ function world({ col = 5, row = 5, health = 30, max = 30, room = 999 } = {}) {
 const { OF } = await import('./m59-parse.mjs');
 const MONSTER = OF.ATTACKABLE;
 
+console.log('\n--- hostile-room provisioning refusal reads initialized vigor ---');
+{
+  const w = world();
+  w.addMonster(1, 2, 0, MONSTER);
+  const notes = [];
+  const p = Object.create(Autopilot.prototype);
+  p.policy = { vigorCeiling: 200 };
+  p.hold = null;
+  p.s = w.s;
+  p.sanctuary = () => false;
+  p.fightFloor = () => 80;
+  p.notedNoEatingHere = false;
+  p.note = (message, data) => notes.push({ message, data });
+  let result, error = null;
+  try {
+    result = await p.provision(
+      { vigorCeiling: 200 },
+      { vigor: { value: 77, max: 200, scale_max: 200 } },
+    );
+  } catch (caught) {
+    error = caught;
+  }
+  ok('a fresh field keeper refuses to provision near hostiles without throwing',
+     !error && result === false, error ? String(error) : `result=${result}`);
+  ok('the refusal diagnostic reports current vigor and hostile count',
+     notes.length === 1 && notes[0].data?.vigor === 77 &&
+       notes[0].data?.monsters_in_room === 1,
+     JSON.stringify(notes));
+}
+
 console.log('\n--- safe-spot arrival is confirmed, not predicted ---');
 {
   // The dead-reckoned position says we are home. The authoritative read says the

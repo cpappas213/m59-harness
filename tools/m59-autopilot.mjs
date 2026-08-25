@@ -1949,6 +1949,7 @@ export class Autopilot {
   async provision(plan, v) {
     const p = this.policy;
     const floor = this.fightFloor(plan);
+    const vigor = v?.vigor?.value ?? 0;
     // EATING IS NOT A STRATEGY OPTION.
     //
     // This returned before it ever looked at the larder unless the policy named a fight
@@ -2009,7 +2010,6 @@ export class Autopilot {
     this.notedNoEatingHere = false;
 
     const s = this.s;
-    const vigor = v.vigor?.value ?? 0;
     const larder = this.larder(s.client);
     const best = larder[0]?.food ?? null;
     // AND THE SMALLEST, WHICH IS THE ONE THAT DECIDES WHETHER WE CAN EAT AT ALL.
