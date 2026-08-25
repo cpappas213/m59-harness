@@ -23,7 +23,7 @@ import {
   sharedRoomGeometry,
 } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
-import { anchorFor } from './m59-routes.mjs';
+import { anchorFor, activeRoutes } from './m59-routes.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
@@ -1193,6 +1193,12 @@ const leaveViaAny = compileSessionMethod(brokerSource,
     // write under M59_TACTICS_DIR / M59_CROSSINGS_LEARNED, which this file points at a
     // scratch path below so a test run never edits the fleet's own books.
     recordTactic, recordCrossing,
+    // THE BAKED ANCHOR, WHICH leaveViaAny NOW PUTS IN FRONT OF THE SCANNED EXIT SQUARES.
+    // Both are pure reads of the routing table — `activeRoutes` returns whatever is loaded,
+    // `anchorFor` is the accessor that cannot express a room/destination mix-up — so the real
+    // ones are used rather than stubs, and a fixture with no table simply gets null and falls
+    // back to the scan, which is the degradation the change is designed around.
+    activeRoutes, anchorFor,
   });
 
 function fakeBrokerSession(geometry, {

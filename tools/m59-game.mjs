@@ -6293,7 +6293,41 @@ class Session {
     // Far enough that a chasing monster has to come out of the gap to follow, short enough
     // that the re-approach is a few seconds rather than a second crossing of the room.
     const narrowBackoffCrumbs = Number(process.env.M59_NARROW_BACKOFF_CRUMBS || 4);
+    // THE BAKED ANCHOR IS THE DOORWAY; THE EDGE SCAN IS A GUESS ABOUT WHERE ONE MIGHT BE.
+    //
+    // `exits()` publishes crossing squares by walking the room's declared edge openings, and
+    // for Ukgoth's north edge it offers 1,62 / 1,63 / 1,64 / 1,66 and never 1,27. The route
+    // bake, which planned a path somebody can walk, says the anchor for room 2 IS 1,27 — and
+    // `substrate/m59-falljumps.json` wrote down why a year of this went wrong:
+    //
+    //   "The ONLY doorway to Outside Castle Victoria is at row 1, col 27, on the cliff top
+    //    this reaches; the eastern crossing the router used instead (row 1, col 62) goes
+    //    through solid rock."
+    //
+    // So the fleet crossed the whole room — 'followed 37 of 38' eighteen times, jump and all —
+    // and then walked thirty-five columns east to try a wall. Measured over an hour: 599 -> 2
+    // failed 15 times out of 15, every one of them 'every square for that exit refused', and
+    // the four squares tried were 1,62 / 1,63 / 1,64 / 1,66. Never the door.
+    //
+    // The anchor goes in front. It is not a replacement — the scanned squares stay as
+    // fallbacks, because a stale bake should degrade rather than strand anybody — but a
+    // square the bake proved walkable is a better first guess than a square the edge scan
+    // merely found floor on.
     const spread = spreadEdges(candidates);
+    for (const e of candidates || []) {
+      if (e?.to == null) continue;
+      let anchor = null;
+      try { anchor = anchorFor(activeRoutes(), Number(this.world?.room?.num), Number(e.to)); }
+      catch { anchor = null; }
+      if (!anchor || anchor.row == null) continue;
+      const already = spread.some(x => Number(x.to) === Number(e.to) &&
+                                       x.stand_on?.row === anchor.row && x.stand_on?.col === anchor.col);
+      if (already) continue;
+      const me = this.client?.self;
+      spread.unshift({ ...e, stand_on: { col: anchor.col, row: anchor.row },
+                       steps_away: me ? Math.max(Math.abs(anchor.row - me.row), Math.abs(anchor.col - me.col)) : 0,
+                       alternates: undefined, from_anchor: true });
+    }
     const stagingSquares = new Set(spread.map(e => `${e.stand_on?.col},${e.stand_on?.row}`));
     const isNeedle = stagingSquares.size <= 1 && spread.length > 0;
     let waited = 0;
