@@ -1304,6 +1304,10 @@ export class Autopilot {
       // Vigor to reach before picking a fight. Resting alone tops out at the rest
       // threshold (80 of 200); anything above it has to be eaten.
       fightAboveVigor: MIN_FIGHT_VIGOR,
+      // Deterministic recovery must not speak for the character. The controller's
+      // model-driven conversation and direct operator speech are separate paths;
+      // this switch controls only the keeper's canned requests for charity.
+      automatedPleas: false,
       // Disconnect rather than die when a single exchange could finish us. Set false
       // to forbid it — but it is the most effective survival move available when we
       // have nowhere safe to stand, and the penalties the game attaches to logging
@@ -15420,7 +15424,6 @@ export class Autopilot {
   async askForHelp(reason = null) {
     const s = this.s, c = s.need();
     const PLEA_GAP_MS = 5 * 60 * 1000;
-    if (this.lastPleaAt && Date.now() - this.lastPleaAt < PLEA_GAP_MS) return;
 
     // NOBODY NEEDS RESCUING IN AN INN.
     //
@@ -15462,19 +15465,42 @@ export class Autopilot {
     const armed = !!eq?.wielding;
     const where = c.rsc.get(c.roomNameRsc) || 'somewhere';
     const hurt = /hurt|heal|flask/i.test(reason || '');
-    this.note(hurt ? 'asking for a heal' : 'recovering after death',
-              { armed, wielding: eq?.wielding, room: where, reason });
 
     // Rearming solves the post-death case by itself; being hurt never does.
     if (armed && !hurt) { this.progress('rearmed after dying'); return; }
 
+    // Speech is not a survival primitive. Unless an operator explicitly opts this
+    // keeper into canned pleas, leave conversation to the model-driven responder or
+    // a direct speech command. Self-rearming above remains automatic either way.
+    if (this.policy.automatedPleas !== true) {
+      this.note('not asking for help — automated pleas are disabled', {
+        armed, wielding: eq?.wielding, room: where, reason,
+        why: 'only an explicit automated_pleas=true policy may send a canned request',
+      });
+      return;
+    }
+
+    // Throttle only the speech side effect. Inventory refresh, equipping, and
+    // Create Weapon above are recovery mechanics and must still run after a recent
+    // plea — especially when the recent plea preceded another death.
+    if (this.lastPleaAt && Date.now() - this.lastPleaAt < PLEA_GAP_MS) {
+      this.note('not asking for help — automated plea is rate-limited', {
+        armed, room: where, reason,
+        retry_in_ms: PLEA_GAP_MS - (Date.now() - this.lastPleaAt),
+      });
+      return;
+    }
+
+    this.note(hurt ? 'asking for a heal' : 'recovering after death',
+              { armed, wielding: eq?.wielding, room: where, reason });
+
     const v = c.vitals()?.health;
     const name = c.me?.name || 'a traveller';
     const plea = hurt
-      ? `${name} here at ${where} — I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
+      ? `${name} here at ${where} - I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
         `and I have nothing to heal with. Resting brings health back slowly in these lands. ` +
         `If anyone can spare a flask or cast a heal on me I would be in your debt.`
-      : `${name} here — I was killed and lost everything. I am at ${where} with no weapon ` +
+      : `${name} here - I was killed and lost everything. I am at ${where} with no weapon ` +
         `or armour. If anyone can spare a blade or a few shillings I would be grateful, ` +
         `and I will pay it forward once I am on my feet.`;
     this.lastPleaAt = Date.now();
