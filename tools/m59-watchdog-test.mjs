@@ -101,6 +101,31 @@ console.log('\na repeat cannot cancel the survival response to the first interru
      moving.cancels === 1 && moving.watch.repeatInterrupts === 0);
 }
 
+console.log('\na guarded emergency retreat owns its own progress cancellation');
+{
+  const guarded = host({ hp: 5, blockedMs: 9000, doing: 'travelling' });
+  guarded.emergencyRetreat = { active: true, room: 106 };
+  guarded.strangersInReach = () => [];
+  wd.tick(guarded);
+  ok('the ordinary handbrake leaves an active monster-driven refuge route alone',
+     guarded.cancels === 0);
+  guarded.emergencyRetreat.active = false;
+  wd.tick(guarded);
+  ok('once the route guard disarms itself, a still-blocked walk is interruptible again',
+     guarded.cancels === 1);
+
+  const player = host({ hp: 20, blockedMs: 100, doing: 'travelling' });
+  player.emergencyRetreat = { active: true, room: 106 };
+  player.strangersInReach = () => [{ id: 7, name: 'a nearby player' }];
+  wd.tick(player);
+  ok('a nearby player ends even a fresh, healthy guarded retreat immediately',
+     player.cancels === 1 &&
+       player.emergencyRetreat.cancellationKind === 'player');
+  wd.tick(player);
+  ok('the player cancellation is issued once rather than on every watchdog tick',
+     player.cancels === 1);
+}
+
 console.log('\nthe inert rescue — taking a character back from a driver that stopped');
 {
   // Standing down for a driver is right until the body is penned in AND bleeding. Ported
