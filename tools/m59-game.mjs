@@ -4949,6 +4949,57 @@ class Session {
         // The candidates are the landings the declared jump's own shelf offers: the declared
         // one and its neighbours ON THE SAME FLOOR, which is what keeps this a variation of a
         // walked jump rather than a new claim about the map. Ties go to the declared landing.
+        // QUEUE FOR THE LEDGE RATHER THAN CROWDING IT.
+        //
+        // A fall-jump take-off is one square, and the approach to it is a ledge one or two
+        // squares wide. When several characters want it at once they stand on each other,
+        // push each other off, and the ones waiting become the obstacle the jumper is trying
+        // to avoid — measured as 'left the ledge before jumping' becoming the commonest
+        // outcome, and as a room in which nobody could reach the take-off at all.
+        //
+        // So a character that finds one of its own already at the ledge does not join it. It
+        // falls back to the nearest covered square that is FARTHER from the take-off than
+        // whoever is there — a queue by distance, formed without anybody coordinating — and
+        // tries again on the next pass. Waiting costs seconds; the pit costs a lap of Ukgoth,
+        // which is the arithmetic that makes this worth doing at all.
+        if (jumpHere) {
+          const others = (() => { try { return this.world?.objects?.() ?? []; } catch { return []; } })()
+            .filter(o => o.is_player && o.id !== this.client?.selfId);
+          const atLedge = others.filter(o =>
+            Math.max(Math.abs(o.row - here.row), Math.abs(o.col - here.col)) <= 2);
+          if (atLedge.length) {
+            // Somebody else is on the ledge. Stand off, behind cover if there is any, farther
+            // back than they are, and let them go first.
+            const backoff = [];
+            for (let r = here.row - 6; r <= here.row + 6; r++)
+              for (let c = here.col - 6; c <= here.col + 6; c++) {
+                if (geo.walkable(r, c) !== true) continue;
+                let same = false;
+                try {
+                  const a = geo.standPoint(here.row, here.col), b = geo.standPoint(r, c);
+                  same = a && b && Math.abs(geo.floorBaseAtClient(a.x, a.y) - geo.floorBaseAtClient(b.x, b.y)) <= 64;
+                } catch {}
+                if (!same) continue;
+                const d = Math.max(Math.abs(r - here.row), Math.abs(c - here.col));
+                if (d < 3 || d > 6) continue;
+                if (others.some(o => o.row === r && o.col === c)) continue;
+                let cover = 0;
+                for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+                  if (!dr && !dc) continue;
+                  if (geo.walkable(r + dr, c + dc) !== true) cover++;
+                }
+                backoff.push({ row: r, col: c, d, cover });
+              }
+            backoff.sort((a, b) => b.cover - a.cover || a.d - b.d);
+            const spot = backoff[0];
+            if (spot) {
+              await this.walkTo(spot.col, spot.row, { maxSteps: 12 }).catch(() => null);
+              return { railed: false, reason: 'queued_for_the_jump', at: i, walked,
+                       queued_behind: atLedge.length, waiting_at: `${spot.row},${spot.col}` };
+            }
+          }
+        }
+
         let jumpTo = target;
         if (jumpHere) {
           const shelf = [];

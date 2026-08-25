@@ -144,6 +144,25 @@ const STRATEGIES = {
   //
   // 34,21 is the one that is both: five squares back, almost exactly in line, and the
   // best-covered square on the plateau. It waits there until the line clears and then runs.
+  // NO THRESHOLD, JUST THE BEST LINE AVAILABLE — because the threshold was unreachable.
+  //
+  // A Guardian of Zjiria camps on 38,13, stationary, directly under the flight path. Measured
+  // against its actual position and the two trolls beside it, over every take-off x landing
+  // pair the guard permits:
+  //
+  //     best of all 66 lines   35,16 -> 38,9    1.58 squares of clearance
+  //     the declared line      36,16 -> 38,10   0.95
+  //     lines clearing it by more than 2 squares:  NONE
+  //
+  // So every strategy that waits for a 2-square gap waits for something that cannot happen —
+  // `hold_wall` sat behind its wall for 45 seconds, 12 times, and never once saw a clear line.
+  // Waiting is right when the obstacle MOVES; this one does not.
+  //
+  // This takes the maximum-clearance line unconditionally and goes. It is the honest answer
+  // to a camped obstacle: there is no clean jump to be had, so take the least dirty one.
+  best_line: { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, candidates: true,
+               wait: 1, patience: 0, alwaysJump: true,
+               why: 'no gate: always jump at whichever line has the most clearance' },
   hold_wall: { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, candidates: true,
                wait: 2, patience: 45, waitAt: { row: 34, col: 21 },
                why: 'wait behind cover at 34,21, on the jump line, then run through and jump' },
@@ -193,12 +212,35 @@ const STAGE = { row: 32, col: 19 };
 
 // THE SHELF, AS THE OPERATOR DESCRIBES IT. All six measure floor 3840, the declared landing's
 // own floor; 38,13 beside them is 3200 and is the gulley every miss ends in.
+// 38,9 AND 39,9 BELONG HERE AND WERE MISSING, WHICH MADE THE RE-AIMING INERT.
+//
+// The operator named the shelf from 38,10 outward, so that is what this listed — and then
+// `best_line` and `pick_clear` chose 38,10 on all thirty-six attempts, because among the
+// squares they were offered it genuinely was the best. Measured against the camped Guardian
+// at 38,13, from a take-off of 36,16:
+//
+//     38,9    1.10 squares of clearance
+//     38,10   0.95                        <- what they kept picking
+//
+// The whole point of re-aiming is to have somewhere better to aim, and the westward squares
+// are where the clearance is: they lead AWAY from the pit the blockers stand in. All of these
+// measure floor 3840 and are inside what the jump guard permits.
 const SHELF = [
-  { row: 38, col: 10 }, { row: 38, col: 11 }, { row: 38, col: 12 },
-  { row: 39, col: 11 }, { row: 39, col: 12 }, { row: 40, col: 12 },
-];
+  { row: 38, col:  9 }, { row: 38, col: 10 }, { row: 38, col: 11 }, { row: 38, col: 12 },
+  { row: 39, col:  9 }, { row: 39, col: 10 }, { row: 39, col: 11 }, { row: 39, col: 12 },
+  { row: 40, col: 12 },
+].filter(sq => {
+  // Never offer a candidate that is not really on the shelf — the gulley at 3200 sits right
+  // beside it and a miss that lands there is the failure this is trying to avoid.
+  try {
+    const a = geo.standPoint(38, 10), b = geo.standPoint(sq.row, sq.col);
+    if (!a || !b) return false;
+    return Math.abs(geo.floorBaseAtClient(a.x, a.y) - geo.floorBaseAtClient(b.x, b.y)) <= 64
+           && geo.walkable(sq.row, sq.col) === true;
+  } catch { return false; }
+});
 
-const DEFAULT_SET = ['hold_wall', 'pick_clear', 'baseline'];
+const DEFAULT_SET = ['best_line', 'pick_clear', 'baseline'];
 // `sweepStrategies` reads the room geometry, which is loaded further down, so the sweep is
 // applied there rather than here. A const that needs a value that does not exist yet is the
 // kind of ordering bug that reads as an empty strategy list.
@@ -700,7 +742,7 @@ async function attempt(q, name) {
       }
     }
   }
-  if (st.wait && !st.patience && blockers.length) {
+  if (st.wait && !st.patience && !st.alwaysJump && blockers.length) {
     out.made = false;
     out.declined = true;
     out.collided = blockers[0] ? { name: blockers[0].name, moving: blockers[0].moving,
