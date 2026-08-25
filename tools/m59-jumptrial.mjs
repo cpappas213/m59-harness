@@ -48,7 +48,7 @@ const argv = process.argv.slice(2);
 const flag = (n, d = null) => { const i = argv.indexOf('--' + n); return i < 0 ? d : argv[i + 1]; };
 const has = n => argv.includes('--' + n);
 const KNOWN = new Set(['fleet', 'port', 'rounds', 'strategies', 'agents', 'room',
-                       'report', 'dry-run', 'walk', 'sweep', 'help', 'h']);
+                       'report', 'dry-run', 'walk', 'sweep', 'no-evacuate', 'help', 'h']);
 for (const a of argv) if (a.startsWith('--') && !KNOWN.has(a.slice(2))) {
   console.error(`m59-jumptrial: unknown option ${a}`);
   console.error(`known: ${[...KNOWN].map(k => '--' + k).join(' ')}`);
@@ -728,8 +728,15 @@ async function attempt(q, name) {
 // recycled repeatedly is a cleaner experiment than twenty-one queueing, and it is the
 // operator's suggestion.
 const EVACUATE_TO = 52;                       // Familiars, the Tos inn — far, and safe
-const sittingOut = (fleetNow.fleet ?? []).filter(r => r.agent && r.character &&
-                                                 !queue.some(q => q.agent === r.agent));
+// `--no-evacuate` leaves the rest of the fleet alone, which is what you want when the others
+// are doing something — a circuit through this very room, say. Then the traffic is REAL
+// rather than removed, and the trial measures the jump under the conditions the road actually
+// presents instead of a laboratory emptiness.
+const sittingOut = has('no-evacuate') ? []
+  : (fleetNow.fleet ?? []).filter(r => r.agent && r.character &&
+                                  !queue.some(q => q.agent === r.agent));
+if (has('no-evacuate'))
+  console.log('not evacuating: the rest of the fleet is left to whatever it is doing');
 if (sittingOut.length) {
   console.log(`clearing the room: ${sittingOut.length} character(s) not in this trial -> room ${EVACUATE_TO}`);
   // UNPARK FIRST. A PARKED CHARACTER CANNOT BE RELOCATED.
