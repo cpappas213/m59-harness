@@ -59,10 +59,40 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fleetName } from './m59-fleetpath.mjs';
 
 const HERE = resolve(fileURLToPath(import.meta.url), '..', '..');
-export const GRUDGE_FILE = () => process.env.M59_GRUDGE_FILE ||
-  join(HERE, 'substrate', 'grudges.json');
+
+// ONE BOOK PER FLEET, BECAUSE A GRUDGE IS ABOUT PLAYERS ON ONE SERVER.
+//
+// The book was shared by every fleet on this machine, and a fleet is a server. So the
+// shadow fleet — a copy of production running on a LOCAL test server that no other player
+// can reach — inherited production's twenty-two grudges, including one with fifty-five
+// hits that is refreshed every time a real person attacks a real character.
+//
+// That is not cosmetic. `travel_hold_pvp` defaults to `refuse`: no stopping at a safe wall
+// while the grudge book has a live entry, on the sound reasoning that a stationary
+// character with a full pack is the best target this game offers. So every shadow
+// character crossing Ukgoth declined to take a wall — because of a fight happening on a
+// different server, against people who do not exist in its world. Recorded verbatim in its
+// own ledger while three characters were being killed by trolls in that room:
+//
+//     did not consider a wall :: 1 live grudge(s) — PvP is anticipated
+//
+// The fleet name is resolved the same way everything else resolves it, so `--fleet`,
+// `M59_FLEET` and `substrate/fleet-default` all reach here. `M59_GRUDGE_FILE` still wins
+// outright, which is what the tests use.
+//
+// A NAMED FLEET STARTS ITS OWN BOOK EMPTY rather than inheriting the shared one. Inheriting
+// is what this is fixing, and a book that arrives pre-populated with another server's
+// enemies is the bug wearing a migration. The unnamed fleet keeps `grudges.json`, so
+// nothing that was already using it changes file.
+export const GRUDGE_FILE = () => {
+  if (process.env.M59_GRUDGE_FILE) return process.env.M59_GRUDGE_FILE;
+  let name = null;
+  try { name = fleetName(); } catch { name = null; }
+  return join(HERE, 'substrate', name ? `grudges-${name}.json` : 'grudges.json');
+};
 
 // AN HOUR, AND IT IS A BET RATHER THAN A MECHANIC — so it is overridable and the default
 // is written down here rather than scattered. Long enough that walking away and coming

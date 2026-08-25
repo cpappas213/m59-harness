@@ -273,6 +273,11 @@ __pycache__/
 # It is also operational: it says exactly which characters were where and when they were
 # losing, which is the second thing somebody who wanted to grief this fleet would read.
 /substrate/grudges.json
+# AND ONE PER FLEET, for the same reason and with the same contents. The book is scoped by
+# fleet because a grudge is about players on ONE SERVER — the shadow fleet on the local test
+# server was inheriting production's enemies and refusing to stop at safe walls because of a
+# fight happening somewhere its characters cannot be attacked. See m59-grudge.mjs.
+/substrate/grudges-*.json
 
 # AND THE SIGHTING BOOK NAMES THEM TOO — MORE OF THEM, AND WHEN THEY WERE NOT DOING
 # ANYTHING TO US.
