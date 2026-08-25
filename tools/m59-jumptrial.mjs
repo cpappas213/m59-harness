@@ -48,7 +48,7 @@ const argv = process.argv.slice(2);
 const flag = (n, d = null) => { const i = argv.indexOf('--' + n); return i < 0 ? d : argv[i + 1]; };
 const has = n => argv.includes('--' + n);
 const KNOWN = new Set(['fleet', 'port', 'rounds', 'strategies', 'agents', 'room',
-                       'report', 'dry-run', 'walk', 'help', 'h']);
+                       'report', 'dry-run', 'walk', 'sweep', 'help', 'h']);
 for (const a of argv) if (a.startsWith('--') && !KNOWN.has(a.slice(2))) {
   console.error(`m59-jumptrial: unknown option ${a}`);
   console.error(`known: ${[...KNOWN].map(k => '--' + k).join(' ')}`);
@@ -73,21 +73,78 @@ const ONLY = flag('agents') ? String(flag('agents')).split(',').map(x => x.trim(
 // The take-off alternatives are all on the same ledge and the same floor as 36,16 — verified
 // against floorBaseAtClient, not guessed — so every one of them is a jump somebody could
 // actually stand and make, not a new claim about the map.
+// MEASURED, AND THE GEOMETRY QUESTION IS CLOSED.
+//
+// The first hundred attempts settled it. By take-off square, jumps actually attempted:
+//
+//     36,16    9 jumps, 9 made, 100%   landed 39,12 every time
+//     35,16    3 jumps, 0 made,   0%   landed 38,13, the gulley
+//     37,15    3 jumps, 0 made,   0%   landed 38,13
+//
+// and with a clear line, 9 of 9. With anything on the line, 0 of 6. So there is nothing left
+// to tune about WHERE to jump from: the operator declared 36,16 by walking it, and a square
+// either side — same ledge, same floor, one step — never clears the gulley. Aiming a square
+// short of the landing is fine, so it is the TAKE-OFF that is exact, not the target.
+//
+// `strafe_n` and `strafe_s` are kept as controls rather than deleted. They cost six attempts
+// a run and they are the evidence that the declared square matters; a refuted idea that
+// leaves no trace gets re-proposed.
+//
+// What is left is TIMING, because the only thing that fails a jump from 36,16 is something
+// standing on the line. These vary how long to wait and how strict to be about 'clear'.
 const STRATEGIES = {
   baseline:  { from: { row: 36, col: 16 }, to: { row: 38, col: 10 },
-               why: 'the declared jump, exactly as the rail attempts it' },
-  strafe_n:  { from: { row: 35, col: 16 }, to: { row: 38, col: 10 },
-               why: 'one square north along the ledge — same floor, shallower angle' },
-  strafe_s:  { from: { row: 37, col: 15 }, to: { row: 38, col: 10 },
-               why: 'one square south-west along the ledge — steeper angle' },
+               why: 'the declared jump, blind — jumps into whatever is there' },
   land_wide: { from: { row: 36, col: 16 }, to: { row: 38, col: 11 },
-               why: 'aim one square short of the declared landing, on the same shelf' },
-  clear:     { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 3,
-               why: 'the declared jump, but only once nothing is within 3 squares of the line' },
+               why: 'a square short of the declared landing, same shelf — 100% so far' },
+  clear1:    { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 1, patience: 0,
+               why: 'jump unless something is ON the line — the loosest useful gate' },
+  patient:   { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 2, patience: 20,
+               why: 'wait up to 20s for a 2-square gap, then take it anyway' },
+  clear:     { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 3, patience: 0,
+               why: 'declines outright unless 3 squares of the line are clear' },
+  strafe_n:  { from: { row: 35, col: 16 }, to: { row: 38, col: 10 },
+               why: 'CONTROL: one square north — refuted, 0 of 3' },
+  strafe_s:  { from: { row: 37, col: 15 }, to: { row: 38, col: 10 },
+               why: 'CONTROL: one square south-west — refuted, 0 of 3' },
 };
-const CHOSEN = (flag('strategies') ? String(flag('strategies')).split(',') : Object.keys(STRATEGIES))
+// A GEOMETRY SWEEP, GATED ON A CLEAR LINE — because the first attempt to answer this could
+// not have.
+//
+// The refutation of strafing was worthless and I should not have drawn it: all six
+// non-declared take-offs had something on the line, and a blocker is 0% from ANY square. So
+// the geometry question had zero unconfounded attempts behind it, and the operator was right
+// to say the geometry can probably vary.
+//
+// `--sweep` generates every take-off x landing pair the jump verb accepts — one square either
+// way at both ends, on the two right floors, six by six — and gates every one of them on a
+// clear line, so what varies is the geometry and nothing else. That is the experiment the
+// question actually needs.
+function sweepStrategies() {
+  const F = (r, c) => { try { const pt = geo.standPoint(r, c); return pt ? geo.floorBaseAtClient(pt.x, pt.y) : null; } catch { return null; } };
+  const same = (a, b) => a != null && b != null && Math.abs(a - b) <= 64;
+  const TF = F(36, 16), LF = F(38, 10);
+  const out = {};
+  for (let r = 35; r <= 37; r++) for (let c = 15; c <= 17; c++) {
+    if (!same(F(r, c), TF) || geo.walkable(r, c) !== true) continue;
+    for (let lr = 37; lr <= 39; lr++) for (let lc = 9; lc <= 11; lc++) {
+      if (!same(F(lr, lc), LF)) continue;
+      out[`${r},${c}->${lr},${lc}`] = {
+        from: { row: r, col: c }, to: { row: lr, col: lc }, wait: 1, patience: 25,
+        why: 'sweep: waits up to 25s for a clear line so the GEOMETRY is what is measured',
+      };
+    }
+  }
+  return out;
+}
+
+const DEFAULT_SET = ['baseline', 'land_wide', 'clear1', 'patient', 'clear'];
+// `sweepStrategies` reads the room geometry, which is loaded further down, so the sweep is
+// applied there rather than here. A const that needs a value that does not exist yet is the
+// kind of ordering bug that reads as an empty strategy list.
+let CHOSEN = (flag('strategies') ? String(flag('strategies')).split(',') : DEFAULT_SET)
   .map(x => x.trim()).filter(Boolean);
-for (const n of CHOSEN) if (!STRATEGIES[n]) {
+for (const n of (has('sweep') ? [] : CHOSEN)) if (!STRATEGIES[n]) {
   console.error(`m59-jumptrial: no strategy "${n}". Known: ${Object.keys(STRATEGIES).join(', ')}`);
   process.exit(2);
 }
@@ -160,45 +217,89 @@ function readLedger() {
 }
 
 function report(rows) {
-  if (!rows.length) { console.log('\nno attempts on record yet.'); return; }
-  console.log(`\n${rows.length} attempt(s) on record\n`);
+  if (!rows.length) { console.log(''); console.log('no attempts on record yet.'); return; }
+
+  // A JUMP AND A FAILURE TO GET TO THE JUMP ARE DIFFERENT MEASUREMENTS.
+  //
+  // The first version counted 'never got on the ledge' as a missed jump, which made the
+  // declared take-off look like it failed a third of the time when it had not failed once.
+  // Twelve of the first thirty records were approach failures. The approach is a real
+  // problem — Ukgoth's traffic between the queue and the ledge — but it is not this
+  // question, and averaging the two together answers neither.
+  // Records written before `outcome` existed are still evidence; the kind is recoverable
+  // from what they do carry. A ledger that quietly drops its own older half is worse than one
+  // that has to work a little to read it.
+  const kindOf = r => r.outcome
+    ?? (r.declined ? 'declined'
+      : r.landed ? (r.made ? 'made' : 'missed')
+      : /not on the ledge|never reached/.test(r.note ?? '') ? 'no_approach'
+      : /left the ledge|drifted/.test(r.note ?? '') ? 'left_ledge'
+      : 'no_jump');
+  const jumped = rows.filter(r => ['made', 'missed'].includes(kindOf(r)));
+  const approach = rows.filter(r => ['no_approach', 'left_ledge'].includes(kindOf(r)));
+  const declined = rows.filter(r => kindOf(r) === 'declined');
+  console.log('');
+  console.log(rows.length + ' record(s): ' + jumped.length + ' actual jump(s), ' +
+              approach.length + ' never reached the ledge, ' + declined.length + ' declined');
+  console.log('');
   const by = {};
-  for (const r of rows) {
+  for (const r of jumped) {
     const k = r.strategy ?? '?';
     by[k] ??= { n: 0, made: 0, blocked: 0, moving: 0, still: 0, byWhat: {} };
     const b = by[k];
-    b.n++;
-    if (r.made) b.made++;
+    b.n++; if (r.made) b.made++;
     if (r.collided) {
-      b.blocked++;
-      b[r.collided.moving ? 'moving' : 'still']++;
+      b.blocked++; b[r.collided.moving ? 'moving' : 'still']++;
       const w = r.collided.name ?? '?';
       b.byWhat[w] = (b.byWhat[w] || 0) + 1;
     }
   }
-  console.log('  strategy     attempts   made    rate   blocked   the blocker was');
+  console.log('  OF THE JUMPS ACTUALLY ATTEMPTED');
+  console.log('  strategy     jumps   made    rate   blocked   the blocker was');
   for (const [k, b] of Object.entries(by).sort((x, y) => y[1].made / y[1].n - x[1].made / x[1].n)) {
     const what = Object.entries(b.byWhat).sort((x, y) => y[1] - x[1])
-      .map(([n, c]) => `${n} x${c}`).join(', ') || '—';
-    console.log('  ' + k.padEnd(12) + String(b.n).padStart(8) + String(b.made).padStart(7) +
+      .map(([n, c]) => n + ' x' + c).join(', ') || '-';
+    console.log('  ' + k.padEnd(12) + String(b.n).padStart(6) + String(b.made).padStart(7) +
                 String(Math.round(100 * b.made / b.n) + '%').padStart(8) +
                 String(b.blocked).padStart(10) + '   ' + what +
-                (b.blocked ? `  (${b.moving} moving, ${b.still} still)` : ''));
+                (b.blocked ? '  (' + b.moving + ' moving, ' + b.still + ' still)' : ''));
   }
-  const blocked = rows.filter(r => r.collided);
+
+  // BY THE SQUARE IT ACTUALLY LEFT FROM, which is the question worth asking of a jump: the
+  // take-off is exact even when the aim is not, and this is where that shows.
+  const bySquare = {};
+  for (const r of jumped) {
+    const k = r.took_off_from ?? '?';
+    bySquare[k] ??= { n: 0, made: 0, lands: {} };
+    bySquare[k].n++; if (r.made) bySquare[k].made++;
+    const l = r.landed ?? '-';
+    bySquare[k].lands[l] = (bySquare[k].lands[l] || 0) + 1;
+  }
+  console.log('');
+  console.log('  BY TAKE-OFF SQUARE');
+  console.log('  from      jumps   made    rate   landed');
+  for (const [k, b] of Object.entries(bySquare).sort((x, y) => y[1].made / y[1].n - x[1].made / x[1].n)) {
+    const lands = Object.entries(b.lands).sort((x, y) => y[1] - x[1])
+      .map(([l, c]) => l + ' x' + c).join(', ');
+    console.log('  ' + k.padEnd(9) + String(b.n).padStart(6) + String(b.made).padStart(7) +
+                String(Math.round(100 * b.made / b.n) + '%').padStart(8) + '   ' + lands);
+  }
+  console.log('');
+  const blocked = jumped.filter(r => r.collided);
   if (blocked.length) {
     const moving = blocked.filter(r => r.collided.moving).length;
-    console.log(`\n  of ${blocked.length} attempts with something in the way, ${moving} of the blockers ` +
-                `were MOVING and ${blocked.length - moving} were standing still.`);
-    const madeAnyway = blocked.filter(r => r.made).length;
-    console.log(`  ${madeAnyway} of those ${blocked.length} made the jump anyway.`);
+    console.log('  of ' + blocked.length + ' jumps with something on the line, ' + moving +
+                ' blockers were MOVING and ' + (blocked.length - moving) + ' standing still; ' +
+                blocked.filter(r => r.made).length + ' made it anyway.');
   }
-  const clean = rows.filter(r => !r.collided);
+  const clean = jumped.filter(r => !r.collided);
   if (clean.length)
-    console.log(`  with a clear line, ${clean.filter(r => r.made).length} of ${clean.length} made it ` +
-                `(${Math.round(100 * clean.filter(r => r.made).length / clean.length)}%).`);
+    console.log('  with a clear line, ' + clean.filter(r => r.made).length + ' of ' + clean.length +
+                ' made it (' + Math.round(100 * clean.filter(r => r.made).length / clean.length) + '%).');
+  if (approach.length)
+    console.log('  the approach failed ' + approach.length + ' time(s) — Ukgoth between the queue ' +
+                'and the ledge, which is a different problem from the jump.');
 }
-
 if (has('report')) { report(readLedger()); process.exit(0); }
 
 // ---------------------------------------------------------------- setup
@@ -217,6 +318,13 @@ try { attachStepMasks(world); } catch {}
 const room = world.rooms[String(ROOM)];
 if (!room) { console.error(`m59-jumptrial: no room ${ROOM}`); process.exit(1); }
 const geo = sharedRoomGeometry(room);
+
+if (has('sweep')) {
+  const swept = sweepStrategies();
+  Object.assign(STRATEGIES, swept);
+  CHOSEN = Object.keys(swept);
+  if (!CHOSEN.length) { console.error('m59-jumptrial: the sweep produced no pairs'); process.exit(1); }
+}
 
 const jumps = (JSON.parse(readFileSync(sub('m59-falljumps.json'), 'utf8')).jumps ?? [])
   .filter(j => Number(j.room) === ROOM);
@@ -344,12 +452,16 @@ async function attempt(q, name) {
     // body into the neighbourhood and a SHORT walk finishes it. That walk is a few squares on
     // one ledge rather than a crossing of Ukgoth, which is the confound this avoids.
     await dm.relocate([q.character], ROOM, { row: st.from.row, col: st.from.col, verify: false }).catch(() => null);
-    await sleep(900);
-    for (let tries = 0; tries < 3; tries++) {
+    await sleep(500);
+    // THE WALK IS THE EXPENSIVE PART AND USUALLY THE UNNECESSARY ONE. A relocate that already
+    // put the body on the ledge needs no walk, and a walk that is going to fail takes its whole
+    // timeout to say so — at 60s that was most of the wall clock of a run whose interesting
+    // part takes two seconds. Twelve is longer than any successful approach measured here.
+    for (let tries = 0; tries < 2; tries++) {
       const here = await observe(q.agent);
-      if (here?.me && here.me.row === st.from.row && here.me.col === st.from.col) break;
-      await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 60000);
-      await sleep(400);
+      if (here?.me && dist(here.me, st.from) <= 1 && sameFloorAs(here.me, st.from)) break;
+      await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 12000);
+      await sleep(300);
     }
   }
   // ON THE LEDGE IS GOOD ENOUGH, AND INSISTING ON THE EXACT SQUARE THREW THE EXPERIMENT AWAY.
@@ -366,6 +478,7 @@ async function attempt(q, name) {
   const onLedge = at?.me && dist(at.me, st.from) <= 1 && sameFloorAs(at.me, st.from);
   if (!onLedge) {
     out.made = false;
+    out.outcome = 'no_approach';
     out.note = `not on the ledge (${at?.me ? at.me.row + ',' + at.me.col : 'no position'})`;
     return line(out);
   }
@@ -377,7 +490,7 @@ async function attempt(q, name) {
   //    standing on the landing" and "a troll walked into the landing" are different findings
   //    and only the second one argues for timing rather than for a different line.
   const first = at;
-  await sleep(1000);
+  await sleep(500);
   const second = await observe(q.agent);
   const near = (second?.objects ?? []).filter(o =>
     distToLine({ col: o.col, row: o.row }, st.from, st.to) <= (st.wait ?? 2));
@@ -399,6 +512,7 @@ async function attempt(q, name) {
     out.collided = blockers[0] ? { name: blockers[0].name, moving: blockers[0].moving,
                                    kind: blockers[0].name === 'troll' ? 'troll'
                                        : /guardian/i.test(blockers[0].name) ? 'guardian' : 'other' } : null;
+    out.outcome = 'declined';
     out.note = `declined: ${blockers.length} within ${st.wait} of the line`;
     return line(out);
   }
@@ -411,6 +525,7 @@ async function attempt(q, name) {
   if (!still?.me || !sameFloorAs(still.me, st.from) || dist(still.me, st.from) > 1) {
     out.made = false;
     out.drifted = still?.me ? `${still.me.row},${still.me.col}` : 'unknown';
+    out.outcome = 'left_ledge';
     out.note = `left the ledge before jumping (to ${out.drifted})`;
     return line(out);
   }
@@ -419,6 +534,7 @@ async function attempt(q, name) {
   // 5. jump.
   const j = await call('jump', { agent: q.agent, to_col: st.to.col, to_row: st.to.row }, 60000);
   out.made = !!j?.made;
+  out.outcome = j?.landed ? (j.made ? 'made' : 'missed') : 'no_jump';
   out.landed = j?.landed ? `${j.landed.row},${j.landed.col}` : null;
   out.floor = j?.floor ?? null;
   out.landing_floor = j?.landing_floor ?? null;
