@@ -101,6 +101,13 @@ const STRATEGIES = {
                why: 'jump unless something is ON the line — the loosest useful gate' },
   patient:   { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 2, patience: 20,
                why: 'wait up to 20s for a 2-square gap, then take it anyway' },
+  // THE ADAPTIVE ONE, AND THE ONE MOST LIKELY TO BEAT A CROWDED ROOM: do not pick the landing
+  // in advance. Raycast to every square of the shelf at the moment of the jump and take the
+  // line with the most clearance from whatever is standing under the drop. A fixed target is
+  // a bet that the room will be empty where you aimed; this is a choice made with the room in
+  // front of you.
+  pick_clear: { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, candidates: true, wait: 1, patience: 6,
+               why: 'raycast every shelf square and jump at whichever line is clearest' },
   clear:     { from: { row: 36, col: 16 }, to: { row: 38, col: 10 }, wait: 3, patience: 0,
                why: 'declines outright unless 3 squares of the line are clear' },
   strafe_n:  { from: { row: 35, col: 16 }, to: { row: 38, col: 10 },
@@ -130,7 +137,7 @@ function sweepStrategies() {
     for (let lr = 37; lr <= 39; lr++) for (let lc = 9; lc <= 11; lc++) {
       if (!same(F(lr, lc), LF)) continue;
       out[`${r},${c}->${lr},${lc}`] = {
-        from: { row: r, col: c }, to: { row: lr, col: lc }, wait: 1, patience: 25,
+        from: { row: r, col: c }, to: { row: lr, col: lc }, wait: 1, patience: 8,
         why: 'sweep: waits up to 25s for a clear line so the GEOMETRY is what is measured',
       };
     }
@@ -138,7 +145,19 @@ function sweepStrategies() {
   return out;
 }
 
-const DEFAULT_SET = ['baseline', 'land_wide', 'clear1', 'patient', 'clear'];
+// NORTH OF THE LEDGE, ON THE SAME PLATEAU. The operator's own staging ground: everything
+// here is floor 5872 and everything here can reach the take-off. Anything at row 38 or more
+// is below the drop and cannot get back.
+const STAGE = { row: 32, col: 19 };
+
+// THE SHELF, AS THE OPERATOR DESCRIBES IT. All six measure floor 3840, the declared landing's
+// own floor; 38,13 beside them is 3200 and is the gulley every miss ends in.
+const SHELF = [
+  { row: 38, col: 10 }, { row: 38, col: 11 }, { row: 38, col: 12 },
+  { row: 39, col: 11 }, { row: 39, col: 12 }, { row: 40, col: 12 },
+];
+
+const DEFAULT_SET = ['pick_clear', 'baseline', 'clear1', 'patient', 'land_wide'];
 // `sweepStrategies` reads the room geometry, which is loaded further down, so the sweep is
 // applied there rather than here. A const that needs a value that does not exist yet is the
 // kind of ordering bug that reads as an empty strategy list.
@@ -381,7 +400,42 @@ function strictReach(from) {
   return seen;
 }
 
+// AND THE ONE THAT MATTERS: WHICH SQUARES CAN REACH THE TAKE-OFF.
+//
+// `strictReach` answers what the take-off can reach, and on one-way terrain that is a
+// DIFFERENT SET — the operator has had to correct me on this exact confusion once already.
+// Measured here: 1071 squares are reachable FROM 36,16, 1381 can reach it, and only 390 do
+// both. Three of the five queue squares this tool first chose could not reach the take-off
+// at all, and neither could a single one of the places relocate actually drops people:
+// 41,14 / 44,10 / 46,7 / 47,11 are all below the ledge, and below the ledge is one-way.
+//
+// So a waiting room has to be in the BOTH-WAYS set, and a drop is only usable if it lands
+// somewhere that can still get to the ledge.
+function reverseReach(to) {
+  const seen = new Set([to.row * 1000 + to.col]);
+  let frontier = [to];
+  const R = room.rows, C = room.cols;
+  while (frontier.length) {
+    const next = [];
+    for (const p of frontier)
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const q = { row: p.row + dr, col: p.col + dc };
+        if (q.row < 1 || q.col < 1 || q.row > R || q.col > C) continue;
+        const k = q.row * 1000 + q.col;
+        if (seen.has(k) || geo.walkable(q.row, q.col) !== true) continue;
+        let ok = false;
+        try { ok = geo._traceMoverStep(q.row, q.col, p.row, p.col); } catch {}
+        if (!ok) continue;                       // q -> p is the direction that matters
+        seen.add(k); next.push(q);
+      }
+    frontier = next;
+  }
+  return seen;
+}
+
 const connected = strictReach(takeoff);
+const canReach = reverseReach(takeoff);
 const coverAt = (r, c) => {
   let n = 0;
   for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
@@ -392,15 +446,18 @@ const coverAt = (r, c) => {
 };
 const candidates = [];
 for (const k of connected) {
+  if (!canReach.has(k)) continue;            // a waiting room you cannot leave is a cell
   const r = Math.floor(k / 1000), c = k % 1000;
   const d = dist({ row: r, col: c }, takeoff);
   if (d < 3 || d > 16) continue;
+  // ON THE PLATEAU. A waiting square below the drop is a cell, however well covered.
+  if (!sameFloorAs({ row: r, col: c }, takeoff)) continue;
   candidates.push({ row: r, col: c, d, cover: coverAt(r, c) });
 }
 candidates.sort((a, b) => b.cover - a.cover || a.d - b.d);
 const spots = candidates.slice(0, Math.max(agents.length, 8));
-console.log(`queue: ${connected.size} squares strictly reach the take-off; ` +
-            `${candidates.length} are 3-16 away; taking ${spots.length}`);
+console.log(`queue: ${connected.size} reachable from the take-off, ${canReach.size} can reach it, ` +
+            `${candidates.length} do both at 3-16 away; taking ${spots.length}`);
 
 const queue = agents.map((a, i) => ({ ...a, spot: spots[i % Math.max(1, spots.length)] }));
 
@@ -430,7 +487,8 @@ async function observe(agent) {
 }
 
 async function attempt(q, name) {
-  const st = STRATEGIES[name];
+  const st0 = STRATEGIES[name];
+  const st = { ...st0 };
   const out = { character: q.character, strategy: name,
                 from: `${st.from.row},${st.from.col}`, to: `${st.to.row},${st.to.col}` };
 
@@ -451,17 +509,39 @@ async function attempt(q, name) {
     // measured here at 35,21 / 29,19 / 34,21 for a request of 36,16. So the DM call gets the
     // body into the neighbourhood and a SHORT walk finishes it. That walk is a few squares on
     // one ledge rather than a crossing of Ukgoth, which is the confound this avoids.
-    await dm.relocate([q.character], ROOM, { row: st.from.row, col: st.from.col, verify: false }).catch(() => null);
-    await sleep(500);
-    // THE WALK IS THE EXPENSIVE PART AND USUALLY THE UNNECESSARY ONE. A relocate that already
-    // put the body on the ledge needs no walk, and a walk that is going to fail takes its whole
-    // timeout to say so — at 60s that was most of the wall clock of a run whose interesting
-    // part takes two seconds. Twelve is longer than any successful approach measured here.
-    for (let tries = 0; tries < 2; tries++) {
+    // AIM THE DROP NORTH OF THE LEDGE, NOT AT IT.
+    //
+    // Aiming at the take-off itself was the mistake. `UtilGoNearSquare` scatters, and from
+    // 36,16 it scatters SOUTH — 41,14 / 44,10 / 46,7 / 47,11 — which is the region BELOW the
+    // drop, and below the drop is one-way. Not one of those squares can reach the take-off
+    // again, so the body was being teleported into the trap the jump exists to clear, eight
+    // times in a row, which is what the operator was watching when the bots looked like they
+    // were aiming at 42,14.
+    //
+    // The staging ground is north of the ledge and on the same plateau: 30,18 / 31,18 /
+    // 32,19 / 33,19 / 34,18 are all floor 5872, the take-off's own floor, and all of them can
+    // reach it. The ledge itself runs 37,14 to 35,21 on that same floor.
+    //
+    // So the drop is aimed at STAGE, and a drop is only accepted if it lands on the plateau —
+    // the floor test IS the "am I above the drop or below it" test, and it is the one that
+    // matters. Then a short walk south-west onto the take-off.
+    let placed = false;
+    for (let drop = 0; drop < 6 && !placed; drop++) {
+      await dm.relocate([q.character], ROOM, { row: STAGE.row, col: STAGE.col, verify: false }).catch(() => null);
+      await sleep(600);
       const here = await observe(q.agent);
-      if (here?.me && dist(here.me, st.from) <= 1 && sameFloorAs(here.me, st.from)) break;
-      await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 12000);
-      await sleep(300);
+      placed = !!(here?.me && sameFloorAs(here.me, st.from) && canReach.has(here.me.row * 1000 + here.me.col));
+      if (placed) { out.drops = drop + 1; out.dropped_at = `${here.me.row},${here.me.col}`; }
+    }
+    if (!placed) out.drops = 6;
+
+    // Now the walk is worth doing, because we only walk from somewhere that can get there.
+    if (placed) {
+      for (let tries = 0; tries < 2; tries++) {
+        const here = await observe(q.agent);
+        if (here?.me && dist(here.me, st.from) <= 2 && sameFloorAs(here.me, st.from)) break;
+        await call('walk_to', { agent: q.agent, col: st.from.col, row: st.from.row }, 20000);
+      }
     }
   }
   // ON THE LEDGE IS GOOD ENOUGH, AND INSISTING ON THE EXACT SQUARE THREW THE EXPERIMENT AWAY.
@@ -489,9 +569,20 @@ async function attempt(q, name) {
   // 2. WHAT IS IN THE WAY, AND IS IT MOVING. Two samples a second apart, because "a troll was
   //    standing on the landing" and "a troll walked into the landing" are different findings
   //    and only the second one argues for timing rather than for a different line.
+  // ONE LOOK WHEN THE LINE IS CLEAR, TWO ONLY WHEN THERE IS SOMETHING TO CHARACTERISE.
+  //
+  // The second sample exists to tell a blocker that is STANDING on the line from one that
+  // WALKED onto it, which is a real distinction and worth a second — but only when there is a
+  // blocker. Taking it unconditionally left the body standing on a one-square ledge beside
+  // Guardians for a second longer than it needed to, every attempt, and `left the ledge before
+  // jumping` went from 6 to 19 once the tolerance widened enough to notice.
+  //
+  // So: look once, and if nothing is near the line, jump NOW. The exposure that costs attempts
+  // is the time between arriving and committing, and with a clear line that time is waste.
   const first = at;
-  await sleep(500);
-  const second = await observe(q.agent);
+  const nearFirst = (first.objects ?? []).filter(o =>
+    distToLine({ col: o.col, row: o.row }, st.from, st.to) <= (st.wait ?? 2));
+  const second = nearFirst.length ? (await sleep(500), await observe(q.agent)) : first;
   const near = (second?.objects ?? []).filter(o =>
     distToLine({ col: o.col, row: o.row }, st.from, st.to) <= (st.wait ?? 2));
   const movedById = new Map((first.objects ?? []).map(o => [o.id, o]));
@@ -547,7 +638,30 @@ async function attempt(q, name) {
   }
   out.took_off_from = `${still.me.row},${still.me.col}`;
 
-  // 5. jump.
+  // 5. PICK THE LINE, IF THIS STRATEGY PICKS. Clearance is the distance from the nearest
+  //    object to the line, so the best candidate is the one that maximises it; ties go to the
+  //    declared landing, which is the one somebody has actually walked.
+  if (st.candidates) {
+    const objs = (second?.objects ?? []);
+    let best = null;
+    for (const cand of SHELF) {
+      const clearance = objs.length
+        ? Math.min(...objs.map(o => distToLine({ col: o.col, row: o.row }, st.from, cand)))
+        : 99;
+      const isDeclared = cand.row === 38 && cand.col === 10;
+      if (!best || clearance > best.clearance + 0.01 ||
+          (Math.abs(clearance - best.clearance) <= 0.01 && isDeclared)) {
+        best = { cand, clearance };
+      }
+    }
+    if (best) {
+      st.to = best.cand;
+      out.to = `${best.cand.row},${best.cand.col}`;
+      out.clearance = Math.round(best.clearance * 10) / 10;
+    }
+  }
+
+  // 6. jump.
   const j = await call('jump', { agent: q.agent, to_col: st.to.col, to_row: st.to.row }, 60000);
   out.made = !!j?.made;
   out.outcome = j?.landed ? (j.made ? 'made' : 'missed') : 'no_jump';
@@ -557,7 +671,7 @@ async function attempt(q, name) {
   if (j?._error) out.note = j._error;
   else if (j?.reason) out.note = j.reason;
 
-  // 6. WHO WAS IN THE WAY, decided after the fact against where the body ended up. A blocker
+  // 7. WHO WAS IN THE WAY, decided after the fact against where the body ended up. A blocker
   //    that was on the line and a jump that came up short is the collision this exists to
   //    count; a blocker that was on the line and a jump that landed anyway is evidence the
   //    line is survivable, which is just as useful and used to be invisible.

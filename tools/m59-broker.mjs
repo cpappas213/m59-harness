@@ -4170,7 +4170,16 @@ const TOOLS = [
         try { const pt = geo.standPoint(row, col); return pt ? geo.floorBaseAtClient(pt.x, pt.y) : null; }
         catch { return null; }
       };
-      const near = (a1, b1, a2, b2) => Math.max(Math.abs(a1 - a2), Math.abs(b1 - b2)) <= 1;
+      // THE TAKE-OFF IS TIGHT AND THE LANDING IS NOT, because they are different questions.
+      //
+      // You must leave from the ledge, and the ledge is narrow — one square either way, or it
+      // is a different drop. Where you AIM is a choice about which part of the shelf to come
+      // down on, and the operator states that shelf as 38,10 through 38,12, out to 39,12 and
+      // possibly 40,12, with 39,11 likely viable. Every one of those measures floor 3840, the
+      // same shelf as the declared landing; 38,13 beside them is 3200, the gulley, and is
+      // excluded by the floor test rather than by the distance.
+      const nearFrom = (a1, b1, a2, b2) => Math.max(Math.abs(a1 - a2), Math.abs(b1 - b2)) <= 1;
+      const near = (a1, b1, a2, b2) => Math.max(Math.abs(a1 - a2), Math.abs(b1 - b2)) <= 2;
       const sameFloor = (x, y) => x != null && y != null && Math.abs(x - y) <= 64;
       const hereFloor = floorAt(me.row, me.col), wantFloor = floorAt(a.to_row, a.to_col);
       const table = [];
@@ -4178,6 +4187,7 @@ const TOOLS = [
         for (let c = me.col - 1; c <= me.col + 1; c++)
           for (const j of geo.declaredFallJumps(r, c)) table.push({ from: { row: r, col: c }, to: j });
       const declared = table.some(j =>
+        nearFrom(j.from.row, j.from.col, me.row, me.col) &&
         near(j.to.row, j.to.col, a.to_row, a.to_col) &&
         sameFloor(hereFloor, floorAt(j.from.row, j.from.col)) &&
         sameFloor(wantFloor, floorAt(j.to.row, j.to.col)));
