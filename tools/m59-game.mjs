@@ -1319,8 +1319,14 @@ class Session {
             const line =
               `Arrived: ${fromRoom.name || ('room ' + fromRoom.num)} to ${toName}` +
               ` in ${outcome?.hops ?? '?'} hop(s)` +
-              (pct === null ? '' : `, health down to ${pct}% (${lowHealth}/${lowMax})`) +
-              `, ${rests} rest stop(s) at safe walls.`;
+              // "health down to 100%" is not a sentence anybody wants to read a hundred
+              // times a night. Untouched is the good outcome and should read like one.
+              (pct === null ? ''
+               : pct >= 100 ? ', untouched'
+               : `, health down to ${pct}% (${lowHealth}/${lowMax})`) +
+              (rests === 0 ? ', no rest stops.' :
+               rests === 1 ? ', 1 rest stop at a safe wall.'
+                           : `, ${rests} rest stops at safe walls.`);
             // Never let the announcement be the thing that fails a journey that arrived.
             // THE PACER FIRST, THE CLIENT IF IT REFUSES. In the broker's proxy Session
             // `pacer.submit` throws on purpose — "the pacer is in the keeper process" —
