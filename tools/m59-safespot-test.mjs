@@ -228,6 +228,312 @@ console.log('\n--- a room does not become an unbounded wall experiment ---');
      !stopped.took && stopped.unreachable_terrain && /stopping the wall search/.test(stopped.why));
 }
 
+console.log('\n--- open-field quarry pursuit never enters the wall-only pull path ---');
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  p.hold = null;
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  const path = Array.from({ length: 9 }, (_, i) => ({ col: 6 + i, row: 5 }));
+  w.s.world.approachSquare = () => ({ col: 14, row: 5, steps: path.length, path });
+  w.s.movementGeneration = 7;
+  w.s.movementWasCancelled = generation => generation !== w.s.movementGeneration;
+  let stepCalls = 0, pulls = 0, progressed = 0;
+  const stepped = [];
+  w.s.walkTo = async () => { throw new Error('open-field pursuit must never enter walkTo'); };
+  w.s.step = async (col, row, opts) => {
+    stepCalls++;
+    opts.beforeMutation('turn');
+    opts.beforeMutation('move');
+    stepped.push({ col, row });
+    Object.assign(w.me(), { col, row });
+    return { moved: true, position: { col, row } };
+  };
+  p.pull = async () => { pulls++; return { pulled: true, back: true }; };
+  p.progress = () => { progressed++; };
+  const result = await p.handleOutOfReachQuarry({
+    out_of_reach: true, foe_id: quarry.id, target: 'giant rat',
+    nearest: { distance: 10 },
+  }, [quarry]);
+  ok('useSafeSpots=false advances toward present prey instead of calling pull',
+     result.mode === 'open-field' && result.advanced === true && stepCalls === 4 && pulls === 0 &&
+       w.me().col === 9 && w.me().row === 5 && progressed === 1,
+     JSON.stringify({ result, stepCalls, pulls, progressed, at: w.me() }));
+  ok('the open-field advance sends exactly the first four adjacent path steps and never walkTo',
+     JSON.stringify(stepped) === JSON.stringify([
+       { col: 6, row: 5 }, { col: 7, row: 5 },
+       { col: 8, row: 5 }, { col: 9, row: 5 },
+     ]), JSON.stringify(stepped));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  // A valid obstacle detour must initially walk south and west even though the quarry
+  // is due east. The first bounded prefix ends farther away in Euclidean distance.
+  const path = [
+    { col: 5, row: 6 }, { col: 5, row: 7 },
+    { col: 4, row: 7 }, { col: 3, row: 7 },
+    { col: 4, row: 8 }, { col: 5, row: 8 },
+  ];
+  w.s.world.approachSquare = () => ({ col: 14, row: 5, steps: path.length, path });
+  w.s.movementGeneration = 4;
+  w.s.movementWasCancelled = () => false;
+  let stepCalls = 0, progressed = 0, stalled = 0;
+  w.s.walkTo = async () => { throw new Error('detour must remain on bounded direct steps'); };
+  w.s.step = async (col, row, opts) => {
+    stepCalls++;
+    opts.beforeMutation('move');
+    Object.assign(w.me(), { col, row });
+    return { moved: true, position: { col, row } };
+  };
+  p.progress = () => { progressed++; };
+  p.noProgress = () => { stalled++; };
+  const result = await p.handleOutOfReachQuarry({
+    out_of_reach: true, foe_id: quarry.id, target: 'giant rat',
+  }, [quarry]);
+  const beforeDistance = Math.hypot(quarry.col - 5, quarry.row - 5);
+  const afterDistance = Math.hypot(quarry.col - w.me().col, quarry.row - w.me().row);
+  ok('a valid four-step obstacle detour is progress before Euclidean distance falls',
+     result.advanced === true && result.distance_reduced === false &&
+       result.path_steps_accepted === 4 && stepCalls === 4 && progressed === 1 && stalled === 0 &&
+       afterDistance > beforeDistance,
+     JSON.stringify({ result, stepCalls, progressed, stalled, beforeDistance, afterDistance }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  p.policy.hunt = 'fungus beast';
+  p.clearing = 'baby spider';
+  p.hold = null;
+  w.addMonster(2, 0, 10, MONSTER);
+  const blocker = w.c.room.objects.get(2);
+  const path = Array.from({ length: 9 }, (_, i) => ({ col: 5, row: 6 + i }));
+  w.s.world.approachSquare = () => ({ col: 5, row: 14, steps: path.length, path });
+  w.s.movementGeneration = 3;
+  w.s.movementWasCancelled = () => false;
+  let pulls = 0;
+  const stepped = [];
+  w.s.walkTo = async () => { throw new Error('room-clear pursuit must never enter walkTo'); };
+  w.s.step = async (col, row, opts) => {
+    opts.beforeMutation('move');
+    stepped.push({ col, row });
+    Object.assign(w.me(), { col, row });
+    return { moved: true };
+  };
+  p.pull = async () => { pulls++; return { pulled: true, back: true }; };
+  p.progress = () => {};
+  const result = await p.handleOutOfReachQuarry({
+    out_of_reach: true, foe_id: blocker.id, target: 'baby spider',
+  }, [blocker]);
+  ok('the same bounded open-field path accepts a temporary room-clear target',
+     result.advanced === true && result.target_id === blocker.id &&
+       stepped.length === 4 && stepped.at(-1)?.col === 5 && stepped.at(-1)?.row === 9 && pulls === 0,
+     JSON.stringify({ result, stepped, pulls }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  p.hold = null;
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  const path = Array.from({ length: 9 }, (_, i) => ({ col: 6 + i, row: 5 }));
+  w.s.world.approachSquare = () => ({ col: 14, row: 5, steps: path.length, path });
+  w.s.movementGeneration = 11;
+  w.s.movementWasCancelled = generation => generation !== w.s.movementGeneration;
+  w.s.cancelledMovement = extra => ({
+    arrived: false, left: false, cancelled: true,
+    reason: 'movement cancelled by a newer command', cancelled_by: 'fixture operator', ...extra,
+  });
+  let pulls = 0, progressed = 0, stepCalls = 0, mutationChecks = 0;
+  w.s.walkTo = async () => { throw new Error('cancelled pursuit must never enter walkTo'); };
+  w.s.step = async (_col, _row, opts) => {
+    stepCalls++;
+    mutationChecks++;
+    opts.beforeMutation('turn');
+    // Simulate an operator taking movement ownership while this step is paced between
+    // its turn and move packets. The second mutation check must refuse the move.
+    w.s.movementGeneration++;
+    mutationChecks++;
+    opts.beforeMutation('move');
+    throw new Error('the cancelled move packet was allowed');
+  };
+  p.pull = async () => { pulls++; return { pulled: true, back: true }; };
+  p.progress = () => { progressed++; };
+  const result = await p.handleOutOfReachQuarry({
+    out_of_reach: true, foe_id: quarry.id, target: 'giant rat',
+  }, [quarry]);
+  ok('cancellation ends the bounded open-field approach without pull or false progress',
+     result.cancelled === true && pulls === 0 && progressed === 0 &&
+       result.reason === 'movement cancelled by a newer command' &&
+       result.cancelled_by === 'fixture operator' && result.step_count === 1 &&
+       w.s.movementGeneration === 12 && stepCalls === 1 && mutationChecks === 2,
+     JSON.stringify({ result, pulls, progressed, stepCalls, mutationChecks,
+       generation: w.s.movementGeneration }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  w.addMonster(1, 10, 0, MONSTER);
+  let stepCalls = 0;
+  w.s.step = async () => { stepCalls++; return { moved: true }; };
+  w.s.world.approachSquare = () => ({ path: [{ col: 6, row: 5 }] });
+  const result = await p.handleOutOfReachQuarry({
+    out_of_reach: true, foe_id: 9999, nearest: { distance: 10 },
+  }, [w.c.room.objects.get(1)]);
+  ok('a vanished exact foe id stops for re-observation instead of substituting found[0]',
+     result.reobserve === true && result.target_id === 9999 && stepCalls === 0,
+     JSON.stringify({ result, stepCalls }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  w.s.world.approachSquare = () => ({ path: [{ col: 6, row: 5 }, { col: 7, row: 5 }] });
+  w.s.movementGeneration = 1;
+  w.s.movementWasCancelled = () => false;
+  let stepCalls = 0, progressed = 0;
+  w.s.step = async () => {
+    stepCalls++;
+    w.c.room.id = 999;
+    return { moved: true, left_room: false };
+  };
+  p.progress = () => { progressed++; };
+  const result = await p.handleOutOfReachQuarry({ out_of_reach: true, foe_id: quarry.id }, [quarry]);
+  ok('a room identity change stops after one direct step even if the leaf missed left_room',
+     result.left_room === true && stepCalls === 1 && progressed === 0,
+     JSON.stringify({ result, stepCalls, progressed }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  w.s.world.approachSquare = () => ({ path: [{ col: 6, row: 5 }, { col: 7, row: 5 }] });
+  w.s.movementGeneration = 1;
+  w.s.movementWasCancelled = () => false;
+  let stepCalls = 0, progressed = 0;
+  w.s.step = async () => {
+    stepCalls++;
+    return { moved: false, reason: 'room_geometry_mismatch', note: 'fixture mismatch' };
+  };
+  p.progress = () => { progressed++; };
+  const result = await p.handleOutOfReachQuarry({ out_of_reach: true, foe_id: quarry.id }, [quarry]);
+  ok('a terminal collision contract refusal stops the direct loop after one step',
+     result.terminal === true && result.reason === 'room_geometry_mismatch' &&
+       stepCalls === 1 && progressed === 0,
+     JSON.stringify({ result, stepCalls, progressed }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  p.safety = () => ({ fleeAt: 0.75 });
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  w.s.world.approachSquare = () => ({ path: [
+    { col: 6, row: 5 }, { col: 7, row: 5 }, { col: 8, row: 5 },
+  ] });
+  w.s.movementGeneration = 1;
+  w.s.movementWasCancelled = () => false;
+  let stepCalls = 0, progressed = 0;
+  w.s.step = async (col, row, opts) => {
+    stepCalls++;
+    opts.beforeMutation('move');
+    Object.assign(w.me(), { col, row });
+    w.c._health = 20;
+    return { moved: true };
+  };
+  p.progress = () => { progressed++; };
+  const result = await p.handleOutOfReachQuarry({ out_of_reach: true, foe_id: quarry.id }, [quarry]);
+  ok('crossing the flee threshold stops before a second open-field step',
+     result.health_abort === true && result.health === 20 &&
+       stepCalls === 1 && progressed === 0,
+     JSON.stringify({ result, stepCalls, progressed }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = true;
+  p.hold = { room: 562, col: 5, row: 5, proven: true };
+  w.addMonster(1, 10, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  let steps = 0, pulls = 0;
+  w.s.step = async () => { steps++; return { moved: true }; };
+  p.pull = async selected => {
+    pulls++;
+    return { pulled: true, back: true, target: w.c.rsc.get(selected.nameRsc), steps: 4 };
+  };
+  const fight = {
+    out_of_reach: true, foe_id: quarry.id, nearest: { distance: 10 }, target: 'giant rat',
+  };
+  const result = await p.handleOutOfReachQuarry(fight, [quarry]);
+  const second = await p.handleOutOfReachQuarry(fight, [quarry]);
+  ok('safe-spot mode with a real hold keeps the established wall pull behavior',
+     result.mode === 'wall' && result.pulled === true && second.waiting === true &&
+       pulls === 1 && steps === 0 && p.pendingPull?.target_id === quarry.id &&
+       p.pendingPull?.steps === 4,
+     JSON.stringify({ result, second, pulls, steps, pending: p.pendingPull }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  // Simulate a policy flip between observations: the old coordinates still exist, but
+  // they must not make either fight() hold position or pull() start a wall round trip.
+  p.hold = { room: 562, col: 5, row: 5, proven: true };
+  w.addMonster(1, 1, 0, MONSTER);
+  const quarry = w.c.room.objects.get(1);
+  const refused = await p.pull(quarry);
+  ok('policy-off outranks a stale hold for both fight positioning and pull defense',
+     p.holdingForFight() === false && refused.pulled === false &&
+       /switched off/.test(refused.why || ''),
+     JSON.stringify({ holding: p.holdingForFight(), refused }));
+  const source = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+  ok('the legacy empty-room vigil uses the same live tactical hold gate',
+     /const waitingInASpot = this\.holdingForFight\(\) && this\.holdWorks\(\) && !this\.sanctuary\(room\);/.test(source));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = true;
+  // The coordinates are remembered, but the body has already moved one square away.
+  p.hold = { room: 562, col: 4, row: 5, proven: true };
+  let pulls = 0, advances = 0;
+  p.pull = async () => { pulls++; return { pulled: true, back: true }; };
+  p.advanceOnOpenFieldQuarry = async () => { advances++; return { advanced: true }; };
+  const result = await p.handleOutOfReachQuarry({ out_of_reach: true }, []);
+  ok('a remembered hold is not tactical wall state after the body moved away',
+     p.holdingForFight() === false && result.mode === 'open-field' &&
+       pulls === 0 && advances === 1,
+     JSON.stringify({ holding: p.holdingForFight(), result, pulls, advances }));
+}
+{
+  const w = world({ col: 5, row: 5, room: 562, health: 38, max: 38, vigor: 180 });
+  const p = keeper(w);
+  p.policy.useSafeSpots = false;
+  p.hold = { room: 562, col: 5, row: 5, proven: false, failures: 0 };
+  p.spotTest = { at: '5,5', since: Date.now(), passes: 2 };
+  w.addMonster(1, 1, 0, MONSTER);
+  w.addMonster(2, 0, 1, MONSTER);
+  w.addMonster(3, -1, 0, MONSTER);
+  const adjacent = [1, 2, 3].map(id => w.c.room.objects.get(id));
+  const heldTheSwing = p.maybeTestSpot(adjacent);
+  ok('policy-off with a stale unproven hold does not suppress an adjacent open-field attack',
+     heldTheSwing === false && p.spotTest === null && adjacent.length === 3,
+     JSON.stringify({ heldTheSwing, spotTest: p.spotTest, adjacent: adjacent.length }));
+}
+
 console.log('\n--- unrelated combat does not erase a pending pull ---');
 {
   const w = world();
