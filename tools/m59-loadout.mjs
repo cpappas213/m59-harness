@@ -140,6 +140,25 @@ export const POLICY_KEYS = {
   fight_rounds:            { type: 'number',  as: 'fightRounds' },
   use_bt:                  { type: 'boolean', as: 'useBT' },
   conflict_response_hops:  { type: 'number',  as: 'conflict_response_hops' },
+  // WHETHER THIS CHARACTER NARRATES ITS OWN ARRIVALS, and on which channel.
+  //
+  // `M59_TRIP_ANNOUNCE` is the machine's default and is all-or-nothing: it lives on the
+  // broker process and every keeper inherits it, so turning it on to watch ONE character
+  // do an errand loop makes twenty-one of them broadcast. That matters because a broadcast
+  // costs a percentage of maximum mana per line and `create food` costs 15 a casting — the
+  // only way past the vigor rest cap of 80. A whole fleet narrating pays for the telemetry
+  // out of the larder.
+  //
+  // Here it is per character, in the file that is already this character's standing plan,
+  // applied on the next pass after the file is saved. No restart, no second broker, and no
+  // separate fleet — which was the alternative and is a great deal of machinery for one
+  // character's commentary.
+  //
+  //   "broadcast"  the whole server; what a watcher on another account sees. Costs mana.
+  //   "yell"       this room and its neighbours. Free.
+  //   "say"        this room only. Free.
+  //   "off"        silent, even when the environment variable is on.
+  trip_announce:           { type: 'string',  as: 'tripAnnounce' },
 };
 
 // Turn both halves of the planner into the ORDERED STAGES a learning errand can buy.

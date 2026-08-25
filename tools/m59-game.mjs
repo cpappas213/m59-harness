@@ -1310,7 +1310,16 @@ class Session {
           // A FAILED JOURNEY SAYS NOTHING. The server already broadcasts deaths and the
           // transit ledger already records short trips; a character announcing its own
           // failures would be the noisiest thing on the server and the least informative.
-          const channel = String(process.env.M59_TRIP_ANNOUNCE ?? '').trim().toLowerCase();
+          // THE CHARACTER'S OWN SETTING FIRST, THE MACHINE'S SECOND.
+          //
+          // The environment variable is all-or-nothing across a broker, so watching ONE
+          // character run errands meant making the whole fleet broadcast — and a broadcast
+          // costs mana the larder needs. `trip_announce` in that character's loadout is the
+          // narrow answer: per character, live on the next pass after the file is saved, no
+          // restart and no second broker. "off" in the file beats the variable being on,
+          // which is the direction that has to work for a fleet-wide default to be usable.
+          const channel = String(keeper?.policy?.tripAnnounce
+                                 ?? process.env.M59_TRIP_ANNOUNCE ?? '').trim().toLowerCase();
           const kind = { say: 1, yell: 2, broadcast: 3 }[channel];
           if (arrived && kind && this.client?.say) {
             const rests = Math.max(0, Number(keeper?.tally?.rests ?? 0) - restsAtStart);
