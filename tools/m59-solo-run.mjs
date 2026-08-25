@@ -337,9 +337,20 @@ async function runLeg(r, { from = FROM, to = TO, place = true, heal = true, leg 
     // run's result depended on how the one before it ended, and today's runs alternated
     // between "0 deaths" and "2 deaths" partly for that reason. A measurement whose result
     // depends on the previous measurement is not a measurement.
-    const cmds = [...dm.healthCmds(ids[r.character], max)];
-    if (typeof dm.manaCmds === 'function') cmds.push(...dm.manaCmds(ids[r.character], 50));
-    await dm.dm(cmds, { timeoutMs: 60000 });
+    // AND VIGOR, WHICH IS THE ONE THAT DECIDES HOW LONG THE CHARACTER IS IN THE ROOM.
+    //
+    // `healthCmds` fills health and `manaCmds` fills mana; neither touches vigor, so every
+    // leg started at whatever resting had delivered — and resting stops at 80 of 200. Vigor
+    // is what pays for running, running is roughly five squares a second against a walk,
+    // and TIME IN THE ROOM is the dominant risk on this road: the same Ukgoth crossing runs
+    // 30s uncontended and 155-230s when it goes wrong, and the deaths are all in the long
+    // ones. Starting every measured leg at the rest cap measured a fleet that cannot run.
+    //
+    // `dm.heal` already does all three — health and mana to their real ceilings, piVigor to
+    // MAX_VIGOR, piExertion to 0 — and pushes NewHealth/NewMana/NewVigor, because a bar set
+    // behind the game's back is not redrawn and a reset the client cannot see is one the
+    // operator will do again.
+    await dm.heal([r.character], { timeoutMs: 60000 }).catch(() => null);
   }
 
   // A LEG THAT STARTS UNDER A RECOVERY HOLD IS NOT A MEASUREMENT OF ANYTHING.
