@@ -5341,11 +5341,60 @@ class Session {
           // "walk back to the start" is not a move a cycle supports. So board at the
           // nearest square of the line and follow from there. It may be behind us or ahead
           // of us; both are ground the bake proved, and either is nearer than the anchor.
-          let boardAt = 0, boardDistance = Infinity;
-          for (let n = 0; n < rail.squares.length; n++) {
-            const sq = rail.squares[n];
-            const d = Math.hypot(sq.row - me0.row, sq.col - me0.col);
-            if (d < boardDistance) { boardDistance = d; boardAt = n; }
+          // NEAREST IS NOT THE SAME AS REACHABLE, AND IN THIS ROOM IT IS USUALLY NOT.
+          //
+          // Picking the closest square by straight line asks the crow. Ukgoth is a cycle
+          // with one-way cliffs — forward and reverse reachability differ by hundreds of
+          // squares — so the nearest point of the line is regularly on the far side of a
+          // drop, and `walkTo` cannot get there from here at any price. Nothing noticed,
+          // because the next call recomputed the SAME nearest square and tried again.
+          // Eleven minutes of it, one character, on one crossing:
+          //
+          //   17:11:30  could not get on at 38,15 (nearest of 38, 15.6 away)
+          //   17:12:39  could not get on at 38,15 (nearest of 38, 15.6 away)
+          //   17:13:49  could not get on at 38,15 (nearest of 38, 16.4 away)
+          //   ... unchanged until 17:22:15 ...
+          //
+          // The distance alternating between two values and never falling IS the dithering
+          // an operator sees from inside the room: a character shuffling between two
+          // squares, fifteen away from a line it will never reach, while a troll eats it.
+          //
+          // So candidates are tried nearest-first and each is ASKED whether it can be
+          // walked to before it is committed to. Bounded, because this runs on the keeper's
+          // clock: the ten nearest are enough when the line has 38 squares, and a room that
+          // answers "no" ten times has told us what we needed to know.
+          //
+          // AND A SQUARE THAT FAILED IS NOT OFFERED AGAIN. Reachability says whether a path
+          // exists; it does not say whether the walk survives contact with whatever is
+          // standing on it. Remembering the failures is what turns a loop into a search —
+          // per room, and cleared when the room changes, because this is a fact about one
+          // crossing rather than about the map.
+          const boardKey = Number(this.world?.room?.num ?? 0);
+          if (this._railBoardFailed?.room !== boardKey)
+            this._railBoardFailed = { room: boardKey, squares: new Set() };
+          const tried = this._railBoardFailed.squares;
+          const geoNow = this.world?.geometry;
+          const canWalkTo = (sq) => {
+            if (!geoNow || typeof geoNow.path !== 'function') return true;  // no opinion: carry on
+            try { return !!geoNow.path(me0.row, me0.col, sq.row, sq.col)?.found; }
+            catch { return true; }
+          };
+          const ranked = rail.squares
+            .map((sq, n) => ({ sq, n, d: Math.hypot(sq.row - me0.row, sq.col - me0.col) }))
+            .sort((a, b) => a.d - b.d);
+          let boardAt = -1, boardDistance = Infinity, probed = 0;
+          for (const cand of ranked) {
+            if (tried.has(`${cand.sq.row},${cand.sq.col}`)) continue;
+            if (probed++ >= 10) break;
+            if (!canWalkTo(cand.sq)) continue;
+            boardAt = cand.n; boardDistance = cand.d; break;
+          }
+          // Everything near is unreachable or already failed. Fall back to the old answer
+          // rather than refusing the crossing — the ordinary exit walk below is still there,
+          // and one more honest attempt beats a silent skip.
+          if (boardAt < 0) {
+            const first = ranked.find(c => !tried.has(`${c.sq.row},${c.sq.col}`)) ?? ranked[0];
+            boardAt = first.n; boardDistance = first.d;
           }
           const board = rail.squares[boardAt] ?? rail.from;
           const onIt = me0.col === board.col && me0.row === board.row;
@@ -5371,6 +5420,8 @@ class Session {
                                       : `no reason given (steps ${got?.steps ?? 0}` +
                                         `${got?.blocked_at ? `, blocked at ${got.blocked_at.row},${got.blocked_at.col}` : ''}` +
                                         `${got?.replans != null ? `, replans ${got.replans}` : ''})`)) });
+            // Do not offer this square again for this room. See the note above the ranking.
+            this._railBoardFailed.squares.add(`${board.row},${board.col}`);
           }
           if (got?.arrived) {
             // 2. FOLLOW â€” from where we joined, not from the anchor.
