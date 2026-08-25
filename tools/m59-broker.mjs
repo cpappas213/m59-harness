@@ -766,7 +766,18 @@ async function spawnKeeper(agent, index, credentials) {
   const logFd = openSync(`substrate/keeper-${agent}.log`, 'a');
   const child = spawn(process.execPath,
     [join(HERE, 'm59-keeper-process.mjs'), '--agent', agent, '--port', String(port), '--fleet', FLEET ?? 'default'],
-    { stdio: ['ignore', logFd, logFd], cwd: process.cwd() });
+    { stdio: ['ignore', logFd, logFd], cwd: process.cwd(),
+      // HIDDEN, BECAUSE TWENTY-ONE OF THESE IS TWENTY-ONE CONSOLE WINDOWS.
+      //
+      // On Windows a spawned console application gets its own window unless told otherwise,
+      // and a full fleet therefore buried the operator's desktop the first time this ran.
+      // Everything the window would show is already in substrate/keeper-<agent>.log, which
+      // is where the two stdio slots above point.
+      //
+      // `M59_KEEPER_WINDOWS=1` brings them back, and that is worth having rather than
+      // hard-coding the hide: watching one keeper's log scroll live in its own window is a
+      // genuinely good way to debug it. It is the DEFAULT that was wrong, not the option.
+      windowsHide: process.env.M59_KEEPER_WINDOWS !== '1' });
   // NOT detached: keepers die when the broker exits.
   keeperProcesses.set(agent, { pid: child.pid, port, startedAt: Date.now() });
   console.error(`[keeper] spawned ${agent} pid=${child.pid} port=${port}`);

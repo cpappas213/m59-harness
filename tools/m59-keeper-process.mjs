@@ -15,7 +15,7 @@ process.env.M59_KEEPER = '1';
 //   7. Saves state periodically
 //   8. Handles SIGTERM gracefully
 
-import { readFileSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { createServer } from 'http';
 import { Session, Pacer } from './m59-session.mjs';
 import { autopilotFor, dropAutopilot, autopilotIfAny } from './m59-autopilot.mjs';
@@ -50,12 +50,23 @@ console.error(`[keeper] ${agent} starting on port ${port} (fleet: ${fleetName})`
 
 // ---------------------------------------------------------------- load credentials
 
-// Resolve the fleet name to a file path, same as the broker does.
-// The default fleet is substrate/fleet-state.json.
-// Named fleets are substrate/fleet-<name>.json.
-const fleetPath = fleetName === 'default' || fleetName === '-'
-  ? 'substrate/fleet-state.json'
-  : `substrate/fleet-${fleetName}.json`;
+// WHERE A NAMED ROSTER ACTUALLY LIVES: substrate/fleets/<name>.json, not
+// substrate/fleet-<name>.json.
+//
+// This said the latter, which is a file that has never existed here — so every keeper
+// process started against a named fleet died on ENOENT before it read a credential, the
+// broker's 30s readiness wait timed out, and the rejoin sweep respawned it for ever. Seen
+// live as 116 respawns with three keepers alive out of twenty-one, and the fleet page
+// reporting characters the broker could not drive.
+//
+// The convention is CLAUDE.md's and every other tool's: `--fleet <name>` selects
+// substrate/fleets/<name>.json; the unnamed fleet is substrate/fleet-state.json and is what
+// `-` asks for on purpose. The old spelling is still tried second, so a checkout that does
+// have one keeps working rather than being told its roster vanished.
+const fleetCandidates = fleetName === 'default' || fleetName === '-'
+  ? ['substrate/fleet-state.json']
+  : [`substrate/fleets/${fleetName}.json`, `substrate/fleet-${fleetName}.json`];
+const fleetPath = fleetCandidates.find(f => existsSync(f)) ?? fleetCandidates[0];
 
 let fleet;
 try {
