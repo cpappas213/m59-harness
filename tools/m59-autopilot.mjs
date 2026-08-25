@@ -2242,6 +2242,14 @@ export class Autopilot {
   // unproven spot is treated exactly like open floor, which is what it might be.
   holdWorks() { return !!(this.atHold() && this.hold?.proven); }
 
+  // Policy-off means open-field combat even if a remembered hold has not yet been
+  // released by the next observation. A remembered square is likewise not a wall after
+  // the body moved away from it. This is the tactical gate shared by fight positioning,
+  // pull selection, spot testing, and partner healing.
+  holdingForFight() {
+    return this.policy.useSafeSpots !== false && this.atHold();
+  }
+
   // IS THERE A WEAPON IN OUR HAND — asked of the server, never of our own intentions.
   //
   // plUsing is the only authority (see equipment()): "the last use we sent was not
@@ -3019,6 +3027,8 @@ export class Autopilot {
   // blows is precisely what walking to the wall was meant to avoid.
   async pull(want) {
     const s = this.s, c = s.client;
+    if (this.policy.useSafeSpots === false)
+      return { pulled: false, why: 'safe spots are switched off; open-field combat must close forward instead' };
     if (!this.hold) return { pulled: false, why: 'not holding a spot to pull it back to' };
     if (!this.atHold())
       return { pulled: false, why: 'not standing on the held spot, so there is no safe pull origin' };
@@ -4177,7 +4187,13 @@ export class Autopilot {
   //
   // Returns true if the caller should NOT attack this pass.
   maybeTestSpot(adjacent) {
-    if (!this.hold || this.holdWorks() || !adjacent.length) { this.spotTest = null; return false; }
+    // A remembered hold is not a tactical wall while safe spots are policy-disabled.
+    // In particular, do not spend three adjacent-monster passes silently testing stale
+    // coordinates when open-field policy says to fight them now.
+    if (!this.holdingForFight() || this.holdWorks() || !adjacent.length) {
+      this.spotTest = null;
+      return false;
+    }
     const at = `${this.hold.col},${this.hold.row}`;
     if (this.spotTest && this.spotTest.at !== at) this.spotTest = null;   // a different square
     if (!this.spotTest) {
@@ -6457,6 +6473,321 @@ export class Autopilot {
     if (!p) return null;
     const remaining = Math.max(0, p.waitUntil - now);
     return { ...p, remaining_ms: remaining, ready: remaining === 0 };
+  }
+
+  // AN OUT-OF-REACH OPEN-FIELD FIGHT CLOSES THE DISTANCE; ONLY A WALL FIGHT PULLS.
+  //
+  // `skills.fight` deliberately declines a target more than one short approach away so
+  // one farm pass cannot turn into an unbounded walk. The legacy caller treated every
+  // such result as a wall fight, even when `useSafeSpots` was false and no hold existed:
+  // it called pull(), which correctly refused with "not holding a spot to pull it back
+  // to", then repeated the same decision forever. Room 562 did this with two eligible
+  // fungus beasts standing in the room.
+  //
+  // Keep the boundedness and make the missing progress explicit. `approachSquare` gives
+  // us the proved path beside the exact eligible quarry (including a temporary room-clear
+  // target). Send at most its first four adjacent steps. Do not call walkTo here: even a
+  // small hardCap can enter its 60-step fine fallback or pivot before that cap is charged.
+  // One direct step at a time gives this stale combat decision a literal four-move ceiling.
+  async advanceOnOpenFieldQuarry(f, found = []) {
+    const s = this.s, c = s.client;
+    const reportedId = f?.foe_id ?? f?.nearest?.id ?? null;
+    const liveById = id => {
+      const objects = c.room?.objects;
+      if (id == null || !objects?.get) return null;
+      return objects.get(id) ?? (Number.isFinite(Number(id)) ? objects.get(Number(id)) : null) ?? null;
+    };
+    // An exact fight result outranks the caller's pre-fight snapshot. If that exact
+    // object vanished, re-observe; substituting found[0] can chase a different monster.
+    // Only old callers with no reported id may select the first candidate still live.
+    const quarry = reportedId != null
+      ? liveById(reportedId)
+      : found.map(o => liveById(o?.id)).find(Boolean) ?? null;
+    if (!quarry || !Number.isFinite(Number(quarry.col)) || !Number.isFinite(Number(quarry.row))) {
+      const reason = reportedId != null
+        ? 'the exact open-field quarry left before the bounded approach'
+        : 'no live open-field quarry remains to approach';
+      this.note('open-field quarry needs a fresh observation', {
+        target_id: reportedId,
+        why: reason + '; do not substitute another pre-fight candidate',
+      });
+      return { advanced: false, reobserve: true, target_id: reportedId, reason };
+    }
+
+    const approach = s.world?.approachSquare?.(quarry.col, quarry.row) ?? null;
+    const fullPath = Array.isArray(approach?.path) ? approach.path : [];
+    const before = c.self
+      ? { col: Number(c.self.col), row: Number(c.self.row) }
+      : null;
+    let start = 0;
+    while (before && start < fullPath.length &&
+           Number(fullPath[start]?.col) === before.col &&
+           Number(fullPath[start]?.row) === before.row) start++;
+    const plan = fullPath.slice(start, start + 4);
+    if (!before || !plan.length) {
+      this.noProgress('no bounded open-field route toward the quarry');
+      return { advanced: false, target_id: quarry.id, reason: 'no approach path' };
+    }
+
+    const targetAt = { col: Number(quarry.col), row: Number(quarry.row) };
+    const beforeDistance = before
+      ? Math.hypot(targetAt.col - before.col, targetAt.row - before.row) : null;
+    const movementGeneration = s.movementGeneration;
+    const roomId = c.room?.id;
+    const fleeAt = this.safety().fleeAt;
+    const cancelled = () => typeof s.movementWasCancelled === 'function'
+      ? s.movementWasCancelled(movementGeneration)
+      : s.movementGeneration !== movementGeneration;
+    const healthBelowFlee = () => {
+      const health = c.vitals?.()?.health;
+      const fraction = pct(health);
+      return fraction != null && fraction < fleeAt
+        ? { health: health?.value ?? null, fraction, flee_at: fleeAt }
+        : null;
+    };
+    const stopError = (kind, detail = {}) => Object.assign(
+      new Error(`open-field quarry approach stopped: ${kind}`),
+      { openFieldStop: kind, ...detail },
+    );
+    let expected = { ...before };
+    let last = null;
+    const steps = [];
+    let stepCalls = 0;
+    let acceptedSteps = 0;
+
+    for (const next of plan) {
+      const target = { col: Number(next?.col), row: Number(next?.row) };
+      if (!Number.isSafeInteger(target.col) || !Number.isSafeInteger(target.row) ||
+          Math.max(Math.abs(target.col - expected.col), Math.abs(target.row - expected.row)) !== 1) {
+        last = { moved: false, reason: 'open_field_path_off_plan', expected, target };
+        break;
+      }
+      const guard = () => {
+        if (cancelled()) throw stopError('cancelled');
+        if (c.room?.id !== roomId) throw stopError('left_room');
+        const me = c.self;
+        if (!me || Number(me.col) !== expected.col || Number(me.row) !== expected.row)
+          throw stopError('off_plan', { position: me ? { col: me.col, row: me.row } : null });
+        const live = liveById(quarry.id);
+        if (!live) throw stopError('target_left');
+        if (Number(live.col) !== targetAt.col || Number(live.row) !== targetAt.row)
+          throw stopError('target_moved');
+        const low = healthBelowFlee();
+        if (low) throw stopError('health_abort', low);
+      };
+
+      try {
+        guard();
+        stepCalls++;
+        last = await s.step(target.col, target.row, {
+          fall: !!next?.fall,
+          // step can wait in both its turn and move pacers. Re-check immediately before
+          // each packet so cancellation or a health drop during either wait owns the body.
+          beforeMutation: guard,
+        });
+      } catch (error) {
+        if (error?.openFieldStop) last = { moved: false, stopped: error.openFieldStop, ...error };
+        else last = { moved: false, reason: error.message };
+      }
+      steps.push({ target, result: last });
+
+      if (last?.stopped === 'left_room' || last?.left_room || c.room?.id !== roomId) {
+        const after = c.self ? { col: Number(c.self.col), row: Number(c.self.row) } : null;
+        this.note('open-field quarry approach changed rooms', {
+          target_id: quarry.id, before, after,
+          why: 'the bounded approach left the room; stop this stale combat decision and re-observe',
+        });
+        return { advanced: false, left_room: true, target_id: quarry.id, before, after,
+                 step_count: stepCalls, steps };
+      }
+      if (last?.stopped === 'cancelled' || last?.cancelled || cancelled()) {
+        const after = c.self ? { col: Number(c.self.col), row: Number(c.self.row) } : null;
+        this.note('open-field quarry approach was cancelled', {
+          target: c.rsc.get(quarry.nameRsc) || f?.target || null,
+          target_id: quarry.id, before, after,
+          why: 'movement ownership changed; this pass must not replace it with another move',
+        });
+        const standard = typeof s.cancelledMovement === 'function'
+          ? s.cancelledMovement({ step_count: stepCalls })
+          : { arrived: false, left: false, cancelled: true,
+              reason: 'movement cancelled by a newer command' };
+        return { advanced: false, target_id: quarry.id, before, after, steps, ...standard };
+      }
+      if (last?.stopped === 'health_abort') {
+        return { advanced: false, health_abort: true, target_id: quarry.id,
+                 health: last.health, flee_at: last.flee_at, before,
+                 after: c.self ? { col: Number(c.self.col), row: Number(c.self.row) } : null,
+                 step_count: stepCalls, steps };
+      }
+      const terminal = this.terminalMovement(last, 'open-field quarry approach', {
+        target_id: quarry.id,
+      });
+      if (terminal)
+        return { advanced: false, target_id: quarry.id, before,
+                 after: c.self ? { col: Number(c.self.col), row: Number(c.self.row) } : null,
+                 step_count: stepCalls, steps, ...terminal };
+
+      const now = c.self ? { col: Number(c.self.col), row: Number(c.self.row) } : null;
+      if (!last?.moved || !now || (now.col === expected.col && now.row === expected.row)) {
+        last = { ...last, reason: last?.reason ?? 'open_field_step_made_no_move' };
+        break;
+      }
+      if (now.col !== target.col || now.row !== target.row) {
+        last = { ...last, reason: 'open_field_step_landed_off_plan', position: now };
+        break;
+      }
+      const live = liveById(quarry.id);
+      if (!live || Number(live.col) !== targetAt.col || Number(live.row) !== targetAt.row) {
+        last = { ...last, reason: live ? 'open_field_target_moved' : 'open_field_target_left' };
+        break;
+      }
+      expected = now;
+      acceptedSteps++;
+    }
+
+    const after = c.self ? { col: Number(c.self.col), row: Number(c.self.row) } : null;
+    const moved = !!after && (before.col !== after.col || before.row !== after.row);
+    const afterDistance = after
+      ? Math.hypot(targetAt.col - after.col, targetAt.row - after.row) : null;
+    const closer = moved && beforeDistance != null && afterDistance != null &&
+      afterDistance < beforeDistance;
+    if (last?.stopped === 'target_left' || last?.stopped === 'target_moved' ||
+        last?.reason === 'open_field_target_left' || last?.reason === 'open_field_target_moved') {
+      return { advanced: false, reobserve: true, target_id: quarry.id, before, after,
+               reason: last.stopped ?? last.reason, step_count: stepCalls, steps };
+    }
+    // A proved shortest path may begin sideways or even away from the quarry while it
+    // clears an obstacle. Consuming one or more exact on-plan steps is genuine bounded
+    // progress even when this four-step prefix has not yet reduced straight-line distance.
+    if (acceptedSteps > 0) {
+      this.progress('advanced along the bounded route to an open-field quarry');
+      this.note(closer ? 'closing on quarry in the open field'
+                       : 'following an obstacle detour toward quarry in the open field', {
+        target: c.rsc.get(quarry.nameRsc) || f?.target || null,
+        target_id: quarry.id, before, after,
+        distance_before: +beforeDistance.toFixed(1),
+        distance_after: +afterDistance.toFixed(1),
+        step_attempts: stepCalls,
+        path_steps_accepted: acceptedSteps,
+        why: closer
+          ? 'there is no wall to preserve or pull back to; make at most four direct ' +
+            'steps and let the next fresh pass fight from the new position'
+          : 'the proved approach is routing around an obstacle; accepted on-plan path ' +
+            'consumption is progress even before straight-line distance falls',
+      });
+      return { advanced: true, target_id: quarry.id, before, after,
+               step_count: stepCalls, path_steps_accepted: acceptedSteps,
+               distance_reduced: closer, steps };
+    }
+
+    this.noProgress('could not make bounded forward progress toward the open-field quarry');
+    this.note('could not close on quarry in the open field', {
+      target: c.rsc.get(quarry.nameRsc) || f?.target || null,
+      target_id: quarry.id, before, after, why: last?.reason ?? 'position did not change',
+    });
+    return { advanced: false, target_id: quarry.id, before, after, steps,
+             step_count: stepCalls, reason: last?.reason ?? 'position did not change' };
+  }
+
+  async handleOutOfReachQuarry(f, found = []) {
+    const c = this.s.client;
+    // Policy-off is open-field even if a stale hold has not yet been observed away.
+    // Conversely, the wall state machine is valid only when a real hold exists.
+    const holdingWall = this.holdingForFight();
+    if (!holdingWall) {
+      this.doing = 'fighting';
+      this.pendingPull = null;
+      const advanced = await this.advanceOnOpenFieldQuarry(f, found);
+      return { handled: true, mode: 'open-field', ...advanced };
+    }
+
+    this.doing = 'pulling';
+    // A DISTANT QUARRY IS STILL ON THE ROAD.
+    //
+    // Decisions run every second. Counting the first decision after a pull as a miss
+    // gave a quarry one or two seconds to cross routes that took us tens of seconds,
+    // then hit it again and repeated the mistake. Wait out a distance-sized follow
+    // window before this pull is allowed to count toward the empirical cliff verdict.
+    let waiting = this.pendingPullWait();
+    // A quarry that despawned, died to somebody else, or left the room did not fail
+    // to follow. Clear the experiment without charging the square and try whatever is
+    // actually here now.
+    if (waiting?.target_id != null && !c.room.objects.get(waiting.target_id)) {
+      this.note('the pulled quarry is gone — not blaming the wall', {
+        target: waiting.target, target_id: waiting.target_id,
+        why: 'a missing quarry cannot establish that the route to this square is blocked' });
+      this.pendingPull = null;
+      releaseQuarry(this.s.name);
+      waiting = null;
+    }
+    if (waiting && !waiting.ready) {
+      if (!this.pendingPull.waitNoted) {
+        this.pendingPull.waitNoted = true;
+        this.note('giving the pulled quarry time to reach the wall', {
+          target: waiting.target, pull_steps: waiting.steps,
+          waiting_ms: waiting.remaining_ms,
+          why: 'one movement square takes about one decision interval; the next pass ' +
+               'is not evidence that a distant quarry cannot follow' });
+      }
+      this.doing = 'waiting';
+      return { handled: true, mode: 'wall', waiting: true };
+    }
+    if (waiting?.ready) {
+      this.pendingPull = null;
+      if (this.pullDidNotConvert(f.reason || 'still nothing in reach after the follow window'))
+        return { handled: true, mode: 'wall', retired: true };
+    }
+    const pullSpot = this.hold
+      ? { room: this.hold.room, col: this.hold.col, row: this.hold.row }
+      : null;
+    const reportedId = f?.foe_id ?? f?.nearest?.id ?? null;
+    const liveById = id => {
+      const objects = c.room?.objects;
+      if (id == null || !objects?.get) return null;
+      return objects.get(id) ?? (Number.isFinite(Number(id)) ? objects.get(Number(id)) : null) ?? null;
+    };
+    const quarry = reportedId != null
+      ? liveById(reportedId)
+      : found.map(o => liveById(o?.id)).find(Boolean) ?? null;
+    if (!quarry) {
+      this.note('the selected quarry left before the wall pull began', {
+        target_id: reportedId,
+        why: 're-observe instead of substituting a different pre-fight candidate or charging the wall',
+      });
+      releaseQuarry(this.s.name);
+      return { handled: true, mode: 'wall', reobserve: true, target_id: reportedId };
+    }
+    const p = await this.pull(quarry);
+    if (p.pulled && p.back) {
+      const waitMs = this.pullFollowWaitMs(p.steps);
+      this.pendingPull = {
+        at: Date.now(), waitUntil: Date.now() + waitMs,
+        target: p.target, target_id: quarry?.id ?? null, steps: p.steps, wait_ms: waitMs,
+      };
+      // DELIBERATELY NOT progress(). A pull is not an achievement, it is an attempt,
+      // and calling it progress is what kept the stall detector quiet through hours
+      // of this. Contact is the achievement, and the fight path below reports that.
+      this.note('waiting for it at the wall', {
+        target: p.target, pull_attempt: (this.pullsWithoutContact ?? 0) + 1,
+        follow_window_ms: waitMs, pull_steps: p.steps,
+        why: 'it has been hit and is following; only after its distance-sized follow ' +
+             'window expires can this pull count against the square' });
+    } else {
+      // Fetching failed before a swing. One moving target or refused step is not a
+      // property of the wall; retire it only after repeated misses from this square.
+      const failed = this.pullAttemptFailed(pullSpot, p.why || 'the pull did not complete');
+      this.note('could not bring it to the wall', {
+        why: p.why, target: p.target, attempt: failed.attempt, of: failed.limit,
+        note: failed.retired
+          ? 'repeated failures excluded this square in this room'
+          : 'keeping the wall and trying again; a single failed approach proves nothing' });
+      if (failed.retired && this.hold)
+        this.releaseHold('repeated pull attempts could not swing from here');
+      this.noProgress(failed.retired
+        ? 'holding a spot repeated pull attempts could not use'
+        : 'a pull attempt failed transiently; retrying from the same wall');
+    }
+    return { handled: true, mode: 'wall', pulled: !!(p.pulled && p.back) };
   }
 
   // THE SPOT NOTHING CAN ACTUALLY REACH — the cliff.
@@ -12387,7 +12718,7 @@ export class Autopilot {
         // empty pass is not counted at all. Everything that ends a vigil for a real
         // reason still fires: being hit in the spot releases it, the room going capped is
         // handled above, hunger and health run on their own clocks.
-        const waitingInASpot = !!this.hold && this.holdWorks() && !this.sanctuary(room);
+        const waitingInASpot = this.holdingForFight() && this.holdWorks() && !this.sanctuary(room);
         if (waitingInASpot) {
           this.doing = 'waiting';
           if (!this.waitedInSpotAt || Date.now() - this.waitedInSpotAt > 60_000) {
@@ -13089,7 +13420,7 @@ export class Autopilot {
       // to something else resets both advancement flags and throws away the credit for
       // every hit already landed. So this returns without touching foeId, and the
       // healing happens exactly where we stand — behind the wall we already hold.
-      if (this.policy.partner && this.hold) {
+      if (this.policy.partner && this.holdingForFight()) {
         const role = party.roleFor(this.s.name,
           { health: hp, floor: this.policy.partyHealBelow ?? 0.5 });
         if (role === 'heal') {
@@ -13124,7 +13455,7 @@ export class Autopilot {
         V.lowest_at_engage = V.lowest_at_engage == null ? vAt : Math.min(V.lowest_at_engage, vAt);
         if (vAt < WANT_FIGHT_VIGOR) V.below_want++;
       }
-      const holding = !!this.hold;
+      const holding = this.holdingForFight();
       // TELL THE PARTNER WHAT WE ARE ABOUT TO HIT, before hitting it. Declaring after
       // the swing means the first exchange of every fight is two characters choosing
       // independently, which is the one moment convergence is worth most — whoever
@@ -13139,81 +13470,11 @@ export class Autopilot {
                                         holdPosition: holding, reach: REACH,
                                         weaponPriority: this.weaponPriorityNow() });
 
-      // NOTHING IN REACH, AND WE ARE NOT GOING TO CHASE IT. fight() refuses to walk
-      // while we are holding, which is correct and leaves the interesting half to us:
-      // a monster that will not come to the wall has to be fetched. Hit it once and
-      // walk back, and the fight happens where we chose.
+      // NOTHING IN REACH. At a held wall, fetch the quarry with the established
+      // hit-and-return pull. In open-field mode, close only a bounded path prefix so
+      // the next pass fights from a fresh observation without chasing indefinitely.
       if (f.out_of_reach) {
-        this.doing = 'pulling';
-        // A DISTANT QUARRY IS STILL ON THE ROAD.
-        //
-        // Decisions run every second. Counting the first decision after a pull as a miss
-        // gave a quarry one or two seconds to cross routes that took us tens of seconds,
-        // then hit it again and repeated the mistake. Wait out a distance-sized follow
-        // window before this pull is allowed to count toward the empirical cliff verdict.
-        let waiting = this.pendingPullWait();
-        // A quarry that despawned, died to somebody else, or left the room did not fail
-        // to follow. Clear the experiment without charging the square and try whatever is
-        // actually here now.
-        if (waiting?.target_id != null && !c.room.objects.get(waiting.target_id)) {
-          this.note('the pulled quarry is gone — not blaming the wall', {
-            target: waiting.target, target_id: waiting.target_id,
-            why: 'a missing quarry cannot establish that the route to this square is blocked' });
-          this.pendingPull = null;
-          releaseQuarry(this.s.name);
-          waiting = null;
-        }
-        if (waiting && !waiting.ready) {
-          if (!this.pendingPull.waitNoted) {
-            this.pendingPull.waitNoted = true;
-            this.note('giving the pulled quarry time to reach the wall', {
-              target: waiting.target, pull_steps: waiting.steps,
-              waiting_ms: waiting.remaining_ms,
-              why: 'one movement square takes about one decision interval; the next pass ' +
-                   'is not evidence that a distant quarry cannot follow' });
-          }
-          this.doing = 'waiting';
-          return HANDLED;
-        }
-        if (waiting?.ready) {
-          this.pendingPull = null;
-          if (this.pullDidNotConvert(f.reason || 'still nothing in reach after the follow window'))
-            return HANDLED;
-        }
-        const pullSpot = this.hold
-          ? { room: this.hold.room, col: this.hold.col, row: this.hold.row }
-          : null;
-        const quarry = found.find(o => o.id === f.nearest?.id) || found[0];
-        const p = quarry ? await this.pull(quarry) : { pulled: false, why: 'nothing to pull' };
-        if (p.pulled && p.back) {
-          const waitMs = this.pullFollowWaitMs(p.steps);
-          this.pendingPull = {
-            at: Date.now(), waitUntil: Date.now() + waitMs,
-            target: p.target, target_id: quarry?.id ?? null, steps: p.steps, wait_ms: waitMs,
-          };
-          // DELIBERATELY NOT progress(). A pull is not an achievement, it is an attempt,
-          // and calling it progress is what kept the stall detector quiet through hours
-          // of this. Contact is the achievement, and the fight path below reports that.
-          this.note('waiting for it at the wall', {
-            target: p.target, pull_attempt: (this.pullsWithoutContact ?? 0) + 1,
-            follow_window_ms: waitMs, pull_steps: p.steps,
-            why: 'it has been hit and is following; only after its distance-sized follow ' +
-                 'window expires can this pull count against the square' });
-        } else {
-          // Fetching failed before a swing. One moving target or refused step is not a
-          // property of the wall; retire it only after repeated misses from this square.
-          const failed = this.pullAttemptFailed(pullSpot, p.why || 'the pull did not complete');
-          this.note('could not bring it to the wall', {
-            why: p.why, target: p.target, attempt: failed.attempt, of: failed.limit,
-            note: failed.retired
-              ? 'repeated failures excluded this square in this room'
-              : 'keeping the wall and trying again; a single failed approach proves nothing' });
-          if (failed.retired && this.hold)
-            this.releaseHold('repeated pull attempts could not swing from here');
-          this.noProgress(failed.retired
-            ? 'holding a spot repeated pull attempts could not use'
-            : 'a pull attempt failed transiently; retrying from the same wall');
-        }
+        await this.handleOutOfReachQuarry(f, found);
         return HANDLED;
       }
       // We got a fight. Whatever we are standing on can be fought from, so the cliff
