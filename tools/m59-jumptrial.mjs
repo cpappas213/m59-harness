@@ -212,33 +212,6 @@ const STAGE = { row: 32, col: 19 };
 
 // THE SHELF, AS THE OPERATOR DESCRIBES IT. All six measure floor 3840, the declared landing's
 // own floor; 38,13 beside them is 3200 and is the gulley every miss ends in.
-// 38,9 AND 39,9 BELONG HERE AND WERE MISSING, WHICH MADE THE RE-AIMING INERT.
-//
-// The operator named the shelf from 38,10 outward, so that is what this listed — and then
-// `best_line` and `pick_clear` chose 38,10 on all thirty-six attempts, because among the
-// squares they were offered it genuinely was the best. Measured against the camped Guardian
-// at 38,13, from a take-off of 36,16:
-//
-//     38,9    1.10 squares of clearance
-//     38,10   0.95                        <- what they kept picking
-//
-// The whole point of re-aiming is to have somewhere better to aim, and the westward squares
-// are where the clearance is: they lead AWAY from the pit the blockers stand in. All of these
-// measure floor 3840 and are inside what the jump guard permits.
-const SHELF = [
-  { row: 38, col:  9 }, { row: 38, col: 10 }, { row: 38, col: 11 }, { row: 38, col: 12 },
-  { row: 39, col:  9 }, { row: 39, col: 10 }, { row: 39, col: 11 }, { row: 39, col: 12 },
-  { row: 40, col: 12 },
-].filter(sq => {
-  // Never offer a candidate that is not really on the shelf — the gulley at 3200 sits right
-  // beside it and a miss that lands there is the failure this is trying to avoid.
-  try {
-    const a = geo.standPoint(38, 10), b = geo.standPoint(sq.row, sq.col);
-    if (!a || !b) return false;
-    return Math.abs(geo.floorBaseAtClient(a.x, a.y) - geo.floorBaseAtClient(b.x, b.y)) <= 64
-           && geo.walkable(sq.row, sq.col) === true;
-  } catch { return false; }
-});
 
 const DEFAULT_SET = ['best_line', 'pick_clear', 'baseline'];
 // `sweepStrategies` reads the room geometry, which is loaded further down, so the sweep is
@@ -516,6 +489,33 @@ function reverseReach(to) {
   }
   return seen;
 }
+
+// THE SHELF, BUILT AFTER THE GEOMETRY EXISTS.
+//
+// This list used to be declared beside STAGE, above `const geo = sharedRoomGeometry(room)`,
+// and its floor filter therefore ran against `geo` in the temporal dead zone. The throw was
+// caught, every candidate was dropped, and SHELF came out EMPTY — so `best_line` and
+// `pick_clear` had nothing to choose between and aimed at the declared landing every single
+// time. Twenty-one attempts of a strategy whose entire purpose is to choose, choosing
+// nothing, and reporting a plausible number while doing it.
+//
+// 38,9 / 39,9 / 39,10 are the westward squares that matter: west leads AWAY from the pit the
+// blockers stand in, and measured against the Guardian camped on 38,13, from 36,16, 38,9
+// clears it by 1.10 squares against 38,10's 0.95.
+const SHELF = [
+  { row: 38, col:  9 }, { row: 38, col: 10 }, { row: 38, col: 11 }, { row: 38, col: 12 },
+  { row: 39, col:  9 }, { row: 39, col: 10 }, { row: 39, col: 11 }, { row: 39, col: 12 },
+  { row: 40, col: 12 },
+].filter(sq => {
+  try {
+    const a = geo.standPoint(38, 10), b = geo.standPoint(sq.row, sq.col);
+    if (!a || !b) return false;
+    return Math.abs(geo.floorBaseAtClient(a.x, a.y) - geo.floorBaseAtClient(b.x, b.y)) <= 64
+           && geo.walkable(sq.row, sq.col) === true;
+  } catch { return false; }
+});
+if (!SHELF.length) { console.error('m59-jumptrial: the shelf came out empty — refusing to run blind'); process.exit(1); }
+console.log(`shelf: ${SHELF.length} landing candidate(s) — ${SHELF.map(x => x.row + ',' + x.col).join(' ')}`);
 
 const connected = strictReach(takeoff);
 const canReach = reverseReach(takeoff);
