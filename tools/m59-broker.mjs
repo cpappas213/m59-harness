@@ -4132,6 +4132,83 @@ const TOOLS = [
     },
   },
   {
+    name: 'jump',
+    description: 'Run off a DECLARED ledge and land on the far side. This is the one move that ' +
+      'cannot be expressed as a step — the mover gates climbing on MAX_STEP_HEIGHT, so a fall is ' +
+      'refused by every ordinary walk — and it exists as its own verb so a jump can be attempted, ' +
+      'measured and retried on purpose rather than only as a side effect of following a rail.',
+    schema: { type: 'object', properties: {
+      agent: { type: 'string' },
+      to_col: { type: 'number', description: 'landing column; must be a DECLARED landing from where you stand' },
+      to_row: { type: 'number', description: 'landing row' },
+    }, required: ['agent', 'to_col', 'to_row'] },
+    run: async (a) => {
+      const s = session(a.agent);
+      const me = s.client?.self;
+      if (!me) throw new Error(`${a.agent}: no position`);
+      const geo = s.world?.geometry;
+      if (!geo?.declaredFallJumps) throw new Error(`${a.agent}: no geometry for this room`);
+      // ONLY A DECLARED JUMP, AND THAT IS THE WHOLE SAFEGUARD.
+      //
+      // `substrate/m59-falljumps.json` is operator-supplied and WALKED — somebody stood on the
+      // ledge and made the jump before it was written down. Without this gate the verb would be
+      // a general licence to move through geometry the mover refuses, which is exactly the
+      // permission `moverStepLands` spends a page arguing against.
+      // A DECLARED JUMP, OR A SQUARE'S PERTURBATION OF ONE — and nothing else.
+      //
+      // Exactly-declared is too tight to learn with. The thing worth measuring is whether a
+      // step along the ledge or a square's difference in where you aim changes how often the
+      // jump survives a room full of moving trolls, and none of those variants is in the
+      // table because nobody walked each one individually.
+      //
+      // So the neighbourhood of a declared jump is allowed: within one square at both ends,
+      // AND on the same two floors. The floor check is what keeps this honest — it is the
+      // difference between "the same jump, a step to the left" and "some other drop that
+      // happens to be nearby", and it is the measurement that tells the shelf at 3840 from
+      // the gulley at 3200 in the first place.
+      const floorAt = (row, col) => {
+        try { const pt = geo.standPoint(row, col); return pt ? geo.floorBaseAtClient(pt.x, pt.y) : null; }
+        catch { return null; }
+      };
+      const near = (a1, b1, a2, b2) => Math.max(Math.abs(a1 - a2), Math.abs(b1 - b2)) <= 1;
+      const sameFloor = (x, y) => x != null && y != null && Math.abs(x - y) <= 64;
+      const hereFloor = floorAt(me.row, me.col), wantFloor = floorAt(a.to_row, a.to_col);
+      const table = [];
+      for (let r = me.row - 1; r <= me.row + 1; r++)
+        for (let c = me.col - 1; c <= me.col + 1; c++)
+          for (const j of geo.declaredFallJumps(r, c)) table.push({ from: { row: r, col: c }, to: j });
+      const declared = table.some(j =>
+        near(j.to.row, j.to.col, a.to_row, a.to_col) &&
+        sameFloor(hereFloor, floorAt(j.from.row, j.from.col)) &&
+        sameFloor(wantFloor, floorAt(j.to.row, j.to.col)));
+      if (!declared)
+        throw new Error(`${a.agent}: ${me.row},${me.col} -> ${a.to_row},${a.to_col} is not a declared ` +
+                        `fall-jump or a one-square variation of one. Declared near here: ` +
+                        (table.map(j => `${j.from.row},${j.from.col}->${j.to.row},${j.to.col}`).join(' ') || 'none'));
+      const before = { col: me.col, row: me.row };
+      const r = await s.step(a.to_col, a.to_row, { fall: true });
+      const now = s.client?.self;
+      const landed = now ? { col: now.col, row: now.row } : null;
+      // WHERE IT LANDED IS THE ONLY HONEST VERDICT. A jump that comes up short lands on real
+      // floor and reports `moved: true`, so "did the move send" says nothing about whether the
+      // gulley was cleared. The floor height under the body does.
+      let floor = null;
+      try {
+        const pt = now && geo.standPoint(now.row, now.col);
+        if (pt) floor = geo.floorBaseAtClient(pt.x, pt.y);
+      } catch {}
+      let wanted = null;
+      try {
+        const pt = geo.standPoint(a.to_row, a.to_col);
+        if (pt) wanted = geo.floorBaseAtClient(pt.x, pt.y);
+      } catch {}
+      return { from: before, aimed_at: { col: a.to_col, row: a.to_row }, landed,
+               floor, landing_floor: wanted,
+               made: floor != null && wanted != null && Math.abs(floor - wanted) <= 64,
+               moved: !!r?.moved, reason: r?.reason ?? null };
+    },
+  },
+  {
     name: 'walk_to',
     description: 'Walk to a square, routing around walls through the room geometry, one step per ' +
       'second — the pace a human client moves at. Coordinates are the col/row that look reports. ' +
