@@ -1096,15 +1096,36 @@ class KeeperProxy {
 
 // Wrap KeeperProxy instances with a Proxy that returns null for any
 // undefined method, so the fleet tool and other MCP tools don't crash.
+// AN UNKNOWN PROPERTY IS UNDEFINED, NOT A FUNCTION THAT RETURNS NULL.
+//
+// This trap used to answer EVERY unknown string property with `(...args) => null`, to keep
+// a tool from crashing on a method the proxy has not implemented. It does the opposite of
+// that, because a function is TRUTHY and most of this codebase guards with optional
+// chaining:
+//
+//     const rec = sessions.get(agent)?.recorder;   // a function, not undefined
+//     rec?.line('call', ...)                       // ?. passes, .line is undefined -> throws
+//
+// That is exactly how a keeper-backed `travel` died: not on anything to do with travel, but
+// on the flight recorder's own "if there is no recorder" guard being unable to see that
+// there is no recorder. Every `x?.y()` and every `typeof s.f === 'function'` in the file is
+// defeated the same way, silently, and the failure surfaces somewhere unrelated.
+//
+// So unknown properties read as `undefined`, which is what every guard here is written
+// against. A tool that genuinely needs a method the proxy lacks now fails NAMING it, which
+// is how the three holes this proxy had were found at all.
+//
+// `methodsThatMayNoOp` is the deliberate exception: a handful of fire-and-forget calls a
+// snapshot-backed session can honestly ignore. It is a list rather than a catch-all so that
+// adding to it is a decision somebody made.
+const methodsThatMayNoOp = new Set(['progress', 'note', 'emit', 'flush', 'touch']);
+
 function makeKeeperProxy(agent, index) {
   const target = new KeeperProxy(agent, index);
   return new Proxy(target, {
     get(target, prop, receiver) {
       if (prop in target) return Reflect.get(target, prop, receiver);
-      // Unknown method: return a function that returns null
-      if (typeof prop === 'string') {
-        return (...args) => null;
-      }
+      if (typeof prop === 'string' && methodsThatMayNoOp.has(prop)) return () => null;
       return undefined;
     }
   });
