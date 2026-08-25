@@ -732,13 +732,25 @@ const sittingOut = (fleetNow.fleet ?? []).filter(r => r.agent && r.character &&
                                                  !queue.some(q => q.agent === r.agent));
 if (sittingOut.length) {
   console.log(`clearing the room: ${sittingOut.length} character(s) not in this trial -> room ${EVACUATE_TO}`);
+  // UNPARK FIRST. A PARKED CHARACTER CANNOT BE RELOCATED.
+  //
+  // This parked and then moved, and a body already parked — from this run or a previous one —
+  // silently refused the move and stayed exactly where it was. The result was the opposite of
+  // an evacuation: sixteen characters frozen IN the room as permanent obstacles. Counted from
+  // the ledge afterwards: nineteen of my own characters plus fifteen trolls and three
+  // Guardians, which is why the success rate collapsed from 85% to 12%.
+  let cleared = 0;
   for (const r of sittingOut) {
+    await call('autopilot', { agent: r.agent, action: 'unpark', why: 'moving out of the trial room' });
     await call('autopilot', { agent: r.agent, mode: 'idle', roam: false, confine_rooms: [EVACUATE_TO] });
-    await dm.relocate([r.character], EVACUATE_TO, { verify: false }).catch(() => null);
+    const moved = await dm.relocate([r.character], EVACUATE_TO, { verify: false }).catch(() => null);
+    if (moved?.ok) cleared++;
     await call('autopilot', { agent: r.agent, action: 'park', why: 'sitting out a jump trial' });
     await sleep(150);
   }
-  console.log('cleared.');
+  console.log(`cleared: ${cleared} of ${sittingOut.length} moved out.`);
+  if (cleared < sittingOut.length)
+    console.log('  WARNING: the ones that did not move are still in the room and are traffic.');
 }
 
 console.log('placing the queue…');
