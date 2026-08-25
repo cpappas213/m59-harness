@@ -1934,6 +1934,25 @@ export class Autopilot {
   async provision(plan, v) {
     const p = this.policy;
     const floor = this.fightFloor(plan);
+    // READ BEFORE THE FIRST THING THAT REPORTS IT, WHICH IS NOT WHERE IT WAS DECLARED.
+    //
+    // `vigor` used to be declared thirty lines below, next to the larder — and the
+    // "not eating here" note above that point reads it. Same function, same scope, so the
+    // read landed in the temporal dead zone and threw `Cannot access 'vigor' before
+    // initialization`, which aborts the keeper pass. The keeper reports it as `last_error`
+    // and otherwise says nothing, so the character simply does not act:
+    //
+    //     mode: "farm"   activity: "fighting from a proven safe spot"
+    //     last_error: "Cannot access 'vigor' before initialization"
+    //     rooms_moved: 0   withdrawals: 0   kills: 0
+    //
+    // Ten minutes of a character standing in Castle Victoria with 400 shillings, a loadout
+    // asking for twenty elderberry, and one in its pack.
+    //
+    // It fires on a NARROW path — hungry, something hostile in the room, and the note not
+    // yet made — but `notedNoEatingHere` is cleared the moment the room is clear again, so
+    // it rearms every time. For a character that fights, that is most passes.
+    const vigor = v.vigor?.value ?? 0;
     // EATING IS NOT A STRATEGY OPTION.
     //
     // This returned before it ever looked at the larder unless the policy named a fight
@@ -1994,7 +2013,6 @@ export class Autopilot {
     this.notedNoEatingHere = false;
 
     const s = this.s;
-    const vigor = v.vigor?.value ?? 0;
     const larder = this.larder(s.client);
     const best = larder[0]?.food ?? null;
     // AND THE SMALLEST, WHICH IS THE ONE THAT DECIDES WHETHER WE CAN EAT AT ALL.
