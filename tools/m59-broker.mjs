@@ -765,7 +765,10 @@ async function spawnKeeper(agent, index, credentials) {
   const HERE = dirname(fileURLToPath(import.meta.url));
   const logFd = openSync(`substrate/keeper-${agent}.log`, 'a');
   const child = spawn(process.execPath,
-    [join(HERE, 'm59-keeper-process.mjs'), '--agent', agent, '--port', String(port), '--fleet', FLEET ?? 'default'],
+    [join(HERE, 'm59-keeper-process.mjs'), '--agent', agent, '--port', String(port), // `-` IS HOW YOU ASK FOR THE UNNAMED FLEET, and 'default' is how you ask for a file
+     // called default.json that has never existed. resolveFleet reads this argv, and it
+     // treats any other word as a roster NAME under substrate/fleets/.
+     '--fleet', FLEET ?? '-'],
     { stdio: ['ignore', logFd, logFd], cwd: process.cwd(),
       // HIDDEN, BECAUSE TWENTY-ONE OF THESE IS TWENTY-ONE CONSOLE WINDOWS.
       //
@@ -909,12 +912,47 @@ class KeeperProxy {
     return client;
   }
 
+  // A WORLD THAT ANSWERS WHAT IT HONESTLY CAN AND REFUSES THE REST.
+  //
+  // This used to be `{ room: {...} }` and nothing else, so any tool reaching past the room
+  // threw. `travel` reaches past it — `s.world.route(dest)` — and every journey issued to a
+  // keeper-backed character died with "s.world.route is not a function".
+  //
+  // It cannot become a real World here, and should not: a World is built on a live client
+  // with a position and geometry, and this side has a two-second-old snapshot. The process
+  // that owns the body is the one that can answer, so `route` says so rather than guessing.
+  // The keeper answers the same question properly over /action when a caller needs it.
   get world() {
     const s = this._state;
     if (!s?.room) return null;
-    return { room: { name: s.room.name, num: s.room.num, id: s.room.num } };
+    const room = { name: s.room.name, num: s.room.num, id: s.room.num };
+    return {
+      room,
+      route: () => ({ found: null,
+                      reason: 'this character is driven by a keeper process; ask it over ' +
+                              '/action {name:"route"} — the broker holds a snapshot, not a World' }),
+      geometry: null,
+    };
   }
   set world(v) { this._world = v; }
+
+  // THE JOB SLOT, WHICH IS WHAT THE TRAVEL TOOL ACTUALLY CALLS.
+  //
+  // `travel()` above exists and nothing reaches it: the tool calls `travelJob`, because that
+  // is the one definition of the slot and the keeper hold. Without it a keeper-backed travel
+  // failed before it sent anything. Returns the same shape the tool expects — an object with
+  // a `promise` — so foreground and background both work through one path.
+  travelJob(dest, opts = {}) {
+    const started = keeperAction(this.name, this._index, 'travel', {
+      to: dest, toRoomNum: dest,
+      where: opts.where, max_hops: opts.maxHops, control_token: opts.controlToken,
+      run_errands: opts.runErrands !== false,
+      // The keeper backgrounds by default; a foreground caller awaits `promise` below and
+      // wants the journey's own result rather than an acknowledgement.
+      background: opts.foreground !== true,
+    });
+    return { promise: started, keeper: true };
+  }
 
   async _refreshState() {
     const now = Date.now();
@@ -3146,7 +3184,12 @@ const TOOLS = [
 
       if (a.background) {
         startTravel();
-        const hops = s.world.route(dest)?.length ?? null;
+        // `route()` returns { found, hops: [...] }, NOT an array — see the note in
+        // m59-autopilot.mjs. Taking `.length` off it has always produced undefined, so this
+        // number has never once been reported. A keeper-backed session answers `found: null`
+        // here, which is honest: the route lives in the keeper process.
+        const plan = s.world?.route?.(dest);
+        const hops = Array.isArray(plan?.hops) ? plan.hops.length : null;
         return { started: true, destination: where, hops,
                  note: 'walking now; poll `fleet` or `status` — do not re-issue while busy' };
       }

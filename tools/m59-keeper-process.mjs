@@ -27,6 +27,7 @@ import { loadMap, buildReverseEdges } from './m59-map.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 import * as watchdog from './m59-watchdog.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
+import { resolveFleet } from './m59-fleetpath.mjs';
 
 // ---------------------------------------------------------------- args
 
@@ -50,23 +51,18 @@ console.error(`[keeper] ${agent} starting on port ${port} (fleet: ${fleetName})`
 
 // ---------------------------------------------------------------- load credentials
 
-// WHERE A NAMED ROSTER ACTUALLY LIVES: substrate/fleets/<name>.json, not
-// substrate/fleet-<name>.json.
+// WHERE A NAMED ROSTER ACTUALLY LIVES — and asked of the module that decides, not copied.
 //
-// This said the latter, which is a file that has never existed here — so every keeper
-// process started against a named fleet died on ENOENT before it read a credential, the
-// broker's 30s readiness wait timed out, and the rejoin sweep respawned it for ever. Seen
-// live as 116 respawns with three keepers alive out of twenty-one, and the fleet page
-// reporting characters the broker could not drive.
+// This resolved it itself, as `substrate/fleet-<name>.json`. That file has never existed
+// here: the convention is `substrate/fleets/<name>.json`, which `stateFileFor` has always
+// known. So every keeper started against a named fleet died on ENOENT before it read a
+// credential, the broker's 30s readiness wait timed out, and the rejoin sweep respawned it
+// for ever — 116 respawns with three keepers alive out of twenty-one.
 //
-// The convention is CLAUDE.md's and every other tool's: `--fleet <name>` selects
-// substrate/fleets/<name>.json; the unnamed fleet is substrate/fleet-state.json and is what
-// `-` asks for on purpose. The old spelling is still tried second, so a checkout that does
-// have one keeps working rather than being told its roster vanished.
-const fleetCandidates = fleetName === 'default' || fleetName === '-'
-  ? ['substrate/fleet-state.json']
-  : [`substrate/fleets/${fleetName}.json`, `substrate/fleet-${fleetName}.json`];
-const fleetPath = fleetCandidates.find(f => existsSync(f)) ?? fleetCandidates[0];
+// A second copy of a path convention is how that happens, so there is no second copy now.
+// `resolveFleet` reads the same argv this process was given and honours M59_STATE_FILE and
+// M59_FLEET exactly as every other tool does.
+const fleetPath = resolveFleet(process.argv.slice(2)).stateFile;
 
 let fleet;
 try {
@@ -319,6 +315,84 @@ const server = createServer(async (req, res) => {
       // Use cached state to avoid blocking on the live session
       json(cachedState || state());
       return;
+    }
+
+    // THE HALF OF THE PROXY THAT WAS NEVER BUILT.
+    //
+    // `KeeperProxy` in m59-broker.mjs forwards every mutating tool here as
+    // POST /action {name, args} — walk, fight, travel, cancel, pass. This endpoint did not
+    // exist, so a broker holding keeper processes could READ a character and not MOVE one.
+    // Measured: twenty-one of twenty-one travels refused, and the fleet could only be driven
+    // by falling back to in-process keepers, which is the arrangement whose event-loop p99
+    // is thirty times worse.
+    //
+    // The keeper is the right place for this. It holds the real Session, the real World and
+    // the real geometry; the broker holds a cached snapshot. So an order arrives here as a
+    // name and is executed by the thing that owns the body.
+    if (req.method === 'POST' && path === '/action') {
+      let body = '';
+      for await (const chunk of req) body += chunk;
+      let ask;
+      try { ask = JSON.parse(body || '{}'); }
+      catch (e) { json({ error: `unparseable action: ${e.message}` }, 400); return; }
+      const name = String(ask?.name ?? '');
+      const args = ask?.args ?? {};
+      if (!inGame) { json({ error: `${agent}: not in game` }, 409); return; }
+      try {
+        switch (name) {
+          case 'travel': {
+            // BACKGROUND BY DEFAULT, because a journey outlives any sane HTTP timeout and
+            // the caller polls /state to watch it. `travelJob` is the one definition of the
+            // job slot and the keeper hold; calling `travel` directly would give this path
+            // its own private copy of both, which is the bug the broker's travel tool has
+            // a long comment about.
+            const dest = Number(args.to ?? args.toRoomNum);
+            if (!Number.isFinite(dest)) { json({ error: 'travel needs a destination room number' }, 400); return; }
+            const job = session.travelJob(dest, {
+              where: args.where, maxHops: Number(args.max_hops ?? args.maxHops ?? 25),
+              controlToken: args.control_token ?? args.controlToken,
+              runErrands: args.run_errands !== false && args.runErrands !== false,
+            });
+            if (args.background === false) { json({ ...(await job.promise), destination: dest }); return; }
+            json({ started: true, destination: dest,
+                   note: 'walking now; poll /state — do not re-issue while busy' });
+            return;
+          }
+          case 'walk': {
+            const r = await session.walkTo(Number(args.col), Number(args.row), args);
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'fight': {
+            const r = await session.fight?.(args.target, args);
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'cancel': {
+            const r = session.cancelMovement?.(args.control_token, 'the keeper /action endpoint');
+            json({ cancelled: true, ...(r ?? {}) });
+            return;
+          }
+          case 'pass': {
+            const r = await autopilot?.pass?.();
+            json({ passed: true, ...(r ?? {}) });
+            return;
+          }
+          // A ROUTE IS A QUESTION, NOT AN ORDER, but it belongs here for the same reason:
+          // only this process has the live World that can answer it.
+          case 'route': {
+            const dest = Number(args.to ?? args.toRoomNum);
+            json(session.world?.route?.(dest) ?? { found: false, reason: 'no world' });
+            return;
+          }
+          default:
+            json({ error: `unknown action "${name}"` }, 400);
+            return;
+        }
+      } catch (e) {
+        json({ error: e?.message ?? String(e) }, 500);
+        return;
+      }
     }
 
     if (req.method === 'GET' && path === '/pacerstats') {
