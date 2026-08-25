@@ -642,7 +642,12 @@ export function sheltersAlong(geo, steps, {
  */
 export function shelterAhead(shelters, atStep,
                              { maxDetour = 4, requireDisagreement = true, unreachable = null,
-                               exitable = null } = {}) {
+                               exitable = null,
+                               // NEARLY DEAD: take the BEST wall ahead, not the next one.
+                               emergency = false,
+                               // How much further along the route an emergency will walk to
+                               // get a better wall. Steps, not squares off the road.
+                               emergencyWithin = 8 } = {}) {
   if (!Array.isArray(shelters) || !shelters.length) return null;
   let ahead = shelters.filter(s => s.atStep >= atStep && s.detour <= maxDetour);
   // A REFUGE YOU CANNOT LEAVE IS A COFFIN, AND THIS ASKED ONLY WHETHER WE COULD GET IN.
@@ -698,9 +703,40 @@ export function shelterAhead(shelters, atStep,
 
   // Nearest along the route first, so the stop is the next one rather than the best one —
   // the best one may be forty squares further on, which is the same mistake as searching.
-  ahead.sort((a, b) => (a.atStep - b.atStep)
-    || ((b.refused_approaches ?? -1) - (a.refused_approaches ?? -1))
-    || (a.detour - b.detour));
+  //
+  // EXCEPT WHEN THE NEAREST ONE WILL NOT DO. `atStep` being the first key means quality
+  // breaks exact ties only, and two walls are almost never at the same step — so the wall
+  // taken is simply the next one, whatever it is. That is right while a character is merely
+  // hurt and wrong when it is nearly dead, because the walls in these rooms are not
+  // interchangeable: 587 offers eight, one of which refuses seven approaches and the rest
+  // refuse one or two.
+  //
+  // Measured, one character, one crossing: three refuges taken at 48%, 38% and 27% health,
+  // every one of them `taking_hits: true`, each rest aborted by the damage it was meant to
+  // escape, dead on the fourth. It had unlimited shelter below 30% and spent it on the
+  // three nearest squares rather than the one that would have held.
+  //
+  // So `emergency` ranks by how many ways in the mover refuses, and falls back to distance
+  // only to break THAT tie. The candidate set is unchanged — still ahead of us, still
+  // inside `maxDetour` — so this cannot send anybody across the room for a better wall.
+  // AND A BETTER WALL IS ONLY BETTER IF WE REACH IT. The original objection to ranking by
+  // quality stands — "the best one may be forty squares further on" — and a character at
+  // 27% health walking eighteen extra squares through what is already hitting it has not
+  // been helped. So an emergency looks at the walls it can actually get to first, and only
+  // widens to the whole route if there are none.
+  //
+  //     587, ranked by quality alone:   refused_approaches 1 -> 7, but atStep 0 -> 18
+  //     587, bounded to the next 8:     the best wall inside reach, whatever that is
+  if (emergency) {
+    const soon = ahead.filter(s => s.atStep <= atStep + (emergencyWithin ?? 8));
+    if (soon.length) ahead = soon;
+  }
+  ahead.sort(emergency
+    ? (a, b) => ((b.refused_approaches ?? -1) - (a.refused_approaches ?? -1))
+             || (a.atStep - b.atStep) || (a.detour - b.detour)
+    : (a, b) => (a.atStep - b.atStep)
+             || ((b.refused_approaches ?? -1) - (a.refused_approaches ?? -1))
+             || (a.detour - b.detour));
   return ahead[0];
 }
 

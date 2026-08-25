@@ -6036,7 +6036,15 @@ export class Autopilot {
       ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
                            { maxDetour: planned.maxDetour ?? 4,
                              unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
-                             exitable: this.exitTest() });
+                             exitable: this.exitTest(),
+                             // The same line that grants unlimited shelter grants the BEST
+                             // wall rather than the next one — one threshold, not two, so
+                             // "this is an emergency" cannot mean two different things.
+                             emergency: (() => {
+                               const v = this.s.client?.vitals?.();
+                               const hp = v?.health?.max ? v.health.value / v.health.max : null;
+                               return hp !== null && hp < (this.policy.doomedInOpenBelow ?? 0.3);
+                             })() });
     } catch { ahead = null; }
     if (!ahead) return false;
     this.note('taking the next wall on the route and mending there', {
