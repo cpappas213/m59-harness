@@ -279,6 +279,20 @@ const CROWD_RADIUS = 4;
 // out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
+// A bounded four-square open-field approach costs two vigor in the live client. When the
+// operator deliberately sets the fight floor to the exact 80-vigor resting cap, requiring
+// 80 again after those steps makes the order impossible: rest to 80, walk to 78, seek a
+// wall to rest to 80, repeat. This allowance applies only to that exact cap. Lower floors
+// already have transit margin; higher floors are food-backed and stay exact.
+const REST_CAP_APPROACH_VIGOR = 2;
+export function effectiveFightVigorFloor(floor, {
+  restCeiling = REST_VIGOR_CAP * skills.VIGOR_MAX,
+  approachCost = REST_CAP_APPROACH_VIGOR,
+} = {}) {
+  const requested = Number(floor);
+  if (!Number.isFinite(requested)) return floor;
+  return requested === restCeiling ? Math.max(0, requested - approachCost) : requested;
+}
 // A TRAVELLER IS NOT MADE TO SIT FOR VIGOR IT CANNOT AFFORD TO EARN.
 //
 // Resting recovers vigor towards REST_VIGOR_CAP (80 of 200) and everything above that has to
@@ -12575,7 +12589,8 @@ export class Autopilot {
       // character that has to leave the room to recover has to walk back afterwards
       // through everything it just walked past.
       const vigorNow = vigorOf(v);
-      const vigorFloor = this.fightFloor();
+      const requestedVigorFloor = this.fightFloor();
+      const vigorFloor = effectiveFightVigorFloor(requestedVigorFloor);
       // THE INKY RESERVE. A character can be BELOW the floor and unable to do anything
       // about it, because the food that would fix it is too big to fit.
       //
@@ -12614,7 +12629,9 @@ export class Autopilot {
           health: 0.98, vigor: REST_VIGOR_CAP, maxSeconds: 120 }).catch(() => null);
         this.tally.rests++;
         this.note('too tired to start a fight', {
-          vigor: vigorNow, need: vigorFloor, after_resting: r?.vitals?.vigor?.value,
+          vigor: vigorNow, need: vigorFloor,
+          requested_floor: requestedVigorFloor === vigorFloor ? undefined : requestedVigorFloor,
+          after_resting: r?.vitals?.vigor?.value,
           behind_a_wall: !!this.hold,
           why: 'attacking costs about thirty vigor a minute and vigor also sets how fast health ' +
                'comes back, so starting a fight below ' + vigorFloor + ' means breaking off ' +

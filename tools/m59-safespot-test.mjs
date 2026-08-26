@@ -14,7 +14,8 @@
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync, readFileSync } from 'node:fs';
-import { Autopilot, farmRoomDenials,
+import { Autopilot, HANDLED, effectiveFightVigorFloor,
+         farmRoomDenials, releaseQuarry,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
@@ -30,15 +31,16 @@ const ok = (label, cond, detail = '') => {
 //
 // Only as much world as observe() reads: where we are, what our health is, and what
 // is standing next to us.
-function world({ col = 5, row = 5, health = 30, max = 30, room = 999 } = {}) {
+function world({ col = 5, row = 5, health = 30, max = 30, vigor = 150, room = 999 } = {}) {
   const objects = new Map();
   const names = new Map([[1, 'giant rat'], [2, 'baby spider'], [3, 'Varuka']]);
   const c = {
     selfId: 99,
     room: { id: room, objects },
     rsc: { get: n => names.get(n) || `rsc${n}` },
-    vitals: () => ({ health: { value: c._health, max }, vigor: { value: 150, max: 200 } }),
+    vitals: () => ({ health: { value: c._health, max }, vigor: { value: c._vigor, max: 200 } }),
     _health: health,
+    _vigor: vigor,
     inventory: [],
     // The real client resolves this out of room contents on every read, which is why
     // a save-game renumber makes a live character look dead. Same shape here.
@@ -182,6 +184,67 @@ function keeper(w) {
   const p = new Autopilot(w.s, { mode: 'farm', policy: { hunt: 'giant rat' } });
   p.book = new SafeSpotBook(BOOK);      // never touch the real substrate
   return p;
+}
+
+console.log('\n--- the resting-cap floor allows only measured approach vigor ---');
+{
+  ok('an 80-vigor resting-cap order allows the measured two vigor spent approaching',
+     effectiveFightVigorFloor(80) === 78);
+  ok('food-backed floors and lower deliberate floors remain exact',
+     effectiveFightVigorFloor(100) === 100 && effectiveFightVigorFloor(70) === 70);
+}
+{
+  // Exercise the real farm gate. A unit test of only the threshold helper would miss
+  // passFarm continuing to compare against the unadjusted floor.
+  const w = world({ room: 575, health: 40, max: 40, vigor: 78 });
+  w.s.name = 'approach-vigor-ladder';
+  w.s.need = () => w.c;
+  w.s.pacer = { submit: async (_kind, action) => action() };
+  w.c.requestInventory = () => {};
+  w.c.waitFor = async () => ({ events: [] });
+  w.c.spells = [];
+  w.addMonster(31, 4, 0, MONSTER);
+  w.c.room.objects.get(31).nameRsc = 1;
+
+  const p = keeper(w);
+  Object.assign(p.policy, {
+    hunt: 'giant rat', vigorFloor: 80, clearWeak: false, maxCarry: 50,
+    restBelow: 0.7, fleeBelow: 0.425,
+    useSafeSpots: true, requireSafeWall: false,
+  });
+  p.resumeSuspendedJourney = async () => null;
+  p.provision = async () => false;
+  p.sweepBroken = async () => {};
+  p.sweepGearCondition = async () => {};
+  p.armSelf = async () => true;
+  p.holdWorthwhile = () => ({ hold: false, level: 30, my_level: 40 });
+  p.hold = { room: 575, col: 5, row: 5 };
+  p.maybeTestSpot = () => false;
+  let pulls = 0;
+  p.pull = async () => { pulls++; return { pulled: false, why: 'fixture ends after the farm gate' }; };
+  const wallReasons = [];
+  p.takeSafeSpot = async reason => {
+    wallReasons.push(reason);
+    return { took: false, why: 'fixture does not need a wall' };
+  };
+
+  const ctx = { s: w.s, c: w.c, room: w.s.world.room,
+                v: w.c.vitals(), hp: 1 };
+  const restsBefore = p.tally.rests;
+  let result = null, error = null;
+  try {
+    result = await p.passFarm(ctx);
+  } catch (caught) {
+    error = caught;
+  } finally {
+    releaseQuarry(w.s.name);
+  }
+  ok('the real farm gate does not turn the measured 80-to-78 approach into another rest trip',
+     !error && result === HANDLED && p.tally.rests === restsBefore && pulls === 1 &&
+       wallReasons.length === 0,
+     error ? (error.stack || String(error)) : JSON.stringify({ handled: result === HANDLED,
+                                              restsBefore, restsAfter: p.tally.rests,
+                                              pulls, wallReasons }));
 }
 
 // A pass of time in which we did nothing: the keeper looks, and looks again later.
