@@ -543,6 +543,37 @@ const server = createServer(async (req, res) => {
             json(r ?? { ok: true });
             return;
           }
+          // A JUMP NEEDS THE GEOMETRY, AND ONLY THIS PROCESS HAS IT.
+          //
+          // The broker's `jump` tool asks `s.world.geometry.declaredFallJumps(...)` and the
+          // proxy's world has `geometry: null` on purpose — it holds a two-second-old
+          // snapshot, not a World. So every jump on a keeper-backed broker answered
+          // "no geometry for this room", which is true and unhelpful: the geometry is here.
+          //
+          // Same shape as `route`, which is already handled this way for the same reason.
+          case 'jump': {
+            const geo = session.world?.geometry;
+            if (!geo?.declaredFallJumps) { json({ error: 'no geometry for this room' }, 409); return; }
+            const me = session.client?.self;
+            if (!me) { json({ error: 'own position unknown' }, 409); return; }
+            const toRow = Number(args.to_row ?? args.toRow);
+            const toCol = Number(args.to_col ?? args.toCol);
+            const declared = geo.declaredFallJumps(me.row, me.col) ?? [];
+            const match = declared.find(j => j.row === toRow && j.col === toCol);
+            if (!match) {
+              json({ jumped: false,
+                     reason: `no declared fall-jump from ${me.row},${me.col} to ${toRow},${toCol}`,
+                     declared_here: declared.map(j => j.row + ',' + j.col) });
+              return;
+            }
+            const r = await session.step(toCol, toRow, { fall: true });
+            const now = session.client?.self;
+            json({ jumped: true, asked: { row: toRow, col: toCol },
+                   landed: now ? { row: now.row, col: now.col } : null,
+                   arrived: !!now && now.row === toRow && now.col === toCol,
+                   mover: r ?? null });
+            return;
+          }
           case 'confirm_position': {
             const r = await session.confirmPosition?.();
             json({ confirmed: r ?? false });

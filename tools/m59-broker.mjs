@@ -4455,6 +4455,12 @@ const TOOLS = [
       const s = session(a.agent);
       const me = s.client?.self;
       if (!me) throw new Error(`${a.agent}: no position`);
+      // KEEPER-BACKED SESSIONS JUMP IN THE KEEPER, because that is where the World is.
+      // The proxy's world carries `geometry: null` deliberately — a two-second-old snapshot
+      // is not a World — so asking here answered "no geometry for this room" for every
+      // character on the architecture production now runs.
+      if (typeof s.walkFine === 'function' && s._index !== undefined && !s.world?.geometry)
+        return keeperAction(s.name, s._index, 'jump', { to_row: a.to_row, to_col: a.to_col });
       const geo = s.world?.geometry;
       if (!geo?.declaredFallJumps) throw new Error(`${a.agent}: no geometry for this room`);
       // ONLY A DECLARED JUMP, AND THAT IS THE WHOLE SAFEGUARD.
@@ -4545,9 +4551,32 @@ const TOOLS = [
       fine: { type: 'boolean',
               description: 'use locally validated fine BSP movement for this one call' },
       stride: { type: 'number', description: 'fine units to reach per step, default 48 of 64' },
-    }, required: ['agent', 'col', 'row'] },
-    run: (a) => {
+      x: { type: 'number', description: 'fine x to walk to, instead of a square. See below.' },
+      y: { type: 'number', description: 'fine y to walk to, instead of a square' },
+    }, required: ['agent'] },
+    run: async (a) => {
       const s = session(a.agent);
+      // A SQUARE IS A PLACE THE BODY MAY NEVER OCCUPY, AND ON A LEDGE IT USUALLY IS NOT.
+      //
+      // `col`/`row` aims at the square's CENTRE, which is right in a room and wrong on a
+      // ledge: the walkable part of 40,52 in 579 is 21 of 49 sampled points and the centre
+      // is not one of them. Walking a derived ledge route square by square therefore aims
+      // repeatedly at the drop — measured, a character walked nine waypoints of the Ancient
+      // Place climb and then stepped off, ending eight columns away with a third of its
+      // health gone.
+      //
+      // `replay_track` already says this about itself — "the failure mode of planning on
+      // square stand points a body never occupies" — but it can only replay a crossing
+      // somebody has already made. This is the same idea for a route nobody has walked yet:
+      // give it the fine point, not the square that contains it.
+      if (a.x != null && a.y != null) {
+        const r = await s.walkFine(num(a.x), num(a.y), {
+          maxSteps: num(a.max_steps, 60),
+          ...(a.stride != null ? { stride: num(a.stride) } : {}),
+          controlToken: a.control_token,
+        });
+        return r ?? { arrived: false, reason: 'the mover said nothing' };
+      }
       const fine = a.fine ?? s.fine;
       if (!fine) return s.walkTo(num(a.col), num(a.row), {
         maxSteps: num(a.max_steps, 30), controlToken: a.control_token,
