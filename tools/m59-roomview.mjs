@@ -943,7 +943,11 @@ function routeMeta(){
 function statBlock(v, label, cls){
   return '<div class="stat ' + (cls||'') + '"><b>' + v + '</b><span>' + label + '</span></div>';
 }
-var railRows = D.tacticsRows.filter(function(t){ return t.tactic === 'baked_rail'; });
+/* A ROW THE WALKER CHOSE NOT TO TRY IS NOT A RAIL THAT FAILED. attempted:false marks a
+   deliberate skip - most often "the door is already 0 squares away, a rail across the room
+   would be a detour" - and counting those as failures overstates the failure rate.
+   Absent means true, so older rows keep their meaning. */
+var railRows = D.tacticsRows.filter(function(t){ return t.tactic === 'baked_rail' && t.attempted !== false; });
 var railOk = railRows.filter(function(t){ return t.worked; }).length;
 var cross = D.crossings.filter(function(x){ return x.room === D.room.num; });
 var crossOk = cross.filter(function(x){ return x.ok; });
@@ -983,7 +987,8 @@ function findings(){
   var out = [];
   var tac = {};
   D.tacticsRows.forEach(function(t){
-    tac[t.tactic] = tac[t.tactic] || { ok:0, fail:0 };
+    tac[t.tactic] = tac[t.tactic] || { ok:0, fail:0, skipped:0 };
+    if (t.attempted === false) { tac[t.tactic].skipped++; return; }
     tac[t.tactic][t.worked ? 'ok' : 'fail']++;
   });
   var names = Object.keys(tac).sort(function(a,b){
@@ -1161,7 +1166,7 @@ function main(argv) {
   fs.writeFileSync(out, renderPage(data));
   if (jsonOut) fs.writeFileSync(jsonOut, JSON.stringify(data, null, 2));
 
-  const rail = data.tacticsRows.filter(t => t.tactic === 'baked_rail');
+  const rail = data.tacticsRows.filter(t => t.tactic === 'baked_rail' && t.attempted !== false);
   const railOk = rail.filter(t => t.worked).length;
   // The count worth printing is the per-APPROACH one, which is what safeSpots() gates on.
   // The per-square version ("standable but not coarse-walkable") is mostly rock outdoors,

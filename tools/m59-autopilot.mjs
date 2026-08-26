@@ -25,7 +25,7 @@ import * as watchdog from './m59-watchdog.mjs';
 import { OF, affordances, dropSpec as dropSpecFor,
          playerClassName, flaggedAggressor } from './m59-parse.mjs';
 import * as grudge from './m59-grudge.mjs';
-import { isFood, foodValue } from './m59-items.mjs';
+import { isFood, foodValue, weighItem } from './m59-items.mjs';
 import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
          roomThreats, goalYield, roomCap, karmaSafe,
          FORGIVING_RATING as GENTLE_RATING } from './m59-spawns.mjs';
@@ -50,6 +50,11 @@ import { StorageCache, BOOKMAKERS_HALL_ROOM } from './m59-storage.mjs';
 import * as uptime from './m59-uptime.mjs';
 import * as party from './m59-party.mjs';
 import { mayShareSpot } from './m59-party.mjs';
+import {
+  claimFileSpot, fileClaimedSpotList, fileSpotClaimSnapshot,
+  fileSpotClaimsEnabled, fileSpotHeldBy, fileSpotOccupancy,
+  fileSpotTakenByAnother, releaseFileSpot, rememberFileSpotPartner,
+} from './m59-spotclaims.mjs';
 // The pre-registered table the keeper consults at the three moments it has no opinion
 // about. A LOOKUP, never a request — see the note above checkAttackedByPlayer().
 import * as playbook from './m59-playbook.mjs';
@@ -1149,6 +1154,13 @@ export class Autopilot {
       // Stop farming when carrying this many things, so the character does not spend
       // an hour filling up and dropping the overflow.
       maxCarry: 14,
+      // Shelter farming cannot pay for a market trip every time the pack gets heavy.
+      // When set to a fraction such as .75, shed one expendable, lowest-value load at a
+      // time until both weight and bulk are back below the fraction. null preserves the
+      // ordinary sell/bank economy. Food, reagents, worn/protected items and useful gear
+      // are never candidates; if those alone bind, the keeper reports that instead of
+      // stripping its survival kit.
+      dropAtLoad: null,
       // Items a directional strategy is accumulating. The keeper treats these as
       // collection stock rather than food or loot and stores them during Barloque loops.
       vaultItems: [],
@@ -2641,6 +2653,28 @@ export class Autopilot {
     const s = this.s, c = s.client;
     if (!plan || !c || !s.world) return { arrived: false, reason: 'no same-room bridge plan' };
 
+    // A SAME-ROOM BRIDGE IS STILL TRAVEL. The route temporarily leaves the room
+    // (39 -> 38 -> 39 in Upstairs Castle Victoria), so checking only the final room
+    // quietly bypassed an operator confinement that allowed 39 and nothing else.
+    // Keep this guard here, immediately before the first raw leaveViaAny call: this
+    // helper deliberately does not use travel(), so it cannot inherit that method's
+    // confineRooms check. Death/Underworld escape does not use this helper and remains
+    // available even under a one-room confinement.
+    const confine = Array.isArray(this.policy?.confineRooms) ? this.policy.confineRooms : null;
+    if (confine?.length && !new Set(confine.map(Number)).has(Number(plan.viaRoom))) {
+      this.note('split-room bridge refused by the confinement', {
+        room: plan.fromName,
+        via: plan.viaName,
+        confined_to: confine.map(Number),
+        why: 'changing sides would leave the permitted room, even though the route returns to it',
+      });
+      return {
+        arrived: false,
+        confined: true,
+        reason: `the split-room bridge passes through room ${plan.viaRoom}, outside the confinement`,
+      };
+    }
+
     const matches = (e, doors, to) => e.kind === 'go' && e.to === to && e.stand_on &&
       doors.some(d => d.row === e.stand_on.row && d.col === e.stand_on.col);
     const settle = async () => {
@@ -2835,13 +2869,30 @@ export class Autopilot {
       ? Math.max(1, Math.floor(this.policy.maxBotsPerSafeSpot)) : null;
     // With spreading off there is one unbounded search. With it on, retain the existing
     // fair fill: try one per wall, then two, up to the configured maximum.
+    rememberSpotClaimPartner(this.s.name, this.policy.partner ?? null);
     let spot = null, shareCap = configuredShareCap == null ? Infinity : 1;
+    let claimCollisions = 0;
+    spotSearch:
     for (; configuredShareCap == null || shareCap <= configuredShareCap; shareCap++) {
-      for (const k of Object.keys(spotStats)) delete spotStats[k];   // stats describe the LAST attempt
-      spot = this.searchSafeSpot(geo, me, room, {
-        within, quarryReach, strictQuarryReach, los, quarry, barren,
-        stats: spotStats, shareCap });
-      if (spot) break;
+      // Selection and walking are separated by an await. A second process may reserve
+      // our choice in that gap between the read and this process's atomic claim, so retry
+      // from a fresh snapshot a few times before raising the share cap. The claim itself
+      // is the authority; the snapshot only keeps the room-sized search cheap.
+      // A production fleet is normally 21 characters. Thirty-two collisions is enough
+      // for every other one to win a distinct wall ahead of us while keeping a broken or
+      // adversarial claim store from turning one decision into an unbounded loop.
+      for (let attempt = 0; attempt < 32; attempt++) {
+        for (const k of Object.keys(spotStats)) delete spotStats[k]; // stats describe LAST attempt
+        spot = this.searchSafeSpot(geo, me, room, {
+          within, quarryReach, strictQuarryReach, los, quarry, barren,
+          stats: spotStats, shareCap });
+        if (!spot) break;
+        if (claimSpot(this.s.name, room.num, spot.col, spot.row,
+                      { cap: shareCap, partner: this.policy.partner ?? null }))
+          break spotSearch;
+        claimCollisions++;
+        spot = null;                  // another process won it; refresh and search again
+      }
       if (configuredShareCap == null) break;
     }
     if (spot && Number.isFinite(shareCap) && shareCap > 1)
@@ -2882,12 +2933,13 @@ export class Autopilot {
         why: 'the coarse movement grid is useful for ranking, but only repeated pulls can ' +
              'prove that a live quarry cannot fight here' });
 
-    // CLAIM IT BEFORE WALKING, not after arriving. Choosing and taking are separated
-    // by a walk, and a walk is an await: three keepers each looked at the room, each
-    // saw (29,15) unclaimed because none of them had got there yet, and all three set
-    // off for it. Reserving at selection time is what makes the register mean
-    // anything; if the walk fails the reservation goes back.
-    claimSpot(this.s.name, room.num, spot.col, spot.row);
+    if (claimCollisions)
+      this.note('another keeper reserved a wall while we were choosing', {
+        collisions: claimCollisions,
+        settled_on: { col: spot.col, row: spot.row },
+        why: 'wall reservations are atomic across keeper processes; the losing selector ' +
+             'refreshes the room and takes another square instead of walking into the winner',
+      });
 
     if ((spot.steps_away ?? 99) > 0) {
       this.doing = 'travelling';
@@ -2950,7 +3002,27 @@ export class Autopilot {
 
     const now = c.self;
     const known = this.book.get(room.num, spot.col, spot.row);
-    const trusted = !!known?.held && !this.book.discredited(known);
+    // A SAFE WALL IS TRUSTED ON ARRIVAL UNLESS IT HAS ACTUALLY FAILED HERE.
+    //
+    // This used to require `known.held` — the square had to have been stood on and
+    // survived BEFORE it counted, so a wall the geometry had never offered anyone was
+    // "unproven: it will be treated as open floor". That inverts the burden of proof
+    // against an algorithm that has never been wrong: the safe-wall calculation is
+    // derived from the same two grids the mover enforces, and no algorithmically-offered
+    // wall has ever been disproved by standing on it. Meanwhile the cost of disbelief is
+    // paid in deaths — Pepe went to a wall in The Twisted Wood at 13/20 with
+    // `can_reach_you: 0, free_shots: 6, back_cover: 5`, was told it was open floor
+    // because nobody had tested it, gave the square up after ONE second, and was dead
+    // four samples later with fifteen trolls on him.
+    //
+    // So the law is inverted to match the evidence: BELIEVED unless this exact square has
+    // failed under attack. `discredited()` is that record and a single failure is
+    // permanent, which is the "unless we can prove otherwise" half — the disproof path at
+    // `THIS IS NOT A SAFE SPOT` below is untouched and still clears `proven` the instant
+    // something lands a blow while we sit. The PROOF_MS timer also still runs and still
+    // settles, so the ledger keeps collecting evidence about the law; it simply no longer
+    // gates the shelter on having collected it first.
+    const trusted = !this.book.discredited(known);
     this.hold = {
       source,
       room: room.num, col: spot.col, row: spot.row,
@@ -2968,20 +3040,22 @@ export class Autopilot {
     };
     // Tell the other keepers this one is taken, so the next of them to look at this
     // room ranks it out instead of walking into us.
-    claimSpot(this.s.name, room.num, spot.col, spot.row);
+    claimSpot(this.s.name, room.num, spot.col, spot.row,
+              { cap: shareCap, partner: this.policy.partner ?? null });
     this.note('took a safe spot', {
       where: { col: spot.col, row: spot.row }, why,
       can_reach_you: spot.can_reach_you, free_shots: spot.free_shots, back_cover: spot.back_cover,
       proven_before: known?.failed ? `DISCREDITED — failed ${known.failed} time(s) here`
                    : known?.held   ? `held ${known.held} time(s) before`
                    :                 'never tested',
-      note: trusted
-        ? 'this square has held under attack before and never failed, so it is trusted on arrival'
-        : known?.failed
+      note: known?.failed
         ? 'this square has failed before; it is treated as open floor and should not have ' +
           'been offered — a failure is permanent'
-        : 'unproven: it will be treated as open floor until something stands next to us ' +
-          'for ' + Math.round(PROOF_MS / 1000) + 's without landing a blow',
+        : known?.held
+        ? 'this square has held under attack before and never failed, so it is trusted on arrival'
+        : 'trusted on arrival: the geometry says nothing can reach it, and an algorithmically ' +
+          'offered wall has never been disproved. Still under test — ' +
+          Math.round(PROOF_MS / 1000) + 's quiet confirms it, one landed blow discredits it',
     });
     return { took: true, spot: this.hold };
   }
@@ -4406,6 +4480,11 @@ export class Autopilot {
   searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
                                   los, quarry, barren, stats, shareCap = 1 }) {
     const s = this.s;
+    // One room search can inspect hundreds of candidate squares. Reading the shared
+    // claim directory for every candidate would turn that into hundreds of lock/file
+    // round-trips, so take one coherent snapshot for this selector. An atomic claim after
+    // selection catches the only race a snapshot can leave, and its retry takes a fresh one.
+    const spotClaims = snapshotSpotClaims();
     return nearestSafeSpot(geo, me, {
       // WHAT MAKES A SQUARE A CANDIDATE. `wall` asks for a wall to stand against and
       // ranks by how much of it there is; `disc` is the old attackers_avoided >= 20
@@ -4430,7 +4509,7 @@ export class Autopilot {
       reach: (col, r2) => {
         if (barren?.has(`${col},${r2}`))
           return { reachable: false, reason: 'empirically barren after repeated pulls' };
-        if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap))
+        if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap, spotClaims))
           return { reachable: false, reason: 'occupied at this share cap' };
         return s.world.reach(col, r2);
       },
@@ -8112,6 +8191,7 @@ export class Autopilot {
   stop(why = null, { hard = false } = {}) {
     if (!hard) { this.goInert(why); return this.status(); }
     releaseQuarry(this.s.name);
+    releaseSpot(this.s.name);
     this.stopping = true;
     this.stopWatchdog();
     this.passStartedAt = null;
@@ -12117,6 +12197,35 @@ export class Autopilot {
       await this.sweepBroken().catch(() => {});
       this.sweepGearCondition().catch(() => {});
 
+      // KEEP SHELTER FARMERS ABLE TO PICK UP THE NEXT DROP WITHOUT OPENING A TOWN
+      // ERRAND. sellAtLoad answers "when should I visit a merchant"; dropAtLoad is the
+      // deliberately local answer for a travel-forbidden shift. It sheds one safe stack
+      // per pass, then re-measures from the server-refreshed inventory in makeRoom().
+      // One-at-a-time is important: weights are static, but the server is authoritative
+      // about whether a particular stacked drop was accepted.
+      const dropAt = Number(this.policy.dropAtLoad);
+      if (dropAt > 0 && dropAt < 1) {
+        const cap = skills.carryCapacity(c);
+        const frac = (value, max) => max > 0 && Number.isFinite(value) ? value / max : 0;
+        const fullness = cap?.known && cap.load
+          ? Math.max(frac(cap.load.weight, cap.weight_max), frac(cap.load.bulk, cap.bulk_max))
+          : null;
+        if (cap?.load?.exact === false) {
+          this.note('cannot prove the shelter pack is below its load ceiling', {
+            target_percent: Math.round(dropAt * 100), unweighed: cap.load.unweighed,
+            why: 'unknown item weights make the measured load a lower bound; nothing is ' +
+                 'guessed disposable from an unknown weight' });
+        } else if (fullness != null && fullness > dropAt) {
+          const freed = await this.makeRoom();
+          this.note('shelter pack above its local load ceiling — ' + freed.did, {
+            load_percent: Math.round(fullness * 100), target_percent: Math.round(dropAt * 100),
+            ...freed.detail });
+          if (freed.ok) this.progress('made local room for the next farm drop');
+          else this.noProgress('protected supplies alone exceed the local load ceiling');
+          return HANDLED;
+        }
+      }
+
       if (c.inventory.length >= this.policy.maxCarry) {
         const freed = await this.makeRoom();
         this.note('bags full — ' + freed.did, { carrying: c.inventory.length, max: this.policy.maxCarry, ...freed.detail });
@@ -12208,6 +12317,48 @@ export class Autopilot {
           this.noProgress('room capped by creatures we will not fight');
           return HANDLED;
         }
+      }
+
+      // A QUARRY IN ANOTHER PART OF THIS ROOM MAY REQUIRE LEAVING THE ROOM TO
+      // REACH IT. Castle Victoria's upstairs is the worked example: changing wings is
+      // 39 -> 38 -> 39. Filtering at the source is important. Refusing the bridge only
+      // inside takeSafeSpot leaves the keeper repeatedly selecting the unreachable
+      // creature, and a cap-clearing target can replace the ordinary prey above, so this
+      // one filter deliberately runs after both selections and before quarry ranking.
+      const visibleBeforeConfinement = found;
+      found = found.filter(target => quarryPermittedByConfinement({
+        map: s.world?.map,
+        room,
+        geo: s.world?.geometry,
+        from: c.self,
+        target,
+        confineRooms: this.policy.confineRooms,
+      }));
+      if (visibleBeforeConfinement.length && !found.length) {
+        // This is a vigil, not an empty hunting room. Do not let the normal empty-pass
+        // machinery count toward roaming, and do not retain an advisory claim on prey
+        // this keeper is forbidden to cross the room boundary to reach.
+        releaseQuarry(this.s.name);
+        this.clearing = null;
+        this.emptyPasses = 0;
+        const alreadySheltered = !!this.hold && !!this.holdWorks?.();
+        const shelter = alreadySheltered
+          ? { took: true }
+          : await this.takeSafeSpot(
+              'all visible quarry is across a split-room bridge outside the confinement', null)
+              .catch(e => ({ took: false, why: e.message }));
+        this.doing = 'waiting';
+        this.note('visible quarry is outside this room component — sheltering in place', {
+          room: room?.name,
+          excluded: visibleBeforeConfinement.length,
+          confined_to: Array.isArray(this.policy.confineRooms)
+            ? this.policy.confineRooms.map(Number) : [],
+          sheltered: !!shelter.took,
+          why_not_sheltered: shelter.took ? undefined : shelter.why,
+          why: 'reaching it would temporarily leave the permitted rooms; waiting here keeps ' +
+               'the confinement intact and lets this component\'s next spawn come to us',
+        });
+        return HANDLED;
       }
 
       // ONE NEAREST TARGET PER KEEPER PRODUCES A PILE, NOT A FLEET.
@@ -15929,9 +16080,33 @@ export class Autopilot {
         if (worn.has(o.id) || this.wontDrop?.has(o.id) ||
             skills.itemIsProtected(name, this.protectedItemNames())) return false;
         if (overrideSell?.(name)) return true;
+        // Food and create-food reagents are the shelter's fuel and redistribution
+        // stock. A low vendor value must never make them look like disposable loot.
+        if (isFood(name) || skills.shareKind(name)) return false;
         return !keep.test(name);
       })
-      .sort((a, b) => rank(a) - rank(b) || (b.amount || 1) - (a.amount || 1));
+      .sort((a, b) => {
+        const score = o => {
+          const name = c.rsc.get(o.nameRsc) || '';
+          const key = String(name).toLowerCase();
+          const unit = weighItem(name);
+          const amount = Math.max(1, Number(o.amount) || 1);
+          const relief = unit ? Math.max(unit.weight, unit.bulk) * amount : 0;
+          const valueKnown = Object.prototype.hasOwnProperty.call(ITEM_VALUE, key);
+          const value = valueKnown ? Number(ITEM_VALUE[key]) || 0 : null;
+          // Value per unit of the binding resource keeps the most earning power in the
+          // remaining 75%. Unknown value or load ranks last: unknown is never worthless.
+          const density = valueKnown && unit && Math.max(unit.weight, unit.bulk) > 0
+            ? value / Math.max(unit.weight, unit.bulk) : Infinity;
+          return { rank: rank(o), valueKnown, loadKnown: !!unit, density, relief, value };
+        };
+        const x = score(a), y = score(b);
+        return x.rank - y.rank ||
+          Number(y.valueKnown && y.loadKnown) - Number(x.valueKnown && x.loadKnown) ||
+          x.density - y.density ||
+          (x.value ?? Infinity) - (y.value ?? Infinity) ||
+          y.relief - x.relief;
+      });
     if (!junk.length) {
       return { ok: false, did: 'nothing safe to drop',
                detail: { hint: 'raise maxCarry, or go and sell — everything carried looks worth keeping' } };
@@ -16537,8 +16712,9 @@ export class Autopilot {
 // when the search comes back empty, so the distribution is a consequence of the search
 // rather than a number anybody has to maintain.
 //
-// The register lives in the module rather than in a keeper because that is the only
-// place all of them can see: every session in a broker shares this process.
+// The fallback register lives in this module for ordinary in-process callers and offline
+// tests. Production keepers do NOT share a process; m59-spotclaims.mjs supplies the same
+// API from an atomic file-backed register configured by m59-keeper-process.mjs.
 //
 // A SQUARE HOLDS A SET, NOT A NAME, because partners share one on purpose (see
 // m59-party.mjs). With a single name the second partner to claim simply overwrote the
@@ -16548,18 +16724,50 @@ export class Autopilot {
 const claimedSpots = new Map();        // "room:col,row" -> Set<agent name>
 const spotKey = (room, col, row) => `${room}:${col},${row}`;
 
-export function claimSpot(agent, room, col, row) {
+function snapshotSpotClaims() {
+  if (fileSpotClaimsEnabled()) {
+    try { return { kind: 'file', value: fileSpotClaimSnapshot() }; }
+    catch (error) { return { kind: 'unavailable', error }; }
+  }
+  return { kind: 'memory', value: new Map(
+    [...claimedSpots].map(([key, who]) => [key, new Set(who)])) };
+}
+
+// Publish a partnership to the cross-process register. `mayShareSpot` remains the
+// in-process authority; the file record is its symmetric equivalent for two keepers that
+// cannot see each other's m59-party Map.
+export function rememberSpotClaimPartner(agent, partner = null) {
+  if (!fileSpotClaimsEnabled()) return false;
+  try { return rememberFileSpotPartner(agent, partner); }
+  catch { return false; }
+}
+
+export function claimSpot(agent, room, col, row, { cap = Infinity, partner = undefined } = {}) {
+  if (fileSpotClaimsEnabled()) {
+    try {
+      return claimFileSpot(agent, room, col, row,
+        { cap, partner, mayShare: (a, b) => mayShareSpot(a, b) });
+    } catch { return false; }           // fail closed: do not walk into an unreserved wall
+  }
   releaseSpot(agent);                  // one square each; claiming a new one gives up the old
   const k = spotKey(room, col, row);
   let held = claimedSpots.get(k);
   if (!held) claimedSpots.set(k, held = new Set());
   held.add(agent);
+  return true;
 }
 export function releaseSpot(agent) {
+  if (fileSpotClaimsEnabled()) {
+    try { return releaseFileSpot(agent); }
+    catch { return 0; }
+  }
+  let released = 0;
   for (const [k, who] of claimedSpots) {
     if (!who.delete(agent)) continue;
+    released++;
     if (!who.size) claimedSpots.delete(k);
   }
+  return released;
 }
 // WHO IS IN THE WAY — meaning who is standing here that this agent may not join.
 //
@@ -16569,8 +16777,13 @@ export function releaseSpot(agent) {
 // How many OTHERS are standing here that this agent is not deliberately sharing with.
 // Partners are not crowding us — that is the exception m59-party.mjs relies on — so they
 // do not count toward the cap.
-export function spotOccupancy(agent, room, col, row) {
-  const held = claimedSpots.get(spotKey(room, col, row));
+export function spotOccupancy(agent, room, col, row, snapshot = null) {
+  snapshot ??= snapshotSpotClaims();
+  if (snapshot.kind === 'unavailable') return Number.MAX_SAFE_INTEGER;
+  if (snapshot.kind === 'file')
+    return fileSpotOccupancy(agent, room, col, row,
+      { snapshot: snapshot.value, mayShare: (a, b) => mayShareSpot(a, b) });
+  const held = snapshot.value.get(spotKey(room, col, row));
   if (!held) return 0;
   let n = 0;
   for (const who of held) {
@@ -16584,10 +16797,15 @@ export function spotOccupancy(agent, room, col, row) {
 // behaviour and stays the default, so every existing caller is unchanged; takeSafeSpot
 // raises it a step at a time when nothing is free at the current level, which is what
 // turns "one each" into "spread evenly".
-export function spotTakenByAnother(agent, room, col, row, cap = 1) {
-  const held = claimedSpots.get(spotKey(room, col, row));
+export function spotTakenByAnother(agent, room, col, row, cap = 1, snapshot = null) {
+  snapshot ??= snapshotSpotClaims();
+  if (snapshot.kind === 'unavailable') return 'wall claim store unavailable';
+  if (snapshot.kind === 'file')
+    return fileSpotTakenByAnother(agent, room, col, row, cap,
+      { snapshot: snapshot.value, mayShare: (a, b) => mayShareSpot(a, b) });
+  const held = snapshot.value.get(spotKey(room, col, row));
   if (!held) return null;
-  if (spotOccupancy(agent, room, col, row) < cap) return null;
+  if (spotOccupancy(agent, room, col, row, snapshot) < cap) return null;
   for (const who of held) {
     if (who === agent) continue;
     if (mayShareSpot(agent, who)) continue;
@@ -16602,8 +16820,29 @@ export function spotTakenByAnother(agent, room, col, row, cap = 1) {
 // wired into takeSafeSpot: strategy off means unlimited, strategy on with no override
 // reproduces the historical cap of three bots per wall.
 export const SPOT_SHARE_CAP = 3;
-export const claimedSpotList = () =>
-  [...claimedSpots.entries()].flatMap(([k, who]) => [...who].map(agent => ({ at: k, agent })));
+export const claimedSpotList = () => {
+  const snapshot = snapshotSpotClaims();
+  if (snapshot.kind === 'unavailable') return [];
+  if (snapshot.kind === 'file') return fileClaimedSpotList({ snapshot: snapshot.value });
+  return [...snapshot.value.entries()]
+    .flatMap(([k, who]) => [...who].map(agent => ({ at: k, agent })));
+};
+
+// A room number can contain disconnected monster-movement components. Players can
+// sometimes bridge them only by stepping through another room; monsters cannot. Under
+// confinement that bridge is permitted only when its intermediate room is permitted too.
+// Keep this as a pure predicate so quarry selection and the last-moment movement guard can
+// be tested independently: the latter remains the safety backstop for every other caller.
+export function quarryPermittedByConfinement({
+  map, room, geo, from, target, confineRooms,
+} = {}) {
+  if (!Array.isArray(confineRooms) || !confineRooms.length) return true;
+  const roomNum = Number(room?.num ?? room);
+  const bridge = sameRoomIslandBridgePlan(map, roomNum, geo, from, target);
+  if (!bridge) return true;       // same component, or no route that would leave the room
+  const permitted = new Set(confineRooms.map(Number));
+  return permitted.has(Number(bridge.viaRoom));
+}
 
 // SPREAD THE FLEET ACROSS THE ROOM'S QUARRY.
 //
@@ -16713,8 +16952,11 @@ function releaseFarmDelivery(room, agent) {
 // Where a particular keeper is standing, for the one case that WANTS to share: a loot
 // runner sheltering on the farmer's wall while it picks up behind them.
 export function spotHeldBy(agent) {
-  for (const [k, who] of claimedSpots) {
-    if (who !== agent) continue;
+  const snapshot = snapshotSpotClaims();
+  if (snapshot.kind === 'unavailable') return null;
+  if (snapshot.kind === 'file') return fileSpotHeldBy(agent, { snapshot: snapshot.value });
+  for (const [k, who] of snapshot.value) {
+    if (!who.has(agent)) continue;
     const [room, rc] = k.split(':');
     const [col, row] = rc.split(',');
     return { room: Number(room), col: Number(col), row: Number(row) };

@@ -539,6 +539,7 @@ const KEEP_ACROSS_RESTART = {
   assignedRoom: 'assigned_room', roam: 'roam', roamLimit: 'roam_limit',
   partner: 'partner', bankAbove: 'bank_above', restBelow: 'rest_below',
   walkingMoney: 'walking_money', sellAtLoad: 'sell_at_load',
+  dropAtLoad: 'drop_at_load',
   sellWhenBroke: 'sell_when_broke', sellWhenBrokeUnder: 'sell_when_broke_under',
   sellWhenBrokeStacks: 'sell_when_broke_stacks',
   maxBotsPerSafeSpot: 'max_bots_per_safe_spot',

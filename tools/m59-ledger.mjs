@@ -100,6 +100,9 @@ export function recordSample(rows = []) {
       level: r.level ?? null,
       kills: r.autopilot?.kills ?? 0,
       deaths: r.deaths ?? null,
+      // Restart-safe rolling count from keeper post-mortems.  `deaths` above remains the
+      // current keeper process tally for compatibility; this is the fleet-board figure.
+      deaths_24h: r.deaths_24h ?? null,
       room: r.room ?? null,
       room_num: r.room_num ?? null,
       health: r.health ?? null,

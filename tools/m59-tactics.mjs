@@ -109,6 +109,19 @@ export function recordTactic(row = {}) {
       hp_lost: Number.isFinite(row.hp_lost) ? row.hp_lost : 0,
       // The caller's measured answer, never the tactic's own opinion of itself.
       worked: row.worked === true,
+      // AND WHETHER IT WAS EVEN TRIED. `worked` is a strict boolean and every consumer
+      // counts `worked ? ok : fail`, so a row saying "we decided this tactic was not the
+      // right one here" scored as a tactic that was tried and failed. The rail logs those
+      // deliberately — the note at its skip site argues, correctly, that the DECISION is
+      // worth recording — and the result was that Ukgoth read as an 84% rail failure while
+      // seventy-one of those rows say `no rail needed, the door is 0 squares away`, which
+      // is the walk going right.
+      //
+      // That matters beyond tidiness: this ledger is what an operator reads to choose what
+      // to go and fix, so a decision counted as a failure sends somebody to repair
+      // something that is working. Absent means true, so every existing row and every
+      // caller that does not know about this keeps its old meaning.
+      attempted: row.attempted !== false,
       ...(row.note ? { note: String(row.note).slice(0, 200) } : {}),
     };
     buffer.push(entry);
@@ -159,6 +172,11 @@ export function summarise(rows = []) {
     const key = r.tactic + ' ' + (r.trigger ?? 'unknown');
     const cell = cells.get(key) ?? { tactic: r.tactic, trigger: r.trigger ?? 'unknown',
                                      used: 0, worked: 0, ms: [], hp: 0, closed: 0, rooms: new Map() };
+    // NOT COUNTED AS A GO. A row the caller marked `attempted: false` is a decision not to
+    // use the tactic, and folding it into `used` makes the success rate a measure of how
+    // often the tactic was APPROPRIATE rather than of whether it works. Reported on its own
+    // line, because "we skipped it ninety times" is worth seeing and worth explaining.
+    if (r.attempted === false) { cell.skipped = (cell.skipped ?? 0) + 1; cells.set(key, cell); continue; }
     cell.used++;
     if (r.worked) cell.worked++;
     if (Number.isFinite(r.ms)) cell.ms.push(r.ms);
@@ -170,6 +188,7 @@ export function summarise(rows = []) {
   }
   return [...cells.values()].map(c => ({
     tactic: c.tactic, trigger: c.trigger, used: c.used, worked: c.worked,
+    ...(c.skipped ? { skipped: c.skipped } : {}),
     success: c.used ? c.worked / c.used : 0,
     // Time is what a tactic costs whether or not it works, so the total is the honest
     // figure for "what did this spend of the walk" and the median for "what does one go

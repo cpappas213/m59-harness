@@ -105,6 +105,7 @@ import { safeSpots, safeSpotBook, geometryFor as safeSpotGeometryFor,
 import { planRuns, planProvisioning } from './m59-lootrun.mjs';
 import { planCharacter, STAT_ORDER, STAT_PRESETS } from './m59-newchar.mjs';
 import { recordSample, recordEvent, summarise as ledgerSummary, readLedger, deathReport, timeReport, spellReport, killsIn } from './m59-ledger.mjs';
+import { recentDeathsIn, DEATH_WINDOW_MS } from './m59-death-tally.mjs';
 import { renderDashboard } from './m59-dashboard.mjs';
 import { renderDeaths, renderTougher, deathReportJSON } from './m59-deaths-page.mjs';
 import { renderEconomy } from './m59-economy-page.mjs';
@@ -879,6 +880,32 @@ async function spawnKeeper(agent, index, credentials) {
 
 async function spawnKeeperInner(agent, index, credentials) {
   const port = await allocateKeeperPort(agent, index);
+  // WINDOWS SERVICE RESTARTS STOP ONLY THE BROKER PID. Its keeper children survive,
+  // and allocateKeeperPort deliberately recognizes a matching /state as ours. The old
+  // code then spawned another process anyway; that child lost EADDRINUSE, while the
+  // broker mistook the survivor's /health for the new child's readiness and recorded a
+  // dead PID. Adopt the verified survivor instead. Identity is mandatory; a keeper from
+  // another fleet on the same numeric port is never adopted.
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (res.ok) {
+      const live = await res.json();
+      if (String(live?.agent ?? '') === String(agent)) {
+        const pid = Number(live.pid);
+        keeperProcesses.set(agent, {
+          pid: Number.isInteger(pid) && pid > 0 ? pid : null,
+          port,
+          startedAt: Date.now(),
+          adopted: true,
+        });
+        console.error(`[keeper] adopted surviving ${agent} on port=${port}` +
+          (Number.isInteger(pid) && pid > 0 ? ` pid=${pid}` : ' (keeper predates PID telemetry)'));
+        return true;
+      }
+    }
+  } catch { /* nobody verified on the port — start a keeper below */ }
   const { spawn } = await import('node:child_process');
   const { join } = await import('path');
   const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1191,7 +1218,13 @@ class KeeperProxy {
       // bracket in its name. The keeper now sends `items` with real ids and amounts; the
       // parse stays as the fallback so a keeper running older code still answers.
       inventory: Array.isArray(s.items) && s.items.length
-        ? s.items.map(o => ({ id: o.id, nameRsc: o.name, amount: o.amount ?? 1, flags: o.flags ?? 0 }))
+        // `amount` AND `tag` STRAIGHT THROUGH. This coerced amount to 1, which is what a
+        // real client reports for a STACK OF ONE and never for an ordinary item — and the
+        // difference is the whole of whether an offer may carry a count for it. See the
+        // note over `items` in m59-keeper-process.mjs: a malformed id list completes the
+        // handshake and moves nothing.
+        ? s.items.map(o => ({ id: o.id, nameRsc: o.name, amount: o.amount ?? 0,
+                              tag: o.tag ?? null, flags: o.flags ?? 0 }))
         : [
             ...(s.equipment ?? []).map(name => ({ nameRsc: name, amount: 1, flags: 0x04 })),
             ...(s.pack ?? []).map(entry => {
@@ -1199,6 +1232,10 @@ class KeeperProxy {
               return m ? { nameRsc: m[1], amount: parseInt(m[2]), flags: 0 } : { nameRsc: entry, amount: 1, flags: 0 };
             }),
           ],
+      // Derived in the keeper beside the live might stat and inventory. A proxy has no
+      // independent stats stream, so recomputing here used to return known:false and made
+      // receiver capacity impossible to prove.
+      carry: s.carry ?? null,
       abilitiesAt: { skills: 0, spells: 0 },
       // WHERE THE BODY IS. `self` was null, and `c.self` is how nearly everything asks —
       // the status tool's `where`, the travel guard's "what is within two squares of us",
@@ -1279,9 +1316,9 @@ class KeeperProxy {
     return { promise: started, keeper: true };
   }
 
-  async _refreshState({ fresh = false } = {}) {
+  async _refreshState({ fresh = false, force = false } = {}) {
     const now = Date.now();
-    if (!fresh && this._state && now - this._stateAt < this._stateTtl) return this._state;
+    if (!fresh && !force && this._state && now - this._stateAt < this._stateTtl) return this._state;
     const s = await keeperState(this.name, this._index, { fresh });
     if (s) {
       this._state = s;
@@ -1289,6 +1326,19 @@ class KeeperProxy {
       this._client = null;
     }
     return this._state;
+  }
+
+  // Refresh only the loopback process snapshot, never the game wire.  `fresh:true` has a
+  // deliberately stronger meaning in KeeperProxy: it asks the keeper to refresh inventory
+  // and equipment from Meridian.  A fleet board needs the newest snapshot the keeper can
+  // already see, not 84 packets every five seconds, so the TUI/fleet path uses this method.
+  async refreshSnapshot() { return this._refreshState({ force: true, fresh: false }); }
+
+  snapshotAgeMs() {
+    if (!this._state || !this._stateAt) return null;
+    const keeperAge = Number(this._state.as_of_ms);
+    return Math.max(0, Date.now() - this._stateAt) +
+      (Number.isFinite(keeperAge) && keeperAge >= 0 ? keeperAge : 0);
   }
 
   get inGame() { return this._state?.in_game ?? false; }
@@ -1492,8 +1542,13 @@ class KeeperProxy {
   // been a silent no-op since keepers moved out of process — `resumeFleet` drops the
   // in-process autopilot for every keeper-backed character, so there was nothing there to
   // stop. `holdReport()` in the keeper is the same fact published back in `/state`.
-  async holdStill(why, maxMs) {
-    return keeperAction(this.name, this._index, 'hold', { why, max_ms: maxMs });
+  // `token` presented means RENEW the hold in force rather than take a new one. A hold has
+  // a deadline so a caller that dies cannot silence a character for ever, and that deadline
+  // does not know how long the caller's errand is — so an errand outlasting its own hold has
+  // to be able to say so. Presenting no token, or the wrong one, is refused: this is not a
+  // way to take somebody else's.
+  async holdStill(why, maxMs, token) {
+    return keeperAction(this.name, this._index, 'hold', { why, max_ms: maxMs, token });
   }
   async releaseHold(why, token) {
     return keeperAction(this.name, this._index, 'release', { why, token });
@@ -1548,6 +1603,24 @@ class KeeperProxy {
   }
   status({ full = false } = {}) {
     const g = this._state?.goap ?? {};
+    const remote = this._state?.autopilot_status;
+    if (remote) {
+      // This is the process that actually owns and drives the character.  Preserve its
+      // complete status instead of rebuilding a lossy facsimile here.  Only liveness and
+      // the compact GOAP mode are overlaid: those are newer broker/proxy observations and
+      // prevent a dead HTTP process's last `running:true` from surviving indefinitely.
+      return {
+        ...remote,
+        running: this.live && remote.running !== false,
+        mode: g.mode ?? remote.mode ?? 'goap',
+        policy: remote.policy ?? { strategy: g.mode ?? remote.mode ?? 'goap', hunt: null },
+        activity: remote.activity ?? this.activity(),
+        stuck: remote.stuck ?? this._state?.stuck ?? null,
+        time: remote.time ?? this._state?.time ?? null,
+        refusals: remote.refusals ?? this._state?.refusals ?? [],
+        waiting_on: remote.waiting_on ?? this._state?.waiting_on ?? null,
+      };
+    }
     return {
       running: this.live, mode: g.mode ?? 'goap',
       policy: { strategy: g.mode ?? 'goap', hunt: null },
@@ -6636,11 +6709,25 @@ const TOOLS = [
       from: { type: 'string', description: 'agent handing things over' },
       to: { type: 'string', description: 'agent receiving them' },
       what: { type: ['string', 'array'],
-              description: '"reagents" (default), "food", "all", or an array of object ids',
-              items: { type: 'number' } },
+              description: '"reagents" (default), "food", "all", or an array of object ids / ' +
+                '{id,amount} partial-stack specifications',
+              items: { anyOf: [
+                { type: 'number' },
+                { type: 'object', properties: {
+                    id: { type: 'number' }, amount: { type: 'number', minimum: 1 },
+                  }, required: ['id', 'amount'], additionalProperties: false },
+              ] } },
       amount: { type: 'number', description: 'per reagent kind, default 2 of each — one casting' },
       who_travels: { type: 'string', enum: ['from', 'to', 'neither'],
                      description: 'default "from"' },
+      // A DELIVERY THAT NEVER RETURNS IS NOT A SLOW DELIVERY. Twelve travel attempts, each
+      // waiting for a journey to finish, is three quarters of an hour on one call — and the
+      // first measured run hit exactly that: the caller gave up at five minutes while the
+      // exchange carried on holding a character nobody was waiting for. The walk is bounded
+      // in wall clock as well as in attempts, and this is that bound.
+      walk_ms: { type: 'number',
+                 description: 'how long the walk may take before this gives up, default 300000 ' +
+                              '(5 min). The handshake itself is seconds; this is the journey' },
     }, required: ['from', 'to'] },
     run: async (a) => supplyBetween(a),
   },
@@ -7258,6 +7345,10 @@ const TOOLS = [
         description: 'shillings retained in hand when banking surplus, default 400' },
       sell_at_load: { type: 'number',
         description: 'go sell when weight or bulk reaches this fraction, default 0.85' },
+      drop_at_load: { type: ['number', 'null'],
+        description: 'without travelling, drop expendable lowest-value loot one stack at a time ' +
+          'until weight and bulk are below this fraction. Intended for confined shelter farming; ' +
+          'food, reagents, equipped/protected items and useful gear are retained. null disables it' },
       sell_when_broke: { type: 'boolean',
         description: 'also sell a useful-sized pack when cash-poor and no timed window is open' },
       sell_when_broke_under: { type: 'number',
@@ -7909,6 +8000,9 @@ const TOOLS = [
         p.policy.walkingMoney = Math.max(0, Number(a.walking_money) || 0);
       if (a.sell_at_load !== undefined)
         p.policy.sellAtLoad = Math.max(0, Math.min(1, Number(a.sell_at_load) || 0));
+      if (a.drop_at_load !== undefined)
+        p.policy.dropAtLoad = a.drop_at_load == null ? null
+          : Math.max(0.05, Math.min(0.99, Number(a.drop_at_load) || 0.75));
       if (a.sell_when_broke !== undefined) p.policy.sellWhenBroke = !!a.sell_when_broke;
       if (a.sell_when_broke_under !== undefined)
         p.policy.sellWhenBrokeUnder = Math.max(0, Number(a.sell_when_broke_under) || 0);
@@ -8416,14 +8510,19 @@ const TOOLS = [
       // "nothing of this kind in the pack".
       const condemned = skills.brokenSet(c);
       return { items: c.inventory.map(o => ({ id: o.id, name: c.rsc.get(o.nameRsc),
-                                              amount: o.amount || undefined, can: affordances(o.flags),
+                                              // Preserve the wire distinction: tag=1 is a
+                                              // NumberItem and must carry a quantity; tag=0
+                                              // is an ordinary object and must not. amount
+                                              // alone cannot distinguish a one-item stack.
+                                              amount: o.amount ?? 0, tag: o.tag ?? null,
+                                              can: affordances(o.flags),
                                               broken: condemned.has(o.id) || undefined })),
                equipped: c.equipment().equipped.map(e => e.name ?? e.id),
                // HOW FULL, in the units the server actually refuses on. The ceiling is
                // 1700 + might*20 for weight and bulk alike; the load is added up from a
                // table of every item class's viWeight/viBulk, because neither the load
                // nor any item's weight is ever sent. See m59-items.mjs.
-               carry: skills.carryCapacity(c),
+               carry: c.carry ?? skills.carryCapacity(c),
                equipped_note: 'the pack is what you CARRY. `equipped` is what you are wearing and ' +
                               'wielding — a different list, and the server\'s own. Call `equipment` for it.' };
     },
@@ -11546,13 +11645,27 @@ const TOOLS = [
       'yet — call `equipment` for the full picture.',
     schema: { type: 'object', properties: {
       verbose: { type: 'boolean', description: 'include each keeper\'s recent journal' },
+      refresh: { type: 'boolean', description: 'refresh every keeper process snapshot before building rows; loopback-only and sends no Meridian packets' },
     } },
     run: async (a) => {
       const rows = [];
+      // ASK THE PROCESS THAT OWNS EACH SOCKET BEFORE DRAWING THE BOARD.  The ordinary
+      // two-second poller is enough for background consumers; an explicit refresh (used by
+      // the TUI's five-second repaint and its `r` key) eliminates another cache layer while
+      // remaining packet-free with respect to the game server.
+      if (a.refresh === true) {
+        await Promise.all([...sessions.values()]
+          .filter(s => s instanceof KeeperProxy)
+          .map(s => s.refreshSnapshot().catch(() => null)));
+      }
       // Once for the whole fleet, not once per row, and from the ledger rather than from
       // each keeper — see killsIn(). A keeper's own kills_30m is wiped every time the
       // supervisor restarts it, which is about once a minute.
       const recentKills = killsIn();
+      // Keeper tallies reset whenever a keeper process is rolled.  Post-mortems are written
+      // at the death boundary and survive that restart, so they are the board's durable
+      // 24-hour death count and latest-death fallback.
+      const recentDeaths = recentDeathsIn(POSTMORTEM_DIR, { sinceMs: DEATH_WINDOW_MS });
       for (const [name, s] of sessions) {
         const c = s.client;
         const ap = autopilotIfAny(name);
@@ -11563,6 +11676,7 @@ const TOOLS = [
           continue;
         }
         const v = c.vitals();
+        const durableDeath = recentDeaths.get(c.me?.name ?? '');
         rows.push({
           agent: name,
           character: c.me?.name ?? null,
@@ -11729,13 +11843,17 @@ const TOOLS = [
           // only because m59-uptime.mjs and the postmortem files keep their own copies,
           // which is why the count there (32) and the count in the ledger (0 today)
           // disagreed without either looking wrong.
+          // Process-lifetime count retained for diagnostics; the explicit 24-hour count is
+          // the restart-safe figure a fleet board should display.
           deaths: st?.did?.deaths ?? 0,
+          deaths_since_keeper_start: st?.did?.deaths ?? 0,
+          deaths_24h: durableDeath?.count ?? 0,
           // Same reason, and it is the pair to the above: the ledger's own note says a
           // quantity with two homes in this repository ends up with two answers, so the
           // row should carry the keeper's figure rather than leaving a reader to guess.
           kills: st?.did?.kills ?? 0,
-          deaths_in_safe_spot: st?.did?.deaths_in_safe_spot ?? 0,
-          deaths_in_proven_safe_spot: st?.did?.deaths_in_proven_safe_spot ?? 0,
+          deaths_in_safe_spot: durableDeath?.in_safe_spot ?? st?.did?.deaths_in_safe_spot ?? 0,
+          deaths_in_proven_safe_spot: durableDeath?.in_proven_safe_spot ?? st?.did?.deaths_in_proven_safe_spot ?? 0,
           mulligans: st?.did?.mulligans ?? 0,
           breakoffs: st?.did?.breakoffs ?? 0,
           logoffs: st?.did?.logoffs ?? 0,
@@ -11898,7 +12016,12 @@ const TOOLS = [
           // is active, and a character sitting down regenerating is working.
           time: st?.time ?? null,
           coordination: st?.coordination ?? null,
-          last_death: st?.last_death ?? null,
+          last_death: st?.last_death ?? durableDeath?.last ?? null,
+          // AGE OF THE EVIDENCE ON THIS ROW.  A successful explicit fleet refresh usually
+          // reports roughly the keeper's own 0-2s cache age.  A growing number is visible
+          // staleness, not a healthy-looking frozen row.
+          snapshot_age_ms: s instanceof KeeperProxy ? s.snapshotAgeMs() : 0,
+          snapshot_source: s instanceof KeeperProxy ? 'keeper_process' : 'broker_process',
           vigor_target: st?.policy?.fightAboveVigor || null,
           // No keeper, or a keeper that is not running, IS a stall. It used to report
           // as `autopilot: null` next to a full health bar and a sensible room name,

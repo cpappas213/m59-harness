@@ -5290,6 +5290,7 @@ class Session {
       const railRoom = Number(this.world?.room?.num ?? NaN);
       const target = anchorFor(railTable, railRoom, Number(exit.to));
       let rail = target ? this.railAcross({ row: target.row, col: target.col }) : null;
+      let railSkipped = false;
       const me0 = this.client?.self;
       // DO NOT RAIL ACROSS A ROOM TO REACH A DOOR THAT IS FOUR SQUARES AWAY.
       //
@@ -5316,21 +5317,34 @@ class Session {
       if (rail && me0 && target) {
         const away = Math.hypot(target.col - me0.col, target.row - me0.row);
         if (away <= RAIL_SKIP_WITHIN_SQUARES) {
+          // A DECISION, NOT A FAILED ATTEMPT — and the ledger has to be able to tell them
+          // apart. `worked:false` here counted as "the rail was tried and it did not work",
+          // and Ukgoth therefore read as an 84% rail failure with seventy-one of the rows
+          // saying the door was already 0 squares away. That is the walk going RIGHT, and
+          // an operator reading the ledger to pick what to fix was being sent at it.
           recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
-                         tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
+                         tactic: 'baked_rail', trigger: 'exit_crossing',
+                         worked: false, attempted: false, ms: 0, hp_lost: 0,
                          note: `no rail needed — the door at ${target.row},${target.col} is ` +
                                `${Math.round(away)} square(s) away and the line starts at ` +
                                `${rail.from.row},${rail.from.col}` });
           rail = null;
+          railSkipped = true;
         }
       }
       // LOGGED EVEN WHEN NOTHING HAPPENS. The first two attempts at this wrote a ledger row
       // only after the character had got onto the rail, so a run that found no rail at all
       // and a run where `leaveVia` was never reached produced the same evidence — nothing —
       // and there was no way to tell which. The decision is the thing worth recording.
-      if (!rail) {
+      // ONCE, NOT TWICE. The skip above sets `rail = null`, which then fell into this block
+      // and wrote a SECOND row for the same moment — so one deliberate skip appeared in the
+      // ledger as two rail failures. That is why 'no rail needed ... 1,66' and 'no baked
+      // line to the anchor 1,66' have nearly the same count: they are largely the same
+      // events, counted again.
+      if (!rail && !railSkipped) {
         recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
-                       tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
+                       tactic: 'baked_rail', trigger: 'exit_crossing',
+                       worked: false, attempted: false, ms: 0, hp_lost: 0,
                        note: target ? `no baked line to the anchor ${target.row},${target.col}`
                                     : `no anchor for room ${exit.to}` });
       }

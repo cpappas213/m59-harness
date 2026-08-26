@@ -17,8 +17,9 @@ process.env.M59_KEEPER = '1';
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { createServer } from 'http';
+import { resolve } from 'node:path';
 import { Session, Pacer } from './m59-session.mjs';
-import { autopilotFor, dropAutopilot, autopilotIfAny } from './m59-autopilot.mjs';
+import { autopilotFor, dropAutopilot, autopilotIfAny, releaseSpot } from './m59-autopilot.mjs';
 import { TickLoop } from './m59-tick.mjs';
 import { makeDecider, DEFAULT_GOALS, intend, INTENTS } from './m59-decide.mjs';
 import { Router, routeIntent } from './m59-route.mjs';
@@ -29,6 +30,10 @@ import * as watchdog from './m59-watchdog.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { rtsJobReport } from './m59-rts-safety.mjs';
+import * as skills from './m59-skills.mjs';
+import {
+  configureSpotClaimStore, rememberFileSpotPartner, spotClaimNamespace,
+} from './m59-spotclaims.mjs';
 
 // ---------------------------------------------------------------- args
 
@@ -84,6 +89,24 @@ const credHost = entry.credentials.host || host;
 const credPort = entry.credentials.port || serverPort;
 const policy = entry.autopilot?.policy || {};
 const mode = entry.autopilot?.mode || 'goap';
+
+// Every character has its own process, so safe-wall reservations need a shared store.
+// Scope it to BOTH the resolved roster and the game endpoint: two fleets may use the same
+// handles, and one roster may be pointed at two servers. The directory is hidden runtime
+// state under substrate (or an explicitly isolated test directory).
+try {
+  configureSpotClaimStore({
+    directory: process.env.M59_SPOT_CLAIMS_DIR || resolve('substrate', '.spot-claims'),
+    namespace: process.env.M59_SPOT_CLAIMS_NAMESPACE || spotClaimNamespace({
+      fleetPath, host: credHost, port: credPort,
+    }),
+  });
+  rememberFileSpotPartner(agent, policy.partner ?? null);
+} catch (e) {
+  // Leave the store configured so selection fails closed instead of silently falling back
+  // to the per-process Map and recreating the wall pile-up this guard exists to prevent.
+  console.error(`[keeper] ${agent} wall claim store unavailable: ${e.message}`);
+}
 // Log the mode source so a silent revert to 'survive' is visible. This is the value this
 // process read from the fleet file at startup. If the broker later rewrites the file, the
 // /mode endpoint's file_now field will differ from this.
@@ -141,9 +164,42 @@ function holdReport() {
            max_ms: errandHold.maxMs };
 }
 
-function holdKeeper(why, maxMs) {
-  if (errandHold)
+// AND A HOLD HAS TO BE RE-ASSERTABLE BY WHOEVER TOOK IT.
+//
+// The deadline below exists so a caller that dies cannot silence a character for ever, and
+// it does not know how long the caller's errand is. The broker's travel tool has the same
+// note and learned it the hard way: "a stale supply hold lapsed mid-walk, the keeper woke
+// up, and the character was being driven by the keeper and by travel at the same time — the
+// exact contention this is for". A supply exchange walks one character to the other and
+// then trades, and the walk can outlast the hold the walk itself took.
+//
+// So presenting the token in force RENEWS it rather than being refused. Presenting no token,
+// or the wrong one, is still refused: this must not become a way to take somebody else's.
+function renewHold(maxMs) {
+  clearTimeout(errandHold.timer);
+  errandHold.maxMs = maxMs;
+  errandHold.renewedAt = Date.now();
+  // The keeper's own inert deadline is a separate clock and would otherwise wake it on the
+  // original one. `goInert` returns early when already inert, so this moves it in place.
+  if (errandHold.kind === 'inert' && autopilot?.inert) {
+    autopilot.inert.at = Date.now();
+    autopilot.inert.maxMs = maxMs;
+  }
+  const token = errandHold.token;
+  errandHold.timer = setTimeout(() => {
+    if (errandHold?.token !== token) return;
+    console.error(`[keeper] ${agent} errand hold expired after ${Math.round(maxMs / 1000)}s — releasing`);
+    releaseKeeper('hold deadline — whoever took it never gave it back', token);
+  }, maxMs);
+  errandHold.timer.unref?.();
+  return { held: true, ours: true, renewed: true, hold: holdReport() };
+}
+
+function holdKeeper(why, maxMs, token = null) {
+  if (errandHold) {
+    if (token && token === errandHold.token) return renewHold(maxMs);
     return { held: false, ours: false, reason: `already held: ${errandHold.why}`, hold: holdReport() };
+  }
   if (!autopilot)
     return { held: false, reason: 'nothing is driving this character, so there is nothing to hold' };
   const tick = !!autopilot._tickLoop;
@@ -161,11 +217,11 @@ function holdKeeper(why, maxMs) {
   }
   errandHold = { token: `hold-${agent}-${++errandHoldSeq}`, why, at: Date.now(), maxMs,
                  kind: tick ? 'tick' : 'inert' };
-  const token = errandHold.token;
+  const holdToken = errandHold.token;
   errandHold.timer = setTimeout(() => {
-    if (errandHold?.token !== token) return;
+    if (errandHold?.token !== holdToken) return;
     console.error(`[keeper] ${agent} errand hold expired after ${Math.round(maxMs / 1000)}s — releasing`);
-    releaseKeeper('hold deadline — whoever took it never gave it back', token);
+    releaseKeeper('hold deadline — whoever took it never gave it back', holdToken);
   }, maxMs);
   errandHold.timer.unref?.();
   console.error(`[keeper] ${agent} held (${errandHold.kind}) — ${why}`);
@@ -322,6 +378,22 @@ function state() {
   const me = c?.me;
   const room = session.world?.room;
   const v = c?.vitals?.() || {};
+  // THE AUTHORITATIVE KEEPER STATUS CROSSES THE PROCESS BOUNDARY AS ONE OBJECT.
+  //
+  // The broker used to reconstruct this object from a handful of fields in `/state` and
+  // fill everything else with plausible zeroes/nulls.  In production every keeper is in
+  // this process, so that made `did.deaths`, safe-wall evidence, threat, recent decisions,
+  // coordination and the live policy permanently stale or absent in the broker and TUI.
+  // `status()` already owns the definitions; publish its non-full form rather than growing
+  // a second, inevitably drifting list here.  It is computed locally and sends no packet.
+  let autopilotStatus = null;
+  try { autopilotStatus = autopilot?.status?.({ full: false }) ?? null; }
+  catch (e) {
+    // A status projection must never take the keeper down.  The surrounding snapshot still
+    // carries vitals/position and the explicit error distinguishes missing telemetry from 0.
+    autopilotStatus = { projection_error: e.message, running: !!autopilot?.running,
+                        mode: autopilot?.mode ?? mode };
+  }
   return {
     agent,
     character: me?.name ?? character,
@@ -405,12 +477,31 @@ function state() {
       try { return (session.world?.exits?.() ?? []).map(e => ({ to: e.to, direction: e.direction })); }
       catch { return []; }
     })(),
+    // AMOUNT AS THE WIRE REPORTED IT, WHICH FOR A NON-STACK IS ZERO AND NOT ONE.
+    //
+    // This said `?? 1`, and that one character destroys the only distinction that decides
+    // how an item may be OFFERED. `extractObject` files an amount only for an object the
+    // server tagged as a NumberItem and zero for everything else, and `UserDropItems` pairs
+    // a PARALLEL number list against exactly those — positionally. So an offer has to carry
+    // a count for every stack and none for anything else, and coercing every item to 1 made
+    // a sword indistinguishable from a herb.
+    //
+    // Measured: Hhhh could hand Jjjj neither its elderberry nor its herbs — handshake
+    // complete, `may_accept` true, nothing moved, in both directions. Nobody was full; the
+    // id list was malformed. `tag` is the server's own answer and is carried beside it, so
+    // `dropSpec` can ask the authoritative question rather than infer from a quantity.
     items: c?.inventory ? c.inventory.map(o => ({
       id: o.id,
       name: c.rsc?.get?.(o.nameRsc) ?? '',
-      amount: o.amount ?? 1,
+      amount: o.amount ?? 0,
+      tag: o.tag ?? null,
       flags: o.flags ?? 0,
     })).filter(o => o.name) : [],
+    // Load is derived beside the live client because might and the authoritative
+    // inventory both live here. The broker's KeeperProxy cannot reconstruct might;
+    // publishing the measured result lets same-room transfers fail closed on receiver
+    // capacity instead of treating an unknown load as empty.
+    carry: c ? skills.carryCapacity(c) : { known: false, why: 'client is unavailable' },
     pack: c?.inventory ? c.inventory
       .filter(o => !(o.flags & 0x04))
       .map(o => {
@@ -480,6 +571,10 @@ function state() {
           })()
         : null,
     } : null,
+    // Full live autopilot projection used by KeeperProxy.status() and the terminal TUI.
+    // `goap` above stays as the compact movement/render shape; this is the operational
+    // status shape.  Keeping both named prevents a reader from mistaking one for the other.
+    autopilot_status: autopilotStatus,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     // WHERE THIS CHARACTER'S TIME WENT, WHICH LEFT THE BUILDING WITH THE KEEPER.
     //
@@ -561,7 +656,10 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && path === '/health') {
       // Use cached state to avoid blocking on the live session
       const s = cachedState || state();
-      json({ ok: inGame, agent, ...s });
+      // The broker may survive-reuse this process across a Windows service restart.
+      // Publishing the exact PID lets it adopt the existing keeper instead of spawning
+      // a doomed duplicate on the occupied port and recording that dead child's PID.
+      json({ ok: inGame, agent, pid: process.pid, ...s });
       return;
     }
 
@@ -745,13 +843,32 @@ const server = createServer(async (req, res) => {
           // `escapeUnderworld` were also `Promise.resolve(null)`, so a keeper-backed
           // character asked to recover did nothing and said it was fine.
           case 'rest': {
-            const r = await session.rest?.(args);
-            json(r ?? { ok: true });
+            const health = Number(args.health ?? args.to_health ?? args.toHealth ?? 0.99);
+            const vigor = Number(args.vigor ?? args.to_vigor ?? args.toVigor ?? 80);
+            const maxSeconds = Math.max(5, Math.min(300,
+              Number(args.max_seconds ?? args.maxSeconds ?? 90) || 90));
+            const r = await skills.restUntil(session, {
+              health: Number.isFinite(health) ? Math.max(0, Math.min(1, health)) : 0.99,
+              vigor: Number.isFinite(vigor) ? Math.max(0, Math.min(200, vigor)) : 80,
+              maxSeconds,
+            });
+            json(r);
             return;
           }
           case 'escape_underworld': {
-            const r = await session.escapeUnderworld?.(args);
-            json(r ?? { ok: true });
+            // The socket and live World belong to this keeper process. Calling an
+            // optional Session method used to return {ok:true} even though Session has
+            // no such method, leaving the character in the Underworld. Use the proven
+            // survival implementation directly and report its actual room-changing
+            // verdict; callers must still require `left:true`.
+            const r = await skills.escapeUnderworld(session, {
+              city: args.city ?? null,
+              nearestTo: args.nearest_to ?? args.nearestTo ?? null,
+              maxSeconds: Math.max(5, Math.min(300,
+                Number(args.max_seconds ?? args.maxSeconds ?? 180) || 180)),
+              allowRip: args.allow_rip ?? args.allowRip ?? true,
+            });
+            json(r);
             return;
           }
           case 'face': {
@@ -817,7 +934,8 @@ const server = createServer(async (req, res) => {
           // way from the goap one.
           case 'hold': {
             json(holdKeeper(String(args.why ?? 'an errand owns this character'),
-                            Math.max(5000, Math.min(Number(args.max_ms ?? 180000), 900000))));
+                            Math.max(5000, Math.min(Number(args.max_ms ?? 180000), 900000)),
+                            args.token ?? null));
             return;
           }
           case 'release': {
@@ -1512,6 +1630,8 @@ const server = createServer(async (req, res) => {
       const body = JSON.parse(await readBody(req));
       if (autopilot) {
         Object.assign(autopilot.policy, body);
+        if (Object.hasOwn(body, 'partner'))
+          rememberFileSpotPartner(agent, autopilot.policy.partner ?? null);
         log(`[keeper] ${agent} policy updated: ${JSON.stringify(body)}`);
       }
       json({ ok: true });
@@ -1593,6 +1713,40 @@ const server = createServer(async (req, res) => {
             } else {
               result = await session.leaveViaAny(candidates);
             }
+            break;
+          }
+          case 'go_exact': {
+            // Use one specific exit square from the live world's published set. This is
+            // intentionally narrower than `go`: it cannot reorder the candidates or inject
+            // a stale baked anchor ahead of the square an operator has just observed. The
+            // ordinary leaveVia path still performs the approach, BSP/fine-position checks,
+            // outward-edge validation, pacing, and room-change confirmation.
+            const dest = Number(args.to ?? args.room);
+            const col = Number(args.col), row = Number(args.row);
+            const c = session.need();
+            const me = c.self;
+            if (!Number.isFinite(dest) || !Number.isInteger(col) || !Number.isInteger(row)) {
+              result = { error: 'go_exact requires integer to, col, and row' };
+              break;
+            }
+            if (!me || me.col !== col || me.row !== row) {
+              result = { error: 'not standing on the requested exit square',
+                         expected: { col, row },
+                         actual: me ? { col: me.col, row: me.row } : null };
+              break;
+            }
+            const exits = session.world?.exits?.() ?? [];
+            const exact = exits.find(e => Number(e.to) === dest
+              && Number(e.stand_on?.col) === col && Number(e.stand_on?.row) === row);
+            if (!exact) {
+              result = { error: 'the live world does not publish that exact exit square',
+                         requested: { to: dest, col, row },
+                         exits: exits.filter(e => Number(e.to) === dest).map(e => ({
+                           kind: e.kind, to: e.to, col: e.stand_on?.col, row: e.stand_on?.row,
+                         })) };
+              break;
+            }
+            result = await session.leaveVia(exact);
             break;
           }
           case 'attack': {
@@ -1961,6 +2115,7 @@ process.on('SIGTERM', () => {
 process.on('SIGINT', () => process.kill(process.pid, 'SIGTERM'));
 
 process.on('exit', () => {
+  releaseSpot(agent);
   saveState();
 });
 

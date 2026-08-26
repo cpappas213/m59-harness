@@ -179,6 +179,9 @@ export const PROFILES = {
       buy_reagents: false,
       sell_when_broke: false,
       sell_at_load: 1,
+      // No merchant trip during a shelter shift: retain food/reagents/gear and shed
+      // only the lowest-value expendable loot to keep pickup headroom.
+      drop_at_load: 0.75,
       bank_above: 100000000,
       farm_delivery: null,
       farm_cleanup: null,

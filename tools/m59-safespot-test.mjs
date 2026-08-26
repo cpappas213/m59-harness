@@ -1155,8 +1155,17 @@ console.log('ONLY GRID-DISAGREEMENT SQUARES ARE CANDIDATES');
      !/for \(let c = 1; c <= geo\.cols; c\+\+\) \{\s*\n\s*if \(!geo\.walkable\(r, c\)\) continue;/.test(fn));
   ok('a body still has to fit, which is the BSP question',
      /!geo\.standable\(r, c\)\) continue/.test(fn));
-  ok('and a square is only a candidate if the grids disagree about it',
-     /coarseRefusesIt[\s\S]{0,200}disagree\?\.refused/.test(fn));
+  // THE DISAGREEMENT IS ABOUT THE SQUARE, NOT ITS APPROACHES.
+  //
+  // This used to accept the OR form — coarse refuses the square, or merely one APPROACH to
+  // it is refused — and pinned it by requiring `disagree?.refused` to appear beside
+  // `coarseRefusesIt`. The second half admits squares the coarse grid calls perfectly
+  // walkable, which is open floor with an awkward doorway: something can path onto it and
+  // stand next to you, so it is not a wall and does not hold. Measured over twelve rooms it
+  // was 834 of 2228 candidates. A safe wall IS the two grids disagreeing about the square
+  // you stand on; that is the entire mechanism and it is now the only gate.
+  ok('and a square is only a candidate if the coarse grid refuses THE SQUARE ITSELF',
+     /const coarseRefusesIt = geo\.walkable\(r, c\) !== true;[\s\S]{0,120}if \(!coarseRefusesIt\) continue;/.test(fn));
   ok('a square the coarse grid refuses counts as the strongest disagreement there is',
      /geo\.walkable\(r, c\) !== true/.test(fn));
   // AND WHERE IT CANNOT BE MEASURED, NOTHING IS OFFERED. `moverStepLands` answers true for

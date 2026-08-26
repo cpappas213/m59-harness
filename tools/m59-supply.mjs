@@ -20,10 +20,16 @@
 // broker — how to look a session up, whether that session is keeper-backed, and where the
 // in-process keepers live — arrives as arguments, so the test hands it fakes and the
 // broker hands it the real thing.
-import { OF } from './m59-parse.mjs';
+import { OF, dropSpec } from './m59-parse.mjs';
 import * as skills from './m59-skills.mjs';
 
 const num = (v, d) => (v === undefined || v === null ? d : Number(v));
+
+// An in-process keeper has no token of its own — the hold IS `Autopilot.inert`, which is a
+// single slot with no owner recorded. This stands in for one so that the renew path can tell
+// "the hold we took" from "a hold somebody else took", which is the only distinction it
+// needs. A keeper process issues a real one; see `holdReport` in m59-keeper-process.mjs.
+const IN_PROCESS_HOLD = 'in-process';
 
 // ONE EXCHANGE, TWO KINDS OF SESSION.
 //
@@ -111,21 +117,35 @@ export function supplyOps(sess, { isProxied, autopilotIfAny }) {
     // STAND STILL. `hold` answers `{held}` — false when somebody else already has it,
     // which is left alone rather than stolen: reviving another errand's hold is how a
     // character ends up driven by two things at once.
-    async hold(why, maxMs = 180_000) {
+    // `token` renews a hold this exchange already took, for an errand that has outlasted
+    // the deadline it asked for. A hold that lapses mid-errand is not a tidy no-op: the
+    // keeper wakes up and starts driving a character something else is in the middle of,
+    // which is the contention the hold exists to prevent, reached by the one path the
+    // deadline was supposed to protect.
+    async hold(why, maxMs = 180_000, token = null) {
       if (proxied) {
-        const r = await sess.holdStill(why, maxMs);
+        const r = await sess.holdStill(why, maxMs, token);
         if (r?.error) return { held: false, reason: r.error };
-        return { held: !!r?.held, token: r?.hold?.token ?? null, reason: r?.reason };
+        return { held: !!r?.held, token: r?.hold?.token ?? null,
+                 renewed: !!r?.renewed, reason: r?.reason };
       }
       const p = autopilotIfAny(sess.name);
       if (!p?.running) return { held: false, reason: 'no keeper is running' };
+      // OURS ALREADY: renew it. `goInert` returns early when the keeper is already inert,
+      // so its own `INERT_MAX_MS` deadline is moved in place rather than re-taken. Without
+      // this the branch below would read our own hold as somebody else's and refuse it.
+      if (token === IN_PROCESS_HOLD && p.inert) {
+        p.inert.at = Date.now();
+        if (maxMs) p.inert.maxMs = maxMs;
+        return { held: true, renewed: true, token: IN_PROCESS_HOLD };
+      }
       // ALREADY HELD BY SOMEBODY ELSE. `running` stays true while a keeper is inert, so
       // without this a trade nested inside another errand would revive a hold it never
       // took, and hand the character back mid-way through someone else's walk.
       if (p.inert) return { held: false, reason: 'already held by another errand' };
       // Named, so the outage this creates is not later read as a keeper fault.
       p.stop(why);
-      return { held: true, token: null };
+      return { held: true, token: IN_PROCESS_HOLD };
     },
     async release(why, token) {
       if (proxied) {
@@ -139,8 +159,8 @@ export function supplyOps(sess, { isProxied, autopilotIfAny }) {
     // Both kinds now answer the same question — did this character arrive — because
     // `KeeperProxy.travelExclusive` was fixed to match `Session.travelExclusive` rather
     // than hand back the job wrapper.
-    travelTo(dest) {
-      return sess.travelExclusive(dest, { maxHops: 20 })
+    travelTo(dest, timeoutMs) {
+      return sess.travelExclusive(dest, { maxHops: 20, timeoutMs })
                  .catch(e => ({ arrived: false, reason: e.message }));
     },
 
@@ -271,8 +291,13 @@ export async function supplyBetween(a, deps) {
   // one standing still is on an errand and needs its keeper stopped or it wanders off.
   const holds = [];
   const takeHold = async (ops, why, maxMs) => {
-    const h = await ops.hold(why, maxMs);
-    if (h.held) holds.push({ ops, token: h.token });
+    // RENEW OURS RATHER THAN ASK FOR A SECOND ONE. A hold this exchange already took is
+    // re-asserted by presenting its token, which moves the keeper's deadline instead of
+    // being refused as "already held" — by us — and then left to lapse in the middle of
+    // the trade it was taken for.
+    const mine = holds.find(h => h.ops === ops);
+    const h = await ops.hold(why, maxMs, mine?.token ?? null);
+    if (h.held && !mine) holds.push({ ops, token: h.token });
     return h;
   };
   const notes = [];
@@ -297,7 +322,10 @@ export async function supplyBetween(a, deps) {
       // target — Zoot was steered across four rooms in twenty-five attempts and never
       // arrived. The mover is deliberately NOT held; `travelJob` already stops its keeper
       // driving and leaves it able to defend itself.
-      const sh = await takeHold(stander, 'standing still for a supply exchange', 300_000);
+      // Longer than the walk it is covering, with room for the handshake at the end of
+      // it — a hold that expires exactly when it is needed is the same as no hold.
+      const sh = await takeHold(stander, 'standing still for a supply exchange',
+                                num(a.walk_ms, 300_000) + 120_000);
       if (!sh.held) notes.push(`could not hold ${stander.name()} still: ${sh.reason}`);
 
       // ARRIVAL IS SEEING THEM, NOT MATCHING A ROOM NUMBER.
@@ -328,26 +356,42 @@ export async function supplyBetween(a, deps) {
       //
       // So: keep going while the room keeps changing, stop after three attempts that
       // do not move. This is the same rule m59-feed.mjs uses to reach a shop.
+      //
+      // AND IT IS BOUNDED IN WALL CLOCK, not only in attempts. Twelve attempts of a walk
+      // that each wait for a journey to finish is up to three quarters of an hour on one
+      // call — which is not a slow delivery, it is a tool that never returns. The first
+      // measured run of this hit exactly that: the caller gave up at five minutes and the
+      // exchange carried on holding a character nobody was waiting for any more. So the
+      // whole walk gets a deadline, each attempt gets whatever is left of it, and running
+      // out is reported as running out rather than as a blocked route.
+      const walkDeadline = Date.now() + num(a.walk_ms, 300_000);
+      const left = () => walkDeadline - Date.now();
       let arrived = await canSeeThem(), why = null;
-      let stuck = 0, wasIn = mover.room();
-      for (let i = 0; i < 12 && !arrived && stuck < 3; i++) {
+      let stuck = 0, wasIn = mover.room(), tries = 0;
+      for (let i = 0; i < 12 && !arrived && stuck < 3 && left() > 15_000; i++) {
         // Re-read the destination each time: the other one may itself have moved,
         // and chasing where it WAS is how this used to end up in the wrong room.
         const dest = stander.room();
         if (dest == null) { why = 'cannot see which room the other one is in'; break; }
-        const t = await mover.travelTo(dest);
+        tries++;
+        const t = await mover.travelTo(dest, Math.min(180_000, left()));
         why = t.arrived ? null : t.reason;
         arrived = await canSeeThem();
         const nowIn = mover.room();
         if (nowIn === wasIn) stuck++; else { stuck = 0; wasIn = nowIn; }
       }
+      if (!arrived && left() <= 15_000)
+        why = `still walking after ${Math.round(num(a.walk_ms, 300_000) / 1000)}s ` +
+              `(${tries} attempt(s)); last: ${why ?? 'no reason given'}`;
       if (!arrived)
         return { supplied: false,
                  reason: `${mover.name()} could not get there: ${why}`,
                  giver_in: give.room(), receiver_in: recv.room(),
                  notes: notes.length ? notes : undefined,
+                 attempts: tries,
                  note: 'travel is resumable, so this kept going while the room kept ' +
-                       'changing and stopped after three attempts that did not move' };
+                       'changing and stopped after three attempts that did not move, or ' +
+                       'when the walk ran out of its deadline — `walk_ms` moves that' };
     }
 
     // HOLD BOTH ENDS FOR THE HANDSHAKE, WHATEVER HAPPENED ABOVE.
@@ -358,11 +402,14 @@ export async function supplyBetween(a, deps) {
     // was left sitting in a dead trade window — the next three deliveries then reported
     // "carrying nothing matching food", because it was no longer in the pack.
     //
-    // Short and re-asserted here rather than carried down from the walk on purpose: an
-    // inert keeper WAKES ON A DEADLINE, and a hold taken four minutes ago may have
-    // lapsed while the mover was still walking.
+    // RE-ASSERTED HERE, INCLUDING THE ONE ALREADY HELD FOR THE WALK. An inert keeper WAKES
+    // ON A DEADLINE, and the hold taken before a five-minute walk can lapse in the seconds
+    // between arriving and offering — at which point its keeper starts driving a character
+    // that is mid-trade, which is the contention the hold exists to prevent, reached
+    // through the one path the deadline was meant to protect. The broker's travel tool has
+    // the same note and watched it happen. `takeHold` presents the token, so this renews
+    // ours and takes a new one for the other end.
     for (const ops of [give, recv]) {
-      if (holds.some(h => h.ops === ops)) continue;
       const h = await takeHold(ops, 'a supply exchange owns this character', 120_000);
       if (!h.held) notes.push(`could not hold ${ops.name()} for the trade: ${h.reason}`);
     }
@@ -435,7 +482,20 @@ export async function supplyBetween(a, deps) {
     // handed Waldorf a single shilling out of 1647 and the transfer reported complete,
     // because it was: one shilling is what was offered. encodeIdList has taken
     // {id, amount} all along.
-    const offered = items.map(o => (o.amount ?? 1) > 1 ? { id: o.id, amount: o.amount } : o.id);
+    //
+    // AND THE TEST IS THE TAG, NOT WHETHER THERE IS MORE THAN ONE. This read
+    // `(o.amount ?? 1) > 1`, which is the exact mistake `dropSpec`'s note in m59-parse.mjs
+    // was written about: a stack with ONE left carries amount 1, went out as a bare id, and
+    // moved nothing. Worse than nothing — `UserDropItems` pairs a PARALLEL number list
+    // against the ids the SERVER thinks are NumberItems, POSITIONALLY, so one untagged
+    // stack slides every count after it onto the wrong item and the whole offer fails.
+    // Measured on shadow: Hhhh (1 elderberry, 1 herb) could hand Jjjj neither, in either
+    // direction, with the handshake completing and `may_accept` true each time. Nobody was
+    // full. The packet was wrong.
+    //
+    // `dropSpec` is the one place that question is answered, and it answers it from the
+    // server's own tag with the quantity only as a fallback.
+    const offered = items.map(o => dropSpec(o, o.amount ?? null));
     await give.offer(them.id, offered);
     if (!await recv.sawOffer(recvSeq, 6000)) {
       await give.cancelOffer();

@@ -154,6 +154,9 @@ export async function probe(agent, mark = 0) {
   const seq = tail.length ? Math.max(...tail.map(e => e.seq ?? 0)) : mark;
   const w = st?.where ?? {};
   return { room: w.num ?? null, name: w.name ?? null, busy: !!st?.busy,
+           // WHAT THE KEEPER SAYS ABOUT ITSELF, rather than what this end infers from a
+           // missing field. See the give-up rule below for why `busy` cannot carry it.
+           stuck: st?.stuck ?? null,
            health: st?.vitals?.health?.value ?? null, max: st?.vitals?.health?.max ?? null,
            swings, seq, last: st?.last_action ?? null, error: st?._error ?? null };
 }
@@ -231,9 +234,29 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
     // refused for all twenty-one with `is busy: walk to North Barloque`. The fleet was
     // fine; the instrument gave up on it. `STUCK in ?` — a null room — is the tell.
     if (p.error) continue;
-    if (!p.busy && Date.now() - lastSeen > pollMs * 3)
+    // AND `!busy` IS NOT EVIDENCE OF ANYTHING, WHICH IS THE SECOND TIME THIS RULE HAS LIED.
+    //
+    // The note above records the first: a timed-out probe answered `{busy:false}` and the
+    // leg was abandoned while everyone was still walking. It happened again for a different
+    // reason. `KeeperProxy.jobReport()` returned a hardcoded null, so `busy` was ABSENT from
+    // every status on a keeper-backed broker — which is every broker — and absent reads as
+    // false here. Measured: 0/21 arrived declared after 62 seconds of a 900-second budget,
+    // on twenty-one characters every one of which was walking to Castle Victoria.
+    //
+    // Publishing the job fixed the absence but not the inference, and that is the part worth
+    // writing down: `rtsJobReport` returns `undefined` when there is no job, so `busy` is
+    // LEGITIMATELY absent most of the time. A rule that reads absence as "it stopped" is
+    // still wrong afterwards — it just fails rarely, which is worse, because a rule that
+    // fails one run in twenty gets believed.
+    //
+    // So the give-up is asked of the keeper instead. `stuck` is non-null only when a live
+    // keeper has a character that has stopped getting anywhere, it carries why and for how
+    // long, and it CLEARS on its own when the character gets going again. It is slower to
+    // fire than three polls of stillness, which is correct: this rule was too eager, and
+    // being late costs a few seconds where being early costs the whole measurement.
+    if (p.stuck && Date.now() - lastSeen > pollMs * 3)
       return { agent, to, from, arrived: p.room === to, ms: Date.now() - start, rooms, swings, lowest,
-               deaths, why: 'stopped being busy without arriving',
+               deaths, why: `keeper reports stuck: ${p.stuck.why ?? 'no reason given'} (${p.stuck.seconds}s)`,
                note: p.last?.note ?? p.last?.reason ?? null, stuck_in: p.room };
     if (Date.now() - start > maxMs)
       return { agent, to, from, arrived: false, ms: Date.now() - start, rooms, swings, lowest,

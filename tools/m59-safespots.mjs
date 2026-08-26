@@ -433,11 +433,25 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
       // candidate rather than per returned spot: callers filter and sort on it, so it has
       // to exist before the narrowing rather than be attached to the survivors.
       const disagree = gridDisagreementAt(geo, r, c);
-      // THE GATE. A square the coarse grid refuses is itself a disagreement and the strongest
-      // one; otherwise at least one offered approach has to be one the mover will not make.
-      // Anything else is open floor and is not a safe spot however good it scores.
+      // THE GATE, AND IT IS THE SQUARE ITSELF — NOT ITS APPROACHES.
+      //
+      // A safe wall IS the two grids disagreeing about the square you are standing on:
+      // the coarse grid says you cannot be there, the fine geometry says you can. That
+      // is the whole mechanism, and it is what makes the square unreachable to anything
+      // pathing on the coarse grid.
+      //
+      // This used to be an OR — coarse refuses the square, or merely one APPROACH to it is
+      // refused. The second half admits squares the coarse grid calls perfectly walkable,
+      // which is open floor with an awkward doorway: something can still path to it and
+      // stand next to you. Those are the candidates that get taken under attack and then
+      // do not hold. Measured over twelve rooms, the approach-only half was 834 of 2228
+      // candidates — 37% of everything on offer, and none of it a wall.
+      //
+      // Narrowing costs nothing in supply: 1394 survive, including 100 in The Twisted
+      // Wood, 185 in the Cragged Mountains and 179 in Ukgoth — the three rooms where the
+      // fleet actually dies.
       const coarseRefusesIt = geo.walkable(r, c) !== true;
-      if (!coarseRefusesIt && !((disagree?.refused ?? 0) > 0)) continue;
+      if (!coarseRefusesIt) continue;
       // ...AND YOU HAVE TO BE ABLE TO LEAVE IT AGAIN. See escapeRoom: a five-square island
       // in The Twisted Wood cost four hundred and fifty seconds a leg and was recorded in
       // the book as a square that had HELD, because nothing could reach the character there.
