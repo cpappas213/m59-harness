@@ -38,7 +38,11 @@ import net from 'node:net';
 import http from 'node:http';
 import { EventEmitter } from 'node:events';
 import { parseRoomContents, objId } from './m59-parse.mjs';
-import { writeFileSync, appendFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, appendFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { join as joinPath, dirname as dirnamePath } from 'node:path';
+import { fileURLToPath as fileURLToPathP } from 'node:url';
+
+const REPO_DIR = joinPath(dirnamePath(fileURLToPathP(import.meta.url)), '..');
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -824,9 +828,32 @@ if (process.argv[1]?.endsWith('m59-proxy.mjs')) {
     return i >= 0 ? process.argv[i + 1] : d;
   };
   const [h, p] = String(arg('--server', '127.0.0.1:5959')).split(':');
+  const listen = Number(arg('--listen', 5960));
+  const host = h, port = Number(p || 5959);
+
+  // SAY WHAT THIS PROXY FRONTS, so a client launcher can find the right one by itself.
+  //
+  // "A proxy is listening on 5961" is not the same fact as "a proxy for the server this
+  // character belongs to". Two fleets on this machine already sit on two different servers,
+  // and pointing a client through the proxy for the wrong one logs it into the wrong world —
+  // quietly, because the client cannot tell. So the endpoint is published rather than
+  // assumed, and m59-devclient.mjs matches on it.
+  //
+  // The pid is in the file for the same reason the broker's is: a file outlives the process
+  // that wrote it, and a reader has to be able to tell a live proxy from a leftover.
+  try {
+    const advert = joinPath(REPO_DIR, 'substrate', 'proxies', String(listen) + '.json');
+    mkdirSync(dirnamePath(advert), { recursive: true });
+    writeFileSync(advert, JSON.stringify({
+      listen, server: { host, port }, pid: process.pid, at: Date.now(),
+    }, null, 1));
+    const drop = () => { try { unlinkSync(advert); } catch { /* already gone */ } };
+    process.on('exit', drop);
+    for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { drop(); process.exit(0); });
+  } catch { /* an unadvertised proxy still works; it just cannot be found automatically */ }
+
   serveProxy({
-    listen: Number(arg('--listen', 5960)),
-    host: h, port: Number(p || 5959),
+    listen, host, port,
     observe: process.argv.includes('--observe'),
     control: arg('--control') ? Number(arg('--control')) : null,
   });

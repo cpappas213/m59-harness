@@ -7233,6 +7233,19 @@ export class Autopilot {
         ? { since_seconds: Math.round((Date.now() - this.stalledSince) / 1000),
             idle_passes: this.idlePasses, why: this.stalledWhy }
         : false,
+      // THE SAME FACT AGAIN, IN THE ONE SHAPE EVERY READER CAN USE.
+      //
+      // `stalled` is three different types depending on who is answering — a sentence from a
+      // keeper proxy, this object from an in-process pilot, `false` from either — because it
+      // has always been a thing to PRINT. Anything that wants to act on it (a fleet board
+      // column, a watcher deciding whether to shout) needs one shape that is either null or
+      // an object, and needs it to mean the same thing on both kinds of broker. That is
+      // `stuck`, and m59-keeper-process.mjs publishes exactly this from /state.
+      stuck: this.stalledSince
+        ? { since: this.stalledSince,
+            seconds: Math.round((Date.now() - this.stalledSince) / 1000),
+            why: this.stalledWhy ?? null }
+        : null,
       // THE SAME TWO FACTS AS `stalled`, AS DATA RATHER THAN AS A SENTENCE.
       //
       // Always arrays/null rather than absent, because a reader has to be able to tell

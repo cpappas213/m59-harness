@@ -44,7 +44,9 @@ const OBJECT_MARKS = 'abcdefghijklmnopqrstuvwxyz0123456789';
 // That is authoritative, so the name is only used to LABEL what the flag found.
 const PORTAL_NAME = /(portal|rip in space|gateway|vortex|moongate)/i;
 
-const dirName = deg => {
+// Exported because the broker's keeper-backed render projection has to name a facing the
+// same way this file does. A second copy of the table is a second answer.
+export const dirName = deg => {
   const names = ['east', 'southeast', 'south', 'southwest', 'west', 'northwest', 'north', 'northeast'];
   return names[Math.round(((deg % 360) + 360) % 360 / 45) % 8];
 };

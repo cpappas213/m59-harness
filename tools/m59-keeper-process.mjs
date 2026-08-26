@@ -28,6 +28,7 @@ import { attachStepMasks } from './m59-routes.mjs';
 import * as watchdog from './m59-watchdog.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 import { resolveFleet } from './m59-fleetpath.mjs';
+import { rtsJobReport } from './m59-rts-safety.mjs';
 
 // ---------------------------------------------------------------- args
 
@@ -233,6 +234,20 @@ function state() {
     agent,
     character: me?.name ?? character,
     in_game: inGame,
+    // WHAT WE BELIEVE vs WHAT THE SOCKET SAYS.
+    //
+    // `inGame` is set true on a successful join and cleared ONLY by /leave and /rejoin —
+    // nothing clears it when the SERVER drops us, which is what happens every time a
+    // person logs in on the character. The keeper then reports in_game:true for ever on a
+    // dead connection: every plan succeeds, every action comes back "not in game", and
+    // hp/vigor/pack freeze at the last values read. Four of twenty-one prod characters
+    // were in that state when this was written.
+    //
+    // `connected` is the Session's own liveness (client.state === 'game'). It is reported
+    // BESIDE in_game rather than replacing it because the state field LAGS after a rejoin
+    // — see the rawmove note below — so a reader that treats one false sample as death
+    // will rejoin healthy characters. Judge them together, with hysteresis.
+    connected: !!session.live,
     room: room ? { name: c?.rsc?.get?.(room.nameRsc) ?? room.name, num: room.num } : null,
     hp: v.health ? { value: v.health.value, max: v.health.max } : null,
     vigor: v.vigor ? { value: v.vigor.value, max: v.vigor.max } : null,
@@ -319,6 +334,30 @@ function state() {
       school: s.school,
       mana: s.mana,
     })).filter(s => s.name),
+    // STUCK, AS A FACT THE FLEET BOARD CAN READ.
+    //
+    // The keeper has known this all along — `stalledSince` is set after five idle passes and
+    // `stalledWhy` says what it was trying to do — and none of it left this process. The
+    // broker's proxy answered `stalled: false` unconditionally, so on the architecture
+    // production now runs the fleet board could not report a stuck character at all: it said
+    // everything was fine while a body stood in a corner for twenty minutes.
+    //
+    // Published here rather than derived over there, because "did anything happen in the last
+    // five passes" is a question only the process running the passes can answer.
+    stuck: (autopilot?.stalledSince)
+      ? { since: autopilot.stalledSince,
+          seconds: Math.round((Date.now() - autopilot.stalledSince) / 1000),
+          why: autopilot.stalledWhy ?? null }
+      : null,
+    // IS THIS CHARACTER IN THE MIDDLE OF SOMETHING. `KeeperProxy.jobReport()` returns a
+    // hardcoded `null`, so on a keeper-backed broker — every broker — `busy` was absent
+    // from `status` and from every fleet row, and absent reads as `false` to everything
+    // downstream. That is not a cosmetic gap: `m59-circuit.mjs` abandons a leg when a
+    // character is not busy and has not changed room for three polls, so it declared 0/21
+    // arrived on a fleet that was still walking, and its own comment describes being
+    // caught by exactly this once before with a different cause. The job slot lives here,
+    // with the body; the broker holds a snapshot and cannot see it.
+    job: rtsJobReport(session.job) ?? null,
     goap: autopilot ? {
       goal: autopilot._goapKeeper?.state()?.goal ?? null,
       action: autopilot._currentAction ?? null,
@@ -489,6 +528,65 @@ const server = createServer(async (req, res) => {
             json(r ?? { ok: true });
             return;
           }
+          // SPEECH, WHICH THE PROXY COULD NOT DO AT ALL.
+          //
+          // `c.say is not a function`, measured on the shadow fleet: the broker's emulated
+          // client has no `say`, so on a keeper-backed broker — which is every broker now —
+          // the `say` tool threw for every character and every channel. Nothing in the fleet
+          // could speak, tell, broadcast or answer a question put to it, and the inbox and
+          // the chatter both go out through that same tool.
+          //
+          // It belongs here for the same reason movement does: the socket is here. The
+          // broker holds a two-second snapshot and no wire.
+          //
+          // THE ECHO IS THE RECEIPT. This game confirms nothing — a refusal is a sentence
+          // spoken to the room, and a say that goes nowhere looks exactly like one that
+          // worked. So this waits briefly for the server to send our own line back and
+          // reports whether it did, rather than returning `{ok:true}` for a packet that was
+          // merely written to a socket.
+          case 'say': {
+            const c = session.client;
+            const text = String(args.text ?? '');
+            if (!text) { json({ error: 'say needs text' }, 400); return; }
+            const since = c.evSeq;
+            const to = [].concat(args.to ?? []).filter(x => x !== null && x !== undefined);
+            if (to.length) {
+              // tell/send: object ids, so names are resolved against who is online NOW.
+              await session.pacer.submit('read', () => c.players());
+              await c.waitFor({ kinds: ['who'], timeoutMs: 3000 });
+              const online = [...c.playersOnline.values()];
+              const ids = [], unknown = [];
+              for (const w of to) {
+                const n = Number(w);
+                const hit = Number.isFinite(n) && String(w).trim() !== ''
+                  ? online.find(p => p.id === n)
+                  : online.find(p => p.name && p.name.toLowerCase() === String(w).toLowerCase())
+                    ?? online.find(p => p.name && p.name.toLowerCase().includes(String(w).toLowerCase()));
+                if (hit) ids.push(hit.id); else unknown.push(w);
+              }
+              if (!ids.length) {
+                json({ spoken: null, unknown, online: online.map(p => ({ id: p.id, name: p.name })),
+                       note: 'nobody by that name is logged on, so there was nothing to send to' });
+                return;
+              }
+              const sent = c.evSeq;
+              await session.pacer.submit('say', () => c.sayGroup(ids, text));
+              const { events } = await c.waitFor({ since: sent, kinds: ['said', 'message'], timeoutMs: 2500 });
+              const mine = events.find(e => e.kind === 'said' && e.speaker === c.selfId);
+              json({ spoken: text, to: ids.map(id => ({ id, name: c.playersOnline.get(id)?.name })),
+                     ...(unknown.length ? { unknown } : {}),
+                     echoed: mine ? mine.text : null,
+                     messages: events.filter(e => e.text).map(e => e.text) });
+              return;
+            }
+            const kind = Number(args.kind ?? 1);
+            await session.pacer.submit('say', () => c.say(text, kind));
+            const { events } = await c.waitFor({ since, kinds: ['said', 'message'], timeoutMs: 2500 });
+            const mine = events.find(e => e.kind === 'said' && e.speaker === c.selfId);
+            json({ spoken: text, say_type: kind, echoed: mine ? mine.text : null,
+                   messages: events.filter(e => e.text).map(e => e.text) });
+            return;
+          }
           case 'cancel': {
             const r = session.cancelMovement?.(args.control_token, 'the keeper /action endpoint');
             json({ cancelled: true, ...(r ?? {}) });
@@ -604,6 +702,31 @@ const server = createServer(async (req, res) => {
         json({ error: e?.message ?? String(e) }, 500);
         return;
       }
+    }
+
+    // WHAT THIS CHARACTER HAS HEARD, because the broker cannot hear anything.
+    //
+    // The `chat` tool reads `client.chatSince()` off the session, and the emulated client a
+    // keeper-backed broker holds has no chat ring — so it hit `if (!c?.chat) continue` and
+    // returned `count: 0` for the whole fleet, for ever. Not an error: a silent, permanent
+    // "nobody has said anything", which is the worst possible answer about a shared server.
+    // Everything anybody says to this character arrives on THIS socket, so the transcript
+    // lives here and the broker asks for it.
+    //
+    // Sequences are per character and this endpoint is one character, so `since` means what
+    // it says here in a way it cannot across a fleet.
+    if (req.method === 'GET' && path === '/chat') {
+      const c = session.client;
+      if (!c?.chat) { json({ seq: 0, messages: [], note: 'not in game' }); return; }
+      const q = url.searchParams;
+      const channels = q.get('channels') ? q.get('channels').split(',').filter(Boolean) : null;
+      const limit = Number(q.get('limit') ?? 50);
+      const rows = c.chatSince(Number(q.get('since') ?? 0), {
+        channels, includeSelf: q.get('include_self') !== 'false',
+      });
+      json({ seq: c.chatSeq, heard_by: c.me?.name ?? null,
+             messages: rows.slice(-limit) });
+      return;
     }
 
     if (req.method === 'GET' && path === '/pacerstats') {

@@ -38,6 +38,10 @@ const { label: FLEET_LABEL, stateFile: STATE_FILE } = resolveFleet();
 
 const PORT = env.M59_BROKER_PORT || '8901';
 const URL_ = `http://127.0.0.1:${PORT}/`;
+// Each keeper is its own process with its own HTTP port. This is only where the SEARCH
+// starts — the actual port is whatever that keeper answers on, which the broker may have
+// moved to dodge another fleet. See keeperStates().
+const KEEPER_PORT_BASE = Number(env.M59_KEEPER_PORT_BASE || 8911);
 const REFRESH_MS = Number(env.M59_TUI_REFRESH_MS || 5000);
 
 // ------------------------------------------------------------------ broker
@@ -119,14 +123,78 @@ const S = {
   placed: false,         // has the cursor been put somewhere sensible yet?
 };
 
+// WHICH PORT IS WHOSE KEEPER — ASKED, NEVER COMPUTED.
+//
+// A keeper's port is NOT `KEEPER_PORT_BASE + index`. Every broker on this machine starts
+// from the same base, so two fleets contend for one range, and `allocateKeeperPort` in
+// m59-broker.mjs walks forward past any port another fleet already holds — on this
+// machine prod's t21 ended up on 8940 because shadow21 had 8931. Computing the port
+// therefore reads a STRANGER'S keeper and believes it: port 8923 answers as `shadow13`,
+// and a board that trusted the arithmetic showed ten shadow characters as prod ones.
+//
+// So sweep the range, ask each port `/mode` — which names its own agent — and keep only
+// the answers. Same doctrine as m59-which.mjs one layer down: two fleets on one machine
+// are not the same fleet, and identity is checked rather than inferred from a number.
+const KEEPER_SCAN = Number(env.M59_TUI_KEEPER_SCAN || 60);
+let _ports = null;                       // agent -> port, learned by asking
+async function keeperMode(port) {
+  if (port == null) return null;
+  try {
+    // Generous: these processes are also playing the game, and a keeper mid-pass will
+    // sit on a request long enough that a tight timeout reads as "no keeper".
+    const r = await fetch(`http://127.0.0.1:${port}/mode`, { signal: AbortSignal.timeout(6000) });
+    return await r.json();
+  } catch { return null; }
+}
+// `mine` is this fleet's agent names. Anything else answering is another fleet's keeper
+// and is dropped here rather than carried around — a map that holds `shadow13` is one
+// stray lookup away from putting a stranger's vitals on a prod row.
+async function sweep(ports, mine) {
+  const seen = new Map();
+  await Promise.all(ports.map(async (p) => {
+    const m = await keeperMode(p);
+    if (m?.agent && (!mine || mine.has(m.agent))) seen.set(m.agent, { ...m, __port: p });
+  }));
+  return seen;
+}
+// Fast path is the ports we already know. A keeper that respawns can land somewhere else
+// entirely now that allocation is dynamic, so any agent we expected and did not hear from
+// triggers ONE full re-scan — otherwise a moved keeper silently drops off the board for
+// as long as the process lives, which is the failure this whole comment block is about.
+async function keeperStates(expected = []) {
+  const mine = new Set(expected);
+  const full = () => Array.from({ length: KEEPER_SCAN }, (_, k) => KEEPER_PORT_BASE + k);
+  let seen = await sweep(_ports ? [..._ports.values()] : full(), mine);
+  if (_ports && expected.some(a => !seen.has(a))) seen = await sweep(full(), mine);
+  _ports = new Map([...seen].map(([a, m]) => [a, m.__port]));
+  return seen;
+}
+
+// EVERY CHARACTER IN THE FLEET IS A ROW, AND ITS KEEPER IS READ FROM ITS OWN PROCESS.
+//
+// This used to enumerate `autopilot action=list` — the broker's IN-PROCESS Autopilot
+// registry — and join the fleet onto it. Since keepers moved into their own processes
+// that registry is a shell: it holds an entry only for characters something happened to
+// call `autopilot action=start` on inside the broker, and `running` on those entries
+// describes the shell rather than the keeper. Measured on prod: the list held 20 of 21
+// agents and reported 2 running, so the board read "2/20 keepers up" and WALDORF WAS
+// SIMPLY ABSENT — alive on the server, farming, answering on its own port, and missing
+// from the fleet board because no shell object happened to bear its name.
+//
+// A character that exists is a row. Anything that enumerates keepers to find characters
+// will drop the ones whose keeper the broker did not personally start.
 async function refresh() {
-  const [l, f] = await Promise.all([call('autopilot', { agent: 'any', action: 'list' }, 8000),
-                                    call('fleet', {}, 15000)]);
-  if (l?.__error) { S.lastError = 'broker: ' + l.__error; S.loading = false; return; }
+  const f = await call('fleet', {}, 15000);
+  if (f?.__error) { S.lastError = 'broker: ' + f.__error; S.loading = false; return; }
   S.lastError = null;
-  const by = new Map((f?.fleet || []).map(r => [r.agent, r]));
-  S.rows = (l.autopilots || []).map(a => ({ ...by.get(a.name), agent: a.name, ap: a }))
-    .sort((x, y) => (y.level ?? 0) - (x.level ?? 0));
+  const rows = f?.fleet || [];
+  // `running` is the keeper's own ground truth, off its own HTTP port. Failing to reach
+  // one leaves `ap` as it was, which every consumer below already treats as "no keeper".
+  const keepers = await keeperStates(rows.map(r => r.agent));
+  S.rows = rows.map((r) => {
+    const k = keepers.get(r.agent);
+    return { ...r, agent: r.agent, ap: k ? { ...r.ap, ...k } : r.ap };
+  }).sort((x, y) => (y.level ?? 0) - (x.level ?? 0));
   if (S.sel >= S.rows.length) S.sel = Math.max(0, S.rows.length - 1);
   // The first draw should not open on a character you are not allowed to pick. After
   // that the cursor is the operator's and a refresh must not move it — a board that

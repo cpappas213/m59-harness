@@ -420,3 +420,23 @@ _verify2.mjs
 # the ledgers, regenerated in a second, and an opinion about where to spend the next hour
 # rather than a fact about the map. See m59-review.mjs.
 /substrate/review-queue*.json
+
+# What THIS machine's watchers have already said, and to whom. The last-words rotation and
+# the stuck cooldown are both "have we used this up yet" state for a fleet that only exists
+# here — committing either would hand a stranger a spent rotation and an hour of silence
+# from characters they have never met.
+/substrate/lastwords.json
+/substrate/stuckwatch-*.json
+
+# Watcher logs. Same argument as substrate/broker-<fleet>.log: they name characters and
+# quote what was said on a live server.
+/substrate/logs/
+
+# Which local port a proxy is advertising for which server. One machine's answer, written
+# at start-up and stale the moment that process exits.
+/substrate/proxies/
+
+# One room's jump search: the candidates m59-jumpfinder.mjs found in it. Derived from the
+# .roo in seconds, and an inventory of guesses rather than of confirmed jumps — the
+# confirmed ones are declarations and live in substrate/m59-falljumps.json, committed.
+/substrate/jumpfinder-*.json

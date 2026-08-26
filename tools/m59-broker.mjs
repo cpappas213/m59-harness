@@ -753,6 +753,16 @@ const sessions = new Map();             // agent name -> Session
 // Port allocation: 8911 + agent_index. t1=8911, t2=8912, ...
 
 const keeperProcesses = new Map();     // agent name -> { pid, port, startedAt }
+// A KEEPER THAT IS STILL STARTING IS NOT A KEEPER THAT HAS DIED.
+//
+// The 45s rejoin sweep asks whether a keeper answers and respawns it when it does not, which
+// is right for one that has crashed and wrong for one that is eight seconds into a
+// fourteen-second start. On the last two resumes it respawned two keepers each time, leaving
+// two processes for one character on one port — the second wins the bind, the first is a
+// zombie holding a game socket, and the character it is holding cannot be logged in by
+// anybody. Membership here means "somebody is already bringing this one up"; the sweep
+// steps over it and tries again next lap.
+const keeperSpawning = new Set();
 const KEEPER_PORT_BASE = 8911;
 
 // A PORT IS NOT A NAME, AND TWO FLEETS ON ONE MACHINE WANTED THE SAME PORTS.
@@ -778,6 +788,10 @@ const KEEPER_PORT_BASE = 8911;
 // The allocation is remembered per agent so every later call reaches the keeper that was
 // actually started, rather than recomputing a guess.
 const keeperPorts = new Map();
+// Ports this broker spawned a keeper on and never heard back from — lost to another
+// fleet's broker in the gap between our bind test and our child's bind. Never offered
+// again this session; see the readiness timeout for the argument.
+const portsLostToOthers = new Set();
 
 function keeperPort(agent, index) {
   const known = keeperProcesses.get(agent)?.port ?? keeperPorts.get(agent);
@@ -826,23 +840,43 @@ async function allocateKeeperPort(agent, index) {
   // agents allocating at once both find the same silent port and both take it. Seen in the
   // first run of this code — "t11: port 8927 answers for t12" — which is this broker
   // colliding with itself, one layer in from the collision it was written to fix.
-  const promised = new Set();
-  for (const [who, port] of keeperPorts) if (who !== agent) promised.add(port);
-  for (const [who, rec] of keeperProcesses) if (who !== agent && rec?.port) promised.add(rec.port);
+  // AND THE RESERVATION IS TAKEN BEFORE THE FIRST await, not after the last one.
+  //
+  // The `promised` set below closed the race for SERIAL callers and left it wide open for
+  // concurrent ones: the old loop probed the port and only then wrote it into `keeperPorts`,
+  // so two allocations running at once both read the same snapshot, both awaited, and both
+  // claimed the same number. Two of twenty-one collided on the last serial resume alone
+  // (shadow06 on 8920, shadow17 on 8931) — and this is now the fan-out path, where every
+  // allocation overlaps every other. Claiming synchronously and releasing the claim if the
+  // probe rejects it makes "who asked first" decidable without a lock.
+  const held = () => {
+    const taken = new Set();
+    for (const [who, port] of keeperPorts) if (who !== agent) taken.add(port);
+    for (const [who, rec] of keeperProcesses) if (who !== agent && rec?.port) taken.add(rec.port);
+    return taken;
+  };
   for (let port = start; port < start + 200; port++) {
-    if (promised.has(port)) continue;
+    if (held().has(port)) continue;
+    if (portsLostToOthers.has(port)) continue;   // we spawned here once and never heard back
+    keeperPorts.set(agent, port);            // claim first — no await between here and the read
     if (await portIsOursOrFree(port, agent)) {
-      keeperPorts.set(agent, port);
       if (port !== start)
         console.error(`[keeper] ${agent}: ${start} is held by another fleet's keeper — using ${port}`);
       return port;
     }
+    if (keeperPorts.get(agent) === port) keeperPorts.delete(agent);
   }
   keeperPorts.set(agent, start);
   return start;
 }
 
 async function spawnKeeper(agent, index, credentials) {
+  keeperSpawning.add(agent);
+  try { return await spawnKeeperInner(agent, index, credentials); }
+  finally { keeperSpawning.delete(agent); }
+}
+
+async function spawnKeeperInner(agent, index, credentials) {
   const port = await allocateKeeperPort(agent, index);
   const { spawn } = await import('node:child_process');
   const { join } = await import('path');
@@ -868,18 +902,42 @@ async function spawnKeeper(agent, index, credentials) {
   // NOT detached: keepers die when the broker exits.
   keeperProcesses.set(agent, { pid: child.pid, port, startedAt: Date.now() });
   console.error(`[keeper] spawned ${agent} pid=${child.pid} port=${port}`);
-  // Wait for the keeper to be ready
-  for (let i = 0; i < 30; i++) {
-    await new Promise(r => setTimeout(r, 1000));
+  // Wait for the keeper to be ready. POLLED FOUR TIMES A SECOND, not once: the old loop
+  // slept a full second BEFORE its first check, so a keeper that was ready in 300ms was
+  // still reported at 1s and every keeper paid up to a second of pure measurement error.
+  // Twenty-one of those was most of a lap of the fleet. Same thirty-second ceiling.
+  const began = Date.now();
+  for (let i = 0; i < 120; i++) {
+    await new Promise(r => setTimeout(r, 250));
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) {
-        console.error(`[keeper] ${agent} ready after ${i+1}s`);
+        console.error(`[keeper] ${agent} ready after ${((Date.now() - began) / 1000).toFixed(1)}s`);
         return true;
       }
     } catch {}
   }
-  console.error(`[keeper] ${agent} did not become ready in 30s`);
+  // A PORT WE SPAWNED ON AND NEVER HEARD FROM IS A PORT WE LOST, AND WE HAVE TO REMEMBER IT.
+  //
+  // portIsOursOrFree ends in a real bind test, which is correct and still racy: this broker
+  // binds, releases, and the other fleet's broker takes the number in the microseconds
+  // before our child gets there. The child then dies with EADDRINUSE at startup, the broker
+  // reads the dead process as "dropped 0s after rejoining — something else may be holding
+  // this character", and the next attempt allocates from the SAME base and picks the SAME
+  // port. Lew and Scooter span that loop for an hour; Bunsen did it earlier for longer,
+  // and it reads as a game-connection fault every time.
+  //
+  // Nothing here can win a race against another process, so stop trying to: record the
+  // number and never offer it again this session. There are two hundred to walk through.
+  const lost = keeperPorts.get(agent);
+  if (lost != null) {
+    portsLostToOthers.add(lost);
+    keeperPorts.delete(agent);
+    console.error(`[keeper] ${agent} did not become ready in 30s on ${lost} — ` +
+                  `retiring that port for this session`);
+  } else {
+    console.error(`[keeper] ${agent} did not become ready in 30s`);
+  }
   return false;
 }
 
@@ -934,6 +992,25 @@ async function keeperState(agent, index, { fresh = false } = {}) {
   return null;
 }
 
+// THE READ HALF OF keeperAction. The keeper publishes several things that are honestly
+// unknowable from this side — the chat ring, the pacer's rates, the room view — on plain GET
+// endpoints, and a tool that wants one of them should not have to hand-roll a fetch and a
+// port lookup each time. Same failure shape as keeperAction: `{error}` rather than a throw,
+// because every caller here is a tool run that must report rather than crash.
+async function keeperGet(agent, index, path, params = {}) {
+  const port = keeperPort(agent, index);
+  const q = new URLSearchParams(Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== ''));
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/${path}${q.toString() ? '?' + q : ''}`,
+                            { signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return { error: `keeper ${res.status}` };
+    return await res.json();
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 async function keeperAction(agent, index, name, args) {
   const port = keeperPort(agent, index);
   try {
@@ -966,6 +1043,8 @@ class KeeperProxy {
     this._state = null;
     this._stateAt = 0;
     this._stateTtl = 2000;
+    // When `connected` first went false, for the hysteresis in `phantom`. 0 = not now.
+    this._notConnectedSince = 0;
     this._world = null;
     // One frame of the keeper's room view. See `_roomViewCached`.
     this._roomView = null;
@@ -1004,7 +1083,34 @@ class KeeperProxy {
   get live() {
     if (!this._state?.in_game) return false;
     // If the state is stale (older than 30s), the keeper process is likely dead
-    return (Date.now() - this._stateAt) < 30000;
+    if (Date.now() - this._stateAt >= 30000) return false;
+    // A PHANTOM IS NOT LIVE, AND IT USED TO BE.
+    //
+    // `in_game` is the keeper's BELIEF, and nothing clears it when the server drops the
+    // socket — which is what happens every time a person logs in on the character. The
+    // keeper kept answering, kept saying in_game:true, so `_stateAt` refreshed on every
+    // poll and this stayed true for ever on a dead connection. reconcileFleet skips
+    // anything live, so the 45s sweep never even tried: the character sat frozen, with
+    // every action refused, until somebody noticed by hand. Four of twenty-one were like
+    // that when this was written, some for hours.
+    //
+    // `connected` is the socket's own answer. It is only believed after PHANTOM_AFTER_MS
+    // of continuously saying no, because client.state lags after a rejoin and one false
+    // sample would rejoin a healthy character — the opposite bug, and a noisier one.
+    return !this.phantom;
+  }
+
+  // How long `connected:false` must persist before we call it a dead connection rather
+  // than the state field lagging. Two poll cycles is enough to clear the lag.
+  static PHANTOM_AFTER_MS = 20000;
+
+  // in_game true, socket says otherwise, and it has said so long enough to be believed.
+  // Undefined `connected` means a keeper older than this field: fail OPEN, behave as before.
+  get phantom() {
+    const s = this._state;
+    if (!s?.in_game || s.connected !== false) { this._notConnectedSince = 0; return false; }
+    if (!this._notConnectedSince) this._notConnectedSince = Date.now();
+    return (Date.now() - this._notConnectedSince) >= KeeperProxy.PHANTOM_AFTER_MS;
   }
 
   // Emulated client object that mimics the real Session client interface.
@@ -1300,7 +1406,13 @@ class KeeperProxy {
 
   // The job lives in the keeper. Callers spread this with `?? {}`, so null is the shape that
   // means "nothing to add" rather than "no job".
-  jobReport() { return null; }
+  // NOT null ANY MORE. This hardcoded null meant `busy` never appeared on a keeper-backed
+  // character, and absent reads as false: the fleet board could not show what a character
+  // was in the middle of, and m59-circuit.mjs — which gives up on a leg when a character is
+  // "not busy and has not moved" — abandoned twenty-one bots that were all still walking and
+  // reported 0/21 arrived. The keeper owns the job slot and now publishes the same
+  // `rtsJobReport` shape in /state; this hands it straight through.
+  jobReport() { return this._state?.job ?? null; }
   startJob() { throw new Error(`${this.name}: the job slot is in the keeper process`); }
   travelExclusive(dest, opts = {}) { return this.travelJob(dest, opts); }
 
@@ -1360,7 +1472,13 @@ class KeeperProxy {
       faculties: {}, activity: this.activity(),
       town_service: null, committed: null, watchdog: null,
       did: { kills: 0, deaths_in_safe_spot: 0, deaths_in_proven_safe_spot: 0 },
-      stalled: this.live ? false : 'keeper unreachable',
+      // NOT HARDCODED FALSE ANY MORE. The keeper knows whether it is stuck and now says so in
+      // /state; answering `false` here meant the fleet board could not report a stuck
+      // character on a keeper-backed broker, which is every character in production.
+      stalled: this._state?.stuck
+        ? `${this._state.stuck.why ?? 'stalled'} (${this._state.stuck.seconds}s)`
+        : (this.live ? false : 'keeper unreachable'),
+      stuck: this._state?.stuck ?? null,
       // PASSED THROUGH, NOT NULLED. These three were hardcoded null and `[]` here, which was
       // honest when the keeper did not send them and a lie the moment it did: the fleet row
       // reads `st.time`, `st.refusals` and `st.waiting_on` off this, so every activity clock
@@ -1855,18 +1973,36 @@ async function resumeFleet() {
                 (held.size ? `; leaving ${[...held.keys()].join(', ')}` : ''));
   let keeperIndex = 0;
   const useKeepers = !process.argv.includes('--in-process');
-  for (const agent of names) {
-    const { credentials, autopilot } = saved[agent] || {};
-    if (!credentials) continue;
-    if (held.has(agent)) { fleetState.set(agent, { credentials, autopilot }); continue; }
-    fleetState.set(agent, { credentials, autopilot });
+
+  // KEEPERS COME UP TOGETHER, BECAUSE NOTHING ABOUT THEM IS SHARED.
+  //
+  // This loop used to `await spawnKeeper` one character at a time, and spawnKeeper waits up
+  // to thirty seconds for that keeper's `/health` to answer. Measured on the shadow fleet's
+  // last serial resume: every keeper took 7-10s and twenty-one of them took the sum, so the
+  // fleet was absent for the best part of three minutes on every restart — and a restart is
+  // how new code is deployed, so that cost is paid on every single change.
+  //
+  // The 7-10s is NOT contention, and the log is what says so: the twenty-first keeper took
+  // the same eight seconds as the first, where contention would have shown a rising curve.
+  // It is a flat per-process cost — node start, then this repository's map, geometry and
+  // routing tables loaded before the HTTP port binds — and a flat cost paid twenty-one times
+  // in a row is just the wrong shape. Each keeper owns its own process, its own socket, its
+  // own port and its own character; there is nothing for them to queue behind.
+  //
+  // BOUNDED, NOT UNLIMITED. Twenty-one node processes starting in the same instant thrash a
+  // laptop and hit the game server with twenty-one logins at once, and blakserv is a single
+  // thread. The cap makes it a handful of waves instead of one stampede, which is where the
+  // wall-clock win already is: at 6 the same fleet is four waves of ~8s rather than
+  // twenty-one of them. M59_KEEPER_CONCURRENCY=1 restores exactly the old behaviour, which
+  // is the switch to reach for if a resume ever starts failing in a way this might explain.
+  const CONCURRENCY = Math.max(1, Number(process.env.M59_KEEPER_CONCURRENCY || 6));
+
+  const resumeOne = async (agent, credentials, autopilot, index) => {
     try {
       if (useKeepers) {
         // SPAWN A KEEPER PROCESS. The GOAP loop runs in its own process, isolated
         // from the broker's HTTP event loop. The broker gets a KeeperProxy that
         // reads state from and proxies mutations to the keeper.
-        const index = keeperIndex++;
-        agentIndices.set(agent, index);
         const ok = await spawnKeeper(agent, index, credentials);
         const proxy = makeKeeperProxy(agent, index);
         sessions.set(agent, proxy);
@@ -1890,6 +2026,41 @@ async function resumeFleet() {
         console.error(`[state] resumed ${agent} (${credentials.character || '?'}) keeper=in-process`);
       }
     } catch (e) { console.error(`[state] ${agent} did not resume: ${e.message}`); }
+  };
+
+  // The work list is built first and in order, so `index` — which decides a keeper's
+  // preferred port — is assigned by roster position exactly as it was serially. A port
+  // that moves every restart is a port nothing outside this process can predict.
+  const work = [];
+  for (const agent of names) {
+    const { credentials, autopilot } = saved[agent] || {};
+    if (!credentials) continue;
+    if (held.has(agent)) { fleetState.set(agent, { credentials, autopilot }); continue; }
+    fleetState.set(agent, { credentials, autopilot });
+    const index = useKeepers ? keeperIndex++ : null;
+    if (useKeepers) agentIndices.set(agent, index);
+    work.push({ agent, credentials, autopilot, index });
+  }
+
+  // IN-PROCESS SESSIONS STAY SERIAL. They share this event loop and this process's one
+  // socket table, and their join path was written on the assumption that nothing else is
+  // joining at the same time. The fallback mode is not where the three minutes is.
+  if (!useKeepers) {
+    for (const w of work) await resumeOne(w.agent, w.credentials, w.autopilot, w.index);
+  } else {
+    const started = Date.now();
+    let next = 0;
+    const lane = async () => {
+      for (;;) {
+        const w = work[next++];
+        if (!w) return;
+        await resumeOne(w.agent, w.credentials, w.autopilot, w.index);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, work.length) }, lane));
+    if (work.length)
+      console.error(`[state] ${work.length} keeper(s) up in ${Math.round((Date.now() - started) / 1000)}s ` +
+                    `(${CONCURRENCY} at a time)`);
   }
   // Drop in-process autopilot stubs for keeper-backed sessions. The GOAP loop runs
   // in the keeper process; a stub in the broker just fails every pass against the
@@ -2055,6 +2226,12 @@ async function reconcileFleet() {
     const credentials = entry?.credentials;
     if (!credentials) continue;
     if (leftOnPurpose.has(agent)) continue;
+    // ALREADY COMING UP. A keeper takes eight to fifteen seconds to bind its port, and
+    // this sweep runs every forty-five — so a resume that overlaps one lap looks, from
+    // here, exactly like a keeper that has died, and the remedy for that is to spawn a
+    // second one on the same port for the same character. Measured twice: two zombies
+    // per resume, each holding a game socket for a character nobody could then log in.
+    if (keeperSpawning.has(agent)) continue;
     // Being played by a person. Not missing — occupied. Rejoining would take the
     // character out from under a hand that is on the keys, and the login would bump
     // them straight out of the world.
@@ -2322,8 +2499,25 @@ function claimPilot(agent, pid, { character = null } = {}) {
   // this has to ask the narrower question or releasing the pilot would hand a character
   // back to a keeper that an errand is still holding — and put the person's session and
   // that errand into exactly the fight the hold exists to prevent.
-  const keeperWasRunning = !!keeper?.running && !keeper?.inert;
-  if (keeperWasRunning) keeper.stop('a person took the controls — deliberate');
+  //
+  // AND IT HAS TO ASK THE KEEPER PROCESS, NOT THE SHELL IN HERE.
+  //
+  // `autopilotIfAny` returns the broker's own in-process Autopilot. Since keepers moved
+  // into their own processes that object is a shell that is almost never running —
+  // measured on prod: `autopilot list` held twenty entries with TWO running while all
+  // twenty-one keeper PROCESSES reported `running: farm`. So this read false for nearly
+  // everybody, the release path then said "its keeper was stopped before, so it stays
+  // stopped", and the false value was written into rejoinState so the reconciler would
+  // not restore it either. Every time an operator logged in to look at a character and
+  // closed the client, that character was parked for good. Waldorf was found that way:
+  // `[pilot] t4 claimed ... keeper was stopped` while its keeper was farming.
+  //
+  // The proxy already caches the keeper's own /state, so this stays synchronous.
+  const proxied = s instanceof KeeperProxy ? s : null;
+  const keeperWasRunning = proxied
+    ? !!proxied._state?.goap?.running
+    : (!!keeper?.running && !keeper?.inert);
+  if (keeperWasRunning && keeper && !proxied) keeper.stop('a person took the controls — deliberate');
   piloted.set(agent, { pid, since: Date.now(), objectId,
                        character: character ?? s?.client?.me?.name ?? null, keeperWasRunning });
   console.error(`[pilot] ${agent} claimed by pid ${pid}` +
@@ -4213,8 +4407,33 @@ const TOOLS = [
             type: ['string', 'number', 'array'], items: { type: ['string', 'number'] } },
     }, required: ['agent', 'text'] },
     run: async (a) => {
-      const s = session(a.agent), c = s.need();
+      const s = session(a.agent);
       const type = a.type || 'say';
+
+      // A KEEPER-BACKED CHARACTER SPEAKS IN THE KEEPER, because that is where the socket is.
+      //
+      // This tool used to call `c.say(...)` unconditionally on the emulated client, which has
+      // no `say`: measured on the shadow fleet, every channel for every character came back
+      // `error: c.say is not a function`. Out-of-process keepers are the default, so the whole
+      // fleet was mute — the inbox could not reply, the chatter could not answer, and nothing
+      // could report anything about itself out loud. Same reasoning, and the same predicate,
+      // as `jump` above: a proxy's `world.geometry` is honestly null because a two-second
+      // snapshot is not a World.
+      if (s instanceof KeeperProxy) {
+        const kind = type === 'tell' || type === 'send' ? null
+                   : { say: 1, yell: 2, broadcast: 3, emote: 6, guild: 10 }[type];
+        if (kind === undefined) throw new Error(`unknown say type "${type}"`);
+        const to = [].concat(a.to ?? []);
+        if (kind === null && !to.length)
+          throw new Error(`"${type}" needs \`to\` — who is it for? Use who to list everyone online.`);
+        if (type === 'tell' && to.length > 1)
+          throw new Error('"tell" is for one person; use type "send" for several');
+        const r = await keeperAction(s.name, s._index, 'say', { text: a.text, kind, to });
+        if (r?.error) throw new Error(r.error);
+        return { as: type, ...(kind ? { say_type: kind } : {}), ...r };
+      }
+
+      const c = s.need();
       const before = c.evSeq;
 
       // tell and send go out on a different opcode from the rest, and it carries
@@ -4305,6 +4524,21 @@ const TOOLS = [
       const cursors = {};
       for (const n of names) {
         const s = sessions.get(n);
+        // A KEEPER-BACKED CHARACTER'S EARS ARE IN THE KEEPER. The emulated client has no
+        // chat ring, so this loop used to `continue` past every character on the default
+        // architecture and answer `count: 0` — a permanent, silent "nobody has said
+        // anything to anyone" for a fleet standing on a shared server. See /chat there.
+        if (s instanceof KeeperProxy) {
+          const r = await keeperGet(s.name, s._index, 'chat', {
+            since: num(a.since, 0), limit: num(a.limit, 50),
+            ...(a.channels ? { channels: [].concat(a.channels).join(',') } : {}),
+            ...(a.include_self === false ? { include_self: 'false' } : {}),
+          });
+          if (!r || r.error) continue;
+          cursors[n] = r.seq;
+          for (const l of r.messages ?? []) out.push({ agent: n, heard_by: r.heard_by ?? null, ...l });
+          continue;
+        }
         const c = s?.client;
         if (!c?.chat) continue;
         cursors[n] = c.chatSeq;
@@ -11568,6 +11802,17 @@ const TOOLS = [
           stalled: !st ? 'no keeper — nothing is driving this character'
                  : !st.running ? `keeper stopped (mode ${st.mode})`
                  : st.stalled,
+          // AND THE SAME FACT AS SOMETHING A PROGRAM CAN BRANCH ON.
+          //
+          // `stalled` above is a sentence on one kind of broker and an object on the other,
+          // and both are `false` when all is well — fine to print, useless to act on. This
+          // column is null or an object, always, on either kind, so a board can render a
+          // STUCK pill and a watcher can decide whether to say something without knowing
+          // which sort of keeper answered. A keeper that is not there at all is not the same
+          // fact as a character that stopped moving, so it stays null here and is reported
+          // by `stalled` — reviving a dead keeper and unsticking a live one are different
+          // remedies and folding them together sends somebody to the wrong one.
+          stuck: st?.stuck ?? null,
           ...(s.jobReport() ?? {}),
           // Whether anyone has been talking to this character, and whether anything is
           // waiting on an answer. This used to be unrepresentable here, which made the
@@ -11600,6 +11845,12 @@ const TOOLS = [
       return {
         agents: rows.length,
         stalled_count: stuck.length,
+        // NOT THE SAME NUMBER AS stalled_count, and the difference is the point: that one
+        // counts everything wrong including a keeper that never started, this one counts
+        // characters that are IN GAME AND NOT MOVING. On a broker that has just come up
+        // the first is every character and the second is nobody.
+        stuck_count: rows.filter(r => r.stuck).length,
+        ...(rows.some(r => r.stuck) ? { stuck: rows.filter(r => r.stuck).map(r => r.agent) } : {}),
         // Named separately from `needs_attention`, because the remedy is different in
         // kind: a stalled keeper is revived, a token is CARRIED BACK TO A COUNCILOR.
         // Folding them together would send somebody to `autopilot action=revive`, which
