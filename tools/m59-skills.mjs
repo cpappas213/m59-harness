@@ -3474,9 +3474,20 @@ export function deathBroadcastFor(name, events, at, { withinMs = 30_000 } = {}) 
 // WHEN TO WITHDRAW, AND WHEN NOT TO START. One home, because both keepers need it and a
 // survival threshold with two definitions is two opinions about when to run.
 //
-// Lifted verbatim from Autopilot.safety(); behaviour is unchanged. It takes a CLIENT and
-// a POLICY rather than a keeper, for the same reason isArmed does: whoever is driving,
-// the arithmetic is the same.
+// Lifted from Autopilot.safety() so every driver shares one calculation. Implicit/default
+// policy retains the established adaptive two-hit margin; an explicitly marked broker
+// value is authoritative. It takes a CLIENT and a POLICY rather than a keeper, for the
+// same reason isArmed does: whoever is driving, the arithmetic is the same.
+// An operator-supplied withdraw line is an order, not a hint. Keep the marker beside
+// the value so it survives the broker's policy persistence and so a later start call
+// which omits flee_below does not silently restore the adaptive floor.
+export function applyFleeBelowPolicy(policy, value) {
+  if (value === undefined) return policy;
+  policy.fleeBelow = Number(value);
+  policy.fleeBelowExplicit = true;
+  return policy;
+}
+
 export function safetyFor(client, policy = {}) {
   const v = client?.vitals?.();
   const max = v?.health?.max ?? 0;
@@ -3488,7 +3499,10 @@ export function safetyFor(client, policy = {}) {
   // Two is the number that survives the realistic bad case -- one hit landing as
   // the withdraw begins, and one more before it is out of reach -- while still
   // leaving a usable window to actually fight in.
-  const fleeAt = Math.max(policy.fleeBelow, Math.min(0.7, (2 * maxHit) / max));
+  const adaptiveFleeAt = Math.min(0.7, (2 * maxHit) / max);
+  const fleeAt = policy.fleeBelowExplicit === true
+    ? policy.fleeBelow
+    : Math.max(policy.fleeBelow, adaptiveFleeAt);
   return {
     maxHit, fleeAt,
     // Do not start a fight that cannot be finished. Below this, heal or rest

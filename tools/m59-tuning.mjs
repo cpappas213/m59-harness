@@ -62,9 +62,9 @@ export const TUNABLES = {
     'fight from a wall the monsters cannot reach through. Turning this off gives up the ' +
     'largest survival advantage in the game and is almost never right' },
   flee_below: { check: frac, why:
-    'the health fraction at which a character disengages. NOTE it is a FLOOR, not the ' +
-    'answer: safety() takes Math.max(this, 2*maxHit/max), so on a 41-health character ' +
-    'anything below about 0.68 is inert and the two-hits-of-margin rule wins' },
+    'the exact health fraction below which a character disengages. Supplying this ' +
+    'operator setting is authoritative over the adaptive two-hit default; equality does ' +
+    'not disengage, because the comparison is strictly below the configured fraction' },
   rest_below: { check: frac, why: 'the health fraction at which it breaks off and rests' },
   hold_resume_above: { check: frac, why:
     'in a safe spot, top up to this fraction before swinging again. Stopping costs nothing ' +
