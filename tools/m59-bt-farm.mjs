@@ -733,23 +733,29 @@ export function fightNode(keeper) {
       const atWall = holdingForFight(keeper);
       const proven = atWall && keeper.holdWorks?.();
       if (atWall) {
-        keeper.note('broke off at the wall -- resting here rather than running', {
+        keeper.note(f.disengaged.unarmed
+          ? 'weapon broke at the wall -- stopped attacking here'
+          : 'broke off at the wall -- resting here rather than running', {
           at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round,
+          unarmed: !!f.disengaged.unarmed,
           proven,
-          why: proven ? 'a proven wall blocks the hit; resting here is free'
+          why: f.disengaged.reason ?? (proven ? 'a proven wall blocks the hit; resting here is free'
                       : 'an unproven wall still blocks one direction; the monster '
                         + 'has to walk around the corner, and re-taking this spot '
-                        + 'costs more than the time it buys',
+                        + 'costs more than the time it buys'),
         });
         const skills = getSkills();
         await skills.restUntil(keeper.s, { health: 0.95, vigor: 0.4, maxSeconds: 120 }).catch(() => null);
         keeper.progress('rested after breaking off a fight');
       } else {
         await keeper.retreatToSafety?.({
-          because: 'broke off a fight at ' + (f.disengaged.at_health ?? '?'),
+          because: f.disengaged.reason
+            ?? ('broke off a fight at ' + (f.disengaged.at_health ?? '?')),
           mid_round: !!f.disengaged.mid_round,
+          unarmed: !!f.disengaged.unarmed,
         }).catch(() => {});
-        keeper.progress('retreated after breaking off a fight');
+        keeper.progress(f.disengaged.unarmed
+          ? 'retreated after losing the weapon' : 'retreated after breaking off a fight');
       }
     } else {
       // A fight that ended with no kill, no death, no disengage, no stale id: it ran

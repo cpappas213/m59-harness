@@ -276,7 +276,7 @@ t('tooTiredNode: rests (SUCCESS) when vigor is below floor', async () => {
   // the rest path (SUCCESS, doing='recovering', tally.rests bumped, resting noted).
   const k = mockKeeper();
   k.s.client.vitals = () => ({ health: { value: 36, max: 36 }, vigor: { value: 60, max: 200 } });
-  k.fightFloor = () => 70;          // starved floor; 60 < 70 -> must rest
+  k.fightFloor = () => 80;          // starved floor; 60 < 80 -> must rest
   k.hold = null; k.policy.useSafeSpots = false;   // skip takeSafeSpot
   const node = tooTiredNode(k);
   const r = await node.tickAsync(bb(k));
@@ -460,6 +460,22 @@ t('fightNode retreats when breaking off in the open (not holding a spot)', async
   const r = await node.tickAsync(bb(k));
   if (r !== SUCCESS) throw new Error(`expected SUCCESS, got ${r}`);
   if (retreated !== 1) throw new Error(`expected a retreat in the open, got ${retreated}`);
+});
+
+t('fightNode carries an unarmed weapon-loss reason into the retreat', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = null; k.holdWorks = () => false;
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  const reason = 'the weapon shattered and no verified replacement could be equipped';
+  k._btFarmFight = async () => ({ killed: false, died: false, rounds: 1, target: 'giant rat',
+    disengaged: { at_health: '88%', unarmed: true, reason }, note: reason });
+  let retreat = null;
+  k.retreatToSafety = async args => { retreat = args; return { left: true }; };
+  const r = await fightNode(k).tickAsync(bb(k));
+  if (r !== SUCCESS || retreat?.because !== reason || retreat?.unarmed !== true)
+    throw new Error(`weapon-loss cause was not preserved: ${JSON.stringify({ r, retreat })}`);
 });
 
 t('fightNode treats a stale hold as open field when safe spots are disabled', async () => {

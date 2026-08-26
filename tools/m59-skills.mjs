@@ -2060,6 +2060,13 @@ export async function fight(s, {
     wielded = e.id ?? null;
     say('equipped', { wielding: e.wielding, verified: e.verified, skill: e.skill,
                       ability: e.ability, rejected: e.rejected, note: e.note });
+  } else {
+    // `equip: false` forbids a use request, not observation. Remember a currently
+    // verified weapon so a mid-fight shatter can still retire its exact id before
+    // stopping; the caller opted out of re-arming, not out of learning what broke.
+    const held = equippedNow(c);
+    wielded = weaponRanking(c, { priority: weaponPriority })
+      .find(candidate => held?.has(candidate.o.id))?.o.id ?? null;
   }
 
   // Health BEFORE, so the report can say what the fight cost.
@@ -2151,6 +2158,7 @@ export async function fight(s, {
   }
 
   let killed = false, disengaged = null, roundsFought = 0, drifted = null, stoodUp = false;
+  let weaponLoss = null;
   const combatLines = [];
   let targetCondition = null, conditionTrend = [], projection = null;
   let lastRoundHealth = startPct, worstExchangeLoss = 0;
@@ -2220,45 +2228,15 @@ export async function fight(s, {
     projection = combatRaceProjection({ observations: conditionTrend,
       currentHealth: roundHealth, disengageAt, worstExchangeLoss, round: roundsFought });
 
-    // WE ARE STILL SITTING DOWN, AND THE SERVER JUST SAID SO.
-    //
-    // "You find yourself unable to lift your weapon." is PFLAG_NO_FIGHT, which resting
-    // sets (player.kod:1162). Nothing clears resting but standing or logging off, so a
-    // rest that was cut short, or a safe spot the keeper sat down in and never got back
-    // up from, turns every swing from here on into that line — a fight that reads like
-    // bad luck and is actually a posture. Stand and take the round again.
-    //
-    // Standing is not a cure for the rest of that flag's causes. Hold, Dazzle, Blind and
-    // a DM freeze set it too, and for those the honest answer is to stop and name them,
-    // not to spend eleven more rounds being refused.
-    if (res.messages.some(cannotSwingText)) {
-      if (stoodUp)
-        return { fought: false, could_not_swing: true, stood_up: true,
-                 target: foeName, foe_id: foe.id, rounds: roundsFought,
-                 reason: 'every swing was refused: "unable to lift your weapon"',
-                 combat: combatLines.slice(-8), log,
-                 note: 'standing up did not clear it, so this is not resting. The same flag is set by ' +
-                       'Hold, Dazzle, Blind and a DM freeze — wait for the enchantment to lapse. More ' +
-                       'swings now cost packets and do nothing.' };
-      stoodUp = true;
-      await standUp(s);
-      say('stood up', { because: 'every swing was refused — we were sitting down', round: roundsFought });
-      continue;
-    }
-
     // IT BROKE MID-FIGHT, which is the ordinary way a weapon leaves service and was
-    // previously invisible. ReqWeaponAttack unequips the weapon itself (weapon.kod:513)
-    // and every later swing is a punch, so a character finished the fight, and the next
-    // twenty fights, bare-handed while the keeper reported it armed. Re-arm here rather
-    // than at the next pass: the rest of THIS fight is the part that was being lost.
-    if (res.messages.some(brokenWeaponText)) {
-      if (wielded != null) brokenSet(c).add(wielded);
-      say('weapon broke', { was: wielded, round: roundsFought });
-      if (equip) {
-        const again = await equipBest(s, { priority: weaponPriority });
-        wielded = again.id ?? null;
-        say('re-armed', { wielding: again.wielding, verified: again.verified, note: again.note });
-      }
+    // previously invisible. Record the evidence immediately, but do not mutate inventory
+    // or equipment until the terminal results of this exchange are known: a dead player
+    // cannot re-arm, and a killing shatter does not need to.
+    const weaponBroke = res.messages.some(brokenWeaponText);
+    const brokenId = weaponBroke ? wielded : null;
+    if (weaponBroke) {
+      if (brokenId != null) brokenSet(c).add(brokenId);
+      say('weapon broke', { was: brokenId, round: roundsFought });
     }
 
     // Are we dead? "Our own object is missing from the room list" is NOT the test,
@@ -2280,7 +2258,116 @@ export async function fight(s, {
                combat: combatLines.slice(-8), log, stale_identity: true,
                note: 'our own object id is not in the room contents but we are alive and not in the ' +
                      'Underworld — the server most likely renumbered ids in a save. Re-login to ' +
-                     'resolve a fresh id; do NOT treat this as death.' };
+                      'resolve a fresh id; do NOT treat this as death.' };
+    }
+
+    // Resolve the exchange before recovery policy. A low-health/aborted killing blow is
+    // still a kill, and neither it nor a lethal blow to us may send inventory/use traffic.
+    if (!c.room.objects.has(foe.id)) { killed = true; break; }
+
+    // ReqWeaponAttack unequips a shattered weapon itself (weapon.kod:513), and every
+    // later swing silently becomes a punch. Only a still-live player facing a still-live
+    // foe should attempt to re-arm for the rest of THIS fight.
+    if (weaponBroke) {
+      if (equip) {
+        const again = await equipBest(s, { priority: weaponPriority });
+        const replacementVerified = again.verified === true && again.id != null;
+        wielded = replacementVerified ? again.id : null;
+        say(replacementVerified ? 're-armed' : 're-arm failed', {
+          wielding: again.wielding, id: again.id ?? null, verified: again.verified,
+          rejected: again.rejected, note: again.note,
+        });
+        if (!replacementVerified) {
+          weaponLoss = {
+            unarmed: true,
+            weapon_id: brokenId,
+            reason: 'the weapon shattered and no verified replacement could be equipped',
+            replacement: { id: again.id ?? null, wielding: again.wielding ?? null,
+                           verified: again.verified === true },
+          };
+        }
+      } else {
+        wielded = null;
+        weaponLoss = {
+          unarmed: true,
+          weapon_id: brokenId,
+          rearm_disabled: true,
+          reason: 'the weapon shattered and automatic re-arming was disabled for this fight',
+        };
+        say('re-arm skipped', { because: 'equip=false', weapon: brokenId });
+      }
+    }
+
+    // equipBest waits for inventory and equipment events. The room can become terminal
+    // during that wait, so classify it again before an abort or recovery decision. The
+    // pre-wait check above is what prevents mutation for an already-terminal exchange;
+    // this one preserves death-over-kill and kill-over-health if state changes meanwhile.
+    if (weaponBroke && equip) {
+      const goneAfterRearm = !c.room.objects.has(c.selfId);
+      const underworldAfterRearm = /underworld/i.test(c.rsc.get(c.roomNameRsc) || '');
+      const noHealthAfterRearm = (c.vitals()?.health?.value ?? 1) <= 0;
+      if (goneAfterRearm && (underworldAfterRearm || noHealthAfterRearm)) {
+        return { fought: true, killed: false, died: true, rounds: roundsFought,
+                 combat: combatLines.slice(-8), log,
+                 note: 'we were killed. You are in the Underworld; the way out is a portal — see escape_underworld.' };
+      }
+      if (goneAfterRearm) {
+        return { fought: true, killed: false, died: false, rounds: roundsFought,
+                 combat: combatLines.slice(-8), log, stale_identity: true,
+                 note: 'our own object id is not in the room contents but we are alive and not in the ' +
+                       'Underworld — the server most likely renumbered ids in a save. Re-login to ' +
+                       'resolve a fresh id; do NOT treat this as death.' };
+      }
+      if (!c.room.objects.has(foe.id)) { killed = true; break; }
+    }
+
+    // A SHATTERED WEAPON ENDS A LIVE FIGHT UNLESS A SPARE WAS VERIFIED.
+    //
+    // UserAttack silently falls back to punching once the server removes the broken
+    // weapon from plUsing. Sending another round here therefore converts a bounded
+    // weapon fight into an unarmed one without the caller ever choosing that risk.
+    // Death still outranks this branch above, and a shattering killing blow still
+    // counts as a kill rather than asking the keeper to retreat from an absent foe.
+    if (weaponLoss) {
+      const hpAfterBreak = pct(res.vitals?.health ?? c.vitals()?.health);
+      disengaged = {
+        ...weaponLoss,
+        at_health: Number.isFinite(hpAfterBreak)
+          ? Math.round(hpAfterBreak * 100) + '%' : 'unknown',
+        ...(res.aborted ? { mid_round: true, after_swing: res.aborted.swing } : {}),
+      };
+      say('disengaged unarmed', {
+        target: foeName, at_health: disengaged.at_health,
+        reason: disengaged.reason,
+      });
+      break;
+    }
+
+    // WE ARE STILL SITTING DOWN, AND THE SERVER JUST SAID SO.
+    //
+    // "You find yourself unable to lift your weapon." is PFLAG_NO_FIGHT, which resting
+    // sets (player.kod:1162). Nothing clears resting but standing or logging off, so a
+    // rest that was cut short, or a safe spot the keeper sat down in and never got back
+    // up from, turns every swing from here on into that line — a fight that reads like
+    // bad luck and is actually a posture. Terminal exchange results and weapon loss are
+    // settled above so standing cannot mutate an already-ended fight.
+    //
+    // Standing is not a cure for the rest of that flag's causes. Hold, Dazzle, Blind and
+    // a DM freeze set it too, and for those the honest answer is to stop and name them,
+    // not to spend eleven more rounds being refused.
+    if (res.messages.some(cannotSwingText)) {
+      if (stoodUp)
+        return { fought: false, could_not_swing: true, stood_up: true,
+                 target: foeName, foe_id: foe.id, rounds: roundsFought,
+                 reason: 'every swing was refused: "unable to lift your weapon"',
+                 combat: combatLines.slice(-8), log,
+                 note: 'standing up did not clear it, so this is not resting. The same flag is set by ' +
+                       'Hold, Dazzle, Blind and a DM freeze — wait for the enchantment to lapse. More ' +
+                       'swings now cost packets and do nothing.' };
+      stoodUp = true;
+      await standUp(s);
+      say('stood up', { because: 'every swing was refused — we were sitting down', round: roundsFought });
+      continue;
     }
 
     // Mid-round abort first: attackRounds now watches health between swings, so this
@@ -2296,7 +2383,6 @@ export async function fight(s, {
       disengaged = { at_health: Math.round(hp * 100) + '%' };
       break;
     }
-    if (!c.room.objects.has(foe.id)) { killed = true; break; }
     // The model says this exchange will spend the reserve before the target dies.
     // Leave NOW, while still above the hard threshold. A favorable or uncertain
     // projection changes nothing: the ordinary loop keeps swinging, and the hard
@@ -2337,6 +2423,7 @@ export async function fight(s, {
     // Worth saying out loud: it means a round went nowhere, and it means whatever sat
     // this character down is not doing so again by itself.
     ...(stoodUp ? { stood_up: 'the first round was refused — we were resting' } : {}),
+    ...(weaponLoss ? { weapon_loss: weaponLoss } : {}),
     combat: combatLines.slice(-10),
     // Pass this back as preferId next time. A wounded creature we walk away from is
     // both credit we have already earned and a monster that will heal if left, so
@@ -2352,7 +2439,11 @@ export async function fight(s, {
     // fatal. Out in the open, walking away is what stops the damage. In a safe spot,
     // walking away is what STARTS it: nothing can land a blow while you stand still
     // and do not swing, so the recovery move is to sit down where you are.
-    out.note = disengaged.early
+    out.note = disengaged.unarmed
+      ? `${disengaged.reason}. No further attack was sent. ` + (holdPosition
+        ? 'Hold this position without swinging while the keeper resolves recovery or re-arming.'
+        : 'The monster is still present and hostile; retreat before attempting recovery or re-arming.')
+      : disengaged.early
       ? `broke off early at ${disengaged.at_health} health: ${disengaged.target_band} target, but ` +
         `the observed exchange projected ${disengaged.projected_at_kill} health at the kill, below ` +
         `the configured reserve. The hard per-swing floor was not crossed.`

@@ -92,7 +92,57 @@ console.log('\n--- hostile-room provisioning refusal reads initialized vigor ---
   ok('the refusal diagnostic reports current vigor and hostile count',
      notes.length === 1 && notes[0].data?.vigor === 77 &&
        notes[0].data?.monsters_in_room === 1,
-     JSON.stringify(notes));
+      JSON.stringify(notes));
+}
+
+console.log('\n--- an empty larder creates food only below the effective fight floor ---');
+{
+  const run = async vigor => {
+    const w = world();
+    const p = Object.create(Autopilot.prototype);
+    p.policy = { vigorCeiling: 200 };
+    p.hold = null;
+    p.s = w.s;
+    p.sanctuary = () => true;
+    p.fightFloor = () => 80;
+    p.larder = () => [];
+    p.notedNoEatingHere = false;
+    p.warnedNoFood = true;
+    p.climbing = true;
+    p.note = () => {};
+    let cooks = 0, reagentReads = 0;
+    p.cookSomething = async () => { cooks++; return true; };
+    p.reagentCount = () => { reagentReads++; return { elderberry: 99, herbs: 99 }; };
+    const vitals = vigor === undefined
+      ? { health: { value: 30, max: 30 } }
+      : { health: { value: 30, max: 30 }, vigor: { value: vigor, max: 200 } };
+    const result = await p.provision({ vigorCeiling: 200 }, vitals);
+    return { result, cooks, reagentReads, climbing: p.climbing,
+             warnedNoFood: p.warnedNoFood };
+  };
+
+  const atFloor = await run(80);
+  ok('empty at 80 with floor 80 and ceiling 200 does not create food',
+     atFloor.result === false && atFloor.cooks === 0 && atFloor.reagentReads === 0 &&
+       atFloor.climbing === false && atFloor.warnedNoFood === false,
+     JSON.stringify(atFloor));
+
+  const belowFloor = await run(79);
+  ok('empty at 79 with floor 80 creates exactly once and handles the pass',
+     belowFloor.result === 'ate' && belowFloor.cooks === 1,
+     JSON.stringify(belowFloor));
+
+  const aboveFloor = await run(110);
+  ok('empty at 110 with floor 80 does not chase the ceiling by creating food',
+     aboveFloor.result === false && aboveFloor.cooks === 0 &&
+       aboveFloor.reagentReads === 0 && aboveFloor.climbing === false,
+     JSON.stringify(aboveFloor));
+
+  const unknown = await run(undefined);
+  ok('unknown vigor fails closed without creating food',
+     unknown.result === false && unknown.cooks === 0 && unknown.reagentReads === 0 &&
+       unknown.climbing === false,
+     JSON.stringify(unknown));
 }
 
 console.log('\n--- safe-spot arrival is confirmed, not predicted ---');
@@ -2115,16 +2165,24 @@ console.log('\n--- pairing loot runs ---');
 
 console.log('\n--- nobody starts a fight tired ---');
 {
-  const { STRATEGIES } = await import('./m59-autopilot.mjs');
-  // The floor has to be REACHABLE BY RESTING or it strands everyone without food, and
-  // twenty of twenty-five have none. Resting stops at the rest threshold of 80.
+  const { Autopilot, STRATEGIES } = await import('./m59-autopilot.mjs');
+  // The effective floor has to be REACHABLE BY RESTING or it strands everyone without
+  // food. Resting stops at the rest threshold of 80.
   const REST_STOPS_AT = 80;
   const floors = Object.entries(STRATEGIES)
     .map(([k, v]) => [k, v.vigorFloor ?? v.fightAboveVigor ?? 0]);
   ok('no strategy still permits fighting at any vigor',
-     floors.every(([, f]) => f >= 70), JSON.stringify(floors));
-  ok('the baseline floor is reachable without food', 70 < REST_STOPS_AT,
-     'resting alone stops at 80, so a floor of 70 can always be met by sitting down');
+     floors.every(([, f]) => f >= REST_STOPS_AT), JSON.stringify(floors));
+  const starved = {
+    policy: { strategy: 'baseline' },
+    s: { client: {} },
+    larder: () => [],
+    vigor: { starved_passes: 0 },
+  };
+  const starvedFloor = Autopilot.prototype.fightFloor.call(starved);
+  ok('the empty-larder baseline floor is exactly reachable by resting',
+     starvedFloor === REST_STOPS_AT,
+     `resting stops at ${REST_STOPS_AT}; effective floor is ${starvedFloor}`);
 
   // And the reader that all of this depends on: vigor is {value, scale_max}, not
   // {value, max}, so the old pct() silently returned null and every vigor decision in
