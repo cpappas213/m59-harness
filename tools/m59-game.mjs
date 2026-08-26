@@ -6720,6 +6720,11 @@ class Session {
   async attackRounds(targetId, swings = 4, { abortBelow = null } = {}) {
     const c = this.need();
     const messages = [];
+    // Keep one cursor through the stats barrier below. Monster condition prose is
+    // posted asynchronously by the server and can arrive after the first weapon
+    // event that wakes waitFor; advancing the cursor per swing would skip that late
+    // line permanently.
+    const roundCursor = c.evSeq;
     let aborted = null;
     const healthPct = () => {
       const h = c.vitals()?.health;
@@ -6738,8 +6743,16 @@ class Session {
       const before = c.evSeq;
       await this.pacer.submit('attack', () => c.attack(targetId), ATTACK_INTERVAL_MS);
       const ev = await c.waitFor({ since: before, timeoutMs: 2500 });
-      messages.push(...ev.events.filter(e => e.text).map(e => e.text));
-      if (ev.events.some(e => e.kind === 'vanished' && e.id === targetId)) break;
+      // waitFor resolves on the FIRST event. One combat exchange commonly arrives as
+      // several events in the same payload: weapon prose first, then the monster's
+      // 20%-health-band report, then a resistance line. The parser finishes that
+      // payload before this await resumes, so take the complete post-cursor slice or
+      // the health report that makes an adaptive retreat possible is silently lost.
+      // Older test transports do not expose eventsSince; their wait result remains a
+      // deliberate compatibility fallback.
+      const exchange = typeof c.eventsSince === 'function' ? c.eventsSince(before) : ev.events;
+      messages.push(...exchange.filter(e => e.kind === 'message' && e.text).map(e => e.text));
+      if (exchange.some(e => e.kind === 'vanished' && e.id === targetId)) break;
       if (!c.room.objects.has(c.selfId)) break;      // we died
       if (abortBelow != null) {
         const hp = healthPct();
@@ -6755,6 +6768,15 @@ class Session {
     // it and the stat only arrives when it changes.
     await this.pacer.submit('read', () => c.stats(1));
     await c.waitFor({ kinds: ['stat'], timeoutMs: 1500 });
+    // The stat request/response is the exchange-completion barrier: it is issued only
+    // after all swings, and by the time its reply lands the server's posted combat
+    // prose has crossed the same connection. Re-read from the ORIGINAL cursor so a
+    // condition line split into a later packet is still part of this result.
+    if (typeof c.eventsSince === 'function') {
+      const complete = c.eventsSince(roundCursor)
+        .filter(e => e.kind === 'message' && e.text).map(e => e.text);
+      messages.splice(0, messages.length, ...complete);
+    }
     return { messages, vitals: c.vitals(), aborted };
   }
 

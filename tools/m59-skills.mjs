@@ -73,6 +73,84 @@ export function landedHitSummary(messages = []) {
   return { hits, damage: damageKnown ? damage : null, damage_known_hits: damageKnown };
 }
 
+// THE SERVER'S MONSTER HEALTH BAR IS PROSE, IN FOUR 20% BANDS.
+//
+// Monster.HitPointThreshold emits these exact lines to the character whose kill
+// target is the damaged monster. Room objects carry no hit points, and inserting a
+// paced LOOK between swings would create the very combat gaps this skill removes.
+// Keep this parser anchored so ordinary sentences containing "near death" cannot be
+// mistaken for a health observation.
+const MONSTER_CONDITION_LINES = [
+  { band: 'slightly_wounded', lower: 0.6, upper: 0.8,
+    re: /^\s*(.+?)\s+is\s+slightly wounded\.\s*$/i },
+  { band: 'clearly_injured', lower: 0.4, upper: 0.6,
+    re: /^\s*(.+?)\s+is\s+clearly injured\.\s*$/i },
+  { band: 'seriously_wounded', lower: 0.2, upper: 0.4,
+    re: /^\s*(.+?)\s+is\s+seriously wounded\.\s*$/i },
+  { band: 'near_death', lower: 0, upper: 0.2,
+    re: /^\s*(.+?)\s+is\s+weak,\s*and near death\.\s*$/i },
+];
+const MONSTER_HEALING_LINE =
+  /^\s*(.+?)\s+falls back to recover for a moment, then returns to the fight\.\s*$/i;
+
+export function monsterConditionReport(value) {
+  const line = String(value ?? '');
+  const healed = MONSTER_HEALING_LINE.exec(line);
+  if (healed) return { name: healed[1].trim(), healing: true, band: null, upper: null };
+  for (const row of MONSTER_CONDITION_LINES) {
+    const match = row.re.exec(line);
+    if (match) return { name: match[1].trim(), healing: false,
+                        band: row.band, lower: row.lower, upper: row.upper };
+  }
+  return null;
+}
+
+const combatNameKey = value => String(value ?? '')
+  .toLowerCase().trim().replace(/^(?:the|an|a)\s+/, '').replace(/\s+/g, ' ');
+
+// A CONSERVATIVE RACE TO THE WITHDRAWAL FLOOR.
+//
+// This forecast can only make combat stop EARLIER. It never authorizes a swing below
+// disengageAt; attackRounds remains the hard per-swing guard. Two monotonic server
+// bands are required so an already-wounded target or one ambiguous line cannot invent
+// a damage rate. Player loss is measured over the same interval, then one worst
+// observed exchange is held back as latency/variance margin.
+export function combatRaceProjection({ observations = [], currentHealth = null,
+                                       disengageAt = DEFAULT_DISENGAGE_AT,
+                                       worstExchangeLoss = 0, round = 0 } = {}) {
+  if (!Number.isFinite(currentHealth) || !Number.isFinite(disengageAt)) return null;
+  const usable = observations.filter(o => Number.isFinite(o?.lower) &&
+    Number.isFinite(o?.upper) && Number.isFinite(o?.health));
+  if (usable.length < 2) return null;
+  const first = usable[0], latest = usable[usable.length - 1];
+  // Bucket-to-adjacent-bucket is NOT quantitative evidence: one large hit can land
+  // at the bottom of the first bucket and the next tiny hit can merely cross its
+  // boundary. The progress we can prove is the first bucket's LOWER edge minus the
+  // latest bucket's UPPER edge. That becomes positive only after spanning a whole
+  // intervening band, and deliberately leaves adjacent observations undecided.
+  const targetProgress = first.lower - latest.upper;
+  if (!(targetProgress > 0)) return null;
+
+  const selfLoss = Math.max(0, first.health - currentHealth);
+  const projectedLoss = selfLoss * latest.upper / targetProgress;
+  const margin = Math.max(0, Number(worstExchangeLoss) || 0);
+  const projectedHealth = currentHealth - projectedLoss - margin;
+  const elapsed = Math.max(1, Number(round) - Number(first.round ?? 0));
+  const targetPerRound = targetProgress / elapsed;
+  const remainingRounds = targetPerRound > 0 ? Math.ceil(latest.upper / targetPerRound) : null;
+  return {
+    winning: projectedHealth > disengageAt,
+    projected_health: Math.max(0, projectedHealth),
+    threshold: disengageAt,
+    target_band: latest.band,
+    target_upper: latest.upper,
+    target_progress: targetProgress,
+    observed_self_loss: selfLoss,
+    margin,
+    remaining_rounds: remainingRounds,
+  };
+}
+
 const pct = v => (v && v.max ? v.value / v.max : null);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -2038,6 +2116,9 @@ export async function fight(s, {
 
   let killed = false, disengaged = null, roundsFought = 0, drifted = null, stoodUp = false;
   const combatLines = [];
+  let targetCondition = null, conditionTrend = [], projection = null;
+  let lastRoundHealth = startPct, worstExchangeLoss = 0;
+  const matchesFoe = report => combatNameKey(report?.name) === combatNameKey(foeName);
 
   // FACE THE TARGET. An attack on something behind you is refused with a
   // message about view, not range. The walk may have turned us the wrong
@@ -2074,6 +2155,34 @@ export async function fight(s, {
     const res = await s.attackRounds(foe.id, swingsPerRound, { abortBelow: disengageAt });
     roundsFought++;
     combatLines.push(...res.messages);
+
+    // OUR BAR AND ITS BAR, ON THE SAME EXCHANGE CLOCK. attackRounds has already
+    // refreshed our stats. The target's four health buckets arrive as combat prose;
+    // use only lines naming this exact chosen species and reset the evidence if the
+    // server says it healed or reports a healthier bucket.
+    const roundHealth = pct(res.vitals?.health ?? c.vitals()?.health);
+    if (Number.isFinite(lastRoundHealth) && Number.isFinite(roundHealth))
+      worstExchangeLoss = Math.max(worstExchangeLoss, lastRoundHealth - roundHealth, 0);
+    if (Number.isFinite(roundHealth)) lastRoundHealth = roundHealth;
+    for (const line of res.messages) {
+      const report = monsterConditionReport(line);
+      if (!report || !matchesFoe(report)) continue;
+      if (report.healing) {
+        targetCondition = null;
+        conditionTrend = [];
+        projection = null;
+        continue;
+      }
+      targetCondition = report;
+      if (!Number.isFinite(roundHealth)) continue;
+      const observation = { ...report, health: roundHealth, round: roundsFought };
+      const previous = conditionTrend[conditionTrend.length - 1];
+      if (!previous) conditionTrend = [observation];
+      else if (observation.upper < previous.upper) conditionTrend.push(observation);
+      else if (observation.upper > previous.upper) conditionTrend = [observation];
+    }
+    projection = combatRaceProjection({ observations: conditionTrend,
+      currentHealth: roundHealth, disengageAt, worstExchangeLoss, round: roundsFought });
 
     // WE ARE STILL SITTING DOWN, AND THE SERVER JUST SAID SO.
     //
@@ -2152,6 +2261,20 @@ export async function fight(s, {
       break;
     }
     if (!c.room.objects.has(foe.id)) { killed = true; break; }
+    // The model says this exchange will spend the reserve before the target dies.
+    // Leave NOW, while still above the hard threshold. A favorable or uncertain
+    // projection changes nothing: the ordinary loop keeps swinging, and the hard
+    // per-swing guard remains the final authority.
+    if (projection && !projection.winning) {
+      disengaged = {
+        at_health: Math.round(hp * 100) + '%', early: true,
+        reason: 'projected to cross the disengage threshold before the target dies',
+        projected_at_kill: Math.round(projection.projected_health * 100) + '%',
+        target_band: projection.target_band,
+        target_at_most: Math.round(projection.target_upper * 100) + '%',
+      };
+      break;
+    }
   }
 
   await s.pacer.submit('read', () => c.stats(1));
@@ -2164,6 +2287,17 @@ export async function fight(s, {
     landed_hits: landed.hits,
     damage_dealt: landed.damage,
     health: { before: before.health, after: after.health },
+    ...(targetCondition ? { target_condition: {
+      band: targetCondition.band,
+      at_most: Math.round(targetCondition.upper * 100) + '%',
+    } } : {}),
+    ...(projection ? { projection: {
+      winning: projection.winning,
+      projected_health: Math.round(projection.projected_health * 100) + '%',
+      threshold: Math.round(projection.threshold * 100) + '%',
+      remaining_rounds: projection.remaining_rounds,
+      margin: Math.round(projection.margin * 100) + '%',
+    } } : {}),
     // Worth saying out loud: it means a round went nowhere, and it means whatever sat
     // this character down is not doing so again by itself.
     ...(stoodUp ? { stood_up: 'the first round was refused — we were resting' } : {}),
@@ -2182,7 +2316,11 @@ export async function fight(s, {
     // fatal. Out in the open, walking away is what stops the damage. In a safe spot,
     // walking away is what STARTS it: nothing can land a blow while you stand still
     // and do not swing, so the recovery move is to sit down where you are.
-    out.note = holdPosition
+    out.note = disengaged.early
+      ? `broke off early at ${disengaged.at_health} health: ${disengaged.target_band} target, but ` +
+        `the observed exchange projected ${disengaged.projected_at_kill} health at the kill, below ` +
+        `the configured reserve. The hard per-swing floor was not crossed.`
+      : holdPosition
       ? `broke off at ${disengaged.at_health} health while holding a safe spot. Do NOT walk away — ` +
         `rest where you stand. Nothing can hit you here unless you swing first, so this is a ` +
         `free heal back to full and then the fight again from the top.`

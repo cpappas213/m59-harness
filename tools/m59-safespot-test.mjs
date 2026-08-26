@@ -14,7 +14,7 @@
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync, readFileSync } from 'node:fs';
-import { Autopilot, farmRoomDenials,
+import { Autopilot, HANDLED, farmRoomDenials, releaseQuarry,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
@@ -1865,6 +1865,116 @@ console.log('\n--- no dead zone between "too hurt to fight" and "hurt enough to 
      `restAt is now ${restAt}, so 64% rests instead of waiting`);
   ok('and the two thresholds cannot cross', restAt >= engageAt,
      'whatever health it takes to be willing to fight is the health worth resting to');
+}
+
+console.log('\n--- a too-hurt farm pass re-reads the hostiles beside us ---');
+{
+  const run = async distance => {
+    const w = world({ health: 18, max: 30, vigor: 150 });
+    w.s.name = `too-hurt-${distance}`;
+    w.addMonster(11, distance, 0, MONSTER);
+    w.c.room.objects.get(11).nameRsc = 1;
+    w.s.need = () => w.c;
+    w.s.pacer = { submit: async (_kind, action) => action() };
+    w.c.requestInventory = () => {};
+    w.c.waitFor = async () => ({ events: [] });
+    w.c.spells = [];
+
+    const p = keeper(w);
+    p.policy.clearWeak = false;
+    p.policy.useSafeSpots = false;
+    p.policy.maxCarry = 50;
+    p.provision = async () => false;
+    p.sweepBroken = async () => {};
+    p.sweepGearCondition = async () => {};
+    p.armSelf = async () => false;
+    p.recordHealUse = () => {};
+    p.askForHelp = async () => {};
+    const notes = [], progress = [], stalled = [];
+    p.note = (message, data) => notes.push({ message, data });
+    p.progress = message => progress.push(message);
+    p.noProgress = message => stalled.push(message);
+
+    let result = null, error = null;
+    try {
+      result = await p.passFarm({
+        s: w.s, c: w.c, room: null, v: w.c.vitals(), hp: 18 / 30,
+      });
+    } catch (caught) {
+      error = caught;
+    } finally {
+      releaseQuarry(w.s.name);
+    }
+    return { p, notes, progress, stalled, result, error };
+  };
+
+  // REACH is three squares: this is the live shape that used to read an out-of-scope
+  // `near` after the heal attempt and throw before it could report the corner.
+  const cornered = await run(2);
+  const cornerNote = cornered.notes.find(n => n.message === 'cornered while too hurt to engage');
+  ok('the adjacent-hostile recovery branch executes without throwing',
+     !cornered.error && cornered.result === HANDLED,
+     cornered.error ? String(cornered.error) : String(cornered.result));
+  ok('a hurt keeper with a hostile in reach is explicitly cornered and stalled',
+     cornered.p.doing === 'recovering' && cornerNote?.data?.crowd === 1 &&
+       cornerNote?.data?.what?.[0] === 'giant rat' &&
+       cornered.stalled.includes('too hurt to fight and not safe enough to rest') &&
+       cornered.progress.length === 0,
+     JSON.stringify({ doing: cornered.p.doing, cornerNote, stalled: cornered.stalled,
+                      progress: cornered.progress }));
+
+  const recovering = await run(4);
+  ok('the same failed heal reports genuine recovery when no hostile is in reach',
+     !recovering.error && recovering.result === HANDLED &&
+       recovering.p.doing === 'recovering' && recovering.stalled.length === 0 &&
+       recovering.progress.includes('recovering to fighting strength'),
+     recovering.error ? String(recovering.error)
+       : JSON.stringify({ doing: recovering.p.doing, stalled: recovering.stalled,
+                          progress: recovering.progress }));
+}
+
+console.log('\n--- legacy farm combat uses the policy round budget ---');
+{
+  const w = world();
+  w.s.name = 'farm-round-budget';
+  w.addMonster(12, 1, 0, MONSTER);
+  w.c.room.objects.get(12).nameRsc = 1;
+  w.s.need = () => w.c;
+  w.s.pacer = { submit: async (_kind, action) => action() };
+  w.c.stats = () => {};
+  w.c.waitFor = async () => ({ events: [] });
+  w.c.face = async () => {};
+  w.c.lookup = id => w.c.room.objects.get(id);
+  let swings = 0;
+  w.s.attackRounds = async () => {
+    swings++;
+    return { messages: [], aborted: null };
+  };
+  const p = keeper(w);
+  const fight = () => p.fightFarmTarget({
+    target: 'giant rat', preferId: 12, disengageAt: 0.1,
+    loot: false, equip: false, holdPosition: true, reach: 3,
+  });
+
+  const defaultFight = await fight();
+  ok('the default policy is visible and reaches the real fight skill as 30 rounds',
+     p.status().policy.fightRounds === 30 && defaultFight.rounds === 30 && swings === 30,
+     JSON.stringify({ policy: p.status().policy.fightRounds,
+                      result: defaultFight.rounds, swings }));
+
+  p.policy.fightRounds = 7.8;
+  swings = 0;
+  const configuredFight = await fight();
+  ok('a configured farm round budget is normalized to a positive integer and used',
+     configuredFight.rounds === 7 && swings === 7,
+     JSON.stringify({ result: configuredFight.rounds, swings }));
+
+  p.policy.fightRounds = 0;
+  swings = 0;
+  const invalidFight = await fight();
+  ok('an invalid loadout round budget fails safely back to 30',
+     invalidFight.rounds === 30 && swings === 30,
+     JSON.stringify({ result: invalidFight.rounds, swings }));
 }
 
 console.log('\n--- fleetmates are not prey ---');

@@ -1304,6 +1304,10 @@ export class Autopilot {
       // Vigor to reach before picking a fight. Resting alone tops out at the rest
       // threshold (80 of 200); anything above it has to be eaten.
       fightAboveVigor: MIN_FIGHT_VIGOR,
+      // A farm pass is a sustained engagement, not the three-swing probe that the
+      // general-purpose fight skill defaults to. Kept in policy so an operator can
+      // deliberately shorten it for a fragile character.
+      fightRounds: 30,
       // Disconnect rather than die when a single exchange could finish us. Set false
       // to forbid it — but it is the most effective survival move available when we
       // have nowhere safe to stand, and the penalties the game attaches to logging
@@ -12394,6 +12398,16 @@ export class Autopilot {
     return HANDLED;
   }
 
+  // FARM COMBAT HAS A DIFFERENT CLOCK FROM THE ONE-SHOT FIGHT TOOL. Keep that policy
+  // at this one legacy call boundary so the PvP and scavenging callers retain their
+  // own round counts.
+  async fightFarmTarget(options) {
+    const requested = this.policy.fightRounds ?? 30;
+    const whole = Math.floor(Number(requested));
+    const rounds = Number.isFinite(whole) && whole >= 1 ? whole : 30;
+    return skills.fight(this.s, { ...options, rounds });
+  }
+
   async passFarm(ctx) {
     const { s, c, room, v, hp } = ctx;
     // Before any work is chosen: is there an unfinished journey to pick back up? Ahead of
@@ -12847,10 +12861,14 @@ export class Autopilot {
           // refusing to fight or flee is the definition of stuck. Reporting progress
           // in that state is what let the dead zone hide for so long.
           this.doing = 'recovering';
-          if (near.length) {
+          // Re-read the live room here. The similarly named `near` belongs to the
+          // earlier flee/rest pass and is not in this function's scope; more importantly,
+          // a heal attempt can itself consume time in which the room changes.
+          const adjacentHostiles = this.inReachOfUs();
+          if (adjacentHostiles.length) {
             this.note('cornered while too hurt to engage', {
-              health: Math.round(hp * 100) + '%', crowd: near.length,
-              what: near.map(o => c.rsc.get(o.nameRsc)),
+              health: Math.round(hp * 100) + '%', crowd: adjacentHostiles.length,
+              what: adjacentHostiles.map(o => c.rsc.get(o.nameRsc)),
               why: 'cannot rest with something on us and not healthy enough to start a fight' });
             this.noProgress('too hurt to fight and not safe enough to rest');
           } else {
@@ -13464,11 +13482,11 @@ export class Autopilot {
       const claimedSwing = swingAt ?? found[0]?.id ?? null;
       if (claimedSwing != null) claimQuarry(this.s.name, room?.num, claimedSwing);
       if (this.policy.partner) party.declareTarget(this.s.name, claimedSwing, engageName);
-      const f = await skills.fight(s, { target: engageName,
-                                        preferId: claimedSwing,
-                                        disengageAt: safe.fleeAt, loot: true,
-                                        holdPosition: holding, reach: REACH,
-                                        weaponPriority: this.weaponPriorityNow() });
+      const f = await this.fightFarmTarget({ target: engageName,
+                                             preferId: claimedSwing,
+                                             disengageAt: safe.fleeAt, loot: true,
+                                             holdPosition: holding, reach: REACH,
+                                             weaponPriority: this.weaponPriorityNow() });
 
       // NOTHING IN REACH. At a held wall, fetch the quarry with the established
       // hit-and-return pull. In open-field mode, close only a bounded path prefix so
