@@ -114,9 +114,39 @@ async function fetchJson(url, { timeoutMs = 2500, method = 'GET', headers = {}, 
   });
 }
 
+// A BROKER TOO BUSY TO ANSWER IN 2.5s IS THE ONE YOU MOST NEED TO STOP.
+//
+// This probed once, for 2500ms, and treated silence as "not ours" — so `stop` refused to
+// stop the exact broker whose wedged event loop was the reason for stopping it. Measured on
+// prod: `/health` answered correctly, with the right fleet, roster and root, after 45
+// SECONDS. The refusal said "not answering on 8901", which reads as a dead port and is
+// nothing of the kind.
+//
+// This is the same trap `m59-which.mjs` was fixed for and this file never was. CLAUDE.md
+// states it plainly: prod's /health was 1046ms idle and 2573ms under load against 4ms for
+// an idle broker, so a 2500ms probe sat ON the documented under-load figure — the busiest
+// broker is the one most likely to be missed, and it is always the one that matters.
+//
+// Fast probe first, so an idle broker still answers in milliseconds and nothing gets slower
+// in the common case. Only on silence does it ask again with real patience, because at that
+// point the question has changed from "who is there" to "is anyone there at all", and that
+// answer is worth waiting for. M59_HEALTH_TIMEOUT_MS overrides the patient one.
+const HEALTH_PATIENT_MS = Number(process.env.M59_HEALTH_TIMEOUT_MS || 60000);
+
 async function health(port = HTTP_PORT, timeoutMs = 2500) {
-  const j = await fetchJson(`http://127.0.0.1:${port}/health`, { timeoutMs });
-  return j && j.ok ? j : null;
+  const quick = await fetchJson(`http://127.0.0.1:${port}/health`, { timeoutMs });
+  if (quick && quick.ok) return quick;
+  if (HEALTH_PATIENT_MS <= timeoutMs) return null;
+  const began = Date.now();
+  const slow = await fetchJson(`http://127.0.0.1:${port}/health`, { timeoutMs: HEALTH_PATIENT_MS });
+  if (slow && slow.ok) {
+    // SAID OUT LOUD, because a broker that needs this long is not healthy even though it
+    // answered, and the number is the only warning anybody gets before it stops answering.
+    console.error(`  note: the broker on ${port} took ${Math.round((Date.now() - began) / 1000)}s ` +
+                  `to answer /health — its event loop is heavily blocked`);
+    return slow;
+  }
+  return null;
 }
 
 const sameRepo = (h) => {
