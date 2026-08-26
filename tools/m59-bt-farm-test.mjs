@@ -462,6 +462,62 @@ t('fightNode retreats when breaking off in the open (not holding a spot)', async
   if (retreated !== 1) throw new Error(`expected a retreat in the open, got ${retreated}`);
 });
 
+t('fightNode carries an unarmed weapon-loss reason into the retreat', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = null; k.holdWorks = () => false;
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  const reason = 'the weapon shattered and no verified replacement could be equipped';
+  k._btFarmFight = async () => ({ killed: false, died: false, rounds: 1, target: 'giant rat',
+    disengaged: { at_health: '88%', unarmed: true, reason }, note: reason });
+  let retreat = null;
+  k.retreatToSafety = async args => { retreat = args; return { left: true }; };
+  const r = await fightNode(k).tickAsync(bb(k));
+  if (r !== SUCCESS || retreat?.because !== reason || retreat?.unarmed !== true)
+    throw new Error(`weapon-loss cause was not preserved: ${JSON.stringify({ r, retreat })}`);
+});
+
+t('fightNode leaves a held wall before retreating unarmed, without resting or discrediting it', async () => {
+  const k = mockKeeper({ hibernation: false });
+  k.hold = { col: 1, row: 1, proven: true };
+  k.atHold = () => true;
+  k.holdWorks = () => true;
+  k.policy.hunt = 'giant rat';
+  k._btFarmFoundTargets = () => [{ id: 1, nameRsc: 'giant rat' }];
+  k.inReachOfUs = () => [];
+  const reason = 'the weapon shattered and no verified replacement could be equipped';
+  k._btFarmFight = async () => ({ killed: false, died: false, rounds: 1, target: 'giant rat',
+    disengaged: { at_health: '88%', unarmed: true, reason }, note: reason });
+
+  const persistedBook = { rooms: { 999: { '1,1': { held: 3, failed: 0, verified: true } } } };
+  k.book = persistedBook;
+  const bookBefore = JSON.stringify(persistedBook);
+  const order = [];
+  let leave = null, retreat = null, restReads = 0;
+  k.s.need = () => { restReads++; return k.s.client; };
+  k.leaveHold = async (why, options) => {
+    order.push('leave');
+    leave = { why, options };
+    k.hold = null;
+    return { left: true };
+  };
+  k.retreatToSafety = async args => {
+    order.push('retreat');
+    retreat = args;
+    return { left: true };
+  };
+
+  const r = await fightNode(k).tickAsync(bb(k));
+  if (r !== SUCCESS || order.join(',') !== 'leave,retreat' ||
+      leave?.why !== reason || leave?.options?.force !== true ||
+      retreat?.because !== reason || retreat?.unarmed !== true || restReads !== 0 ||
+      JSON.stringify(persistedBook) !== bookBefore)
+    throw new Error(`unsafe held-wall weapon recovery: ${JSON.stringify({
+      r, order, leave, retreat, restReads, persistedBook,
+    })}`);
+});
+
 t('fightNode treats a stale hold as open field when safe spots are disabled', async () => {
   const k = mockKeeper({ hibernation: false });
   k.policy.useSafeSpots = false;

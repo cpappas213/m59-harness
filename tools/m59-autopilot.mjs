@@ -13670,7 +13670,23 @@ export class Autopilot {
       // held safe spot rests where it stands; everything else leaves the room.
       if (f.disengaged) {
         const hp = v.health?.max ? Math.round(100 * v.health.value / v.health.max) + '%' : null;
-        if (holding && this.holdWorks?.()) {
+        if (f.disengaged.unarmed) {
+          const reason = f.disengaged.reason
+            ?? 'the weapon was lost and no verified replacement could be equipped';
+          // A wall limits how many monsters can join the fight; it does not make the
+          // one we deliberately engaged harmless. Leave the live pocket before asking
+          // recovery to choose a refuge, or retreatToSafety() correctly sees the hold
+          // and returns without moving. leaveHold() does not discredit the saved spot.
+          if (holding) await this.leaveHold(reason, { force: true }).catch(() => null);
+          await this.retreatToSafety({
+            because: reason,
+            mid_round: !!f.disengaged.mid_round,
+            unarmed: true,
+            still_here: (this.inReachOfUs() ?? []).length,
+          });
+          this.progress('retreated after losing the weapon');
+          return HANDLED;
+        } else if (holding && this.holdWorks?.()) {
           this.note('broke off behind the wall — resting here rather than running', {
             at_health: f.disengaged.at_health, mid_round: !!f.disengaged.mid_round,
             why: 'nothing can hit us on this square unless we swing first, so standing still ' +
