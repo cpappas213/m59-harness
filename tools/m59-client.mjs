@@ -1221,6 +1221,40 @@ export class M59Client {
     this.roomContentsRequested = request;
     return request;
   }
+
+  /**
+   * GIVE UP ON EVERY ROOM-CONTENTS REPLY UP TO `upTo`, AND SAY SO OUT LOUD.
+   *
+   * These two counters are ordinals: `roomContents()` hands out a request number and the
+   * BP_ROOM_CONTENTS handler counts replies, so "has my read landed" is
+   * `received >= request`. That is exactly right while every request gets a reply, and it
+   * has no way back if one does not — the requested side climbs on every ask and the
+   * received side cannot, so ONE lost reply puts them permanently out of step and every
+   * future read waits on an ordinal that can never arrive.
+   *
+   * It is not hypothetical and it is not rare. Two characters on the shadow fleet recorded
+   * 600 hops each with a 0% success rate over four and a half hours — 1,180 failures, all
+   * `position_confirmation_timeout`, 80% of everything the fleet logged. Fresh keepers in
+   * the same room confirmed their position in 345ms, so it was never the room: it was one
+   * dropped packet, hours earlier, that the session could not forgive. And drops were the
+   * expected case, because fine movement was sending a move AND a read four times a second
+   * into a server that discards anything over five (INCOMING_PACKET_THROTTLE).
+   *
+   * A reader that has waited out its deadline KNOWS those replies are not coming, so it
+   * retires them and the next read starts even. The cost is bounded and named: if a reply
+   * was merely slow and lands just after being retired, one subsequent read may be
+   * satisfied by a snapshot older than it wanted. That is the staleness `confirmPosition`
+   * warns about, for one read, against a session that otherwise never moves again.
+   */
+  retireRoomContents(upTo = this.roomContentsRequested) {
+    const target = Math.max(this.roomContentsReceived, Number(upTo) || 0);
+    const lost = target - this.roomContentsReceived;
+    if (lost > 0) {
+      this.roomContentsReceived = target;
+      this.roomContentsLost = (this.roomContentsLost ?? 0) + lost;
+    }
+    return lost;
+  }
   players()             { this.send(BP.SEND_PLAYERS); }
   go()                  { this.send(BP.REQ_GO); }
 
@@ -1302,7 +1336,18 @@ export class M59Client {
 
       case BP.ROOM_CONTENTS: {
         const res = parseRoomContents(body);
-        if (!this.check('ROOM_CONTENTS', res)) { this.lastRoomHex = body.toString('hex'); break; }
+        if (!this.check('ROOM_CONTENTS', res)) {
+          this.lastRoomHex = body.toString('hex');
+          // A REPLY WE COULD NOT READ IS STILL A REPLY, AND THE ORDINAL MUST MOVE.
+          //
+          // Breaking here without touching the counter is the second way to fall
+          // permanently behind — see retireRoomContents. The server answered; this end
+          // could not parse it. Retiring the ordinal costs one unusable snapshot and keeps
+          // the session able to read anything ever again, where leaving it costs every
+          // future read. The parse failure itself is already reported by `check`.
+          this.retireRoomContents(this.roomContentsReceived + 1);
+          break;
+        }
         const request = ++this.roomContentsReceived;
         this.room.id = res.roomId;
         this.room.objects = new Map(res.objects.map(o => {

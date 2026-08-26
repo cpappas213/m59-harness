@@ -528,7 +528,12 @@ export async function supplyBetween(a, deps) {
       const n = nameOf(o);
       const received = (recvAfter.get(n) || 0) - (recvBefore.get(n) || 0);
       const giver_lost = (giveBefore.get(n) || 0) - (giveAfter.get(n) || 0);
-      (received > 0 ? moved : missed).push({ name: n, asked: o.amount ?? 1, received, giver_lost });
+      // `|| 1`, NOT `?? 1`. A non-stack honestly carries amount 0 now — that is the whole
+      // point of publishing the wire's answer — and `?? 1` does not catch a zero, so a
+      // hammer that moved reported `asked: 0, received: 1`. Measured on shadow the first
+      // time a mixed offer worked. Nothing was wrong with the delivery; the report was
+      // arithmetic nonsense, which is the kind of thing that gets believed.
+      (received > 0 ? moved : missed).push({ name: n, asked: o.amount || 1, received, giver_lost });
     }
     // SUPPLIED MEANS ALL OF IT. A partial hand-over is something the caller has to know
     // about and retry: the almoner cooks immediately after a delivery, and a half-filled

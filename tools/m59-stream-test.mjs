@@ -35,6 +35,7 @@ const eq = (what, got, want) =>
 
 // include/proto.h
 const BP_USE = 203, BP_UNUSE = 204, BP_USE_LIST = 205, BP_SAID = 206, BP_MESSAGE = 32;
+const BP_ROOM_CONTENTS = 134;   // m59-client.mjs BP table - the read confirmPosition waits on
 
 const u32 = n => { const b = Buffer.alloc(4); b.writeUInt32LE(n >>> 0, 0); return b; };
 const u16 = n => { const b = Buffer.alloc(2); b.writeUInt16LE(n & 0xffff, 0); return b; };
@@ -259,6 +260,76 @@ console.log('\nthe transcript has its own bound too');
   ok('it is capped', c.chat.length === c.maxChat, `${c.chat.length}`);
   ok('keeping the newest', c.chat[c.chat.length - 1].text === `line ${c.maxChat + 49}`);
   ok('and the sequence keeps counting past the cap', c.chatSeq === c.maxChat + 50);
+}
+
+// ---------------------------------------------------- the read that never recovers
+//
+// THE MOST EXPENSIVE BUG THIS FLEET HAS RECORDED, AND IT IS TWO COUNTERS.
+//
+// `roomContents()` hands out an ordinal and the BP_ROOM_CONTENTS handler counts replies, so
+// "has my read landed" is `received >= request`. Correct while every request gets a reply,
+// and unrecoverable when one does not: the requested side climbs on every ask and the
+// received side cannot, so ONE lost reply puts them permanently out of step and every later
+// read waits on an ordinal that can never arrive.
+//
+// Measured on the shadow fleet: two characters, 600 hops each, 0% success, 1,180
+// consecutive `position_confirmation_timeout` across four and a half hours - 80% of
+// everything the fleet logged. Fresh keepers in the SAME room confirmed in 345ms, which is
+// what proves it was session state rather than geometry.
+//
+// This drives the real client, because the bug was in the real bookkeeping.
+console.log('\na lost room-contents reply must not poison every later read');
+{
+  const c = client();
+  // `roomContents()` puts a real packet on the wire, and these fixtures have no wire. The
+  // ordinals are the subject here, not the bytes, so the socket is a sink.
+  c.sock = { write() {} };
+  const first = c.roomContents();
+  ok('a request hands out an ordinal', first === 1, 'got ' + first);
+  ok('and nothing has been received yet', c.roomContentsReceived === 0);
+
+  // The reply never comes - the ordinary case when the walker is over the five-packet
+  // throttle and the server discards the request.
+  const second = c.roomContents();
+  ok('the next request climbs regardless', second === 2, 'got ' + second);
+  ok('so the received side is now behind', c.roomContentsReceived < second);
+
+  // A reader that has waited out its deadline knows those replies are not coming.
+  const lost = c.retireRoomContents(second);
+  eq('retiring says how many were given up on', lost, 2);
+  ok('and the two sides are level again', c.roomContentsReceived === second);
+  ok('the loss is counted rather than hidden', c.roomContentsLost === 2);
+
+  // THE POINT OF ALL OF IT: a later read can succeed again.
+  const third = c.roomContents();
+  c.roomContentsReceived++;                     // one real reply arrives
+  ok('a later read is satisfiable again', c.roomContentsReceived >= third,
+     'received ' + c.roomContentsReceived + ', wanted ' + third);
+
+  // Retiring must never run the counter BACKWARDS: a late reply landing after its ordinal
+  // was retired must not un-count a good read.
+  const before = c.roomContentsReceived;
+  eq('retiring an old ordinal is a no-op', c.retireRoomContents(1), 0);
+  ok('and cannot lower the received count', c.roomContentsReceived === before);
+}
+
+console.log('\nand a reply that cannot be parsed still moves the ordinal');
+{
+  const c = client();
+  c.sock = { write() {} };
+  const request = c.roomContents();
+  // A reply the server really sent and this end cannot use: a well-formed header with a
+  // trailing byte, so it parses but lands `exact: false` and `check` rejects it. That is
+  // the branch that mattered — breaking out of it without touching the counter is the
+  // second way to fall permanently behind, and it needs no dropped packet at all.
+  //
+  // Deliberately NOT a short buffer: `parseRoomContents` THROWS on one of those rather
+  // than returning a failed check, which is a different fault with a different remedy.
+  c.onGameMessage(BP_ROOM_CONTENTS, Buffer.concat([u32(1), u16(0), Buffer.from([0xff])]));
+  ok('the unreadable reply is retired rather than ignored',
+     c.roomContentsReceived >= request,
+     'received ' + c.roomContentsReceived + ', requested ' + request);
+  ok('and it is counted as a loss, not as a good read', (c.roomContentsLost ?? 0) >= 1);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

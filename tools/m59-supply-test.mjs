@@ -287,6 +287,24 @@ section('A STACK IS OFFERED WITH ITS QUANTITY, BECAUSE A BARE ID MEANS ONE');
   ok('and the stack beside it still carries its count',
      items[1] && typeof items[1] === 'object' && items[1].amount === 9, JSON.stringify(items));
 }
+{
+  // AND THE REPORT HAS TO SURVIVE AN HONEST ZERO. A non-stack carries amount 0 now, which
+  // is the point of publishing the wire's answer — but `asked: o.amount ?? 1` does not
+  // catch a zero, so the first mixed offer that worked on shadow reported a hammer as
+  // `asked: 0, received: 1`. The delivery was fine and the arithmetic was nonsense, which
+  // is the kind of line that gets believed.
+  const { giver, recv } = twoInOneRoom({ nothingMoves: true });
+  giver._fake.items = [{ id: 31, name: 'short sword', amount: 0 }];
+  giver._fake.rebuild();
+  giver._fake.onAccept = () => {
+    giver._fake.items = [];
+    recv._fake.items.push({ id: 41, name: 'short sword', amount: 0 });
+  };
+  const out = await supplyBetween({ from: 'g', to: 'r', what: [31], who_travels: 'neither' },
+                                  deps({ g: giver, r: recv }));
+  ok('one of a thing that does not stack is asked for as one, not as zero',
+     out.amounts[0]?.asked === 1 && out.amounts[0]?.received === 1, JSON.stringify(out.amounts));
+}
 
 section('A NAME CANNOT ANSWER "DID THIS TRADE HAPPEN". AN AMOUNT CAN');
 {

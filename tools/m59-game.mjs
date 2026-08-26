@@ -1969,7 +1969,20 @@ class Session {
       cursor = reply.seq;
     }
     Pacer.note('confirm_position', 'blocked', Date.now() - t0);
-    if (!fresh) return null;
+    if (!fresh) {
+      // RETIRE WHAT WE JUST GAVE UP ON, or this call has poisoned every future one.
+      //
+      // `request` is an ordinal and the wait above is `received >= request`. Returning null
+      // without retiring leaves the requested side one ahead for the rest of the session,
+      // so the NEXT confirm asks for a higher ordinal that is also unreachable, and so on
+      // forever. Measured: two characters, 1,180 consecutive `position_confirmation_timeout`
+      // over four and a half hours, while fresh keepers in the same room confirmed in
+      // 345ms. The room was never the problem; this line was.
+      const lost = c.retireRoomContents?.(request) ?? 0;
+      if (lost) this.log?.(`confirmPosition gave up on ${lost} room-contents reply(ies); ` +
+                           `retired them so the next read can succeed`);
+      return null;
+    }
     return c.self ? { col: c.self.col, row: c.self.row } : null;
   }
 
