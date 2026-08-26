@@ -7622,8 +7622,9 @@ const TOOLS = [
       fight_above_vigor: { type: 'number', minimum: 0, maximum: 200,
         description: 'configured minimum vigor for picking a fight; an exact match satisfies it. ' +
           'Resting alone tops out at 80 of 200, and above that only food will do it. The keeper ' +
-          'may apply its higher internal food-backed minimum, but falls back to the rest-reachable ' +
-          '80 when the larder is empty. An explicit value overrides the selected strategy floor ' +
+          'uses its higher internal food-backed minimum only when this argument is omitted, and ' +
+          'caps any requested floor to what resting plus carried food can actually reach. An ' +
+          'explicit value overrides both the internal minimum and the selected strategy floor ' +
           'and deliberately leaves its provisioning ceiling separate' },
       inky_reserve: { type: 'boolean',
         description: 'FIGHT BELOW THE VIGOR FLOOR WHILE HOLDING FOOD TOO BIG TO EAT. `eat` refuses ' +

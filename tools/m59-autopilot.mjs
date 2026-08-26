@@ -914,7 +914,11 @@ const vigorPct = v => {
 // So the floor is now set by what a character needs to FIGHT WELL, and the food supply
 // is expected to meet it. That is not a free choice — everything above 80 has to be
 // eaten — which is exactly why the larder and the vigor floor are one problem.
-const MIN_FIGHT_VIGOR = 100;      // never start a fight below this while there is food
+// The keeper's DEFAULT safety floor when nobody has supplied a tactical floor. It must
+// not override `fight_above_vigor`: that broker argument is an explicit operator/controller
+// decision, and values at the resting cap are useful for bounded farms that deliberately
+// do not have a food loop.
+const MIN_FIGHT_VIGOR = 100;
 const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 // The game's own ceiling: `eat` refuses anything that would carry vigor past it.
 const VIGOR_CAP = 200;
@@ -1655,17 +1659,27 @@ export class Autopilot {
   // engaged at 70 anyway, and the whole strategy comparison was measuring nothing.
   fightFloor(plan = STRATEGIES[this.policy.strategy] || {}) {
     const p = this.policy;
-    // fightAboveVigor was the old single knob; it still works, as the floor.
-    const want = Math.max(MIN_FIGHT_VIGOR,
-      p.vigorFloor ?? plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
+    // `vigorFloor` is written only by an explicit broker/loadout override. Once present,
+    // it is the decision -- silently clamping `fight_above_vigor: 80` to the internal 100
+    // left a no-food keeper at the 80 resting cap forever: it selected a quarry, refused
+    // to swing, rested back to the same 80, and repeated. The internal minimum remains the
+    // safe default when no explicit floor exists.
+    const want = p.vigorFloor != null
+      ? p.vigorFloor
+      : Math.max(MIN_FIGHT_VIGOR,
+          plan.vigorFloor ?? p.fightAboveVigor ?? plan.fightAboveVigor ?? 0);
     // An empty larder puts the floor out of reach — resting stops at 80 — so holding
     // out for it would idle the character for ever. Fall back to what resting can
     // deliver, and COUNT it: this is the food supply failing, not a fighting decision,
     // and it should show up as a supply number rather than as a quiet slowdown.
     const larder = this.larder(this.s.client);
     if (!larder.length) {
-      this.vigor.starved_passes++;
-      return Math.min(want, STARVED_FIGHT_VIGOR);
+      const reachable = Math.min(want, STARVED_FIGHT_VIGOR);
+      // An explicit floor at or below the resting cap needs no food. Calling that a
+      // starved pass made the status claim a supply failure while the keeper was doing
+      // exactly what its order asked.
+      if (reachable < want) this.vigor.starved_passes++;
+      return reachable;
     }
     // A LARDER THAT IS NOT EMPTY CAN STILL BE TOO SMALL. See reachableFightFloor: resting
     // stops at 80 and the rest has to be eaten, so one mushroom against a floor of 140 is
