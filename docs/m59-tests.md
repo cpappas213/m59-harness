@@ -3,6 +3,26 @@
 Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time; they open no socket and touch no roster.
 
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (116),
+  `node tools/m59-render-test.mjs` (81 — **what a renderer gets from a keeper-backed
+  broker**, which for a while was nothing at all. Out-of-process keepers are the default and
+  the broker holds a snapshot rather than a World, so `look` and `/rts/v1/read` answered a map
+  with the keeper's `/state`: vitals, pack, skills, spells, and NO POSITION AND NO ROOM
+  CONTENTS. Measured on prod with twenty-one characters in game, `/rts/v1/read` returned
+  `looks: { t1: {}, ... }` for the whole fleet at status 200 — the strategy game drew an empty
+  room for a fleet standing in it and reported no error. This pins the reshape from the
+  keeper's `/room-view` into `World.perception()`'s shape: that a facing of 90 degrees is
+  SOUTH, that the room's size comes from the `.roo` and not from the 50x48 the keeper sends
+  for every room, that affordances come from the flag word through `affordances()` so a
+  renderer can tell a merchant from a mummy from a bar stool, that an older keeper sending
+  only two booleans gets exactly what those two booleans support and not one bit more, and —
+  the rule with teeth — that an unavailable room view publishes NO `room` key rather than a
+  null one, because this projection is folded OVER a state that does know the room and a null
+  would overwrite a true answer with a false one. It also pins `keeperView`, the composition
+  `look` actually returns — every field `arrivalReport` reads, exercised the way it reads
+  them, because an ASYNC `view()` made `v.objects` a promise property and killed twenty-one
+  of twenty-one travels with `Cannot read properties of undefined`; and the rule that a
+  position from a room the character has LEFT is withheld and the disagreement reported,
+  rather than handed to an arrival report as fact) and
   `node tools/m59-chat-test.mjs` (128) and
   `node tools/m59-rest-test.mjs` (38) and
   `node tools/m59-ledger-test.mjs` (25) and

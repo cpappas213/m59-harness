@@ -105,8 +105,26 @@ The broker:
 
 - 8901: broker HTTP (MCP tools)
 - 8902: dashboard
-- 8911-8950: keeper t1-t40 (8911 + agent_index)
+- 8911-8950: keeper t1-t40 (8911 + agent_index, then the first port a keeper can BIND)
 - 8951-8990: reserved for future use
+
+**THE KEEPER RANGE IS FORTY PORTS WIDE AND IT HAS NEIGHBOURS.** `8911 + agent_index` was
+only ever a starting guess, and two things collide with it in practice:
+
+- **Two fleets on one machine want the same numbers.** `prod`'s t10 and `shadow`'s shadow10
+  are both index 9 and both want 8920. Whichever broker bound it first owned it, and the
+  other one polled it anyway — reading a stranger's keeper and believing the answer. That is
+  why `keeperPort` remembers what was actually allocated and why the free-port check is a
+  bind attempt rather than an HTTP probe: "nothing answered in two seconds" is not "free",
+  and reading it that way left three production characters with no keeper at all.
+- **`meridian59-dum-bot` serves its strategy-control API on 8916 by default**, which is
+  `KEEPER_PORT_BASE + 5`. Any fleet of six or more reaches it, so on this machine a keeper
+  owns that port and answers every request the DUM bot was meant to. Observed from
+  `maps/m59-strategy-game`: `GET :8916/observability` returning
+  `{"error":"unknown endpoint: GET /observability"}` — a keeper's 404, rendered in a page as
+  though the bot had refused. The two are distinguishable by `/health`: a keeper names its
+  `agent`, the DUM control service names its `fleet`. Either side can move; whoever does not
+  should at least identify who answered before reporting a failure.
 
 ---
 
