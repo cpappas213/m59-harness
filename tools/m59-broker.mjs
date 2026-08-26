@@ -7441,7 +7441,10 @@ const TOOLS = [
       mode: { type: 'string', enum: ['survive', 'farm', 'idle', 'tick'] },
       hunt: { type: 'string', description: 'creature name for farm mode — required, never guessed' },
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
-      flee_below: { type: 'number', description: 'withdraw under this fraction, default 0.4' },
+      flee_below: { type: 'number',
+        description: 'withdraw when health/max is strictly below this fraction. When supplied, ' +
+          'this exact operator boundary overrides the adaptive two-hit margin; omit it to retain ' +
+          'the adaptive default' },
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
       max_weapons: { type: ['number', 'null'],
         description: 'weapons retained after selling, including the equipped weapon. Default 2; null removes the limit' },
@@ -7911,7 +7914,9 @@ const TOOLS = [
       }
       if (a.hunt !== undefined) p.policy.hunt = a.hunt;
       if (a.rest_below !== undefined) p.policy.restBelow = Number(a.rest_below);
-      if (a.flee_below !== undefined) p.policy.fleeBelow = Number(a.flee_below);
+      // Explicit means exact. safetyFor retains its adaptive two-hit floor only for a
+      // default/implicit policy; the marker is persisted with the policy below.
+      skills.applyFleeBelowPolicy(p.policy, a.flee_below);
       if (a.max_carry !== undefined) p.policy.maxCarry = Number(a.max_carry);
       if (a.max_weapons !== undefined)
         p.policy.maxWeapons = a.max_weapons == null
