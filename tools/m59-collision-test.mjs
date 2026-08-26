@@ -1042,6 +1042,23 @@ const DeadlinePacer = liftClass(brokerSource, 'class Pacer {', 'Pacer', {
   remainingDoorSettle: () => 0,
 });
 ok('the production Pacer compiled for deadline regression', typeof DeadlinePacer === 'function');
+if (typeof DeadlinePacer === 'function') {
+  const priorityPacer = new DeadlinePacer(1000);
+  priorityPacer.lastByKind.set('read', Date.now());
+  const order = [];
+  const ordinary = priorityPacer.submit('read', async () => { order.push('read'); }, 70);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  let dispatches = 0;
+  priorityPacer.emergencyMovement = {
+    active: true,
+    onDispatch: () => { dispatches++; },
+  };
+  const emergency = priorityPacer.submit('move', async () => { order.push('move'); });
+  await Promise.all([ordinary, emergency]);
+  ok('emergency movement preempts a paced ordinary queue head without bypassing Pacer',
+     order.join(',') === 'move,read' && dispatches === 1,
+     JSON.stringify({ order, dispatches }));
+}
 const provedSquares = liftFunction(brokerSource, 'function provedSquares(geo, from, steps)',
   { KOD_FINENESS, protocolToClient });
 ok('the extracted provedSquares compiled', typeof provedSquares === 'function');
@@ -1051,6 +1068,8 @@ const atEdgeOpening = liftFunction(brokerSource,
   'function atEdgeOpening(position, opening, direction)', { KOD_FINENESS });
 ok('the extracted edge-opening predicate compiled', typeof atEdgeOpening === 'function');
 for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
+const observeMovementDeath = compileSessionMethod(brokerSource,
+  'observeMovementDeath(ev = {}) {', 'observeMovementDeath', {});
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
   { CLIENT_FINENESS, KOD_FINENESS, blocksMovement,
@@ -1291,6 +1310,28 @@ function fakeBrokerSession(geometry, {
 
 console.log('\nclient protocol bounds and live geometry invalidation');
 {
+  if (typeof observeMovementDeath === 'function') {
+    let cancels = 0;
+    const deathSession = {
+      deathGeneration: 0,
+      deathMovementLatched: false,
+      movementGeneration: 7,
+      cancelMovement() { cancels++; this.movementGeneration++; },
+    };
+    const first = observeMovementDeath.call(deathSession,
+      { kind: 'stat', name: 'health', value: 0 });
+    const duplicate = observeMovementDeath.call(deathSession,
+      { kind: 'message', text: 'You are dead.' });
+    observeMovementDeath.call(deathSession,
+      { kind: 'stat', name: 'health', value: 20 });
+    const nextLife = observeMovementDeath.call(deathSession,
+      { kind: 'message', text: 'The troll slays you.' });
+    ok('health zero synchronously invalidates movement once per life',
+       first === true && duplicate === true && nextLife === true &&
+         deathSession.deathGeneration === 2 &&
+         deathSession.movementGeneration === 9 && cancels === 2,
+       JSON.stringify({ deathSession, cancels }));
+  }
   const packetClient = Object.create(M59Client.prototype);
   packetClient.room = { id: 1 };
   let sent = 0;
@@ -1439,7 +1480,7 @@ console.log('\nterminal movement propagation and edge packet authority');
     // WAITING. Both directions are pinned, because the failure is symmetric: lose the
     // patience and every passing rat costs a reroute, lose the escalation and the fleet
     // goes back to standing still while it is eaten.
-    const blockedRun = async ({ falling }) => {
+    const blockedRun = async ({ falling, emergency = false }) => {
       let hp = 50, sleepMs = 0;
       const client = {
         self: { col: 1, row: 1, x: 96, y: 96 },
@@ -1453,6 +1494,7 @@ console.log('\nterminal movement propagation and edge packet authority');
         client, world: { geometry }, movementGeneration: 0,
         need() { return this.client; },
         movementWasCancelled() { return false; },
+        emergencyMovementFor() { return emergency ? { active: true } : null; },
         threatsHere() { return []; },
         // No way round, so the walker must fall through to the occupancy path either way.
         sidestepAround() { return null; },
@@ -1467,6 +1509,7 @@ console.log('\nterminal movement propagation and edge packet authority');
     };
     const patient = await blockedRun({ falling: false });
     const underFire = await blockedRun({ falling: true });
+    const emergency = await blockedRun({ falling: false, emergency: true });
 
     ok('a body in the way with no damage still gets the patient retry',
        patient.elapsed >= 400,
@@ -1474,6 +1517,9 @@ console.log('\nterminal movement propagation and edge packet authority');
     ok('but a body that is HITTING us is never waited for',
        underFire.elapsed < patient.elapsed && underFire.elapsed < 400,
        `under fire took ${underFire.elapsed}ms against ${patient.elapsed}ms patient`);
+    ok('a guarded emergency also escapes the first body block without waiting for a hit',
+       emergency.elapsed < 400,
+       `emergency block recovery took ${emergency.elapsed}ms`);
     ok('and the walk reports the health it lost standing there',
        underFire.out.damage_while_blocked > 0 &&
        /lost \d+ health/.test(underFire.out.note ?? ''),

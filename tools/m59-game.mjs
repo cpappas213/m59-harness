@@ -505,6 +505,12 @@ class Pacer {
     this.prodTimes = [];   // submission timestamps (rolling)
     this.sentTimes = [];   // send timestamps (rolling)
     this.prodByKind = new Map();  // kind -> rolling submission timestamps
+    // A guarded survival movement owns a narrow priority lane. The marker belongs to
+    // Session (one body, one movement generation); Pacer only uses it to put escape
+    // packets ahead of queued work and report when one actually starts. It never relaxes
+    // either the global or per-kind server rate limit.
+    this.emergencyMovement = null;
+    this.wakePump = null;
   }
 
   // Per-kind production rate, for diagnosing WHAT is flooding the queue.
@@ -540,9 +546,17 @@ class Pacer {
     if (!this.prodByKind.has(kind)) this.prodByKind.set(kind, []);
     this.prodByKind.get(kind).push(Date.now());
     const finiteDeadline = Number.isFinite(deadlineAt) ? deadlineAt : Infinity;
+    const movementPacket = kind === 'move' || kind === 'turn' || kind === 'go';
+    const emergencyMarker = movementPacket && this.emergencyMovement?.active
+      ? this.emergencyMovement : null;
+    // Preserve this branch's attack/cast priority; an active survival retreat is the only
+    // band above it.
+    const implicitPriority = emergencyMarker ? 2
+      : (kind === 'attack' || kind === 'cast') ? 1 : 0;
     const job = { kind, fn, minGapForKind, resolve: null, reject: null, queuedAt: Date.now(),
                   deadlineAt: finiteDeadline, deadlineResult, deadlineTimer: null,
-                  started: false, expired: false, settled: false, expire: null };
+                  started: false, expired: false, settled: false, expire: null,
+                  priority: implicitPriority, emergencyMarker };
     return new Promise((resolve, reject) => {
       job.resolve = resolve;
       job.reject = reject;
@@ -563,19 +577,13 @@ class Pacer {
         if (remaining <= 0) { job.expire(); return; }
         job.deadlineTimer = setTimeout(job.expire, Math.ceil(remaining));
       }
-      // PRIORITY: attack packets are time-critical (server cooldown = 1s). They jump
-      // the queue ahead of move/turn/read packets so swings don't wait behind a backlog
-      // of movement packets. Without this, a busy mover (move+turn every ~270ms) pushes
-      // the swing to every 3s instead of every 1s.
-      const isUrgent = kind === 'attack' || kind === 'cast';
-      if (isUrgent) {
-        // Insert after any other urgent packets but before non-urgent ones.
-        let i = 0;
-        while (i < this.q.length && (this.q[i].kind === 'attack' || this.q[i].kind === 'cast')) i++;
-        this.q.splice(i, 0, job);
-      } else {
-        this.q.push(job);
-      }
+      // Stable priority order and FIFO within each band.
+      let i = 0;
+      while (i < this.q.length && (this.q[i].priority ?? 0) >= job.priority) i++;
+      this.q.splice(i, 0, job);
+      // pump may be sleeping for the old head's pacing turn. Only survival movement wakes
+      // that sleep; the recalculated wait still enforces the same wire-rate limits.
+      if (emergencyMarker) this.wakePump?.();
       this.pump();
     });
   }
@@ -602,8 +610,10 @@ class Pacer {
     this.running = true;
     try {
       while (this.q.length) {
-        const job = this.q.shift();
-        if (job.expired) continue;
+        // Peek while pacing rather than removing the job. A newly queued emergency move
+        // can wake this wait, become the head, and be serviced next.
+        const job = this.q[0];
+        if (job.expired) { this.q.shift(); continue; }
         const now = Date.now();
         const waitGlobal = Math.max(0, this.lastSent + this.minGapMs - now);
         const lastKind = this.lastByKind.get(job.kind) || 0;
@@ -613,8 +623,21 @@ class Pacer {
         const wait = Math.max(waitGlobal, waitKind);
         Pacer.note(job.kind, 'queued', Math.max(0, now - job.queuedAt));
         Pacer.note(job.kind, waitKind >= waitGlobal ? 'paced' : 'throttled', wait);
-        if (wait > 0) await new Promise(r => setTimeout(r, wait));
+        if (wait > 0) await new Promise(resolve => {
+          const timer = setTimeout(() => {
+            if (this.wakePump === wake) this.wakePump = null;
+            resolve();
+          }, wait);
+          const wake = () => {
+            clearTimeout(timer);
+            if (this.wakePump === wake) this.wakePump = null;
+            resolve();
+          };
+          this.wakePump = wake;
+        });
         else await new Promise(r => setTimeout(r, 0));
+        if (this.q[0] !== job) continue;
+        this.q.shift();
         // Its deadline timer may have resolved the caller while this job was sleeping for
         // pacing. Never account it as sent and, most importantly, never invoke its callback.
         if (job.expired) continue;
@@ -624,6 +647,10 @@ class Pacer {
         this.lastSent = Date.now();
         this.lastByKind.set(job.kind, this.lastSent);
         this.sentTimes.push(this.lastSent);
+        try {
+          job.emergencyMarker?.onDispatch?.({ kind: job.kind, queuedAt: job.queuedAt,
+                                              startedAt: this.lastSent });
+        } catch { /* survival instrumentation must never prevent the packet */ }
         const t0 = Date.now();
         try {
           const result = await job.fn();
@@ -889,6 +916,11 @@ class Session {
     // orders. This is deliberately session-local: one character has one body.
     this.movementGeneration = 0;
     this.cancelledMovementTokens = new Set();
+    // Death is a movement ownership boundary, not a room along a route. The monotonic
+    // generation lets an awaiting journey notice a death even after a fast respawn.
+    this.deathGeneration = 0;
+    this.deathMovementLatched = false;
+    this.emergencyMovement = null;
     // BP_PLAYER/BP_MOVE do not carry the body's visual z. Keep a short-lived,
     // conservative range after changing floor height so a rapid follow-up packet
     // cannot assume an instantaneous climb/fall and slip through a low arch or up
@@ -1512,6 +1544,51 @@ class Session {
     };
   }
 
+  beginEmergencyMovement({ generation = this.movementGeneration, incident = null,
+                           onDispatch = null, onMove = null } = {}) {
+    const marker = { active: true, generation, incident, onDispatch, onMove,
+                     startedAt: Date.now() };
+    this.emergencyMovement = marker;
+    this.pacer.emergencyMovement = marker;
+    return marker;
+  }
+
+  endEmergencyMovement(marker) {
+    if (!marker) return;
+    marker.active = false;
+    if (this.emergencyMovement === marker) this.emergencyMovement = null;
+    if (this.pacer?.emergencyMovement === marker) this.pacer.emergencyMovement = null;
+  }
+
+  emergencyMovementFor(generation = this.movementGeneration) {
+    const marker = this.emergencyMovement;
+    return marker?.active && marker.generation === generation ? marker : null;
+  }
+
+  noteEmergencyMove(detail = {}) {
+    const marker = this.emergencyMovementFor();
+    if (!marker) return;
+    try { marker.onMove?.(detail); } catch { /* movement must survive diagnostics */ }
+  }
+
+  // Invalidate movement on the pushed death event, before a travel stack can emit in the
+  // Underworld or mistake a quick respawn for arrival at its old destination.
+  observeMovementDeath(ev = {}) {
+    const health = ev.kind === 'stat' && ev.name === 'health' ? Number(ev.value) : null;
+    if (Number.isFinite(health) && health > 0) {
+      this.deathMovementLatched = false;
+      return false;
+    }
+    const deathText = ev.kind === 'message' &&
+      /\b(?:you are dead|slays you|was just killed)\b/i.test(String(ev.text ?? ''));
+    if (!(Number.isFinite(health) && health <= 0) && !deathText) return false;
+    if (this.deathMovementLatched) return true;
+    this.deathMovementLatched = true;
+    this.deathGeneration++;
+    this.cancelMovement(null, 'death ended every in-flight movement and journey');
+    return true;
+  }
+
   jobReport() {
     return rtsJobReport(this.job);
   }
@@ -1552,6 +1629,7 @@ class Session {
       // working while the keeper is inside a multi-minute travel await or held inert by
       // an errand — which is where 23 of the last 50 deaths happened. See m59-hits.mjs.
       if (ev.kind === 'stat' && ev.name === 'health') this.noteHealth(ev);
+      this.observeMovementDeath(ev);
     };
     if (character) c.wantName = character;
     await c.login(account, password);
@@ -2421,6 +2499,8 @@ class Session {
         const sentValidation = { ...validation, available: true, moved: true, blocked: false,
                                  offMap: true, target };
         const eventSeq = c.evSeq;
+        this.noteEmergencyMove?.({ kind: 'move', roomId, before,
+          requested: { x, y }, target, validation: sentValidation });
         c.moveTo(target.x, target.y, speed, roomId);
         return { sent: true, roomId, eventSeq, before, target,
                  validation: sentValidation };
@@ -2478,6 +2558,8 @@ class Session {
                     from: { x: before.x, y: before.y },
                     to: { x: validation.target.x, y: validation.target.y } });
       if (crumbs.length > 64) crumbs.shift();
+      this.noteEmergencyMove?.({ kind: 'move', roomId, before,
+        requested: { x, y }, target: validation.target, validation });
       c.moveTo(validation.target.x, validation.target.y, speed, roomId);
       const destinationFloor = validation.destinationFloor;
       if (Number.isFinite(destinationFloor)) {
@@ -4058,7 +4140,11 @@ class Session {
     let pulled;
     // Health across the walk, so a body in the way can be told from a body that is EATING
     // us. See the under-fire note in the blocked branch below.
-    let hpAtLastBlock = c.vitals?.()?.health?.value, damageWhileBlocked = 0, underFire = false;
+    let hpAtLastBlock = c.vitals?.()?.health?.value, damageWhileBlocked = 0,
+        // A guarded retreat begins after live damage has already made ordinary waiting
+        // unsafe. Escape the first object block instead of spending another block lap
+        // rediscovering that fact from a second health sample.
+        underFire = !!this.emergencyMovementFor?.(movementGeneration);
     while (queue.length && taken < maxSteps) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ steps: taken, replans });
@@ -5571,7 +5657,8 @@ class Session {
           const onIt = me0.col === board.col && me0.row === board.row;
           // 1. GET ON â€” skipped when we are already standing on the boarding square.
           const got = onIt ? { arrived: true } : await this.walkTo(board.col, board.row,
-            { maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
+            { maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }),
+              movementGeneration, controlToken })
             .catch(e => ({ arrived: false, reason: e.message }));
           if (!got?.arrived) {
             recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
@@ -6995,6 +7082,29 @@ class Session {
     allowedRooms = null,
   } = {}) {
     const log = [];
+    const deathGenerationAtStart = Number(this.deathGeneration ?? 0);
+    let deathLogged = false;
+    const deathBoundary = () => {
+      const room = this.world?.room;
+      const hp = this.client?.vitals?.()?.health?.value;
+      const generationChanged = Number(this.deathGeneration ?? 0) !== deathGenerationAtStart;
+      const underworld = Number(room?.num) === 1 && /Underworld/i.test(String(room?.name ?? ''));
+      if (!generationChanged && !(Number.isFinite(hp) && hp <= 0) && !underworld) return null;
+      if (!generationChanged && typeof this.observeMovementDeath === 'function')
+        this.observeMovementDeath(Number.isFinite(hp) && hp <= 0
+          ? { kind: 'stat', name: 'health', value: hp }
+          : { kind: 'message', text: 'You are dead; the journey entered The Underworld.' });
+      if (!deathLogged) {
+        deathLogged = true;
+        log.push({ died: true, room: room?.num ?? null,
+          reason: 'death ended the journey; Underworld recovery is a separate operation' });
+      }
+      return {
+        arrived: false, died: true, hops: 0, log,
+        room: room ? { num: room.num, name: room.name } : null,
+        reason: 'death ended the journey; respawn cannot complete its old destination',
+      };
+    };
     const allowedRoomSet = allowedRooms == null
       ? null
       : new Set([...allowedRooms].map(Number));
@@ -7196,6 +7306,8 @@ class Session {
     };
 
     while (hops < maxHops) {
+      const deadNow = deathBoundary();
+      if (deadNow) return { ...deadNow, hops, stumbles: totalStumbles };
       if (this.movementWasCancelled(movementGeneration, controlToken))
         return this.cancelledMovement({ log });
       const here = this.world.room;
@@ -7307,6 +7419,9 @@ class Session {
         continue;
       }
       const r = await this.leaveViaAny(candidates, { movementGeneration, controlToken });
+      const diedWhileCrossing = deathBoundary();
+      if (diedWhileCrossing)
+        return { ...diedWhileCrossing, hops, stumbles: totalStumbles };
       // QUEUE THE GAP ON `this`, AND LET SOMETHING ELSE FILE IT.
       //
       // Three methods in this chain are lifted out of this file by text and evaluated —
@@ -7652,6 +7767,8 @@ class Session {
     // the right room and reported "gave up" — the one failure mode that is both wrong and
     // reassuringly plausible, since the hop count really had been spent.
     const finally_ = this.world.room;
+    const deadFinally = deathBoundary();
+    if (deadFinally) return { ...deadFinally, hops, stumbles: totalStumbles };
     if (finally_ && finally_.num === toRoomNum)
       return { arrived: true, room: { num: finally_.num, name: finally_.name },
                hops, stumbles: totalStumbles, log };

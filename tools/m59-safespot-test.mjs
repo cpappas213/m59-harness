@@ -808,13 +808,77 @@ console.log('\n--- a guarded retreat owns cancellation only while it is progress
      JSON.stringify({ cancels, watch: p.watch }));
   ok('the scoped marker clears and the result retains the local-guard diagnosis',
      p.emergencyRetreat === null &&
-       retreat.retreat_guard?.why === 'retreat route made no room or square progress',
+       retreat.retreat_guard?.why === 'retreat route made no room or square progress' &&
+       retreat.retreat_guard?.phase === 'dispatch',
      JSON.stringify({ marker: p.emergencyRetreat, retreat }));
   ok('the guarded route preserves the refuge destination and disables intermediate holds',
      travelArgs?.to === 106 && travelArgs?.opts?.reason === 'retreat' &&
+       travelArgs?.opts?.emergency === true &&
        travelArgs?.opts?.holdBetweenRooms === false &&
        travelArgs?.opts?.healBetweenRooms === false,
      JSON.stringify(travelArgs));
+}
+
+console.log('\n--- clipped fine twitches are not retreat progress ---');
+{
+  const w = world({ col: 1, row: 1, room: 562, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.retreatNoProgressMs = 40;
+  p.retreatDispatchMs = 25;
+  p.retreatGuardMs = 5;
+  p.safety = () => ({ fleeAt: 0.75, maxHit: 12 });
+  w.s.movementGeneration = 0;
+  w.s.movementWasCancelled = () => false;
+  let sessionMarker = null;
+  w.s.beginEmergencyMovement = callbacks => {
+    sessionMarker = { active: true, ...callbacks };
+    return sessionMarker;
+  };
+  w.s.endEmergencyMovement = marker => { if (marker) marker.active = false; };
+
+  let finishTravel;
+  p.travel = async () => await new Promise(resolve => { finishTravel = resolve; });
+  let cancels = 0;
+  w.s.cancelMovement = () => {
+    cancels++;
+    finishTravel?.({ arrived: false, cancelled: true });
+    return { cancelled: true };
+  };
+  const incident = {
+    id: 'fine-wiggle', room: 562, startedAt: Date.now(),
+    visitedPositions: new Set(), origins: new Map(), bestNet: new Map(),
+    failedFirstVectorsByRoom: new Map(), blockedDestinations: new Set(),
+  };
+  const pending = p.guardedRetreatTravel(106, { retreatIncident: incident });
+  await new Promise(resolve => setTimeout(resolve, 5));
+  sessionMarker?.onDispatch?.({ kind: 'move' });
+  const before = { col: 1, row: 1, x: 84, y: 104 };
+  const wiggle = setInterval(() => {
+    const out = w.me().x === 84 ? 94 : 84;
+    w.me().x = out;
+    sessionMarker?.onMove?.({ before, requested: { x: 148, y: 104 },
+                              target: { x: out, y: 104 } });
+  }, 4);
+  const retreat = await pending;
+  clearInterval(wiggle);
+  const failed = incident.failedFirstVectorsByRoom.get('562');
+  ok('same-square fine-coordinate movement still reaches the bounded progress guard',
+     cancels === 1 && retreat.retreat_guard?.phase === 'progress' &&
+       retreat.retreat_guard?.dispatch_ms != null,
+     JSON.stringify({ cancels, retreat }));
+  ok('the incident remembers the clipped opening direction for the local fallback',
+     failed?.has('0,1') === true,
+     JSON.stringify([...(failed ?? [])]));
+  let passedAvoid = null;
+  w.s.world.geometry = {};
+  p.takeSafeSpot = async (_why, _quarry, options) => {
+    passedAvoid = options?.avoidFirstVectors;
+    return { took: false };
+  };
+  await p.withdraw([], { retreatIncident: incident });
+  ok('the local wall selector receives the route guard\'s failed first vectors',
+     passedAvoid === failed && passedAvoid?.has('0,1'),
+     JSON.stringify([...(passedAvoid ?? [])]));
 }
 
 console.log('\n--- a short retreat cycle is movement, but it is not progress ---');
@@ -981,6 +1045,46 @@ console.log('\n--- low-vigor refuge travel has one bounded exposure budget ---')
   ok('the live four-hop class of route gets one guarded attempt with the ceiling enforced',
      attempts.length === 1 && attempts[0].to === 106 && attempts[0].opts.maxHops === 6,
      JSON.stringify(attempts));
+}
+
+console.log('\n--- one retreat incident does not replay its stalled refuge ---');
+{
+  const w = world({ room: 552, health: 23, max: 38, vigor: 76 });
+  const p = keeper(w);
+  p.sanctuary = () => false;
+  w.s.world.route = to => to === 106
+    ? { found: true, hops: [{ to: 700 }, { to: 106 }] }
+    : null;
+  let routeAttempts = 0;
+  const routeIncidents = [];
+  p.guardedRetreatTravel = async (_to, opts) => {
+    routeAttempts++;
+    routeIncidents.push(opts.retreatIncident);
+    return {
+      arrived: false, cancelled: true, cancellation_kind: 'progress',
+      retreat_guard: { why: 'retreat route made no room or square progress' },
+    };
+  };
+  const fallbackIncidents = [];
+  p.guardedRetreatFallback = async (_threats, incident) => {
+    fallbackIncidents.push(incident);
+    return {
+      withdrawn: false, cancellation_kind: 'progress',
+      retreat_guard: { why: 'retreat fallback made no room or square progress' },
+    };
+  };
+  const first = await p.retreatToSafety({}, { maxHops: 6 });
+  const second = await p.retreatToSafety({}, { maxHops: 6 });
+  ok('the failed refuge destination is attempted only once across adjacent keeper passes',
+     routeAttempts === 1 && first.retreat_exhausted === true && second.no_route === true,
+     JSON.stringify({ routeAttempts, first, second }));
+  ok('route, fallback, and retry all share the same retreat-incident memory',
+     routeIncidents.length === 1 && fallbackIncidents.length === 2 &&
+       fallbackIncidents.every(x => x === routeIncidents[0]) &&
+       routeIncidents[0]?.blockedDestinations?.has(106),
+     JSON.stringify({ route: routeIncidents[0]?.id,
+       fallbacks: fallbackIncidents.map(x => x?.id),
+       blocked: [...(routeIncidents[0]?.blockedDestinations ?? [])] }));
 }
 
 console.log('\n--- cornered escalation forgets the incident only after arrival ---');

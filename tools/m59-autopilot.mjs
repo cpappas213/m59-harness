@@ -2796,7 +2796,8 @@ export class Autopilot {
   // a journey. A failure still discredits the square permanently either way: a blow that
   // got through is a bad square however we came to be standing on it. The tag is so the
   // travel-only rejections can be told apart afterwards without reconstructing anything.
-  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0 } = {}) {
+  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0,
+                                          avoidFirstVectors = null } = {}) {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
@@ -2830,7 +2831,8 @@ export class Autopilot {
       const liveQuarry = quarry.id != null ? c.room?.objects?.get(quarry.id) : quarry;
       if (!liveQuarry)
         return { took: false, why: 'the quarry was gone when we reached its side' };
-      return this.takeSafeSpot(why, liveQuarry, { source, islandCrossings: islandCrossings + 1 });
+      return this.takeSafeSpot(why, liveQuarry,
+        { source, islandCrossings: islandCrossings + 1, avoidFirstVectors });
     }
     // Squares we have already discovered nothing can be pulled to. Without this the
     // keeper re-picks the same unusable corner every pass for ever, because the
@@ -2900,7 +2902,7 @@ export class Autopilot {
         for (const k of Object.keys(spotStats)) delete spotStats[k]; // stats describe LAST attempt
         spot = this.searchSafeSpot(geo, me, room, {
           within, quarryReach, strictQuarryReach, los, quarry, barren,
-          stats: spotStats, shareCap });
+          stats: spotStats, shareCap, avoidFirstVectors });
         if (!spot) break;
         if (claimSpot(this.s.name, room.num, spot.col, spot.row,
                       { cap: shareCap, partner: this.policy.partner ?? null }))
@@ -4543,7 +4545,8 @@ export class Autopilot {
   // without duplicating the option block — a second copy of these arguments is exactly
   // how the two would come to disagree about `los` or the book.
   searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
-                                  los, quarry, barren, stats, shareCap = 1 }) {
+                                  los, quarry, barren, stats, shareCap = 1,
+                                  avoidFirstVectors = null }) {
     const s = this.s;
     // One room search can inspect hundreds of candidate squares. Reading the shared
     // claim directory for every candidate would turn that into hundreds of lock/file
@@ -4576,7 +4579,15 @@ export class Autopilot {
           return { reachable: false, reason: 'empirically barren after repeated pulls' };
         if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap, spotClaims))
           return { reachable: false, reason: 'occupied at this share cap' };
-        return s.world.reach(col, r2);
+        const reached = s.world.reach(col, r2);
+        const first = reached?.path?.[0];
+        if (first && avoidFirstVectors?.size) {
+          const vector = `${Math.sign(first.row - me.row)},${Math.sign(first.col - me.col)}`;
+          if (avoidFirstVectors.has(vector))
+            return { reachable: false,
+              reason: `retreat incident already stalled on first vector ${vector}` };
+        }
+        return reached;
       },
     });
   }
@@ -5499,7 +5510,7 @@ export class Autopilot {
       return outcome;
     } finally {
       if (detailed) closeMap();
-      this.recordFrame('arrived');
+      this.recordFrame(outcome?.died ? 'travel ended by death' : 'arrived');
       const v1 = this.s.client?.vitals?.()?.health;
       // ONE ROW PER JOURNEY — the denominator. Deaths per journey is the measurement, and
       // without the journeys written down there is nothing to divide by.
@@ -5515,13 +5526,12 @@ export class Autopilot {
         ms: Date.now() - startedAt,
         held_ms: this.travelHeldMs ?? 0,
         hp_start: hpStart, hp_end: v1?.value ?? null, hp_max: hpMax ?? v1?.max ?? null,
-        // Whether this journey ended in a death is not knowable here — the keeper is still
-        // alive to write this line. It is joined afterwards, from the postmortem's own
-        // `travel_arm`, which is why that field exists.
+        died: !!outcome?.died,
       });
       if (travelKind === 'travel') {
         this.detailEvent('travel', 'trip', {
-          to: room, arrived: outcome?.arrived ?? false, reason: outcome?.reason ?? null,
+          to: room, arrived: outcome?.arrived ?? false, died: !!outcome?.died,
+          reason: outcome?.reason ?? null,
           duration_ms: Date.now() - startedAt, legs, planned_legs: plannedLegs,
           damage: Math.max(0, this.hitDamageTotal() - journeyDamageStart),
           safe_spot_stops: this.travelSafeStops ?? 0, safe_spot_ms: this.travelHeldMs ?? 0,
@@ -11251,7 +11261,7 @@ export class Autopilot {
         }
         // retreatToSafety already took the best local wall after its route guard failed.
         // Reconnecting here would throw that fallback away and wake the crowd again.
-        if (r.retreat?.fell_back) {
+        if (r.retreat?.fell_back || r.retreat?.retreat_exhausted) {
           this.note('the refuge route failed — keeping the local survival fallback', {
             why: r.reason,
             next: 'the next pass observes the wall and retries recovery with fresh state',
@@ -16519,6 +16529,7 @@ export class Autopilot {
     room = null,
     why = 'emergency movement made no room or square progress',
     cancelWhy = why,
+    incident = null,
   } = {}) {
     const s = this.s;
     // Composite movement helpers do not all preserve a cancelled leaf result. Capture
@@ -16527,20 +16538,37 @@ export class Autopilot {
     // withdraw consequently returns only `withdrawn:false`.
     const movementGeneration = s.movementGeneration;
     const noProgressMs = this.retreatNoProgressMs ?? 3_000;
+    const dispatchMs = this.retreatDispatchMs ?? Math.min(noProgressMs, 1_250);
     const guardMs = this.retreatGuardMs ?? 250;
+    const meaningfulFine = this.retreatFineProgress ?? 16;
     const position = () => {
       const me = s.client?.self;
-      return `${s.world?.room?.num ?? '?'}:${me?.col ?? '?'}:${me?.row ?? '?'}`;
+      return {
+        room: s.world?.room?.num ?? null,
+        col: me?.col ?? null, row: me?.row ?? null,
+        x: me?.x ?? null, y: me?.y ?? null,
+      };
     };
-    let lastPosition = position();
-    // "Moving" and "making progress" are not the same thing. A two-square bounce
-    // changes position on every sample and therefore kept the old clock fresh for ever,
-    // even though the retreat was no closer to leaving the room. A genuinely advancing
-    // route keeps discovering new room/square positions; a short cycle only revisits
-    // positions it has already spent. Count only the former as progress for this scoped
-    // guard. The set lives for one bounded emergency operation and is discarded with it.
-    const visitedPositions = new Set([lastPosition]);
-    let lastProgressAt = Date.now();
+    const keyOf = p => `${p.room ?? '?'}:${p.col ?? '?'}:${p.row ?? '?'}`;
+    const firstPosition = position();
+    const visitedPositions = incident?.visitedPositions ?? new Set();
+    const origins = incident?.origins ?? new Map();
+    const bestNet = incident?.bestNet ?? new Map();
+    if (incident) {
+      incident.visitedPositions = visitedPositions;
+      incident.origins = origins;
+      incident.bestNet = bestNet;
+    }
+    visitedPositions.add(keyOf(firstPosition));
+    const installOrigin = p => {
+      const rk = String(p.room ?? '?');
+      if (!origins.has(rk)) origins.set(rk, { ...p });
+      return origins.get(rk);
+    };
+    installOrigin(firstPosition);
+    let firstDispatchAt = null;
+    let lastProgressAt = null;
+    let lastRoom = firstPosition.room;
     let guard = null;
     // Scoped ownership token: the ordinary low-health watchdog must not cancel the
     // escape it just handed control to. The token is disarmed before the local guard
@@ -16550,22 +16578,72 @@ export class Autopilot {
       room: room == null ? null : Number(room),
       since: Date.now(),
       cancellationKind: null,
+      incidentId: incident?.id ?? null,
+      firstVector: null,
     };
     this.emergencyRetreat = marker;
+    const noteProgress = (now = Date.now()) => {
+      firstDispatchAt ??= now;
+      lastProgressAt = now;
+    };
+    const observeNet = (p, now = Date.now()) => {
+      if (p.room !== lastRoom) {
+        const newRoom = !origins.has(String(p.room ?? '?'));
+        lastRoom = p.room;
+        installOrigin(p);
+        visitedPositions.add(keyOf(p));
+        if (newRoom) noteProgress(now);
+        return newRoom;
+      }
+      const origin = installOrigin(p);
+      const coarse = Number.isFinite(p.col) && Number.isFinite(origin.col)
+        ? Math.hypot(p.col - origin.col, p.row - origin.row) * 64 : 0;
+      const fine = Number.isFinite(p.x) && Number.isFinite(origin.x)
+        ? Math.hypot(p.x - origin.x, p.y - origin.y) : 0;
+      const net = Math.max(coarse, fine);
+      const rk = String(p.room ?? '?');
+      const previous = bestNet.get(rk) ?? 0;
+      if (net >= previous + meaningfulFine) {
+        bestNet.set(rk, net);
+        visitedPositions.add(keyOf(p));
+        noteProgress(now);
+        return true;
+      }
+      return false;
+    };
+    const rememberVector = detail => {
+      if (marker.firstVector) return;
+      const before = detail?.before, requested = detail?.requested;
+      if (!before || !requested || !Number.isFinite(before.x) || !Number.isFinite(before.y) ||
+          !Number.isFinite(requested.x) || !Number.isFinite(requested.y)) return;
+      const dc = Math.sign(requested.x - before.x);
+      const dr = Math.sign(requested.y - before.y);
+      if (dr || dc) marker.firstVector = `${dr},${dc}`;
+    };
+    const sessionEmergency = s.beginEmergencyMovement?.({
+      generation: movementGeneration,
+      incident,
+      onDispatch: () => {
+        if (!firstDispatchAt) noteProgress(Date.now());
+      },
+      onMove: detail => {
+        rememberVector(detail);
+        const target = detail?.target;
+        if (!target) return;
+        observeNet({
+          room: s.world?.room?.num ?? null,
+          col: Math.floor(target.x / 64), row: Math.floor(target.y / 64),
+          x: target.x, y: target.y,
+        });
+      },
+    });
     const timer = setInterval(() => {
       const now = Date.now();
-      const currentPosition = position();
-      if (currentPosition !== lastPosition) {
-        lastPosition = currentPosition;
-        if (!visitedPositions.has(currentPosition)) {
-          visitedPositions.add(currentPosition);
-          lastProgressAt = now;
-          return;
-        }
-        // A revisited position may be one side of A<->B. Do not return here: once the
-        // novel-progress window has elapsed, this very sample should trip the guard.
-      }
-      if (now - lastProgressAt < noProgressMs || guard) return;
+      observeNet(position(), now);
+      if (guard) return;
+      const dispatchStalled = firstDispatchAt == null && now - marker.since >= dispatchMs;
+      const movementStalled = firstDispatchAt != null && now - lastProgressAt >= noProgressMs;
+      if (!dispatchStalled && !movementStalled) return;
       const hp = s.client?.vitals?.()?.health;
       // This guard is itself the last-resort escape path, so diagnostic
       // enrichment must never prevent it from cancelling a stuck movement.
@@ -16573,7 +16651,10 @@ export class Autopilot {
       try { maxHit = this.safety()?.maxHit ?? null; } catch { /* optional telemetry */ }
       guard = {
         why,
-        stalled_ms: now - lastProgressAt,
+        phase: dispatchStalled ? 'dispatch' : 'progress',
+        detail: dispatchStalled ? 'no emergency packet was dispatched' : 'no net movement progress',
+        stalled_ms: dispatchStalled ? now - marker.since : now - lastProgressAt,
+        dispatch_ms: firstDispatchAt == null ? null : firstDispatchAt - marker.since,
         room: s.world?.room?.num ?? null,
         col: s.client?.self?.col ?? null,
         row: s.client?.self?.row ?? null,
@@ -16584,6 +16665,13 @@ export class Autopilot {
       };
       marker.cancellationKind ??= 'progress';
       marker.active = false;
+      if (marker.firstVector && incident) {
+        const byRoom = (incident.failedFirstVectorsByRoom ??= new Map());
+        const roomKey = String(s.world?.room?.num ?? '?');
+        if (!byRoom.has(roomKey)) byRoom.set(roomKey, new Set());
+        byRoom.get(roomKey).add(marker.firstVector);
+      }
+      s.endEmergencyMovement?.(sessionEmergency);
       try { s.cancelMovement?.(null, cancelWhy); } catch { /* the result below is enough */ }
     }, guardMs);
     try {
@@ -16618,6 +16706,7 @@ export class Autopilot {
       };
     } finally {
       clearInterval(timer);
+      s.endEmergencyMovement?.(sessionEmergency);
       if (this.emergencyRetreat === marker) this.emergencyRetreat = null;
     }
   }
@@ -16660,6 +16749,7 @@ export class Autopilot {
     const guarded = await this.guardedEmergencyMovement(
       () => this.travel(room, {
         ...opts,
+        emergency: true,
         reason: opts.reason ?? 'retreat',
         holdBetweenRooms: false,
         // Session.travel has a separate unconditional wall-heal after each hop.
@@ -16671,6 +16761,7 @@ export class Autopilot {
       }),
       {
         room,
+        incident: opts.retreatIncident ?? this.retreatIncident ?? null,
         why: 'retreat route made no room or square progress',
         cancelWhy: 'the guarded retreat route made no room or square progress',
       },
@@ -16684,11 +16775,12 @@ export class Autopilot {
     };
   }
 
-  async guardedRetreatFallback(threats) {
+  async guardedRetreatFallback(threats, incident = this.retreatIncident ?? null) {
     const guarded = await this.guardedEmergencyMovement(
-      () => this.withdraw(threats),
+      () => this.withdraw(threats, { retreatIncident: incident }),
       {
         room: this.s.world?.room?.num ?? null,
+        incident,
         why: 'retreat fallback made no room or square progress',
         cancelWhy: 'the guarded retreat fallback made no room or square progress',
       },
@@ -16713,16 +16805,36 @@ export class Autopilot {
   async retreatToSafety(why = {}, { maxHops = null } = {}) {
     const s = this.s, c = s.client;
     const here = s.world?.room?.num ?? null;
+    const hpNow = c?.vitals?.()?.health?.value;
+    if ((Number.isFinite(hpNow) && hpNow <= 0) || Number(here) === 1) {
+      this.retreatIncident = null;
+      this.retreatCancelledPass = this.passes;
+      return { arrived: false, died: true,
+        reason: 'death ended the retreat; Underworld recovery is a separate operation' };
+    }
+    const priorIncident = this.retreatIncident;
+    const incident = priorIncident && priorIncident.room === here &&
+      Date.now() - priorIncident.startedAt < 60_000
+      ? priorIncident
+      : {
+          id: `${this.who?.() ?? 'keeper'}-${Date.now().toString(36)}`,
+          room: here, startedAt: Date.now(), visitedPositions: new Set(),
+          origins: new Map(), bestNet: new Map(), failedFirstVectorsByRoom: new Map(),
+          blockedDestinations: new Set(),
+        };
+    this.retreatIncident = incident;
     const inns = Object.entries(CITY_INNS).map(([city, v]) => ({ city, ...v }));
     const finishFallback = (fallback = {}, extra = {}) => {
       const kind = fallback?.cancellation_kind ?? null;
       const terminalCancellation = ['player', 'external'].includes(kind) ||
         (!!fallback?.cancelled && !fallback?.retreat_guard);
-      if (terminalCancellation) this.retreatCancelledPass = this.passes;
+      const progressExhausted = kind === 'progress' || !!fallback?.retreat_guard;
+      if (terminalCancellation || progressExhausted) this.retreatCancelledPass = this.passes;
       return {
         arrived: false,
         fell_back: !terminalCancellation && fallback?.withdrawn === true,
         fallback_attempted: true,
+        retreat_exhausted: progressExhausted,
         ...extra,
         ...fallback,
         ...(terminalCancellation ? {
@@ -16751,6 +16863,7 @@ export class Autopilot {
     // have never been attacked on is not evidence, and the whole point of this branch
     // is that something is attacking us right now.
     if (this.hold && this.holdWorks()) {
+      this.retreatIncident = null;
       this.note('staying behind the wall instead of running', {
         spot: { col: this.hold.col, row: this.hold.row }, ...why,
         why: 'this square has held under attack, so nothing here can land a blow unless we ' +
@@ -16764,6 +16877,7 @@ export class Autopilot {
     const inQuietRetreat = Object.values(PREFERRED_QUIET_RETREATS)
       .some(x => x.room === here);
     if (inQuietRetreat) {
+      this.retreatIncident = null;
       this.note('already in a monster-free retreat', {
         room: here, player_safe: false, ...why,
         safety: 'no monsters spawn here; another player can still attack' });
@@ -16772,6 +16886,7 @@ export class Autopilot {
 
     // Already in a true sanctuary? Then we are safe and this is a no-op worth saying.
     if (here != null && inns.some(i => i.inn === here)) {
+      this.retreatIncident = null;
       this.note('already in a sanctuary', { room: here, ...why });
       return { arrived: true, already: true };
     }
@@ -16825,9 +16940,20 @@ export class Autopilot {
           falling_back_to: ranked.length ? 'a permitted refuge' : 'the local wall' });
     }
 
+    const repeated = ranked.filter(r => incident.blockedDestinations.has(Number(r.inn)));
+    if (repeated.length) {
+      ranked = ranked.filter(r => !incident.blockedDestinations.has(Number(r.inn)));
+      this.note('not replaying a refuge route already stalled in this retreat incident', {
+        incident: incident.id,
+        skipped: repeated.map(r => ({ room: r.inn, name: r.innName })),
+        why: 'the same body, room and escape incident already spent its no-progress budget ' +
+             'on this destination; retrying at lower health is not new information',
+      });
+    }
+
     if (!ranked.length) {
       this.note('no refuge is routable from here — falling back to a local wall', why);
-      const fallback = await this.guardedRetreatFallback(this.inReachOfUs() ?? [])
+      const fallback = await this.guardedRetreatFallback(this.inReachOfUs() ?? [], incident)
         .catch(e => ({ error: String(e) }));
       return finishFallback(fallback, { no_route: true });
     }
@@ -16850,13 +16976,20 @@ export class Autopilot {
                          : 'an inn is a sanctuary and ends the fight'),
       });
       const r = await this.guardedRetreatTravel(dest.inn,
-        maxHops == null ? {} : { maxHops })
+        { ...(maxHops == null ? {} : { maxHops }), retreatIncident: incident })
         .catch(e => ({ arrived: false, error: String(e) }));
       if (r?.arrived) {
+        this.retreatIncident = null;
         this.progress(`reached ${dest.preferred ? 'monster-free retreat' : 'safety'} at ${dest.innName}`);
         this.fledInARow = 0;
         return { arrived: true, at: dest.innName, room: dest.inn, hops: dest.hops,
                  preferred: dest.preferred, player_safe: dest.playerSafe };
+      }
+      if (r?.died) {
+        this.retreatIncident = null;
+        this.retreatCancelledPass = this.passes;
+        return { arrived: false, died: true,
+          reason: r.reason ?? 'death ended the guarded retreat' };
       }
       const terminalCancellation = r?.cancelled && (
         r.cancelled_for_player || r.cancelled_externally ||
@@ -16879,6 +17012,7 @@ export class Autopilot {
         };
       }
       if (r?.retreat_guard) {
+        incident.blockedDestinations.add(Number(dest.inn));
         this.note('aborted a retreat route that was not moving', {
           to: dest.innName,
           ...r.retreat_guard,
@@ -16898,12 +17032,12 @@ export class Autopilot {
     // Nothing reachable. A wall here is better than nothing, so fall through to the
     // behaviour that at least gets our back covered.
     this.note('could not reach any refuge — falling back to a local wall', why);
-    const fallback = await this.guardedRetreatFallback(this.inReachOfUs() ?? [])
+    const fallback = await this.guardedRetreatFallback(this.inReachOfUs() ?? [], incident)
       .catch(e => ({ error: String(e) }));
     return finishFallback(fallback);
   }
 
-  async withdraw(threats) {
+  async withdraw(threats, { retreatIncident = null } = {}) {
     const s = this.s, c = s.client;
     const me0 = c.self, geo0 = s.world?.geometry;
     if (!me0 || !geo0) {
@@ -16926,9 +17060,15 @@ export class Autopilot {
     // Somewhere defensible to run TO. Aim it at whatever is hitting us so the square
     // it picks is one the fight can actually be held at, and so we do not retreat into
     // a corner the threats simply follow us into.
+    const failedVectors = retreatIncident?.failedFirstVectorsByRoom
+      ?.get?.(String(s.world?.room?.num ?? '?')) ?? null;
     const spot = await this.takeSafeSpot(
       'withdrawing from a fight we are losing — to a wall, not into the open',
-      threats[0] ?? null).catch(() => ({ took: false }));
+      threats[0] ?? null,
+      { avoidFirstVectors: failedVectors }).catch(() => ({ took: false }));
+    if (spot.cancelled || spot.health_abort)
+      return { withdrawn: false, cancelled: true, health_abort: !!spot.health_abort,
+               why: spot.why || 'the safe-wall approach was cancelled' };
     if (spot.took) {
       this.tally.withdrawals_to_a_wall = (this.tally.withdrawals_to_a_wall || 0) + 1;
       this.note('withdrew to a defensible square', {
