@@ -14,7 +14,8 @@
 // only by that keeper. Two drivers now run it, so the interface between them is a real
 // boundary and needs a test rather than a convention.
 import * as wd from './m59-watchdog.mjs';
-import { safetyFor } from './m59-skills.mjs';
+import { applyFleeBelowPolicy, safetyFor } from './m59-skills.mjs';
+import { readFileSync } from 'node:fs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, detail) => {
@@ -233,10 +234,34 @@ console.log('\na host that cannot answer must not take the guard down');
 
 console.log('\none home for the withdraw line');
 {
-  const client = { vitals: () => ({ health: { value: 10, max: 50 } }) };
-  const a = safetyFor(client, { fleeBelow: 0.4 });
-  ok('safetyFor computes the same two-hit margin the keeper used to compute inline',
-     a.maxHit === 17 && a.fleeAt > 0.4 && a.fleeAt <= 0.7);
+  const client = { vitals: () => ({ health: { value: 17, max: 40 } }) };
+  const implicit = safetyFor(client, { fleeBelow: 0.4 });
+  ok('an implicit floor still computes the adaptive two-hit margin',
+     implicit.maxHit === 14 && implicit.fleeAt === 0.7,
+     JSON.stringify(implicit));
+
+  const policy = { fleeBelow: 0.4 };
+  applyFleeBelowPolicy(policy, 17 / 40);
+  const explicit = safetyFor(client, policy);
+  ok('an explicit broker floor is marked and used exactly instead of the adaptive margin',
+     policy.fleeBelowExplicit === true && explicit.fleeAt === 0.425,
+     JSON.stringify({ policy, explicit }));
+  ok('at exactly 17/40 the strict withdraw comparison does not fire',
+     (17 / 40) < explicit.fleeAt === false);
+  ok('at 16/40 the strict withdraw comparison fires',
+     (16 / 40) < explicit.fleeAt === true);
+
+  applyFleeBelowPolicy(policy, undefined);
+  ok('an update which omits flee_below preserves the explicit order',
+     policy.fleeBelow === 0.425 && policy.fleeBelowExplicit === true,
+     JSON.stringify(policy));
+
+  const broker = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+  const applyAt = broker.indexOf('skills.applyFleeBelowPolicy(p.policy, a.flee_below);');
+  const persistAt = broker.indexOf('rememberAutopilot(a.agent', applyAt);
+  ok('the broker marks an explicit flee_below before persisting the keeper policy',
+     applyAt >= 0 && persistAt > applyAt,
+     JSON.stringify({ applyAt, persistAt }));
   ok('and with no readable max it falls back to the policy floor',
      safetyFor({ vitals: () => ({}) }, { fleeBelow: 0.4 }).fleeAt === 0.4);
 }

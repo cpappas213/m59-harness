@@ -1140,6 +1140,9 @@ export class Autopilot {
       // Break off and withdraw at this. Deliberately higher than fight()'s own
       // threshold: the keeper is not watching a fight, it is watching a character.
       fleeBelow: 0.4,
+      // False keeps the adaptive two-hit margin. The broker marks this true only when
+      // its caller explicitly supplies flee_below, making that exact boundary authoritative.
+      fleeBelowExplicit: false,
       // What to hunt in `farm` mode. Never guessed — if it is empty, farm does nothing.
       hunt: null,
       // WHAT THE FARMING IS FOR — 'money' | 'items' | 'advance' | null. See scorePrey in
