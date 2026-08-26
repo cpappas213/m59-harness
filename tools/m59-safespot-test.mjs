@@ -1977,6 +1977,96 @@ console.log('\n--- legacy farm combat uses the policy round budget ---');
      JSON.stringify({ result: invalidFight.rounds, swings }));
 }
 
+console.log('\n--- legacy farm weapon loss leaves a live held fight before retreating ---');
+{
+  const run = async holding => {
+    const w = world({ health: 30, max: 30, vigor: 180 });
+    w.s.name = holding ? 'held-weapon-loss' : 'open-weapon-loss';
+    w.addMonster(13, 1, 0, MONSTER);
+    w.c.room.objects.get(13).nameRsc = 1;
+    w.s.need = () => w.c;
+
+    const p = keeper(w);
+    p.policy.clearWeak = false;
+    p.policy.useSafeSpots = holding;
+    p.policy.requireSafeWall = false;
+    p.policy.maxCarry = 50;
+    // Keep this fixture's tactical hold in place until the weapon-loss branch.
+    // resumeSuspendedJourney() normally releases a fully rested hold first.
+    if (holding) p.policy.holdResumeAbove = 1.1;
+    p.provision = async () => false;
+    p.sweepBroken = async () => {};
+    p.sweepGearCondition = async () => {};
+    p.armSelf = async () => true;
+    p.fightFloor = () => 0;
+    p.holdWorthwhile = () => ({ hold: false, level: 1, why: 'fixture' });
+    p.maybeTestSpot = () => false;
+    p.inReachOfUs = () => [w.c.room.objects.get(13)];
+    p.hold = holding
+      ? { col: 5, row: 5, takenAt: Date.now() - 1_000, proven: true }
+      : null;
+    p.holdingForFight = () => holding && !!p.hold;
+    p.holdWorks = () => holding && !!p.hold;
+
+    const reason = 'the weapon shattered and no verified replacement could be equipped';
+    p.fightFarmTarget = async () => ({
+      fought: true, killed: false, died: false, rounds: 1,
+      target: 'giant rat', foe_id: 13,
+      disengaged: { at_health: '88%', unarmed: true, reason },
+      note: reason,
+    });
+
+    const persisted = p.book.verify(999, {
+      col: 5, row: 5, by: 'test', note: 'known safe against added attackers',
+    });
+    p.book.save();
+    const bookBefore = JSON.stringify(persisted);
+    const order = [];
+    let leave = null, retreat = null;
+    p.leaveHold = async (why, options) => {
+      order.push('leave');
+      leave = { why, options };
+      p.hold = null;
+      return { left: true };
+    };
+    p.retreatToSafety = async args => {
+      order.push('retreat');
+      retreat = args;
+      return { left: true };
+    };
+
+    let result, error = null;
+    try {
+      result = await p.passFarm({
+        s: w.s, c: w.c, room: null, v: w.c.vitals(), hp: 1,
+      });
+    } catch (caught) {
+      error = caught;
+    } finally {
+      releaseQuarry(w.s.name);
+    }
+    return {
+      result, error, reason, order, leave, retreat,
+      bookUnchanged: JSON.stringify(p.book.get(999, 5, 5)) === bookBefore,
+    };
+  };
+
+  const open = await run(false);
+  ok('open-field weapon loss preserves its reason and retreats immediately',
+     !open.error && open.result === HANDLED && open.order.join(',') === 'retreat' &&
+       open.retreat?.because === open.reason && open.retreat?.unarmed === true,
+     open.error ? String(open.error) : JSON.stringify(open));
+
+  const held = await run(true);
+  ok('held weapon loss force-leaves the live pocket before retreating',
+     !held.error && held.result === HANDLED && held.order.join(',') === 'leave,retreat' &&
+       held.leave?.why === held.reason && held.leave?.options?.force === true &&
+       held.retreat?.because === held.reason && held.retreat?.unarmed === true,
+     held.error ? String(held.error) : JSON.stringify(held));
+  ok('leaving that tactical hold does not discredit the persisted safe spot',
+     held.bookUnchanged, JSON.stringify(held));
+}
+
 console.log('\n--- fleetmates are not prey ---');
 {
   // What was actually happening: 131 of 132 "hit back at whatever is adjacent"
