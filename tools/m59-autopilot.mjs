@@ -12488,7 +12488,16 @@ export class Autopilot {
     const requested = this.policy.fightRounds ?? 30;
     const whole = Math.floor(Number(requested));
     const rounds = Number.isFinite(whole) && whole >= 1 ? whole : 30;
-    return skills.fight(this.s, { ...options, rounds });
+    // `rounds` is the ordinary exchange budget. If the server's condition reports and
+    // our health say this exact target is safely finishable, allow at most one more
+    // equal-sized window without returning through the outer keeper loop. The fight
+    // skill turns either an unsafe forecast or this hard cap into an explicit
+    // disengagement, so open-field farming retreats in the same pass.
+    return skills.fight(this.s, {
+      ...options, rounds,
+      sustainWhileSafe: true,
+      maxExtraRounds: rounds,
+    });
   }
 
   async passFarm(ctx) {

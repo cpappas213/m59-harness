@@ -1937,6 +1937,11 @@ export async function fight(s, {
   // to heal. Prefer the one we were already fighting, whenever it is still here.
   preferId = null,
   rounds = 3,
+  // The general-purpose fight skill keeps `rounds` as a hard limit. Autonomous
+  // farming may opt into a bounded finishing window without returning through the
+  // keeper's full decision loop while a wounded hostile is still in reach.
+  sustainWhileSafe = false,
+  maxExtraRounds = 0,
   swingsPerRound = 1,
   disengageAt = DEFAULT_DISENGAGE_AT,
   loot = true,
@@ -2118,7 +2123,27 @@ export async function fight(s, {
   const combatLines = [];
   let targetCondition = null, conditionTrend = [], projection = null;
   let lastRoundHealth = startPct, worstExchangeLoss = 0;
+  const numberedRounds = Number(rounds);
+  const nominalRoundLimit = sustainWhileSafe
+    ? (Number.isFinite(numberedRounds) && numberedRounds > 0 ? Math.ceil(numberedRounds) : 3)
+    : rounds;
+  const numberedExtraRounds = Math.floor(Number(maxExtraRounds));
+  const extraRoundLimit = sustainWhileSafe && Number.isFinite(numberedExtraRounds)
+    ? Math.max(0, numberedExtraRounds) : 0;
+  const hardRoundLimit = sustainWhileSafe
+    ? nominalRoundLimit + extraRoundLimit : rounds;
+  let sustainReason = null;
   const matchesFoe = report => combatNameKey(report?.name) === combatNameKey(foeName);
+
+  const roundLimitDisengagement = ({ hardCap = false, reason }) => {
+    const health = pct(c.vitals()?.health);
+    return {
+      at_health: Number.isFinite(health) ? Math.round(health * 100) + '%' : 'unknown',
+      round_limit: true,
+      hard_cap: hardCap,
+      reason,
+    };
+  };
 
   // FACE THE TARGET. An attack on something behind you is refused with a
   // message about view, not range. The walk may have turned us the wrong
@@ -2130,8 +2155,28 @@ export async function fight(s, {
     say('faced target', { deg: Math.round(deg), target: foeName });
   }
 
-  for (let r = 0; r < rounds; r++) {
+  for (let r = 0; r < hardRoundLimit; r++) {
     if (!c.room.objects.has(foe.id)) { killed = true; break; }
+    // Reaching the ordinary farm budget is not, by itself, a reason to stop attacking
+    // a fight we are plainly finishing. Stay in this SAME call — no new room refresh,
+    // equipment sweep or outer-loop sleep — only while the race forecast is favorable,
+    // or while the server says the target is below 20% and one worst observed exchange
+    // still leaves us above the configured withdrawal floor. The latter is the useful
+    // conservative answer for adjacent condition bands, whose interval projection is
+    // deliberately null even when a near-full character has a near-dead target.
+    if (sustainWhileSafe && r >= nominalRoundLimit) {
+      const health = pct(c.vitals()?.health);
+      const projectedWin = projection?.winning === true;
+      const finishableNearDeath = !projection && targetCondition?.band === 'near_death' &&
+        Number.isFinite(health) && health - worstExchangeLoss > disengageAt;
+      if (!projectedWin && !finishableNearDeath) {
+        disengaged = roundLimitDisengagement({
+          reason: 'the nominal round budget ended without a favorable forecast or a safely finishable near-death target',
+        });
+        break;
+      }
+      sustainReason = projectedWin ? 'favorable_projection' : 'near_death_with_exchange_margin';
+    }
     // It backed off. Swinging at nothing is free, but the server refuses the swing
     // and the caller needs to know the creature broke contact rather than that we
     // are missing — those call for opposite responses.
@@ -2277,6 +2322,18 @@ export async function fight(s, {
     }
   }
 
+  // A sustained fight has one finite purse. If it spends that purse with the same
+  // hostile still alive, report an actual disengagement so an open-field farm caller
+  // retreats in THIS pass. Returning a neutral partial result here is the lethal seam:
+  // it hands control to the one-second outer loop while the monster keeps attacking.
+  if (sustainWhileSafe && !killed && !disengaged && !drifted &&
+      c.room.objects.has(foe.id) && roundsFought >= hardRoundLimit) {
+    disengaged = roundLimitDisengagement({
+      hardCap: true,
+      reason: `the bounded sustained-fight cap of ${hardRoundLimit} rounds was reached with the target still alive`,
+    });
+  }
+
   await s.pacer.submit('read', () => c.stats(1));
   await c.waitFor({ kinds: ['stat'], timeoutMs: 2000 });
   const after = c.vitals();
@@ -2298,6 +2355,10 @@ export async function fight(s, {
       remaining_rounds: projection.remaining_rounds,
       margin: Math.round(projection.margin * 100) + '%',
     } } : {}),
+    ...(sustainWhileSafe ? {
+      sustained_rounds: Math.max(0, roundsFought - nominalRoundLimit),
+      ...(sustainReason ? { sustain_reason: sustainReason } : {}),
+    } : {}),
     // Worth saying out loud: it means a round went nowhere, and it means whatever sat
     // this character down is not doing so again by itself.
     ...(stoodUp ? { stood_up: 'the first round was refused — we were resting' } : {}),
@@ -2316,7 +2377,11 @@ export async function fight(s, {
     // fatal. Out in the open, walking away is what stops the damage. In a safe spot,
     // walking away is what STARTS it: nothing can land a blow while you stand still
     // and do not swing, so the recovery move is to sit down where you are.
-    out.note = disengaged.early
+    out.note = disengaged.round_limit
+      ? `${disengaged.reason}. ` + (holdPosition
+        ? 'Hold this position; do not leave a working safe spot merely because the bounded exchange ended.'
+        : 'The monster is still present and hostile; retreat now rather than returning to the decision loop beside it.')
+      : disengaged.early
       ? `broke off early at ${disengaged.at_health} health: ${disengaged.target_band} target, but ` +
         `the observed exchange projected ${disengaged.projected_at_kill} health at the kill, below ` +
         `the configured reserve. The hard per-swing floor was not crossed.`
