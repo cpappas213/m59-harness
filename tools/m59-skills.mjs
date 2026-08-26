@@ -1630,14 +1630,102 @@ function operationCancellationResult(result = null) {
 export async function returnToSpot(s, spot, {
   maxSteps = 20, tolerance = 12,
   movementGeneration = s.movementGeneration, controlToken = null,
+  // Safe-wall acquisition supplies a tight dither cutoff. Other return operations —
+  // especially the trip home after deliberately pulling a monster — retain the ordinary
+  // walker's allowance unless their caller opts into a smaller one.
+  stallSteps = null,
+  // `maxSteps` belongs to each leaf walker for compatibility. Tactical safe-wall trips
+  // additionally set this packet-accurate ceiling for the WHOLE composite, so a failed
+  // coarse walk cannot buy a fresh fine-walk purse (and then a third exact-adjustment
+  // purse). Turns do not spend it; only movement packets can make a body wiggle.
+  maxMovePackets = null,
+  // Optional live predicate used by safe-spot acquisition. It is deliberately not a
+  // generic journey rule: callers that expect retaliation while returning after a pull
+  // omit it and retain the established movement behaviour.
+  shouldAbort = null,
 } = {}) {
   const c = s.need();
   if (!spot) return { arrived: false, why: 'no spot given' };
   const cancelled = result => operationMovementCancelled(
     s, movementGeneration, controlToken, result);
-  const cancelledResult = result => operationCancellationResult(result);
-  const moveOptions = extra => ({ ...extra, movementGeneration, controlToken });
+  // Keep the packet-time safety verdict even if an inner movement helper catches the
+  // thrown guard error. The generation handbrake still makes the operation terminal;
+  // this retained detail explains that it was health, not an operator or terrain.
+  let abortDetail = null;
+  let abortIssued = false;
+  const movePacketLimit = maxMovePackets == null ? null : Number(maxMovePackets);
+  const boundedMovePacketLimit = Number.isFinite(movePacketLimit) && movePacketLimit >= 0
+    ? Math.floor(movePacketLimit) : null;
+  let movePackets = 0;
+  const cancelledResult = result => ({
+    ...operationCancellationResult(result),
+    ...(abortDetail ? { aborted: true, ...abortDetail } : {}),
+  });
+  const abortNow = () => {
+    if (typeof shouldAbort !== 'function') return null;
+    const detail = shouldAbort();
+    if (!detail) return null;
+    return typeof detail === 'object' ? detail : { why: String(detail) };
+  };
+  const abortResult = detail => ({
+    arrived: false, left: false, aborted: true, cancelled: true,
+    reason: detail?.why || 'safe-spot approach aborted',
+    ...detail,
+  });
+  const beforeMutation = packet => {
+    // Health owns the explanation when the flee line and the packet ceiling become true
+    // together. It is the more urgent state transition and already cancels the movement
+    // generation synchronously.
+    const detail = abortNow();
+    if (detail) {
+      abortDetail = detail;
+      if (!abortIssued) {
+        abortIssued = true;
+        try {
+          s.cancelMovement?.(controlToken,
+            detail.why || 'health crossed the flee line during safe-spot acquisition');
+        } catch { /* throwing below is still the synchronous packet handbrake */ }
+      }
+      throw Object.assign(new Error(detail.why || 'safe-spot approach aborted'),
+        { returnToSpotAbort: detail });
+    }
+    if (packet === 'move' && boundedMovePacketLimit !== null) {
+      if (movePackets >= boundedMovePacketLimit) {
+        const budget = {
+          movement_budget_exhausted: true,
+          no_ground_gained: true,
+          move_packets: movePackets,
+          max_move_packets: boundedMovePacketLimit,
+          why: `safe-spot return exhausted its shared ${boundedMovePacketLimit}-move budget`,
+        };
+        // This is terminal to this composite, but it is not an external cancellation:
+        // the autopilot may immediately re-plan, scavenge, or fight on the same pass.
+        throw Object.assign(new Error(budget.why), { returnToSpotBudget: budget });
+      }
+      movePackets++;
+    }
+  };
+  const attempt = async action => {
+    try { return await action(); }
+    catch (error) {
+      if (error?.returnToSpotAbort) return abortResult(error.returnToSpotAbort);
+      if (error?.returnToSpotBudget) return {
+        arrived: false, left: false, aborted: true,
+        reason: 'movement_budget_exhausted',
+        ...error.returnToSpotBudget,
+      };
+      return { arrived: false, reason: error?.message || String(error) };
+    }
+  };
+  const moveOptions = extra => ({
+    maxSteps, hardCap: maxSteps,
+    ...(stallSteps == null ? {} : { stallSteps }),
+    beforeMutation,
+    ...extra, movementGeneration, controlToken,
+  });
   if (cancelled()) return cancelledResult();
+  const initialAbort = abortNow();
+  if (initialAbort) return abortResult(initialAbort);
   // A normal square walk is dead-reckoned for speed. That is appropriate while
   // crossing a room, but a predicted arrival is not evidence that we regained a
   // particular safe square: a delayed server position can still replace it and leave
@@ -1713,45 +1801,56 @@ export async function returnToSpot(s, spot, {
     const fineOwnsIt = away <= FINE_HANDOVER_SQUARES && typeof s.approachFine === 'function';
     let w;
     if (fineOwnsIt) {
-      w = await s.approachFine(spot.col, spot.row,
-        moveOptions({ toX: spot.x, toY: spot.y }))
-                 .catch(e => ({ arrived: false, reason: e.message }));
+      w = await attempt(() => s.approachFine(spot.col, spot.row,
+        moveOptions({ toX: spot.x, toY: spot.y })));
+      if (w.aborted) return w;
       if (cancelled(w)) return cancelledResult(w);
       if (!w.arrived) {
-        const square = await s.walkTo(spot.col, spot.row, moveOptions({ maxSteps }))
-                              .catch(e => ({ arrived: false, reason: e.message }));
+        const square = await attempt(() => s.walkTo(spot.col, spot.row, moveOptions({})));
+        if (square.aborted) return square;
         if (cancelled(square)) return cancelledResult(square);
         if (square.arrived) w = square;
         else w = { ...square, fine_tried: w.reason ?? 'fine approach did not arrive' };
       }
     } else {
-      w = await s.walkTo(spot.col, spot.row, moveOptions({ maxSteps }))
-                 .catch(e => ({ arrived: false, reason: e.message }));
+      w = await attempt(() => s.walkTo(spot.col, spot.row, moveOptions({})));
+      if (w.aborted) return w;
       if (cancelled(w)) return cancelledResult(w);
       if (!w.arrived && typeof s.approachFine === 'function') {
-        const fine = await s.approachFine(spot.col, spot.row,
-          moveOptions({ toX: spot.x, toY: spot.y }))
-                            .catch(e => ({ arrived: false, reason: e.message }));
+        const fine = await attempt(() => s.approachFine(spot.col, spot.row,
+          moveOptions({ toX: spot.x, toY: spot.y })));
+        if (fine.aborted) return fine;
         if (cancelled(fine)) return cancelledResult(fine);
         if (fine.arrived) w = fine;
         else w = { ...w, fine_tried: fine.reason ?? 'fine approach did not arrive' };
       }
     }
     if (!w.arrived)
-      return { arrived: false, why: w.reason || 'could not walk back to the square',
-               ...(w.fine_tried ? { fine_tried: w.fine_tried } : {}) };
+      // Keep terminal leaf metadata (`no_ground_gained`, reason, packet counts) visible
+      // to the tactical caller. Reducing this to prose made a real movement plateau
+      // indistinguishable from an ordinary miss, so the next pass could try its neighbor.
+      return { ...w, arrived: false,
+               why: w.why || w.reason || 'could not walk back to the square' };
     await confirmPrediction();
     if (cancelled()) return cancelledResult();
   }
+  let exactFine = null;
   if (spot.x != null && s.walkFine) {
-    const fine = await s.walkFine(spot.x, spot.y,
-      moveOptions({ maxSteps: 6, stride: 40, arriveWithin: tolerance }))
-      .catch(e => ({ arrived: false, reason: e.message }));
+    const fine = await attempt(() => s.walkFine(spot.x, spot.y,
+      moveOptions({ maxSteps: 6, hardCap: 6, stride: 40, arriveWithin: tolerance })));
+    if (fine.aborted) return fine;
     if (cancelled(fine)) return cancelledResult(fine);
+    exactFine = fine;
   }
   const d = at();
-  return { arrived: d !== null && d <= tolerance, off_by: d,
-           position: c.self ? { col: c.self.col, row: c.self.row, x: c.self.x, y: c.self.y } : null };
+  const arrived = d !== null && d <= tolerance;
+  const position = c.self
+    ? { col: c.self.col, row: c.self.row, x: c.self.x, y: c.self.y } : null;
+  if (!arrived && exactFine && !exactFine.arrived)
+    return { ...exactFine, arrived: false,
+             why: exactFine.why || exactFine.reason || 'could not settle on the remembered position',
+             off_by: d, position };
+  return { arrived, off_by: d, position };
 }
 
 // Sit until a vital comes back, or until nothing is improving. Resting is silent
@@ -1973,9 +2072,20 @@ export async function fight(s, {
   // to heal. Prefer the one we were already fighting, whenever it is still here.
   preferId = null,
   rounds = 3,
+  // The general-purpose fight skill keeps `rounds` as a hard limit. Autonomous
+  // farming may opt into a bounded finishing window without returning through the
+  // keeper's full decision loop while a wounded hostile is still in reach.
+  sustainWhileSafe = false,
+  maxExtraRounds = 0,
   swingsPerRound = 1,
   disengageAt = DEFAULT_DISENGAGE_AT,
   loot = true,
+  // A farming kill does not need a second journey. Its drops land on the creature's
+  // square, which is already inside UserGet's seven-square reach when the final swing
+  // lands. Keep the historical one-shot behaviour by default (only a held position
+  // stays put), while allowing autonomous callers to make post-kill looting in-range
+  // only even when they fought in the open.
+  lootStayPut = null,
   equip = true,
   // FIGHT WITHOUT MOVING. In a safe spot the square IS the advantage, so approaching
   // is not a helpful convenience — it is throwing the fight's entire premise away to
@@ -2162,7 +2272,27 @@ export async function fight(s, {
   const combatLines = [];
   let targetCondition = null, conditionTrend = [], projection = null;
   let lastRoundHealth = startPct, worstExchangeLoss = 0;
+  const numberedRounds = Number(rounds);
+  const nominalRoundLimit = sustainWhileSafe
+    ? (Number.isFinite(numberedRounds) && numberedRounds > 0 ? Math.ceil(numberedRounds) : 3)
+    : rounds;
+  const numberedExtraRounds = Math.floor(Number(maxExtraRounds));
+  const extraRoundLimit = sustainWhileSafe && Number.isFinite(numberedExtraRounds)
+    ? Math.max(0, numberedExtraRounds) : 0;
+  const hardRoundLimit = sustainWhileSafe
+    ? nominalRoundLimit + extraRoundLimit : rounds;
+  let sustainReason = null;
   const matchesFoe = report => combatNameKey(report?.name) === combatNameKey(foeName);
+
+  const roundLimitDisengagement = ({ hardCap = false, reason }) => {
+    const health = pct(c.vitals()?.health);
+    return {
+      at_health: Number.isFinite(health) ? Math.round(health * 100) + '%' : 'unknown',
+      round_limit: true,
+      hard_cap: hardCap,
+      reason,
+    };
+  };
 
   // FACE THE TARGET. An attack on something behind you is refused with a
   // message about view, not range. The walk may have turned us the wrong
@@ -2174,8 +2304,28 @@ export async function fight(s, {
     say('faced target', { deg: Math.round(deg), target: foeName });
   }
 
-  for (let r = 0; r < rounds; r++) {
+  for (let r = 0; r < hardRoundLimit; r++) {
     if (!c.room.objects.has(foe.id)) { killed = true; break; }
+    // Reaching the ordinary farm budget is not, by itself, a reason to stop attacking
+    // a fight we are plainly finishing. Stay in this SAME call — no new room refresh,
+    // equipment sweep or outer-loop sleep — only while the race forecast is favorable,
+    // or while the server says the target is below 20% and one worst observed exchange
+    // still leaves us above the configured withdrawal floor. The latter is the useful
+    // conservative answer for adjacent condition bands, whose interval projection is
+    // deliberately null even when a near-full character has a near-dead target.
+    if (sustainWhileSafe && r >= nominalRoundLimit) {
+      const health = pct(c.vitals()?.health);
+      const projectedWin = projection?.winning === true;
+      const finishableNearDeath = !projection && targetCondition?.band === 'near_death' &&
+        Number.isFinite(health) && health - worstExchangeLoss > disengageAt;
+      if (!projectedWin && !finishableNearDeath) {
+        disengaged = roundLimitDisengagement({
+          reason: 'the nominal round budget ended without a favorable forecast or a safely finishable near-death target',
+        });
+        break;
+      }
+      sustainReason = projectedWin ? 'favorable_projection' : 'near_death_with_exchange_margin';
+    }
     // It backed off. Swinging at nothing is free, but the server refuses the swing
     // and the caller needs to know the creature broke contact rather than that we
     // are missing — those call for opposite responses.
@@ -2399,6 +2549,18 @@ export async function fight(s, {
     }
   }
 
+  // A sustained fight has one finite purse. If it spends that purse with the same
+  // hostile still alive, report an actual disengagement so an open-field farm caller
+  // retreats in THIS pass. Returning a neutral partial result here is the lethal seam:
+  // it hands control to the one-second outer loop while the monster keeps attacking.
+  if (sustainWhileSafe && !killed && !disengaged && !drifted &&
+      c.room.objects.has(foe.id) && roundsFought >= hardRoundLimit) {
+    disengaged = roundLimitDisengagement({
+      hardCap: true,
+      reason: `the bounded sustained-fight cap of ${hardRoundLimit} rounds was reached with the target still alive`,
+    });
+  }
+
   await s.pacer.submit('read', () => c.stats(1));
   await c.waitFor({ kinds: ['stat'], timeoutMs: 2000 });
   const after = c.vitals();
@@ -2420,6 +2582,10 @@ export async function fight(s, {
       remaining_rounds: projection.remaining_rounds,
       margin: Math.round(projection.margin * 100) + '%',
     } } : {}),
+    ...(sustainWhileSafe ? {
+      sustained_rounds: Math.max(0, roundsFought - nominalRoundLimit),
+      ...(sustainReason ? { sustain_reason: sustainReason } : {}),
+    } : {}),
     // Worth saying out loud: it means a round went nowhere, and it means whatever sat
     // this character down is not doing so again by itself.
     ...(stoodUp ? { stood_up: 'the first round was refused — we were resting' } : {}),
@@ -2443,6 +2609,10 @@ export async function fight(s, {
       ? `${disengaged.reason}. No further attack was sent. The monster already engaged in ` +
         'this fight is still present and hostile even at a held wall; leave its reach before ' +
         'attempting recovery or re-arming.'
+      : disengaged.round_limit
+      ? `${disengaged.reason}. ` + (holdPosition
+        ? 'Hold this position; do not leave a working safe spot merely because the bounded exchange ended.'
+        : 'The monster is still present and hostile; retreat now rather than returning to the decision loop beside it.')
       : disengaged.early
       ? `broke off early at ${disengaged.at_health} health: ${disengaged.target_band} target, but ` +
         `the observed exchange projected ${disengaged.projected_at_kill} health at the kill, below ` +
@@ -2468,7 +2638,9 @@ export async function fight(s, {
   }
 
   if (loot) {
-    const l = await s.lootFloor({ stayPut: holdPosition });
+    const l = await s.lootFloor({
+      stayPut: lootStayPut == null ? holdPosition : !!lootStayPut,
+    });
     out.looted = l.taken;
     out.refused = l.refused?.length ? l.refused : undefined;
     out.carrying = l.carrying;

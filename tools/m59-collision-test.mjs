@@ -1042,6 +1042,27 @@ const DeadlinePacer = liftClass(brokerSource, 'class Pacer {', 'Pacer', {
   remainingDoorSettle: () => 0,
 });
 ok('the production Pacer compiled for deadline regression', typeof DeadlinePacer === 'function');
+if (typeof DeadlinePacer === 'function') {
+  // A normal job can already have made pump sleep for its per-kind pacing slot when the
+  // survival ladder submits its first move. The urgent packet must wake that sleep and
+  // become the next wire action; otherwise the guard's movement window is mostly spent in
+  // a queue it cannot observe.
+  const priorityPacer = new DeadlinePacer(1000);
+  priorityPacer.lastByKind.set('read', Date.now());
+  const order = [];
+  const ordinary = priorityPacer.submit('read', async () => { order.push('read'); }, 70);
+  await new Promise(resolve => setTimeout(resolve, 5));
+  let dispatches = 0;
+  priorityPacer.emergencyMovement = {
+    active: true,
+    onDispatch: () => { dispatches++; },
+  };
+  const emergency = priorityPacer.submit('move', async () => { order.push('move'); });
+  await Promise.all([ordinary, emergency]);
+  ok('emergency movement preempts a paced ordinary queue head without bypassing Pacer',
+     order.join(',') === 'move,read' && dispatches === 1,
+     JSON.stringify({ order, dispatches }));
+}
 const provedSquares = liftFunction(brokerSource, 'function provedSquares(geo, from, steps)',
   { KOD_FINENESS, protocolToClient });
 ok('the extracted provedSquares compiled', typeof provedSquares === 'function');
@@ -1051,6 +1072,8 @@ const atEdgeOpening = liftFunction(brokerSource,
   'function atEdgeOpening(position, opening, direction)', { KOD_FINENESS });
 ok('the extracted edge-opening predicate compiled', typeof atEdgeOpening === 'function');
 for (const n of moduleScopeNames(brokerSource)) BROKER_SCOPE.add(n);
+const observeMovementDeath = compileSessionMethod(brokerSource,
+  'observeMovementDeath(ev = {}) {', 'observeMovementDeath', {});
 const validateFineTarget = compileSessionMethod(brokerSource,
   'validateFineTarget(x, y, {', 'validateFineTarget',
   { CLIENT_FINENESS, KOD_FINENESS, blocksMovement,
@@ -1291,6 +1314,28 @@ function fakeBrokerSession(geometry, {
 
 console.log('\nclient protocol bounds and live geometry invalidation');
 {
+  if (typeof observeMovementDeath === 'function') {
+    let cancels = 0;
+    const deathSession = {
+      deathGeneration: 0,
+      deathMovementLatched: false,
+      movementGeneration: 7,
+      cancelMovement() { cancels++; this.movementGeneration++; },
+    };
+    const first = observeMovementDeath.call(deathSession,
+      { kind: 'stat', name: 'health', value: 0 });
+    const duplicate = observeMovementDeath.call(deathSession,
+      { kind: 'message', text: 'You are dead.' });
+    observeMovementDeath.call(deathSession,
+      { kind: 'stat', name: 'health', value: 20 });
+    const nextLife = observeMovementDeath.call(deathSession,
+      { kind: 'message', text: 'The troll slays you.' });
+    ok('health zero synchronously invalidates movement once per life',
+       first === true && duplicate === true && nextLife === true &&
+         deathSession.deathGeneration === 2 &&
+         deathSession.movementGeneration === 9 && cancels === 2,
+       JSON.stringify({ deathSession, cancels }));
+  }
   const packetClient = Object.create(M59Client.prototype);
   packetClient.room = { id: 1 };
   let sent = 0;
@@ -1439,7 +1484,7 @@ console.log('\nterminal movement propagation and edge packet authority');
     // WAITING. Both directions are pinned, because the failure is symmetric: lose the
     // patience and every passing rat costs a reroute, lose the escalation and the fleet
     // goes back to standing still while it is eaten.
-    const blockedRun = async ({ falling }) => {
+    const blockedRun = async ({ falling, emergency = false }) => {
       let hp = 50, sleepMs = 0;
       const client = {
         self: { col: 1, row: 1, x: 96, y: 96 },
@@ -1453,6 +1498,7 @@ console.log('\nterminal movement propagation and edge packet authority');
         client, world: { geometry }, movementGeneration: 0,
         need() { return this.client; },
         movementWasCancelled() { return false; },
+        emergencyMovementFor() { return emergency ? { active: true } : null; },
         threatsHere() { return []; },
         // No way round, so the walker must fall through to the occupancy path either way.
         sidestepAround() { return null; },
@@ -1467,6 +1513,7 @@ console.log('\nterminal movement propagation and edge packet authority');
     };
     const patient = await blockedRun({ falling: false });
     const underFire = await blockedRun({ falling: true });
+    const emergency = await blockedRun({ falling: false, emergency: true });
 
     ok('a body in the way with no damage still gets the patient retry',
        patient.elapsed >= 400,
@@ -1474,6 +1521,9 @@ console.log('\nterminal movement propagation and edge packet authority');
     ok('but a body that is HITTING us is never waited for',
        underFire.elapsed < patient.elapsed && underFire.elapsed < 400,
        `under fire took ${underFire.elapsed}ms against ${patient.elapsed}ms patient`);
+    ok('a guarded emergency also escapes the first body block without waiting for a hit',
+       emergency.elapsed < 400,
+       `emergency block recovery took ${emergency.elapsed}ms`);
     ok('and the walk reports the health it lost standing there',
        underFire.out.damage_while_blocked > 0 &&
        /lost \d+ health/.test(underFire.out.note ?? ''),
@@ -2120,13 +2170,15 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
        pacedPastDeadline.packets.length === 0,
      JSON.stringify({ lateMove, packets: pacedPastDeadline.packets }));
 
-  // A learned-ride deadline is movement authority, not merely a reason for the caller to
-  // stop asking. Keeper mode has an explicitly raw escape for stale geometry, so both the
-  // deadline refusal itself and a geometry refusal returned after expiry must be unable to
-  // enter that escape.
+  // Keeper mode itself grants NO raw movement authority. The server does not validate
+  // player collision, so treating a local geometry refusal as permission to ask it would
+  // let an ordinary keeper cross a wall. The unsafe probe survives only behind the exact
+  // diagnostic opt-in, and an operation deadline still closes that probe before it sends.
   const priorKeeper = process.env.M59_KEEPER;
+  const priorRawFallback = process.env.M59_RAW_MOVE_FALLBACK;
   try {
     process.env.M59_KEEPER = '1';
+    delete process.env.M59_RAW_MOVE_FALLBACK;
     const deadlineClient = {
       room: { id: 1, objects: new Map([[7, {}]]) }, selfId: 7,
       self: { x: 128, y: 128, col: 2, row: 2 }, moveSpeed: () => 1,
@@ -2145,21 +2197,38 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
     });
 
     movementNow = 0;
+    const ordinaryGeometry = await stepFine.call(deadlineSession('geometry_blocked'),
+                                                  256, 128);
+    ok('keeper mode alone never turns a blocked fine move into a raw packet',
+       ordinaryGeometry.reason === 'geometry_blocked' && rawMoves === 0,
+       JSON.stringify({ ordinaryGeometry, rawMoves }));
+
+    movementNow = 0;
     const directDeadline = await stepFine.call(deadlineSession('effort_deadline_exhausted'),
                                                 256, 128, { deadlineAt: 50 });
-    ok('a deadline refusal never becomes a keeper raw movement packet',
+    ok('a deadline refusal never becomes a raw movement packet',
        directDeadline.reason === 'effort_deadline_exhausted' && rawMoves === 0,
        JSON.stringify({ directDeadline, rawMoves }));
 
+    process.env.M59_RAW_MOVE_FALLBACK = '1';
     movementNow = 0;
     const expiredGeometry = await stepFine.call(deadlineSession('geometry_blocked'),
                                                 256, 128, { deadlineAt: 50 });
-    ok('expiry is rechecked before keeper raw fallback can send a geometry-refused move',
+    ok('expiry is rechecked before the diagnostic raw fallback can send a refused move',
        expiredGeometry.reason === 'effort_deadline_exhausted' && rawMoves === 0,
        JSON.stringify({ expiredGeometry, rawMoves }));
+
+    movementNow = 0;
+    const diagnosticGeometry = await stepFine.call(deadlineSession('geometry_blocked'),
+                                                    256, 128);
+    ok('only the exact diagnostic opt-in can emit a locally-refused endpoint',
+       diagnosticGeometry.reason === 'raw_move_rejected' && rawMoves === 1,
+       JSON.stringify({ diagnosticGeometry, rawMoves }));
   } finally {
     if (priorKeeper == null) delete process.env.M59_KEEPER;
     else process.env.M59_KEEPER = priorKeeper;
+    if (priorRawFallback == null) delete process.env.M59_RAW_MOVE_FALLBACK;
+    else process.env.M59_RAW_MOVE_FALLBACK = priorRawFallback;
   }
 
   movementNow = 0;
@@ -2308,6 +2377,36 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      lateralWalk.reason === 'blocked — every heading refused, at every reach tried' &&
        lateralCalls > 0 && lateralCalls <= 36,
      JSON.stringify({ lateralWalk, lateralCalls }));
+
+  // A tactical safe-wall walk has a stricter definition than the generic fine mover:
+  // changing coordinates is not progress if no new all-time closest distance appears.
+  // This fixture alternates between x=120 and x=128. One iteration can gain ground from
+  // the worse point, so the ordinary every-heading stall keeps resetting, but the walk
+  // never beats its starting distance to the target.
+  let plateauCalls = 0;
+  const plateauClient = {
+    room: { id: 1 }, self: { x: 128, y: 128, col: 2, row: 2 },
+  };
+  const plateauSession = {
+    client: plateauClient,
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    async stepFine() {
+      plateauCalls++;
+      plateauClient.self = {
+        ...plateauClient.self,
+        x: plateauCalls % 2 ? 120 : 128,
+      };
+      return { moved: true, left_room: false, position: { ...plateauClient.self } };
+    },
+  };
+  const plateauWalk = await walkFine.call(plateauSession, 256, 128,
+    { maxSteps: 20, stride: 48, arriveWithin: 1, stallSteps: 4 });
+  ok('an explicit fine-walk plateau limit stops a coordinate-changing wiggle',
+     plateauWalk.reason === 'no_ground_gained' && plateauWalk.steps === 4 &&
+       plateauCalls === 20 && plateauWalk.closest === 128,
+     JSON.stringify({ plateauWalk, plateauCalls }));
 
   const blocker = {
     id: 7, x: clientToWire(2048), y: clientToWire(2048), flags: MOVEON.NO,
