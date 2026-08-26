@@ -2652,7 +2652,7 @@ class Session {
   // from full to dead, and the braking version spent most of it thinking.
   async walkPivots(planSteps, geo, { movementGeneration = this.movementGeneration,
                                     controlToken = null, maxMoves = null,
-                                    shelter = null } = {}) {
+                                    shelter = null, beforeMutation = null } = {}) {
     const c = this.need();
     const roomId = c.room.id;
     let legs = 0, singles = 0;
@@ -2731,7 +2731,8 @@ class Session {
         // A FALL IS ALWAYS "UNPROVED" TO THE PULL, because the pull traces in walk mode —
         // which is precisely the predicate that refuses a fall. So it lands here, and here
         // is where the flag has to be passed on.
-        const r = await this.step(target.col, target.row, { fall: !!target.fall });
+        const r = await this.step(target.col, target.row,
+          { fall: !!target.fall, beforeMutation });
         singles++;
         if (r.left_room) return { done: false, legs, singles, left_room: true };
         if (isTerminalMovementReason(r.reason)) return { done: false, legs, singles, ...r };
@@ -2771,10 +2772,15 @@ class Session {
       const speed = this.moveSpeed();
       const owed = Math.round(1000 * dist / squaresPerSecond(speed));
       const deg = (Math.atan2(target.y - me.y, target.x - me.x) * 180 / Math.PI + 360) % 360;
-      await this.pacer.submit('turn', () => (c.room.id === roomId ? c.face(deg) : false));
+      await this.pacer.submit('turn', () => {
+        if (c.room.id !== roomId) return false;
+        if (typeof beforeMutation === 'function')
+          beforeMutation('turn', { x: target.x, y: target.y, pivot: true });
+        return c.face(deg);
+      });
       const queued = await this.queueValidatedMove(target.x, target.y,
         { speed, slide: false, minGap: Math.max(this._moveGapMs ?? MOVE_INTERVAL_MS, owed),
-          expectedRoomId: roomId });
+          expectedRoomId: roomId, beforeMutation });
       // Traced at the CALL SITE, never inside `queueValidatedMove` — that method is lifted
       // out of this file by text and evaluated by m59-collision-test.mjs, so anything it
       // calls has to exist in that scope too. Off unless M59_COLLISION_TRACE=1.
@@ -3003,7 +3009,7 @@ class Session {
   //    rock, not that the way is shut. Fanning the heading out to either side is
   //    what "hugging the wall" actually is, and it is how a human gets along a
   //    ledge without falling off it.
-  async stepFine(x, y, { deadlineAt = Infinity } = {}) {
+  async stepFine(x, y, { deadlineAt = Infinity, beforeMutation = null } = {}) {
     if (performance.now() >= deadlineAt)
       return { moved: false, left_room: false, reason: 'effort_deadline_exhausted' };
     const c = this.need();
@@ -3022,13 +3028,19 @@ class Session {
     const before = p0 ? { x: p0.x, y: p0.y, col: p0.col, row: p0.row } : null;
     if (!before) return { moved: false, left_room: false, reason: 'own_position_unknown' };
     const queued = await this.queueValidatedMove(x, y,
-      { speed: this.moveSpeed(), slide: true, minGap: MOVE_INTERVAL_MS, deadlineAt });
+      { speed: this.moveSpeed(), slide: true, minGap: MOVE_INTERVAL_MS,
+        deadlineAt, beforeMutation });
     const validation = queued.validation ?? {};
     if (!queued.sent) {
-      // In keeper mode, if the collision check rejected the move
-      // due to geometry (stale .roo), send it anyway. The server
-      // will accept or reject based on its own geometry.
-      if (process.env.M59_KEEPER && (validation.blocked || validation.reason)
+      // AN UNVALIDATED COORDINATE IS A DIAGNOSTIC, NEVER A KEEPER DEFAULT.
+      //
+      // The server does not enforce player collision; the stock client does. Sending a
+      // locally-refused endpoint therefore does not ask the server to settle a stale-map
+      // disagreement — it can move the character through the wall. Keep the escape hatch
+      // for an operator proving a known model gap, but require two exact opt-ins so ordinary
+      // keeper mode (including the historically truthy value `M59_KEEPER=0`) fails closed.
+      if (process.env.M59_KEEPER === '1' && process.env.M59_RAW_MOVE_FALLBACK === '1'
+          && (validation.blocked || validation.reason)
           && validation.reason !== 'room_changed_before_move'
           && validation.reason !== 'effort_deadline_exhausted') {
         // DECLARED OUTSIDE THE TRY. It used to be `const c2` inside it, and the catch
@@ -3045,6 +3057,7 @@ class Session {
                      left_room: c2.room?.id !== startRoom,
                      reason: 'effort_deadline_exhausted',
                      note: 'the learned-ride deadline expired before the raw fallback send' };
+          if (typeof beforeMutation === 'function') beforeMutation('move', { x, y, raw: true });
           c2.moveTo(Math.round(x), Math.round(y), c2.moveSpeed() ?? 1, c2.room?.id ?? 0);
           await new Promise(r => setTimeout(r, 300));
           const after = c2.self;
@@ -3056,6 +3069,10 @@ class Session {
           return { moved: false, position: before, left_room: c2.room?.id !== startRoom,
                    reason: 'raw_move_rejected', note: 'server rejected the raw move' };
         } catch (e) {
+          // A packet guard is a hard stop, not a geometry refusal. Let the composite
+          // operation retain its safety detail instead of disguising the refusal as a
+          // raw-move error and trying another movement fallback.
+          if (e?.returnToSpotAbort || e?.returnToSpotBudget) throw e;
           return { moved: false, position: before,
                    left_room: (c2?.room?.id ?? startRoom) !== startRoom,
                    reason: 'raw_move_error', note: e.message };
@@ -3133,8 +3150,9 @@ class Session {
   // ten — but is found so much less often that the share of characters that end up on a
   // wall at all falls from 68% to 51%. `travel_hold_within` stays at ten.)
   async approachFine(col, row, { toX = null, toY = null, maxSteps = 60, stride = 48,
+                                 stallSteps = null,
                                  movementGeneration = this.movementGeneration,
-                                 controlToken = null } = {}) {
+                                 controlToken = null, beforeMutation = null } = {}) {
     const c = this.need();
     const geo = this.world?.geometry;
     const me = c.self ?? await this.selfOrResync();
@@ -3152,8 +3170,12 @@ class Session {
               y: row * KOD_FINENESS + (KOD_FINENESS >> 1) });
 
     const r = await this.walkFine(goal.x, goal.y,
-      { maxSteps, stride, arriveWithin: KOD_FINENESS >> 1, movementGeneration, controlToken })
-      .catch(e => ({ arrived: false, reason: e.message }));
+      { maxSteps, stride, arriveWithin: KOD_FINENESS >> 1, movementGeneration, controlToken,
+        stallSteps, beforeMutation })
+      .catch(e => {
+        if (e?.returnToSpotAbort || e?.returnToSpotBudget) throw e;
+        return { arrived: false, reason: e.message };
+      });
     if (r?.left_room) return { arrived: false, left_room: true, steps: r.steps ?? 0 };
     const at = c.self;
     // ON THE SQUARE IS THE ONLY THING THAT COUNTS. `walkFine` answers "as close as fine
@@ -3176,6 +3198,10 @@ class Session {
     arriveWithin = 40,
     movementGeneration = this.movementGeneration,
     controlToken,
+    // Tactical wall approaches use a short all-time-distance plateau cutoff. Generic
+    // fine walks keep their historical tolerance by leaving this null.
+    stallSteps = null,
+    beforeMutation = null,
   } = {}) {
     const c = this.need();
     const startRoom = c.room.id;
@@ -3187,6 +3213,9 @@ class Session {
     let stalls = 0, lastStep = null;
     const stride0 = stride;          // what a healthy step is, to restore after a halving
     let closest = Infinity, sinceCloser = 0;
+    const requestedStallSteps = stallSteps == null ? null : Number(stallSteps);
+    const stallLimit = Number.isFinite(requestedStallSteps) && requestedStallSteps >= 1
+      ? Math.floor(requestedStallSteps) : null;
     const geometryRejections = new Set();
     // Headings to try, in order: straight at it, then fanned out to either side.
     // The wide angles are what carry you along a wall rather than into it.
@@ -3216,10 +3245,21 @@ class Session {
       // square, it is there — the alternative is spending the whole step budget shaving
       // units off a number that a body's own width makes meaningless.
       if (remaining < closest - 1) { closest = remaining; sinceCloser = 0; }
-      else if (++sinceCloser >= 4 && closest <= KOD_FINENESS)
-        return { arrived: true, position: { col: me.col, row: me.row, x: me.x, y: me.y },
-                 steps: i, log, note: 'as close as fine movement gets — ' +
-                   Math.round(closest) + ' units, inside one square' };
+      else {
+        sinceCloser++;
+        if (sinceCloser >= 4 && closest <= KOD_FINENESS)
+          return { arrived: true, position: { col: me.col, row: me.row, x: me.x, y: me.y },
+                   steps: i, log, note: 'as close as fine movement gets — ' +
+                     Math.round(closest) + ' units, inside one square' };
+        // `moved` can be true forever while collision slides the body between two cells.
+        // A caller-supplied limit therefore measures new all-time ground toward the fixed
+        // target, not whether the most recent packet changed coordinates.
+        if (stallLimit !== null && closest > KOD_FINENESS && sinceCloser >= stallLimit)
+          return { arrived: false, reason: 'no_ground_gained', closest: Math.round(closest),
+                   position: { col: me.col, row: me.row, x: me.x, y: me.y },
+                   steps: i, log,
+                   note: `fine movement found no closer ground for ${sinceCloser} steps` };
+      }
       let progressed = false;
 
       for (const off of FAN) {
@@ -3245,7 +3285,7 @@ class Session {
           const col = Math.floor(aimX / KOD_FINENESS), row = Math.floor(aimY / KOD_FINENESS);
           if (avoidSquares.has(`${row},${col}`)) continue;
         }
-        const r = await this.stepFine(aimX, aimY);
+        const r = await this.stepFine(aimX, aimY, { beforeMutation });
         // THE FINE WALK IS WHERE THE TRACE USED TO GO DARK.
         //
         // `traceMove` sat on the two square-step call sites only, so every fine move was
@@ -3356,7 +3396,8 @@ class Session {
   // rather than unwinding the whole trail — the goal is to get out of the pocket, not to
   // undo the journey.
   async retreatAlongBreadcrumbs({ maxCrumbs = 12, until = null,
-    movementGeneration = this.movementGeneration, controlToken } = {}) {
+    movementGeneration = this.movementGeneration, controlToken,
+    beforeMutation = null } = {}) {
     const c = this.need();
     const crumbs = this.breadcrumbs ?? [];
     // TRIM THE LOOPS OUT OF THE TRAIL BEFORE WALKING IT BACKWARDS.
@@ -3398,7 +3439,7 @@ class Session {
         crumbs.length = 0; blocked = 'breadcrumb_trail_broken'; break;
       }
       const back = await this.queueValidatedMove(crumb.from.x, crumb.from.y,
-        { slide: true, expectedRoomId: roomId });
+        { slide: true, expectedRoomId: roomId, beforeMutation });
       if (!back.sent) { blocked = back.validation?.reason ?? 'geometry_blocked'; break; }
       // The crumb this move just recorded is the retreat itself; drop both, or the trail
       // grows a there-and-back pair and the next retreat undoes the undo.
@@ -3409,7 +3450,10 @@ class Session {
       c.predictSelf({ x: back.target.x, y: back.target.y,
                       col: Math.floor(back.target.x / KOD_FINENESS),
                       row: Math.floor(back.target.y / KOD_FINENESS) });
-      if (typeof until === 'function' && until()) break;
+      // Give the caller the position we just established. Callers used to have to close
+      // over a client and race their own read against prediction; the retreat already owns
+      // the authoritative point at which the stop question should be asked.
+      if (typeof until === 'function' && until(c.self ?? null)) break;
     }
     const me = c.self;
     return { moved: steps > 0, steps, crumbs_left: crumbs.length,
@@ -3512,6 +3556,10 @@ class Session {
   async walkTo(col, row, {
     maxSteps = 120,
     hardCap = 400,
+    // Tactical callers can lower this without weakening ordinary room travel. The
+    // default retains the measured detour allowance; safe-wall acquisition uses four
+    // revisits so a two-square wall bounce ends in seconds rather than minutes.
+    stallSteps = WALK_STALL_STEPS,
     movementGeneration = this.movementGeneration,
     controlToken,
     beforeMutation = null,
@@ -3601,7 +3649,7 @@ class Session {
       // still standing off the floor — from which no route exists at all.
       const half = KOD_FINENESS >> 1;
       const targetX = spot.col * KOD_FINENESS + half, targetY = spot.row * KOD_FINENESS + half;
-      const r = await this.stepFine(targetX, targetY);
+      const r = await this.stepFine(targetX, targetY, { beforeMutation });
       if (isTerminalMovementReason(r.reason))
         return { arrived: false, ...r, position: r.position ?? { col: me0.col, row: me0.row } };
 
@@ -3631,7 +3679,11 @@ class Session {
       if (!r.moved) {
         if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
         const fine = await this.walkFine(targetX, targetY,
-          { maxSteps: 40, movementGeneration, controlToken }).catch(() => null);
+          { maxSteps: Math.min(40, hardCap), movementGeneration, controlToken,
+            beforeMutation }).catch(error => {
+            if (error?.returnToSpotAbort || error?.returnToSpotBudget) throw error;
+            return null;
+          });
         if (isTerminalMovementReason(fine?.reason))
           return { arrived: false, ...fine, position: fine.position ?? { col: me0.col, row: me0.row } };
         const now = c.self;
@@ -3750,7 +3802,7 @@ class Session {
     let escaped = 0;
     if (!plan.found && !plan.stuck) {
       const out = await this.retreatAlongBreadcrumbs({
-        movementGeneration, controlToken,
+        movementGeneration, controlToken, beforeMutation,
         until: () => replan(c.self?.row ?? -1, c.self?.col ?? -1).found,
       });
       if (out.cancelled) return out;
@@ -3774,18 +3826,27 @@ class Session {
       if (process.env.M59_EXIT_DEBUG !== '0')
         console.error(`[walkTo] ${this.name ?? '?'} coarse grid failed (${plan.reason}), trying fine grid to (${destX},${destY})`);
       const fine = await this.walkFine(destX, destY, {
-        maxSteps: Math.max(60, Math.ceil(Math.hypot(col - from.col, row - from.row) * 2)), stride: 48, arriveWithin: 100,
-        movementGeneration, controlToken,
-      }).catch(e => ({ arrived: false, reason: e.message }));
+        maxSteps: Math.min(hardCap,
+          Math.max(60, Math.ceil(Math.hypot(col - from.col, row - from.row) * 2))),
+        stride: 48, arriveWithin: 100,
+        movementGeneration, controlToken, beforeMutation,
+      }).catch(e => {
+        if (e?.returnToSpotAbort || e?.returnToSpotBudget) throw e;
+        return { arrived: false, reason: e.message };
+      });
+      // A cancellation is the answer from the fine walk, not another kind of pathing
+      // failure. In particular it must never fall through into the unvalidated diagnostic
+      // below and re-arm movement after the watchdog has withdrawn its authority.
+      if (fine?.cancelled) return fine;
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return this.cancelledMovement({ steps: fine?.steps ?? 0 });
       if (fine.arrived)
         return { arrived: true, steps: fine.steps, position: fine.position,
                  note: 'coarse grid found no route; fine grid walked it' };
-      // RAW WALK FALLBACK: both grids failed. In keeper mode,
-      // try a direct raw walk toward the target. Send move
-      // commands in the target direction, ignoring geometry.
-      // The server accepts or rejects each move. This bypasses
-      // stale local geometry that blocks both grids.
-      if (process.env.M59_KEEPER === '1') {
+      // RAW WALK FALLBACK: an operator-only probe for a KNOWN stale local model. The
+      // server does not reject player coordinates against room geometry, so a normal
+      // keeper may not infer permission to use this merely because both planners failed.
+      if (process.env.M59_KEEPER === '1' && process.env.M59_RAW_MOVE_FALLBACK === '1') {
         const c = this.client;
         const self = c.self;
         if (self) {
@@ -3798,11 +3859,15 @@ class Session {
             const rawSteps = Math.min(Math.ceil(dist), 8);
             const speed = c.moveSpeed?.() ?? 1;
             for (let i = 0; i < rawSteps; i++) {
+              if (this.movementWasCancelled(movementGeneration, controlToken))
+                return this.cancelledMovement({ steps: fine?.steps ?? 0 });
               try {
                 const step = 24; // 1/4 cell in fine units
                 const rad = deg * Math.PI / 180;
                 const nx = Math.round((self.x ?? self.col * 48) + Math.cos(rad) * step);
                 const ny = Math.round((self.y ?? self.row * 48) + Math.sin(rad) * step);
+                if (typeof beforeMutation === 'function')
+                  beforeMutation('move', { x: nx, y: ny, raw: true });
                 c.moveTo?.(nx, ny, speed, c.room?.id ?? 0);
                 await new Promise(r => setTimeout(r, 250));
                 const newSelf = c.self;
@@ -3810,7 +3875,10 @@ class Session {
                   console.error(`[walkTo] ${this.name ?? '?'} raw walk moved to (${newSelf.col},${newSelf.row})`);
                   return { arrived: false, reason: 'raw walk made progress', position: { col: newSelf.col, row: newSelf.row }, raw_walk: true };
                 }
-              } catch { break; }
+              } catch (error) {
+                if (error?.returnToSpotAbort || error?.returnToSpotBudget) throw error;
+                break;
+              }
             }
           }
         }
@@ -3891,7 +3959,8 @@ class Session {
               onArrive: sp.onArrive ?? null }
           : null;
         const ran = await this.walkPivots(plan.steps, geo,
-                                          { movementGeneration, controlToken, shelter });
+          { movementGeneration, controlToken, maxMoves: Math.min(maxSteps, hardCap),
+            shelter, beforeMutation });
         pivotLegs = (ran.legs ?? 0) + (ran.singles ?? 0);
         if (ran.cancelled) return this.cancelledMovement({ steps: pivotLegs });
         if (ran.left_room)
@@ -4290,7 +4359,7 @@ class Session {
       seenSquares.add(hereKey);
       if (gapNow < bestGap) { bestGap = gapNow; sinceCloser = 0; }
       else if (r.reason === 'object_blocked') { /* the body path owns this one */ }
-      else if (revisited && ++sinceCloser > WALK_STALL_STEPS)
+      else if (revisited && ++sinceCloser > stallSteps)
         return { arrived: false, steps: taken, replans,
                  blocked_at: { col: now.col, row: now.row },
                  reason: 'no_ground_gained',
@@ -4388,7 +4457,11 @@ class Session {
           && was && !recentredAt.has(`${was.row},${was.col}`)
           && typeof this.recentreInSquare === 'function') {
         recentredAt.add(`${was.row},${was.col}`);
-        if (await this.recentreInSquare().catch(() => false)) continue;
+        if (await this.recentreInSquare({ movementGeneration, controlToken, beforeMutation })
+          .catch(error => {
+            if (error?.returnToSpotAbort || error?.returnToSpotBudget) throw error;
+            return false;
+          })) continue;
       }
 
       // THE EDGE THAT REFUSED IS THE ONE WE ASKED FOR, AND IT IS NAMED FROM WHERE WE
@@ -4488,8 +4561,12 @@ class Session {
             let threaded = false;
             for (const leg of legs) {
               if (this.movementWasCancelled(movementGeneration, controlToken)) break;
-              const step = await this.stepFine(clientToProtocol(leg.x), clientToProtocol(leg.y))
-                .catch(() => null);
+              const step = await this.stepFine(clientToProtocol(leg.x), clientToProtocol(leg.y),
+                { beforeMutation })
+                .catch(error => {
+                  if (error?.returnToSpotAbort || error?.returnToSpotBudget) throw error;
+                  return null;
+                });
               if (step?.left_room)
                 return { arrived: false, left_room: true, steps: taken,
                          note: 'a fine detour crossed the room edge' };
@@ -4977,6 +5054,11 @@ class Session {
    * is worse than it was.
    */
   async recentreInSquare() {
+    // Keep the zero-argument method shape: the offline collision harness extracts this
+    // method verbatim by that public signature. Tactical callers may still pass the
+    // operation authority in the ordinary JavaScript arguments object.
+    const { movementGeneration = this.movementGeneration,
+            controlToken = null, beforeMutation = null } = arguments[0] ?? {};
     const geo = this.world?.geometry;
     const me = this.client?.self;
     if (!geo || !me || typeof geo.standPointWire !== 'function'
@@ -4987,7 +5069,14 @@ class Session {
     // outside the room instead of back into this square.
     const pt = geo.standPointWire(me.row, me.col);
     if (!pt) return false;
-    const r = await this.walkFine(pt.x, pt.y, { maxSteps: 3, stride: 24 }).catch(() => null);
+    if (typeof this.movementWasCancelled === 'function' &&
+        this.movementWasCancelled(movementGeneration, controlToken)) return false;
+    const r = await this.walkFine(pt.x, pt.y, {
+      maxSteps: 3, stride: 24, movementGeneration, controlToken, beforeMutation,
+    }).catch(error => {
+      if (error?.returnToSpotAbort || error?.returnToSpotBudget) throw error;
+      return null;
+    });
     return !!(r?.arrived ?? r?.moved);
   }
 

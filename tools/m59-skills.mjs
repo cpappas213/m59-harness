@@ -1630,14 +1630,102 @@ function operationCancellationResult(result = null) {
 export async function returnToSpot(s, spot, {
   maxSteps = 20, tolerance = 12,
   movementGeneration = s.movementGeneration, controlToken = null,
+  // Safe-wall acquisition supplies a tight dither cutoff. Other return operations —
+  // especially the trip home after deliberately pulling a monster — retain the ordinary
+  // walker's allowance unless their caller opts into a smaller one.
+  stallSteps = null,
+  // `maxSteps` belongs to each leaf walker for compatibility. Tactical safe-wall trips
+  // additionally set this packet-accurate ceiling for the WHOLE composite, so a failed
+  // coarse walk cannot buy a fresh fine-walk purse (and then a third exact-adjustment
+  // purse). Turns do not spend it; only movement packets can make a body wiggle.
+  maxMovePackets = null,
+  // Optional live predicate used by safe-spot acquisition. It is deliberately not a
+  // generic journey rule: callers that expect retaliation while returning after a pull
+  // omit it and retain the established movement behaviour.
+  shouldAbort = null,
 } = {}) {
   const c = s.need();
   if (!spot) return { arrived: false, why: 'no spot given' };
   const cancelled = result => operationMovementCancelled(
     s, movementGeneration, controlToken, result);
-  const cancelledResult = result => operationCancellationResult(result);
-  const moveOptions = extra => ({ ...extra, movementGeneration, controlToken });
+  // Keep the packet-time safety verdict even if an inner movement helper catches the
+  // thrown guard error. The generation handbrake still makes the operation terminal;
+  // this retained detail explains that it was health, not an operator or terrain.
+  let abortDetail = null;
+  let abortIssued = false;
+  const movePacketLimit = maxMovePackets == null ? null : Number(maxMovePackets);
+  const boundedMovePacketLimit = Number.isFinite(movePacketLimit) && movePacketLimit >= 0
+    ? Math.floor(movePacketLimit) : null;
+  let movePackets = 0;
+  const cancelledResult = result => ({
+    ...operationCancellationResult(result),
+    ...(abortDetail ? { aborted: true, ...abortDetail } : {}),
+  });
+  const abortNow = () => {
+    if (typeof shouldAbort !== 'function') return null;
+    const detail = shouldAbort();
+    if (!detail) return null;
+    return typeof detail === 'object' ? detail : { why: String(detail) };
+  };
+  const abortResult = detail => ({
+    arrived: false, left: false, aborted: true, cancelled: true,
+    reason: detail?.why || 'safe-spot approach aborted',
+    ...detail,
+  });
+  const beforeMutation = packet => {
+    // Health owns the explanation when the flee line and the packet ceiling become true
+    // together. It is the more urgent state transition and already cancels the movement
+    // generation synchronously.
+    const detail = abortNow();
+    if (detail) {
+      abortDetail = detail;
+      if (!abortIssued) {
+        abortIssued = true;
+        try {
+          s.cancelMovement?.(controlToken,
+            detail.why || 'health crossed the flee line during safe-spot acquisition');
+        } catch { /* throwing below is still the synchronous packet handbrake */ }
+      }
+      throw Object.assign(new Error(detail.why || 'safe-spot approach aborted'),
+        { returnToSpotAbort: detail });
+    }
+    if (packet === 'move' && boundedMovePacketLimit !== null) {
+      if (movePackets >= boundedMovePacketLimit) {
+        const budget = {
+          movement_budget_exhausted: true,
+          no_ground_gained: true,
+          move_packets: movePackets,
+          max_move_packets: boundedMovePacketLimit,
+          why: `safe-spot return exhausted its shared ${boundedMovePacketLimit}-move budget`,
+        };
+        // This is terminal to this composite, but it is not an external cancellation:
+        // the autopilot may immediately re-plan, scavenge, or fight on the same pass.
+        throw Object.assign(new Error(budget.why), { returnToSpotBudget: budget });
+      }
+      movePackets++;
+    }
+  };
+  const attempt = async action => {
+    try { return await action(); }
+    catch (error) {
+      if (error?.returnToSpotAbort) return abortResult(error.returnToSpotAbort);
+      if (error?.returnToSpotBudget) return {
+        arrived: false, left: false, aborted: true,
+        reason: 'movement_budget_exhausted',
+        ...error.returnToSpotBudget,
+      };
+      return { arrived: false, reason: error?.message || String(error) };
+    }
+  };
+  const moveOptions = extra => ({
+    maxSteps, hardCap: maxSteps,
+    ...(stallSteps == null ? {} : { stallSteps }),
+    beforeMutation,
+    ...extra, movementGeneration, controlToken,
+  });
   if (cancelled()) return cancelledResult();
+  const initialAbort = abortNow();
+  if (initialAbort) return abortResult(initialAbort);
   // A normal square walk is dead-reckoned for speed. That is appropriate while
   // crossing a room, but a predicted arrival is not evidence that we regained a
   // particular safe square: a delayed server position can still replace it and leave
@@ -1713,45 +1801,56 @@ export async function returnToSpot(s, spot, {
     const fineOwnsIt = away <= FINE_HANDOVER_SQUARES && typeof s.approachFine === 'function';
     let w;
     if (fineOwnsIt) {
-      w = await s.approachFine(spot.col, spot.row,
-        moveOptions({ toX: spot.x, toY: spot.y }))
-                 .catch(e => ({ arrived: false, reason: e.message }));
+      w = await attempt(() => s.approachFine(spot.col, spot.row,
+        moveOptions({ toX: spot.x, toY: spot.y })));
+      if (w.aborted) return w;
       if (cancelled(w)) return cancelledResult(w);
       if (!w.arrived) {
-        const square = await s.walkTo(spot.col, spot.row, moveOptions({ maxSteps }))
-                              .catch(e => ({ arrived: false, reason: e.message }));
+        const square = await attempt(() => s.walkTo(spot.col, spot.row, moveOptions({})));
+        if (square.aborted) return square;
         if (cancelled(square)) return cancelledResult(square);
         if (square.arrived) w = square;
         else w = { ...square, fine_tried: w.reason ?? 'fine approach did not arrive' };
       }
     } else {
-      w = await s.walkTo(spot.col, spot.row, moveOptions({ maxSteps }))
-                 .catch(e => ({ arrived: false, reason: e.message }));
+      w = await attempt(() => s.walkTo(spot.col, spot.row, moveOptions({})));
+      if (w.aborted) return w;
       if (cancelled(w)) return cancelledResult(w);
       if (!w.arrived && typeof s.approachFine === 'function') {
-        const fine = await s.approachFine(spot.col, spot.row,
-          moveOptions({ toX: spot.x, toY: spot.y }))
-                            .catch(e => ({ arrived: false, reason: e.message }));
+        const fine = await attempt(() => s.approachFine(spot.col, spot.row,
+          moveOptions({ toX: spot.x, toY: spot.y })));
+        if (fine.aborted) return fine;
         if (cancelled(fine)) return cancelledResult(fine);
         if (fine.arrived) w = fine;
         else w = { ...w, fine_tried: fine.reason ?? 'fine approach did not arrive' };
       }
     }
     if (!w.arrived)
-      return { arrived: false, why: w.reason || 'could not walk back to the square',
-               ...(w.fine_tried ? { fine_tried: w.fine_tried } : {}) };
+      // Keep terminal leaf metadata (`no_ground_gained`, reason, packet counts) visible
+      // to the tactical caller. Reducing this to prose made a real movement plateau
+      // indistinguishable from an ordinary miss, so the next pass could try its neighbor.
+      return { ...w, arrived: false,
+               why: w.why || w.reason || 'could not walk back to the square' };
     await confirmPrediction();
     if (cancelled()) return cancelledResult();
   }
+  let exactFine = null;
   if (spot.x != null && s.walkFine) {
-    const fine = await s.walkFine(spot.x, spot.y,
-      moveOptions({ maxSteps: 6, stride: 40, arriveWithin: tolerance }))
-      .catch(e => ({ arrived: false, reason: e.message }));
+    const fine = await attempt(() => s.walkFine(spot.x, spot.y,
+      moveOptions({ maxSteps: 6, hardCap: 6, stride: 40, arriveWithin: tolerance })));
+    if (fine.aborted) return fine;
     if (cancelled(fine)) return cancelledResult(fine);
+    exactFine = fine;
   }
   const d = at();
-  return { arrived: d !== null && d <= tolerance, off_by: d,
-           position: c.self ? { col: c.self.col, row: c.self.row, x: c.self.x, y: c.self.y } : null };
+  const arrived = d !== null && d <= tolerance;
+  const position = c.self
+    ? { col: c.self.col, row: c.self.row, x: c.self.x, y: c.self.y } : null;
+  if (!arrived && exactFine && !exactFine.arrived)
+    return { ...exactFine, arrived: false,
+             why: exactFine.why || exactFine.reason || 'could not settle on the remembered position',
+             off_by: d, position };
+  return { arrived, off_by: d, position };
 }
 
 // Sit until a vital comes back, or until nothing is improving. Resting is silent

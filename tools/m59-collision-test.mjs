@@ -2120,13 +2120,15 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
        pacedPastDeadline.packets.length === 0,
      JSON.stringify({ lateMove, packets: pacedPastDeadline.packets }));
 
-  // A learned-ride deadline is movement authority, not merely a reason for the caller to
-  // stop asking. Keeper mode has an explicitly raw escape for stale geometry, so both the
-  // deadline refusal itself and a geometry refusal returned after expiry must be unable to
-  // enter that escape.
+  // Keeper mode itself grants NO raw movement authority. The server does not validate
+  // player collision, so treating a local geometry refusal as permission to ask it would
+  // let an ordinary keeper cross a wall. The unsafe probe survives only behind the exact
+  // diagnostic opt-in, and an operation deadline still closes that probe before it sends.
   const priorKeeper = process.env.M59_KEEPER;
+  const priorRawFallback = process.env.M59_RAW_MOVE_FALLBACK;
   try {
     process.env.M59_KEEPER = '1';
+    delete process.env.M59_RAW_MOVE_FALLBACK;
     const deadlineClient = {
       room: { id: 1, objects: new Map([[7, {}]]) }, selfId: 7,
       self: { x: 128, y: 128, col: 2, row: 2 }, moveSpeed: () => 1,
@@ -2145,21 +2147,38 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
     });
 
     movementNow = 0;
+    const ordinaryGeometry = await stepFine.call(deadlineSession('geometry_blocked'),
+                                                  256, 128);
+    ok('keeper mode alone never turns a blocked fine move into a raw packet',
+       ordinaryGeometry.reason === 'geometry_blocked' && rawMoves === 0,
+       JSON.stringify({ ordinaryGeometry, rawMoves }));
+
+    movementNow = 0;
     const directDeadline = await stepFine.call(deadlineSession('effort_deadline_exhausted'),
                                                 256, 128, { deadlineAt: 50 });
-    ok('a deadline refusal never becomes a keeper raw movement packet',
+    ok('a deadline refusal never becomes a raw movement packet',
        directDeadline.reason === 'effort_deadline_exhausted' && rawMoves === 0,
        JSON.stringify({ directDeadline, rawMoves }));
 
+    process.env.M59_RAW_MOVE_FALLBACK = '1';
     movementNow = 0;
     const expiredGeometry = await stepFine.call(deadlineSession('geometry_blocked'),
                                                 256, 128, { deadlineAt: 50 });
-    ok('expiry is rechecked before keeper raw fallback can send a geometry-refused move',
+    ok('expiry is rechecked before the diagnostic raw fallback can send a refused move',
        expiredGeometry.reason === 'effort_deadline_exhausted' && rawMoves === 0,
        JSON.stringify({ expiredGeometry, rawMoves }));
+
+    movementNow = 0;
+    const diagnosticGeometry = await stepFine.call(deadlineSession('geometry_blocked'),
+                                                    256, 128);
+    ok('only the exact diagnostic opt-in can emit a locally-refused endpoint',
+       diagnosticGeometry.reason === 'raw_move_rejected' && rawMoves === 1,
+       JSON.stringify({ diagnosticGeometry, rawMoves }));
   } finally {
     if (priorKeeper == null) delete process.env.M59_KEEPER;
     else process.env.M59_KEEPER = priorKeeper;
+    if (priorRawFallback == null) delete process.env.M59_RAW_MOVE_FALLBACK;
+    else process.env.M59_RAW_MOVE_FALLBACK = priorRawFallback;
   }
 
   movementNow = 0;
@@ -2308,6 +2327,36 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      lateralWalk.reason === 'blocked — every heading refused, at every reach tried' &&
        lateralCalls > 0 && lateralCalls <= 36,
      JSON.stringify({ lateralWalk, lateralCalls }));
+
+  // A tactical safe-wall walk has a stricter definition than the generic fine mover:
+  // changing coordinates is not progress if no new all-time closest distance appears.
+  // This fixture alternates between x=120 and x=128. One iteration can gain ground from
+  // the worse point, so the ordinary every-heading stall keeps resetting, but the walk
+  // never beats its starting distance to the target.
+  let plateauCalls = 0;
+  const plateauClient = {
+    room: { id: 1 }, self: { x: 128, y: 128, col: 2, row: 2 },
+  };
+  const plateauSession = {
+    client: plateauClient,
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    async stepFine() {
+      plateauCalls++;
+      plateauClient.self = {
+        ...plateauClient.self,
+        x: plateauCalls % 2 ? 120 : 128,
+      };
+      return { moved: true, left_room: false, position: { ...plateauClient.self } };
+    },
+  };
+  const plateauWalk = await walkFine.call(plateauSession, 256, 128,
+    { maxSteps: 20, stride: 48, arriveWithin: 1, stallSteps: 4 });
+  ok('an explicit fine-walk plateau limit stops a coordinate-changing wiggle',
+     plateauWalk.reason === 'no_ground_gained' && plateauWalk.steps === 4 &&
+       plateauCalls === 20 && plateauWalk.closest === 128,
+     JSON.stringify({ plateauWalk, plateauCalls }));
 
   const blocker = {
     id: 7, x: clientToWire(2048), y: clientToWire(2048), flags: MOVEON.NO,

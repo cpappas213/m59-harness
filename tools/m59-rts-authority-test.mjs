@@ -138,6 +138,38 @@ assert.match(walk, /beforeMutation = null/);
 // unrelated argument, which teaches the next reader to loosen it rather than to look.
 assert.match(walk, /this[.]step[(]next[.]col, next[.]row, \{ beforeMutation[,}]/,
   'walkTo threads its final-packet mutation hook through the shared validated step');
+assert.match(walk, /retreatAlongBreadcrumbs[(]\{[\s\S]*beforeMutation/,
+  'a pocket escape keeps the same final-packet hook');
+assert.match(walk, /walkFine[(][\s\S]*beforeMutation/,
+  'fine-grid fallbacks keep the same final-packet hook');
+assert.match(walk, /walkPivots[(][\s\S]*beforeMutation/,
+  'proved pivot legs keep the same final-packet hook');
+assert.match(walk, /recentreInSquare[(]\{[\s\S]*beforeMutation/,
+  'wall recentring keeps the same final-packet hook');
+assert.match(walk, /beforeMutation[(]'move', \{ x: nx, y: ny, raw: true \}\)[\s\S]*c[.]moveTo/,
+  'the keeper raw fallback checks authority before its packet too');
+
+const pivotWalk = section('async walkPivots(planSteps, geo,', '\n  async step(col, row,');
+assert.match(pivotWalk, /beforeMutation[(]'turn'[\s\S]*c[.]face/,
+  'pivot turns check final-packet authority');
+assert.match(pivotWalk, /queueValidatedMove[\s\S]*beforeMutation/,
+  'pivot moves check final-packet authority');
+
+const fineStep = section('async stepFine(x, y,', '\n  // Walk to a fine coordinate');
+assert.match(fineStep, /queueValidatedMove[\s\S]*beforeMutation/,
+  'fine movement threads final-packet authority into validated movement');
+assert.match(fineStep, /beforeMutation[(]'move', \{ x, y, raw: true \}\)[\s\S]*c2[.]moveTo/,
+  'the fine raw fallback checks authority before its packet');
+
+const fineApproach = section('async approachFine(col, row,', '\n  async walkFine(destX, destY,');
+assert.match(fineApproach, /walkFine[\s\S]*beforeMutation/,
+  'the safe-wall fine approach forwards the packet hook');
+assert.match(fineApproach, /walkFine[\s\S]*stallSteps, beforeMutation/,
+  'the safe-wall fine approach forwards its tactical plateau limit');
+
+const fineWalk = section('async walkFine(destX, destY,', '\n  // THE WAY OUT OF A POCKET');
+assert.match(fineWalk, /stepFine[(]aimX, aimY, \{ beforeMutation \}\)/,
+  'every fanned fine-grid packet keeps the packet hook');
 
 const loot = section('async lootFloor({', '\n  // Offer one item to a merchant');
 assert.match(loot, /this[.]walkTo[\s\S]*beforeMutation:/,

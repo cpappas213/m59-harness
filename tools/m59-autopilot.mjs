@@ -287,6 +287,20 @@ const CROWD_RADIUS = 4;
 // out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
+// A bounded four-square open-field approach costs two vigor in the live client. When the
+// operator deliberately sets the fight floor to the exact 80-vigor resting cap, requiring
+// 80 again after those steps makes the order impossible: rest to 80, walk to 78, seek a
+// wall to rest to 80, repeat. This allowance applies only to that exact cap. Lower floors
+// already have transit margin; higher floors are food-backed and stay exact.
+const REST_CAP_APPROACH_VIGOR = 2;
+export function effectiveFightVigorFloor(floor, {
+  restCeiling = REST_VIGOR_CAP * skills.VIGOR_MAX,
+  approachCost = REST_CAP_APPROACH_VIGOR,
+} = {}) {
+  const requested = Number(floor);
+  if (!Number.isFinite(requested)) return floor;
+  return requested === restCeiling ? Math.max(0, requested - approachCost) : requested;
+}
 // A TRAVELLER IS NOT MADE TO SIT FOR VIGOR IT CANNOT AFFORD TO EARN.
 //
 // Resting recovers vigor towards REST_VIGOR_CAP (80 of 200) and everything above that has to
@@ -2866,10 +2880,59 @@ export class Autopilot {
   // a journey. A failure still discredits the square permanently either way: a blow that
   // got through is a bad square however we came to be standing on it. The tag is so the
   // travel-only rejections can be told apart afterwards without reconstructing anything.
-  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0 } = {}) {
+  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0,
+                                           avoidFirstVectors = null } = {}) {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
+    // A FAILED LAST MILE IS A ROOM-APPROACH FACT, NOT A BAD SAFE-SPOT VERDICT.
+    //
+    // `unreachableSpots` excludes the exact square we failed to walk to. That is enough
+    // for a doorway obstruction and disastrously narrow for a wall band: after (101,22)
+    // spends the whole movement purse, the next pass simply chooses (102,22), then
+    // (103,22), and the character appears to wiggle forever even though every individual
+    // attempt is bounded. Remember the exhausted APPROACH for a few minutes and let the
+    // ordinary open-fight/relocation gates run instead. This does not discredit any wall,
+    // and damage never writes it — safe spots may legitimately take retaliation from the
+    // one monster we chose to fight.
+    //
+    // A proven square underfoot is the exception. Reclaiming it emits no movement packet,
+    // and direct evidence that we can stand there outranks a stale navigation refusal.
+    const approachDeferred = this.wallApproachDeferred(room.num);
+    const unreachableHere = this.unreachableIn(room.num);
+    const knownHere = this.book?.get?.(room.num, me.col, me.row);
+    // Coarse equality is not enough for a remembered fine wall. Direct underfoot evidence
+    // outranks an old route refusal only when the body is actually on the recorded fine
+    // position; landing in the same square but plateauing forty units away must stay out.
+    const onKnownFine = knownHere?.x == null || me.x == null
+      ? true : Math.hypot(me.x - knownHere.x, me.y - knownHere.y) <= 12;
+    const provenHere = !!knownHere?.held && !this.book.discredited(knownHere) && onKnownFine;
+    const cleanProven = approachDeferred
+      ? [...(this.book?.recall?.(room.num)?.values?.() ?? [])]
+          .filter(record => !!record?.held && !this.book.discredited(record) &&
+            ((record.col === me.col && record.row === me.row && provenHere) ||
+             !unreachableHere?.has(`${record.col},${record.row}`)))
+      : [];
+    if (approachDeferred && !cleanProven.length) {
+      return {
+        took: false,
+        approach_deferred: true,
+        why: `not retrying another wall in this room yet — ${approachDeferred.why}`,
+        failed_spot: approachDeferred.spot,
+        retry_after_ms: approachDeferred.retry_after_ms,
+      };
+    }
+    // During a deferral, speculative geometry is off limits but evidence is not. If the
+    // body is already on a clean proven square, reclaim that exact square without even
+    // running the ranker: a remote verified corner must not outscore underfoot evidence
+    // and accidentally reopen the movement loop.
+    const deferredSpotUnderfoot = approachDeferred && provenHere
+      ? {
+          col: me.col, row: me.row, steps_away: 0, proven: true,
+          held_before: knownHere.held, fine: knownHere.x != null
+            ? { x: knownHere.x, y: knownHere.y } : null,
+        }
+      : null;
     // Once several independently tested walls have all failed, continuing to scan the
     // room is research, not survival. `noWallRooms` feeds the already-bounded choice
     // below between a safe open fight and relocating; it does not block the strategic
@@ -2900,7 +2963,8 @@ export class Autopilot {
       const liveQuarry = quarry.id != null ? c.room?.objects?.get(quarry.id) : quarry;
       if (!liveQuarry)
         return { took: false, why: 'the quarry was gone when we reached its side' };
-      return this.takeSafeSpot(why, liveQuarry, { source, islandCrossings: islandCrossings + 1 });
+      return this.takeSafeSpot(why, liveQuarry,
+        { source, islandCrossings: islandCrossings + 1, avoidFirstVectors });
     }
     // Squares we have already discovered nothing can be pulled to. Without this the
     // keeper re-picks the same unusable corner every pass for ever, because the
@@ -2955,30 +3019,36 @@ export class Autopilot {
     // With spreading off there is one unbounded search. With it on, retain the existing
     // fair fill: try one per wall, then two, up to the configured maximum.
     rememberSpotClaimPartner(this.s.name, this.policy.partner ?? null);
-    let spot = null, shareCap = configuredShareCap == null ? Infinity : 1;
+    let spot = deferredSpotUnderfoot;
+    let shareCap = configuredShareCap == null ? Infinity : 1;
     let claimCollisions = 0;
-    spotSearch:
-    for (; configuredShareCap == null || shareCap <= configuredShareCap; shareCap++) {
-      // Selection and walking are separated by an await. A second process may reserve
-      // our choice in that gap between the read and this process's atomic claim, so retry
-      // from a fresh snapshot a few times before raising the share cap. The claim itself
-      // is the authority; the snapshot only keeps the room-sized search cheap.
-      // A production fleet is normally 21 characters. Thirty-two collisions is enough
-      // for every other one to win a distinct wall ahead of us while keeping a broken or
-      // adversarial claim store from turning one decision into an unbounded loop.
-      for (let attempt = 0; attempt < 32; attempt++) {
-        for (const k of Object.keys(spotStats)) delete spotStats[k]; // stats describe LAST attempt
-        spot = this.searchSafeSpot(geo, me, room, {
-          within, quarryReach, strictQuarryReach, los, quarry, barren,
-          stats: spotStats, shareCap });
-        if (!spot) break;
-        if (claimSpot(this.s.name, room.num, spot.col, spot.row,
-                      { cap: shareCap, partner: this.policy.partner ?? null }))
-          break spotSearch;
-        claimCollisions++;
-        spot = null;                  // another process won it; refresh and search again
+    if (spot && !claimSpot(this.s.name, room.num, spot.col, spot.row,
+                           { cap: shareCap, partner: this.policy.partner ?? null })) {
+      claimCollisions++;
+      spot = null;
+    }
+    if (!spot) {
+      spotSearch:
+      for (; configuredShareCap == null || shareCap <= configuredShareCap; shareCap++) {
+        // Selection and walking are separated by an await. A second process may reserve
+        // our choice in that gap, so retry from a fresh snapshot before raising the cap.
+        for (let attempt = 0; attempt < 32; attempt++) {
+          for (const k of Object.keys(spotStats)) delete spotStats[k];
+          spot = this.searchSafeSpot(geo, me, room, {
+            within, quarryReach, strictQuarryReach, los, quarry, barren,
+            // A backoff suppresses speculative neighbors, not clean walls already proven by
+            // this fleet. The selector may use those and only those until the clock expires.
+            provenOnly: !!approachDeferred,
+            stats: spotStats, shareCap, avoidFirstVectors });
+          if (!spot) break;
+          if (claimSpot(this.s.name, room.num, spot.col, spot.row,
+                        { cap: shareCap, partner: this.policy.partner ?? null }))
+            break spotSearch;
+          claimCollisions++;
+          spot = null;
+        }
+        if (configuredShareCap == null) break;
       }
-      if (configuredShareCap == null) break;
     }
     if (spot && Number.isFinite(shareCap) && shareCap > 1)
       this.note('sharing a wall rather than standing in the open', {
@@ -3028,6 +3098,35 @@ export class Autopilot {
 
     if ((spot.steps_away ?? 99) > 0) {
       this.doing = 'travelling';
+      // A WALL WALK MAY START HEALTHY AND BECOME A WITHDRAWAL WHILE ITS PACER IS
+      // BLOCKED. That is exactly what happened in the Ocean: the whole combat pass was
+      // awaiting this composite while the mover bounced between two wall squares, so no
+      // swing or survival rung could run until the watchdog finally took the session back.
+      //
+      // Arm only above the flee line. withdraw() deliberately uses this same method after
+      // health is already below that line; refusing those walks at entry would make the
+      // escape cancel itself forever. Once armed, crossing STRICTLY below the line stops
+      // the next packet. At 17/40 the walk is allowed; at 16/40 it belongs to the next
+      // survival pass.
+      const movementGeneration = s.movementGeneration;
+      const healthAtStart = c.vitals?.()?.health;
+      const fractionAtStart = pct(healthAtStart);
+      const fleeAt = this.safety().fleeAt;
+      const healthGuardArmed = fractionAtStart !== null && fractionAtStart >= fleeAt;
+      const shouldAbort = () => {
+        if (!healthGuardArmed) return null;
+        const health = c.vitals?.()?.health;
+        const fraction = pct(health);
+        if (fraction === null || fraction >= fleeAt) return null;
+        return {
+          health_abort: true,
+          health_before: healthAtStart?.value ?? null,
+          health: health?.value ?? null,
+          fraction,
+          flee_at: fleeAt,
+          why: 'health crossed the flee line while approaching a safe spot',
+        };
+      };
       // THE SQUARE IS THE WHOLE MECHANIC. THERE IS NOTHING FINER TO STAND ON.
       //
       // This used to aim 24 of the 64 fine units toward the wall on the theory that the
@@ -3059,20 +3158,38 @@ export class Autopilot {
       // because we were demonstrably able to stand there. Only the synthesis is gone.
       const fine = spot.fine;
       const arrival = fine
-        ? await skills.returnToSpot(s, { col: spot.col, row: spot.row, ...fine }, { maxSteps: 24 })
+        ? await skills.returnToSpot(s, { col: spot.col, row: spot.row, ...fine },
+                                    { maxSteps: 24, maxMovePackets: 24, stallSteps: 4,
+                                      movementGeneration, shouldAbort })
                       .catch(e => ({ arrived: false, why: e.message }))
         // Claiming a safe square is a correctness boundary, just like returning to one
         // after a pull. A plain walk can finish on a predicted position which a delayed
         // server update revokes on the next pass; use the shared confirmed arrival
         // contract for both remembered and newly-derived spots.
-        : await skills.returnToSpot(s, { col: spot.col, row: spot.row }, { maxSteps: 24 })
+        : await skills.returnToSpot(s, { col: spot.col, row: spot.row },
+                                    { maxSteps: 24, maxMovePackets: 24, stallSteps: 4,
+                                      movementGeneration, shouldAbort })
                       .catch(e => ({ arrived: false, why: e.message }));
       this.movedAt = Date.now();
       if (!arrival.arrived) {
         releaseSpot(this.s.name);      // hand the reservation back
-        // REMEMBERED, so the next pass picks a different one — or none, and gets on with
-        // whatever it was doing. This is the line whose absence killed two characters.
-        this.noteUnreachableSpot(room?.num ?? null, spot.col, spot.row);
+        // A safety or operator interruption says nothing about the terrain. Only a walk
+        // that actually tried and failed earns an unreachable strike.
+        if (!arrival.cancelled && !arrival.health_abort) {
+          this.noteUnreachableSpot(room?.num ?? null, spot.col, spot.row);
+          // A route the selector priced inside the shared purse but the live mover could
+          // not finish is the wall-band signature. A genuinely longer route may use the
+          // next pass to continue; do not turn an ordinary bounded journey into a room
+          // refusal merely because its planned length was greater than the purse.
+          const planned = Number(spot.steps_away);
+          const purse = Number(arrival.max_move_packets);
+          const budgetShouldHaveReached = arrival.movement_budget_exhausted &&
+            (!Number.isFinite(planned) || !Number.isFinite(purse) || planned <= purse);
+          const independentPlateau = !arrival.movement_budget_exhausted &&
+            (arrival.no_ground_gained || arrival.reason === 'no_ground_gained');
+          if (budgetShouldHaveReached || independentPlateau)
+            this.deferWallApproaches(room?.num ?? null, spot, arrival);
+        }
         this.note('could not reach the safe spot', {
           spot: { col: spot.col, row: spot.row }, why: arrival.why || arrival.reason,
           ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) });
@@ -3080,10 +3197,15 @@ export class Autopilot {
         // already failed. Without it "could not walk back to the square" cannot distinguish
         // a fallback that ran and lost from one that never ran at all, and that is the whole
         // question about the last mile into a wall.
-        return { took: false, why: arrival.why || arrival.reason || 'could not get there',
-                 ...(arrival.fine_tried ? { fine_tried: arrival.fine_tried } : {}) };
+        return { ...arrival, took: false,
+                 why: arrival.why || arrival.reason || 'could not get there' };
       }
     }
+
+    // A proven arrival clears both a recent refusal and the retained first strike used
+    // to detect a repeated Ocean wall. The square is demonstrably reachable now.
+    this.clearUnreachableSpot(room.num, spot.col, spot.row);
+    this.clearWallApproachDeferral(room.num);
 
     const now = c.self;
     const known = this.book.get(room.num, spot.col, spot.row);
@@ -4621,7 +4743,8 @@ export class Autopilot {
   // without duplicating the option block — a second copy of these arguments is exactly
   // how the two would come to disagree about `los` or the book.
   searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
-                                  los, quarry, barren, stats, shareCap = 1 }) {
+                                  los, quarry, barren, provenOnly = false,
+                                  stats, shareCap = 1, avoidFirstVectors = null }) {
     const s = this.s;
     // One room search can inspect hundreds of candidate squares. Reading the shared
     // claim directory for every candidate would turn that into hundreds of lock/file
@@ -4638,7 +4761,7 @@ export class Autopilot {
       // `los` has to be the same setting quarryReach uses, or the two disagree about
       // the same monster.
       within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
-      book: this.book, room: room.num, quarryReach, strictQuarryReach, los,
+      book: this.book, room: room.num, quarryReach, strictQuarryReach, los, provenOnly,
       // Only offer walls the router agrees we can walk to — see reachTest.
       reach: this.reachTest(),
       // The same exclusion the other three selectors apply — a wall we have just failed
@@ -4654,7 +4777,15 @@ export class Autopilot {
           return { reachable: false, reason: 'empirically barren after repeated pulls' };
         if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap, spotClaims))
           return { reachable: false, reason: 'occupied at this share cap' };
-        return s.world.reach(col, r2);
+        const reached = s.world.reach(col, r2);
+        const first = reached?.path?.[0];
+        if (first && avoidFirstVectors?.size) {
+          const vector = `${Math.sign(first.row - me.row)},${Math.sign(first.col - me.col)}`;
+          if (avoidFirstVectors.has(vector))
+            return { reachable: false,
+              reason: `retreat incident already stalled on first vector ${vector}` };
+        }
+        return reached;
       },
     });
   }
@@ -6360,7 +6491,59 @@ export class Autopilot {
     const forRoom = per.get(room) ?? per.set(room, new Map()).get(room);
     // Bounded, because a long session in a bad room must not grow this without limit.
     if (forRoom.size > 256) forRoom.clear();
-    forRoom.set(`${col},${row}`, Date.now());
+    const key = `${col},${row}`;
+    const prior = forRoom.get(key);
+    const failures = typeof prior === 'object' ? (prior.failures ?? 1) + 1 : prior != null ? 2 : 1;
+    // One miss can be a wandering body and gets another trial after the ordinary TTL.
+    // Two misses at the same coordinate are the Ocean signature: retreat and healing take
+    // longer than five minutes, so expiring the only memory selects the identical wall on
+    // the next farm cycle. Keep the second refusal for this keeper session. A successful
+    // arrival clears it below; a fresh keeper starts with no transient movement history.
+    forRoom.set(key, { at: Date.now(), failures, session: failures >= 2 });
+  }
+
+  clearUnreachableSpot(room, col, row) {
+    const forRoom = this.unreachableSpots?.get(room);
+    if (!forRoom) return;
+    forRoom.delete(`${col},${row}`);
+    if (!forRoom.size) this.unreachableSpots.delete(room);
+  }
+
+  // STOP A WALL BAND FROM TURNING EXACT-COORDINATE MEMORY INTO A SLOT MACHINE.
+  //
+  // This is deliberately separate from SafeSpotBook. The book answers whether a square
+  // HELD under monsters; this answers whether the live player mover could finish a route
+  // to the wall. Only movement exhaustion/no-ground evidence calls this method. Damage,
+  // including ordinary retaliation while fighting from a safe spot, cannot invalidate or
+  // defer anything here.
+  deferWallApproaches(room, spot, arrival = {}) {
+    if (room == null) return null;
+    const at = Date.now();
+    const ttl = this.policy.wallApproachRetryMs ?? UNREACHABLE_SPOT_MS;
+    const record = {
+      at,
+      retry_after_ms: Math.max(0, Number(ttl) || 0),
+      spot: { col: spot?.col ?? null, row: spot?.row ?? null },
+      why: arrival.why || arrival.reason || 'the last wall approach made no ground',
+    };
+    (this.wallApproachDeferrals ??= new Map()).set(Number(room), record);
+    return record;
+  }
+
+  wallApproachDeferred(room) {
+    const key = Number(room);
+    const record = this.wallApproachDeferrals?.get(key);
+    if (!record) return null;
+    const ttl = this.policy.wallApproachRetryMs ?? UNREACHABLE_SPOT_MS;
+    if (Date.now() - record.at > Math.max(0, Number(ttl) || 0)) {
+      this.wallApproachDeferrals.delete(key);
+      return null;
+    }
+    return { ...record, retry_after_ms: Math.max(0, Math.round(Number(ttl) - (Date.now() - record.at))) };
+  }
+
+  clearWallApproachDeferral(room) {
+    this.wallApproachDeferrals?.delete(Number(room));
   }
 
   /** The squares in this room we have failed to reach recently, as the selectors want them. */
@@ -6370,9 +6553,12 @@ export class Autopilot {
     const ttl = this.policy.unreachableSpotMs ?? UNREACHABLE_SPOT_MS;
     const now = Date.now();
     const live = new Set();
-    for (const [k, at] of forRoom) {
-      if (now - at <= ttl) live.add(k);
-      else forRoom.delete(k);
+    for (const [k, raw] of forRoom) {
+      const record = typeof raw === 'object' ? raw : { at: raw, failures: 1, session: false };
+      if (record.session || now - record.at <= ttl) live.add(k);
+      // Keep an expired first refusal as bounded strike history. It is eligible for a
+      // real retry, and if that retry succeeds clearUnreachableSpot removes it; if the
+      // same coordinate fails again it becomes session-local rather than cycling.
     }
     return live.size ? live : null;
   }
@@ -11333,7 +11519,9 @@ export class Autopilot {
     // For vigor the trigger is what resting can actually deliver; the shortfall above
     // it is a food problem, and eat()/loot runs are what answer it.
     const vigorRestAt = Math.min(this.policy.restBelow, REST_VIGOR_CAP);
-    const hurt = (hp !== null && hp < restAt) || (vig !== null && vig < vigorRestAt);
+    const healthHurt = hp !== null && hp < restAt;
+    const vigorHurt = vig !== null && vig < vigorRestAt;
+    const hurt = healthHurt || vigorHurt;
 
     // RUN THE EXPERIMENT ON PURPOSE. A spot is only proved by standing in it without
     // swinging while something tries to kill us — and every other branch here is
@@ -11419,18 +11607,26 @@ export class Autopilot {
     }
 
     const spawnsHere = !this.sanctuary();
-    if (hurt && (combatZone || spawnsHere) && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
+    // A WALL BEFORE A REST IS A HEALTH RECOVERY MOVE, not the answer to spending two
+    // vigor while closing on a target. At full health a vigor-only shortfall is handled
+    // by provision() and the farming fight floor below. Letting it enter this higher rung
+    // is the Ocean loop: arrive rested at 80, approach to 78, spend the next whole pass
+    // walking to a wall instead of swinging.
+    if (healthHurt && (combatZone || spawnsHere) && !sheltered && !testing && this.policy.useSafeSpots && !this.hold
         && (!this.wallTriedAt || Date.now() - this.wallTriedAt > 30_000)) {
       this.wallTriedAt = Date.now();
       const got = await this.takeSafeSpot(
         'hurt in a room that spawns monsters — a wall before a rest', near[0] ?? hostiles[0] ?? null)
-        .catch(() => false);
+        .catch(error => ({ took: false, why: error.message }));
       this.note('will not rest in the open here', {
         health: hp === null ? null : Math.round(hp * 100) + '%',
-        monsters_in_room: hostiles.length, adjacent: near.length, got_a_wall: !!got,
+        monsters_in_room: hostiles.length, adjacent: near.length, got_a_wall: !!got?.took,
         room_spawns: spawnsHere, nothing_visible_yet: hostiles.length === 0 || undefined,
         why: 'resting is sitting still and not looking. Doing it where something can reach us is ' +
              'how a rest becomes a death, and an empty room that spawns is a room between spawns' });
+      // The wall walk pulled its own packet handbrake. End this pass so rest, combat, or
+      // another movement cannot recapture the newly-current generation underneath it.
+      if (got?.cancelled || got?.health_abort) return HANDLED;
     }
     // VIGOR TO SPARE MEANS WALK, DO NOT WAIT.
     //
@@ -13092,7 +13288,8 @@ export class Autopilot {
       // character that has to leave the room to recover has to walk back afterwards
       // through everything it just walked past.
       const vigorNow = vigorOf(v);
-      const vigorFloor = this.fightFloor();
+      const requestedVigorFloor = this.fightFloor();
+      const vigorFloor = effectiveFightVigorFloor(requestedVigorFloor);
       // THE INKY RESERVE. A character can be BELOW the floor and unable to do anything
       // about it, because the food that would fix it is too big to fit.
       //
@@ -13124,14 +13321,22 @@ export class Autopilot {
         this.doing = 'recovering';
         // A wall first, if one is going and we do not already have it — resting with
         // something adjacent is only safe behind one.
+        let wall = null;
         if (!this.hold && this.policy.useSafeSpots && room)
-          await this.takeSafeSpot('too tired to fight — need somewhere safe to rest',
-                                  found[0] ?? null).catch(() => {});
+          wall = await this.takeSafeSpot('too tired to fight — need somewhere safe to rest',
+                                         found[0] ?? null)
+                           .catch(error => ({ took: false, why: error.message }));
+        if (wall?.cancelled || wall?.health_abort) {
+          this.progress('safe-wall approach stopped at the flee line');
+          return HANDLED;
+        }
         const r = await skills.restUntil(s, {
           health: 0.98, vigor: REST_VIGOR_CAP, maxSeconds: 120 }).catch(() => null);
         this.tally.rests++;
         this.note('too tired to start a fight', {
-          vigor: vigorNow, need: vigorFloor, after_resting: r?.vitals?.vigor?.value,
+          vigor: vigorNow, need: vigorFloor,
+          requested_floor: requestedVigorFloor === vigorFloor ? undefined : requestedVigorFloor,
+          after_resting: r?.vitals?.vigor?.value,
           behind_a_wall: !!this.hold,
           why: 'attacking costs about thirty vigor a minute and vigor also sets how fast health ' +
                'comes back, so starting a fight below ' + vigorFloor + ' means breaking off ' +
@@ -13162,6 +13367,10 @@ export class Autopilot {
         // Aim at the fight, not just at the nicest wall. `found` is sorted nearest
         // first by findCreature, so its head is the thing we are about to go and get.
         const t = await this.takeSafeSpot(worth.why, found[0] ?? null);
+        if (t.cancelled || t.health_abort) {
+          this.progress('safe-wall approach stopped at the flee line');
+          return HANDLED;
+        }
         if (t.took) {
           // Do not burn the pass on arriving. The whole point of the spot is that the
           // fight happens here, and the fight is directly below.
@@ -13212,6 +13421,10 @@ export class Autopilot {
           const probe = await this.takeSafeSpot(
             'testing whether this room can be fought in at all', found[0] ?? null)
             .catch(() => ({ took: false, why: 'the search threw' }));
+          if (probe.cancelled || probe.health_abort) {
+            this.progress('safe-wall approach stopped at the flee line');
+            return HANDLED;
+          }
           // DENY THE ROOM ONLY WHEN NO SQUARE WAS FOUND — not when we failed to WALK to
           // one. Those are different facts about different things: the first is about
           // the room, the second is about us, and takeSafeSpot returns took:false for
