@@ -27,12 +27,12 @@ console.log('--- explicit fight vigor overrides strategy provisioning ---');
 {
   const policy = {
     strategy: 'baseline',
-    fightAboveVigor: 100,
+    fightAboveVigor: 80,
   };
-  applyFightAboveVigor(policy, 100);
+  applyFightAboveVigor(policy, 80);
 
-  ok('the legacy status field remains truthful', policy.fightAboveVigor === 100);
-  ok('the effective provisioning floor is the explicit threshold', policy.vigorFloor === 100);
+  ok('the legacy status field remains truthful', policy.fightAboveVigor === 80);
+  ok('the effective provisioning floor is the explicit threshold', policy.vigorFloor === 80);
   ok('and the strategy ceiling is left where it was — the band is not collapsed',
      policy.vigorCeiling === undefined,
      `baseline default is ${STRATEGIES.baseline.vigorCeiling}`);
@@ -72,15 +72,20 @@ ok('the resting cap scales with the vigor bar, not a hard-coded 200',
    `got ${reachableFightFloor(140, 100, 50)}`);
 
 console.log('\n--- the keeper counts real larder entries and accepts the floor itself ---');
-const effectiveFloor = (vigorFloor, larder) => {
+const effectiveFloorState = (vigorFloor, larder, plan = undefined) => {
   const keeper = {
     policy: { vigorFloor },
     s: { client: {} },
     larder: () => larder,
     vigor: { starved_passes: 0 },
   };
-  return Autopilot.prototype.fightFloor.call(keeper);
+  return {
+    floor: Autopilot.prototype.fightFloor.call(keeper, plan),
+    starved: keeper.vigor.starved_passes,
+  };
 };
+const effectiveFloor = (vigorFloor, larder, plan = undefined) =>
+  effectiveFloorState(vigorFloor, larder, plan).floor;
 const ration = (nutrition, amount = 1) => ({
   name: 'test ration',
   food: { nutrition, filling: 1 },
@@ -90,9 +95,24 @@ const ration = (nutrition, amount = 1) => ({
 ok('an empty larder falls back exactly to the rest-reachable 80',
    effectiveFloor(80, []) === 80,
    `got ${effectiveFloor(80, [])}`);
-ok('the internal food-backed minimum raises configured 80 to 100 when 20 vigor is carried',
-   effectiveFloor(80, [ration(20)]) === 100,
+ok('an explicit resting-cap floor remains 80 even when food is carried',
+   effectiveFloor(80, [ration(20)]) === 80,
    `got ${effectiveFloor(80, [ration(20)])}`);
+ok('an explicit zero floor remains zero with or without food',
+   effectiveFloor(0, []) === 0 && effectiveFloor(0, [ration(20)]) === 0,
+   `empty=${effectiveFloor(0, [])}, fed=${effectiveFloor(0, [ration(20)])}`);
+ok('an empty larder at an explicit reachable floor is not reported as starvation',
+   effectiveFloorState(80, []).starved === 0,
+   JSON.stringify(effectiveFloorState(80, [])));
+ok('the internal food-backed minimum still applies when no explicit floor was supplied',
+   effectiveFloor(undefined, [ration(20)]) === 100,
+   `got ${effectiveFloor(undefined, [ration(20)])}`);
+ok('a sub-100 strategy default is still raised to the internal default floor',
+   effectiveFloor(undefined, [ration(20)], { vigorFloor: 90 }) === 100,
+   `got ${effectiveFloor(undefined, [ration(20)], { vigorFloor: 90 })}`);
+ok('the baseline strategy still requests 140 when no explicit floor was supplied',
+   effectiveFloor(undefined, [ration(100)], STRATEGIES.baseline) === 140,
+   `got ${effectiveFloor(undefined, [ration(100)], STRATEGIES.baseline)}`);
 ok('stack quantities contribute every carried serving',
    effectiveFloor(140, [ration(20, 3)]) === 140,
    `got ${effectiveFloor(140, [ration(20, 3)])}`);
@@ -108,4 +128,4 @@ if (failed) {
   console.error(`\n${failed} failed`);
   process.exit(1);
 }
-console.log('\n20 passed');
+console.log('\n26 passed');
