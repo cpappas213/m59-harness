@@ -8,9 +8,15 @@
 // It must NOT become the ceiling. See applyFightAboveVigor: a ceiling equal to the
 // floor collapses provisioning's band into a threshold and gives up the health
 // regeneration the food was bought for. shouldWaitForProvision is what stops a fed
-// character idling in an inn, and it is pinned in m59-combat-test.mjs.
-import { applyFightAboveVigor, applySafeSpotPolicy,
-         STRATEGIES, reachableFightFloor } from './m59-autopilot.mjs';
+// character idling in an inn, and its inclusive floor semantics are pinned below.
+import {
+  applyFightAboveVigor,
+  applySafeSpotPolicy,
+  Autopilot,
+  reachableFightFloor,
+  shouldWaitForProvision,
+  STRATEGIES,
+} from './m59-autopilot.mjs';
 
 let failed = 0;
 const ok = (label, condition, detail = '') => {
@@ -79,8 +85,41 @@ ok('the resting cap scales with the vigor bar, not a hard-coded 200',
    reachableFightFloor(140, 100, 50) === 90,   // 0.4*100=40 + 50 = 90 -> min(140,90)=90
    `got ${reachableFightFloor(140, 100, 50)}`);
 
+console.log('\n--- the keeper counts real larder entries and accepts the floor itself ---');
+const effectiveFloor = (vigorFloor, larder) => {
+  const keeper = {
+    policy: { vigorFloor },
+    s: { client: {} },
+    larder: () => larder,
+    vigor: { starved_passes: 0 },
+  };
+  return Autopilot.prototype.fightFloor.call(keeper);
+};
+const ration = (nutrition, amount = 1) => ({
+  name: 'test ration',
+  food: { nutrition, filling: 1 },
+  o: { amount },
+});
+
+ok('an empty larder falls back exactly to the rest-reachable 80',
+   effectiveFloor(80, []) === 80,
+   `got ${effectiveFloor(80, [])}`);
+ok('the internal food-backed minimum raises configured 80 to 100 when 20 vigor is carried',
+   effectiveFloor(80, [ration(20)]) === 100,
+   `got ${effectiveFloor(80, [ration(20)])}`);
+ok('stack quantities contribute every carried serving',
+   effectiveFloor(140, [ration(20, 3)]) === 140,
+   `got ${effectiveFloor(140, [ration(20, 3)])}`);
+ok('one 50-vigor item makes a configured 140 floor reachable only to 130',
+   effectiveFloor(140, [ration(50)]) === 130,
+   `got ${effectiveFloor(140, [ration(50)])}`);
+ok('exactly meeting the floor does not keep provisioning',
+   !shouldWaitForProvision({ vigor: 80, floor: 80, wait: 120, hurt: false }));
+ok('one point below the floor does keep provisioning',
+   shouldWaitForProvision({ vigor: 79, floor: 80, wait: 120, hurt: false }));
+
 if (failed) {
   console.error(`\n${failed} failed`);
   process.exit(1);
 }
-console.log('\n17 passed');
+console.log('\n23 passed');
