@@ -34,7 +34,50 @@ console.log('monster condition parser');
   ok('unrelated near-death prose is not a monster-health report',
      monsterConditionReport('Even things thought dead can be brought back to near death.') === null);
   ok('a condition line can reflect party damage and is not claimed as our landed hit',
-     landedHitSummary(['The slime is clearly injured.']).hits === 0);
+     landedHitSummary(['The slime is clearly injured.'], 'slime').hits === 0);
+}
+
+console.log('\nlanded-hit parser');
+{
+  const liveFight = [
+    ...Array.from({ length: 24 }, () => 'Your short sword pokes the fungus beast.'),
+    'The fungus beast is seriously wounded.',
+    'The fungus beast is weak, and near death.',
+  ];
+  const liveSummary = landedHitSummary(liveFight, 'fungus beast');
+  ok('source battler prose counts all 24 live fungus hits without inventing damage totals',
+     liveSummary.hits === 24 && liveSummary.damage === null &&
+       liveSummary.damage_known_hits === 0,
+     JSON.stringify(liveSummary));
+
+  const sourceForms = landedHitSummary([
+    'Your mace bashes the slime.',
+    'Your sword slashes the slime.',
+    'Your rapier runs through the slime.',
+    'Your staff hits the slime.',
+    'You hit the slime for 4 damage.',
+  ], 'The slime');
+  ok('generic and representative source-defined damage verbs remain positive evidence',
+     sourceForms.hits === 5 && sourceForms.damage === 4 &&
+       sourceForms.damage_known_hits === 1,
+     JSON.stringify(sourceForms));
+
+  const rejected = landedHitSummary([
+    'Your short sword misses the fungus beast.',
+    'Your short sword fails to damage the fungus beast.',
+    'The fungus beast pokes you.',
+    'The fungus beast is weak, and near death.',
+    'MANIAC says, "Your short sword pokes the fungus beast."',
+    'Your short sword pokes the slime.',
+    'Your body freezes as total exhaustion grips your limbs.',
+    'Your body cools noticeably as the resist cold enchantment wears off.',
+    'Your weapon sears into your flesh, clinging to your hand as it burns.',
+    'Your bronze room key dissolves into a strange metallic liquid, then evaporates into an orange mist and is gone.',
+  ], 'fungus beast');
+  ok('non-hits, another foe, and real colliding server prose stay excluded',
+     rejected.hits === 0, JSON.stringify(rejected));
+  ok('affirmative prose without an exact selected-foe binding fails closed',
+     landedHitSummary(['Your short sword pokes the fungus beast.']).hits === 0);
 }
 
 console.log('\ncombat race projection');
@@ -133,15 +176,20 @@ function combat(sequence, { start = 1, threshold = 0.6 } = {}) {
 console.log('\nadaptive fight integration');
 {
   const favorable = combat([
-    { health: 0.98, messages: ['The slime is slightly wounded.'] },
-    { health: 0.96, messages: ['The slime is clearly injured.'] },
-    { health: 0.94, messages: ['The slime is seriously wounded.'] },
-    { health: 0.92, messages: ['The slime is weak, and near death.'] },
+    { health: 0.98, messages: ['Your short sword pokes the slime.',
+      'The slime is slightly wounded.'] },
+    { health: 0.96, messages: ['Your short sword pokes the slime.',
+      'The slime is clearly injured.'] },
+    { health: 0.94, messages: ['Your short sword pokes the slime.',
+      'The slime is seriously wounded.'] },
+    { health: 0.92, messages: ['Your short sword pokes the slime.',
+      'The slime is weak, and near death.'] },
     { health: 0.90, messages: [], kill: true },
   ]);
   const won = await favorable.run();
   ok('a favorable race keeps swinging continuously through the kill',
-     won.killed === true && favorable.calls() === 5 && won.projection?.winning === true,
+     won.killed === true && favorable.calls() === 5 && won.projection?.winning === true &&
+       won.landed_hits === 4,
      JSON.stringify(won));
 
   const unfavorable = combat([
