@@ -58,14 +58,48 @@ export const DEFAULT_REST_UNTIL = 0.9;
 // reach. The keeper then pulls the same wounded object back and resumes it. Treating
 // every such return as "no progress" makes five useful exchanges look like a stall and
 // lets an external supervisor stop the keeper in the middle of a bounded pull cycle.
-// The server's own combat text is the affirmative evidence: "You hit ..." is emitted
-// only for a landed blow. Merely sending swings, or receiving dodge/avoid text, does not
-// qualify. Keep the parser pure so the distinction is testable without a live server.
-export function landedHitSummary(messages = []) {
+// The server's own combat text is the affirmative evidence. Generic attacks say
+// "You hit ..." or "Your <weapon> hits ...", while Battler.GotHit uses the weapon's
+// damage type and strength (for example, "Your short sword pokes the fungus beast.").
+// These are all positive-damage branches; a zero-damage blow says "fails to damage".
+// Keep the grammar anchored and the source-defined verbs explicit so misses, incoming
+// attacks, and arbitrary prose cannot manufacture progress.
+const PLAYER_DAMAGE_VERBS = [
+  'runs through',
+  'incinerates', 'electrocutes', 'brutalizes',
+  'disfigures', 'dissolves', 'corrupts', 'purifies',
+  'mortifies', 'cleanses', 'flattens', 'appalls',
+  'pollutes', 'maligns', 'devours', 'thrashes',
+  'mangles', 'pummels', 'cleaves', 'lacerates',
+  'damages', 'wounds', 'nicks', 'slays',
+  'burns', 'sears', 'scorches', 'chars', 'singes',
+  'fries', 'shocks', 'jolts', 'freezes', 'frosts',
+  'chills', 'cools', 'infuses', 'slams', 'buffets',
+  'shakes', 'gnaws', 'bites', 'nips', 'shreds',
+  'rends', 'rakes', 'claws', 'impales', 'pricks',
+  'stings', 'irritates', 'slaps', 'maims', 'slashes',
+  'cuts', 'smashes', 'crushes', 'bashes', 'stabs',
+  'pokes', 'fells', 'pierces', 'grazes', 'hits',
+];
+const PLAYER_DAMAGE_VERB_PATTERN = PLAYER_DAMAGE_VERBS.join('|').replace(/ /g, '\\s+');
+const regexpEscape = value => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+export function landedHitSummary(messages = [], target = null) {
   let hits = 0, damage = 0, damageKnown = 0;
+  // attackRounds may collect unrelated server messages during the same exchange.
+  // Bind affirmative prose to the chosen foe rather than accepting any sentence
+  // that happens to fit "Your <noun> <damage verb> <noun>.". The source inserts
+  // GetDef separately, so articles are allowed independently of the room name.
+  const targetName = combatNameKey(target);
+  if (!targetName) return { hits, damage: null, damage_known_hits: damageKnown };
+  const targetPattern = `(?:the\\s+|an\\s+|a\\s+)?${regexpEscape(targetName).replace(/ /g, '\\s+')}`;
+  const battlerDamageLine = new RegExp(
+    `^\\s*Your\\s+.+?\\s+(?:${PLAYER_DAMAGE_VERB_PATTERN})\\s+${targetPattern}\\.\\s*$`, 'i');
+  const genericDamageLine = new RegExp(
+    `^\\s*You hit\\s+${targetPattern}(?:\\s+(?:with|for)\\b.*?)?\\.\\s*$`, 'i');
   for (const value of messages || []) {
     const line = String(value ?? '');
-    if (!/\byou hit\b/i.test(line)) continue;
+    if (!genericDamageLine.test(line) && !battlerDamageLine.test(line)) continue;
     hits++;
     const amount = /\bfor\s+(\d+)(?:\s+damage)?\b/i.exec(line);
     if (amount) { damage += Number(amount[1]); damageKnown++; }
@@ -105,8 +139,10 @@ export function monsterConditionReport(value) {
   return null;
 }
 
-const combatNameKey = value => String(value ?? '')
-  .toLowerCase().trim().replace(/^(?:the|an|a)\s+/, '').replace(/\s+/g, ' ');
+function combatNameKey(value) {
+  return String(value ?? '').toLowerCase().trim()
+    .replace(/^(?:the|an|a)\s+/, '').replace(/\s+/g, ' ');
+}
 
 // A CONSERVATIVE RACE TO THE WITHDRAWAL FLOOR.
 //
@@ -2280,7 +2316,7 @@ export async function fight(s, {
   await s.pacer.submit('read', () => c.stats(1));
   await c.waitFor({ kinds: ['stat'], timeoutMs: 2000 });
   const after = c.vitals();
-  const landed = landedHitSummary(combatLines);
+  const landed = landedHitSummary(combatLines, foeName);
 
   const out = {
     fought: true, target: foeName, killed, rounds: roundsFought,
