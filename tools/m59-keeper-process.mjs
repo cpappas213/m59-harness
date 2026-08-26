@@ -1537,6 +1537,32 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    // THE FLIGHT RECORDER, WHICH THE BROKER DOES NOT HAVE EITHER.
+    //
+    // Same shape of gap as /chat, and it cost a measurement rather than a fleet: the
+    // `recording` tool reads `session.recorder` off the session, and a KeeperProxy has no
+    // recorder, so on a keeper-backed broker every call threw
+    // `Cannot read properties of undefined (reading 'tail')`. m59-circuit.mjs counts
+    // incoming SWINGS off this to answer "did the road get more dangerous", and it was
+    // reporting `0 swing(s) taken` for whole laps in which characters were being eaten --
+    // the one survival number the experiment exists to produce, silently zero.
+    //
+    // The Session that owns the socket owns the recorder. The broker holds neither.
+    if (req.method === 'GET' && path === '/recording') {
+      const r = session.recorder;
+      if (!r) { json({ lines: 0, recording: false, tail: [], note: 'no recorder on this session' }); return; }
+      const q = url.searchParams;
+      if (q.get('action') === 'status') {
+        json({ recording: r.enabled, bytes_written: r.written,
+               dropped_lines: r.dropped, buffered: r.buf?.length ?? 0 });
+        return;
+      }
+      const kinds = q.get('kinds') ? q.get('kinds').split(',').filter(Boolean) : undefined;
+      const lines = r.tail(Number(q.get('limit') ?? 120), kinds);
+      json({ agent, lines: lines.length, recording: r.enabled, tail: lines });
+      return;
+    }
+
     if (req.method === 'GET' && path === '/pacerstats') {
       // Ground-truth packet rates for the server's 5/s throttle (user.kod:50).
       // prodRate = what the tick loop SUBMITS per second; sentRate = what actually

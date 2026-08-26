@@ -10495,9 +10495,24 @@ const TOOLS = [
                description: 'filter, e.g. ["call"] for just tool calls or ["event"] for just the wire' },
       action: { type: 'string', enum: ['tail', 'status', 'off', 'on'] },
     }, required: ['agent'] },
-    run: (a) => {
+    run: async (a) => {
       const s = sessions.get(a.agent);
       if (!s) return { error: `no session named "${a.agent}"`, known: [...sessions.keys()] };
+      // A KEEPER-BACKED SESSION'S RECORDER IS IN THE KEEPER. This read `s.recorder` off the
+      // proxy, which has none, so every call on the default architecture threw
+      // `Cannot read properties of undefined (reading 'tail')`. m59-circuit.mjs counts
+      // incoming swings off this and was therefore reporting `0 swing(s) taken` for laps
+      // in which characters were being eaten. See /recording in m59-keeper-process.mjs.
+      if (s instanceof KeeperProxy) {
+        const out = await keeperGet(s.name, s._index, 'recording', {
+          action: a.action ?? 'tail', limit: num(a.limit, 120),
+          ...(a.kinds ? { kinds: [].concat(a.kinds).join(',') } : {}),
+        });
+        if (!out || out.error) return { agent: a.agent, lines: 0, tail: [],
+          error: out?.error ?? 'the keeper did not answer',
+          note: 'the recorder lives in the keeper process; it did not answer this read' };
+        return { agent: a.agent, ...out };
+      }
       const r = s.recorder;
       if (a.action === 'off') { r.stop(); r.enabled = false; return { recording: false }; }
       if (a.action === 'on') { r.enabled = true; return { recording: true }; }
