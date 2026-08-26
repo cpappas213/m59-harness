@@ -81,7 +81,8 @@ const retreatAlongBreadcrumbs = lift('async retreatAlongBreadcrumbs({', 'retreat
 // it explicitly is what makes the lift useful: a constant the method reads and this file
 // does not name is a ReferenceError HERE, at test time, rather than mid-journey.
 const walkTo = lift('async walkTo(col, row, {', 'walkTo',
-  { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, PROVED_HOP_MAX_SQUARES: 13, OFF_PLAN_STEP_BUDGET: 3,
+  { KOD_FINENESS, MOVE_HOP_MAX_SQUARES: 8, PROVED_HOP_MAX_SQUARES: 13,
+    OFF_PLAN_STEP_BUDGET: 3, WALK_STALL_STEPS: 24,
     isTerminalMovementReason: () => false, provedSquares: () => null });
 
 // ---------------------------------------------------------------------------
@@ -263,7 +264,13 @@ console.log('it stops the moment the route reappears — the goal is out, not un
 {
   const s = fakeSession();
   await walk(s, [{ col: 6, row: 5 }, { col: 7, row: 5 }, { col: 8, row: 5 }]);
-  const out = await s.retreatAlongBreadcrumbs({ until: () => s.client.self.col === 7 });
+  const positions = [];
+  const out = await s.retreatAlongBreadcrumbs({ until: current => {
+    positions.push(current && { col: current.col, row: current.row });
+    return current?.col === 7;
+  } });
+  ok('the stop predicate receives the newly established position',
+     positions.length === 1 && positions[0]?.col === 7 && positions[0]?.row === 5);
   ok('one step was enough', out.steps === 1);
   ok('and the rest of the trail is kept', out.crumbs_left === 2);
 }
@@ -290,6 +297,55 @@ console.log('walkTo escapes the pocket and then plans from where it lands');
   ok('it does not claim to have arrived', r.arrived === false);
   ok('the retreat is named rather than swallowed', r.retreated >= 1);
   ok('and the note says the escape was tried', /breadcrumbs/.test(r.note ?? ''));
+}
+
+// ---------------------------------------------------------------------------
+console.log('keeper mode alone cannot bypass both pathfinders');
+{
+  const priorKeeper = process.env.M59_KEEPER;
+  const priorRawFallback = process.env.M59_RAW_MOVE_FALLBACK;
+  try {
+    process.env.M59_KEEPER = '1';
+    delete process.env.M59_RAW_MOVE_FALLBACK;
+    const s = fakeSession({ routable: () => false });
+    const r = await walkTo.call(s, 1, 5, {});
+    ok('the failed validated walks remain a refusal',
+       r.arrived === false && r.raw_walk !== true);
+    ok('and ordinary keeper mode emits no raw movement packet', s.packets.length === 0,
+       JSON.stringify(s.packets));
+  } finally {
+    if (priorKeeper == null) delete process.env.M59_KEEPER;
+    else process.env.M59_KEEPER = priorKeeper;
+    if (priorRawFallback == null) delete process.env.M59_RAW_MOVE_FALLBACK;
+    else process.env.M59_RAW_MOVE_FALLBACK = priorRawFallback;
+  }
+}
+
+// ---------------------------------------------------------------------------
+console.log('a cancelled fine fallback cannot re-arm raw movement');
+{
+  const priorKeeper = process.env.M59_KEEPER;
+  const priorRawFallback = process.env.M59_RAW_MOVE_FALLBACK;
+  try {
+    // Both diagnostic gates are deliberately open. This isolates cancellation as the
+    // authority that must stop the fallback; a disabled flag could make the test pass for
+    // the wrong reason.
+    process.env.M59_KEEPER = '1';
+    process.env.M59_RAW_MOVE_FALLBACK = '1';
+    const s = fakeSession({ routable: () => false });
+    s.walkFine = async () => ({ arrived: false, cancelled: true,
+                                reason: 'movement_cancelled', steps: 2 });
+    const r = await walkTo.call(s, 1, 5, {});
+    ok('the cancelled result is returned intact',
+       r.cancelled === true && r.reason === 'movement_cancelled' && r.steps === 2);
+    ok('and no raw movement packet follows it', s.packets.length === 0,
+       JSON.stringify(s.packets));
+  } finally {
+    if (priorKeeper == null) delete process.env.M59_KEEPER;
+    else process.env.M59_KEEPER = priorKeeper;
+    if (priorRawFallback == null) delete process.env.M59_RAW_MOVE_FALLBACK;
+    else process.env.M59_RAW_MOVE_FALLBACK = priorRawFallback;
+  }
 }
 
 // ---------------------------------------------------------------------------
