@@ -234,6 +234,14 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   `node tools/m59-profiles-test.mjs` (87 — **the contract test for a posture whose whole
   value is in what it REFUSES**: that the town is a curated room set rather than a name
   match (the Deep Dark Woods *of Tos* is wilderness; Familiars and The Crypt are indoors
+  `node tools/m59-devclient-test.mjs` (31 — the one file every patched-client launch goes
+  through: that `shortcuts/dev.bat` names no character and carries no password, that its FOR
+  variable is `%%a` and not the `%%%%a` the first version wrote — which cmd rejects, so every
+  launcher it generated died on its endpoint lookup before starting anything — that a
+  per-character file is one `call` line with the five arguments in dev.bat's order, and, on
+  Windows, that the generated file actually runs: usage and exit 2 on too few arguments, exit 3
+  with a message when no client is built, and under `M59_DEVCLIENT_DRYRUN` the endpoint it
+  resolved and the account it would log in as, never the password) and
   and say neither), that a farm room outside the walls and a character standing outside
   them are both refused rather than quietly walked, that an unknown current room is the one
   thing allowed to be a note instead, and above all that every one of the thirteen policy

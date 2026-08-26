@@ -13,6 +13,14 @@
 // agent DLL injected, C to open the COMPENDIUM with that character's real numbers in
 // it. No copying, no pasting.
 //
+// THE CLIENT L STARTS IS THE PATCHED ONE WHEN THERE IS ONE. `m59-devclient.mjs` names the
+// build tree's own meridian.exe — the binary with clientd3d/m59dbg.c in it and without
+// the idle logoff — and `shortcuts/dev.bat` is the one file that knows how to start it.
+// A launch from here goes through that file with the same five arguments the
+// per-character dev-<name>.bat files use, so the terminal and the shortcuts cannot start
+// two different clients. The Steam client is what you get when nothing is built, and
+// M59_TUI_STOCK_CLIENT=1 asks for it on purpose.
+//
 // Zero dependencies and no framework. It draws with ANSI, reads raw keys, and repaints
 // the whole screen on a timer — twenty-five rows is far too little to need anything
 // cleverer, and a dependency here would be a dependency in the one tool you reach for
@@ -26,9 +34,12 @@ import { fileURLToPath } from 'node:url';
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { findClient, findClientExe, isSteamInstall, clientArgs, STEAM_APPID }
   from './m59-shortcuts.mjs';
+import { DEV_CLIENT, ensureUniversalLauncher, universalLauncherArgs } from './m59-devclient.mjs';
 import { ensureServing, openBrowser, importUrl, COMPENDIUM_PORT } from './m59-compendium.mjs';
 import * as webui from './m59-webui.mjs';
 import { commitmentOf, stepSelection, firstSelectable, allCommitted } from './m59-commitment.mjs';
+import { mergeTuiRow, fleetFreshness } from './m59-tui-state.mjs';
+import { recentDeathsIn, DEATH_WINDOW_MS } from './m59-death-tally.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const WIN = process.platform === 'win32';
@@ -132,17 +143,21 @@ const S = {
 // therefore reads a STRANGER'S keeper and believes it: port 8923 answers as `shadow13`,
 // and a board that trusted the arithmetic showed ten shadow characters as prod ones.
 //
-// So sweep the range, ask each port `/mode` — which names its own agent — and keep only
+// So sweep the range, ask each port `/state` — which names its own agent and carries the
+// complete current operational projection — and keep only
 // the answers. Same doctrine as m59-which.mjs one layer down: two fleets on one machine
 // are not the same fleet, and identity is checked rather than inferred from a number.
 const KEEPER_SCAN = Number(env.M59_TUI_KEEPER_SCAN || 60);
 let _ports = null;                       // agent -> port, learned by asking
-async function keeperMode(port) {
+async function keeperState(port) {
   if (port == null) return null;
   try {
     // Generous: these processes are also playing the game, and a keeper mid-pass will
     // sit on a request long enough that a tight timeout reads as "no keeper".
-    const r = await fetch(`http://127.0.0.1:${port}/mode`, { signal: AbortSignal.timeout(6000) });
+    // `/state` answers from the keeper's own at-most-two-second cache and sends no game
+    // packet. `/mode` used to be requested here; it proved identity but none of the data
+    // the hero sheet rendered (deaths, walls, threats, trials) existed in that response.
+    const r = await fetch(`http://127.0.0.1:${port}/state`, { signal: AbortSignal.timeout(6000) });
     return await r.json();
   } catch { return null; }
 }
@@ -152,7 +167,7 @@ async function keeperMode(port) {
 async function sweep(ports, mine) {
   const seen = new Map();
   await Promise.all(ports.map(async (p) => {
-    const m = await keeperMode(p);
+    const m = await keeperState(p);
     if (m?.agent && (!mine || mine.has(m.agent))) seen.set(m.agent, { ...m, __port: p });
   }));
   return seen;
@@ -184,17 +199,35 @@ async function keeperStates(expected = []) {
 // A character that exists is a row. Anything that enumerates keepers to find characters
 // will drop the ones whose keeper the broker did not personally start.
 async function refresh() {
-  const f = await call('fleet', {}, 15000);
+  // Refreshes the loopback keeper snapshots only; the broker explicitly guarantees this
+  // option sends no Meridian packets.  That removes its independent two-second cache from
+  // a manual/periodic TUI refresh without turning a five-second repaint into fleet traffic.
+  const f = await call('fleet', { refresh: true }, 15000);
   if (f?.__error) { S.lastError = 'broker: ' + f.__error; S.loading = false; return; }
   S.lastError = null;
   const rows = f?.fleet || [];
   // `running` is the keeper's own ground truth, off its own HTTP port. Failing to reach
   // one leaves `ap` as it was, which every consumer below already treats as "no keeper".
   const keepers = await keeperStates(rows.map(r => r.agent));
-  S.rows = rows.map((r) => {
-    const k = keepers.get(r.agent);
-    return { ...r, agent: r.agent, ap: k ? { ...r.ap, ...k } : r.ap };
-  }).sort((x, y) => (y.level ?? 0) - (x.level ?? 0));
+  // Read the same durable evidence locally as the new broker.  This fallback matters
+  // during rolling deployment: the TUI can show a death immediately even while the live
+  // broker/keeper processes are still running the preceding binary.  Rows restrict the
+  // result to this selected fleet's character names.
+  const deaths = recentDeathsIn(join(REPO, 'substrate', 'postmortems'), {
+    sinceMs: DEATH_WINDOW_MS,
+  });
+  S.rows = rows.map(r => {
+    const durable = deaths.get(r.character ?? '');
+    return mergeTuiRow({
+      ...r,
+      deaths_24h: r.deaths_24h ?? durable?.count ?? 0,
+      deaths_in_safe_spot: durable?.in_safe_spot ?? r.deaths_in_safe_spot ?? 0,
+      deaths_in_proven_safe_spot: durable?.in_proven_safe_spot ??
+        r.deaths_in_proven_safe_spot ?? 0,
+      last_death: r.last_death ?? durable?.last ?? null,
+    }, keepers.get(r.agent));
+  })
+    .sort((x, y) => (y.level ?? 0) - (x.level ?? 0));
   if (S.sel >= S.rows.length) S.sel = Math.max(0, S.rows.length - 1);
   // The first draw should not open on a character you are not allowed to pick. After
   // that the cursor is the operator's and a refresh must not move it — a board that
@@ -221,13 +254,21 @@ function listView() {
   const walls = S.rows.filter(r => r.ap?.safe_spot?.works).length;
   const dead = S.rows.filter(r => r.in_game === false).length;
   const spotDeaths = S.rows.reduce((n, r) => n + (r.ap?.did?.deaths_in_safe_spot ?? 0), 0);
+  const recentDeaths = S.rows.reduce((n, r) => n + (r.ap?.did?.deaths_24h ?? 0), 0);
   const heldCount = S.rows.filter(r => commitmentOf(r)).length;
+  const freshness = fleetFreshness(S.rows);
 
   L.push(c.bold(c.cyan('  MERIDIAN 59 FLEET')) + '   ' + c.dim([
     `${up}/${S.rows.length} keepers up`,
     walls ? c.green(`${walls} proven walls`) : c.dim('0 proven walls'),
     dead ? c.red(`${dead} NOT IN GAME`) : c.green('all in game'),
+    recentDeaths ? c.red(`${recentDeaths} deaths/24h`) : c.green('0 deaths/24h'),
     spotDeaths ? c.red(`${spotDeaths} died in a spot`) : c.green('0 spot deaths'),
+    freshness.stale.length
+      ? c.red(`${freshness.stale.length} STALE SNAPSHOT${freshness.stale.length === 1 ? '' : 'S'}`)
+      : freshness.unknown
+        ? c.yellow(`${freshness.unknown} snapshot ages unknown`)
+        : c.dim(`newest evidence ≤${Math.ceil((freshness.max_age_ms ?? 0) / 1000)}s old`),
     // Said out loud rather than left to be inferred from the colour of some rows. A
     // person who does not know the skipping exists reads a cursor jumping two rows as a
     // bug, and the count is the shortest possible explanation of it.
@@ -350,9 +391,20 @@ function heroView() {
   } else L.push(c.dim('  not holding one'));
   L.push('');
 
-  L.push(c.bold('  SURVIVAL') + c.dim(`   ${a.did?.deaths ?? 0} deaths · ` +
+  L.push(c.bold('  SURVIVAL') + c.dim(`   ${a.did?.deaths_24h ?? 0} deaths/24h · ` +
+    `${a.did?.deaths ?? 0} since keeper start · ` +
     `${a.did?.deaths_in_safe_spot ?? 0} in a safe spot · ${a.did?.mulligans ?? 0} mulligans · ` +
     `${a.did?.logoffs ?? 0} logoffs`));
+  const lastDeath = a.last_death ?? r.last_death;
+  if (lastDeath) {
+    const ago = lastDeath.at ? Math.max(0, Math.round((Date.now() - lastDeath.at) / 60000)) : null;
+    L.push('  ' + c.dim('last died ') +
+      c.red(`${lastDeath.died_in ?? lastDeath.where?.room ?? 'unknown room'}`) +
+      (ago != null ? c.dim(` · ${ago}m ago`) : '') +
+      (lastDeath.hunting ? c.dim(` · hunting ${lastDeath.hunting}`) : ''));
+  }
+  if (r.snapshot_age_ms == null) L.push('  ' + c.yellow('snapshot age unknown'));
+  else L.push('  ' + c.dim(`snapshot ${Math.round(r.snapshot_age_ms)}ms old`));
   L.push('');
 
   const d = S.detail;
@@ -446,11 +498,15 @@ async function ensureProxy(host, port) {
 async function launch(row, { viaProxy = false } = {}) {
   const creds = rosterFor(row.agent);
   if (!creds) { S.status = c.red('no credentials on file for ' + row.agent); return; }
-  // FIND THE CLIENT THE WAY doctor AND THE SHORTCUTS FIND IT. This was a hardcoded
-  // `C:\Program Files (x86)\...`, which on Linux is not a path at all — and on a
-  // Windows box with Steam installed anywhere else was simply wrong.
-  const clientDir = findClient();
-  const exe = findClientExe(clientDir);
+  // THE PATCHED CLIENT FIRST — see the header. Its directory has no `steamapps` in it, so
+  // isSteamInstall says no and `/S` stays off, which is right: it is a build, not a
+  // Steam install that would try to patch itself.
+  const devExe = WIN && !env.M59_TUI_STOCK_CLIENT && existsSync(DEV_CLIENT()) ? DEV_CLIENT() : null;
+  // Otherwise FIND THE CLIENT THE WAY doctor AND THE SHORTCUTS FIND IT. This was a
+  // hardcoded `C:\Program Files (x86)\...`, which on Linux is not a path at all — and on
+  // a Windows box with Steam installed anywhere else was simply wrong.
+  const clientDir = devExe ? dirname(devExe) : findClient();
+  const exe = devExe || findClientExe(clientDir);
   if (!exe) {
     S.status = c.red('no Meridian 59 client found') + ' ' +
       c.dim('· set M59_CLIENT to its folder · store.steampowered.com/app/' + STEAM_APPID);
@@ -512,9 +568,11 @@ async function launch(row, { viaProxy = false } = {}) {
   const ps = [
     `Write-Output "=== $(Get-Date -Format o) launching `
       + `${row.character ?? row.agent} (${creds.account}) ==="`,
-    `if (-not (Test-Path '${exe}')) { Write-Output 'NO CLIENT AT THAT PATH'; exit 1 }`,
-    `$p = Start-Process -FilePath '${exe}' -WorkingDirectory '${dirname(exe)}' `
-      + `-ArgumentList ${psArgs.join(',')} -PassThru`,
+    ...(devExe ? devStartLines(creds, host, port, row.character ?? row.agent) : [
+      `if (-not (Test-Path '${exe}')) { Write-Output 'NO CLIENT AT THAT PATH'; exit 1 }`,
+      `$p = Start-Process -FilePath '${exe}' -WorkingDirectory '${dirname(exe)}' `
+        + `-ArgumentList ${psArgs.join(',')} -PassThru`,
+    ]),
     // WAIT FOR THE WINDOW RATHER THAN GUESSING AT IT. A fixed sleep was the reason this
     // key looked broken: a cold Steam start takes upwards of fifteen seconds to become
     // a process with a window, the injector ran at six, found nothing, and exited 1 —
@@ -558,7 +616,8 @@ async function launch(row, { viaProxy = false } = {}) {
   child.unref();
   child.on('error', e => { S.status = c.red('could not start powershell: ' + e.message); draw(); });
   S.status = c.green(`launching ${row.character ?? row.agent}…`) + ' ' +
-             c.dim('~20s · log: substrate/m59-launch.log · keep the client focused or it drops movement');
+             c.dim((devExe ? 'patched client via shortcuts/dev.bat' : 'Steam client') +
+                   ' · ~20s · log: substrate/m59-launch.log · keep the client focused or it drops movement');
   // The pilot claim stops the keeper, which leaves an errand sitting there to resume when
   // the client closes — that is fine and deliberate. A PAIRING is not: the other half is
   // now waiting in a room for a character that is in a client window, and it will not
@@ -576,6 +635,38 @@ async function launch(row, { viaProxy = false } = {}) {
     S.status += ' ' + c.red('· broker not told to watch (' + r.__error + ') — `pilot claim` by hand');
     draw();
   }
+  // Handed back for --launch, which has to outlive it — see there.
+  return child;
+}
+
+// START THE PATCHED CLIENT THROUGH dev.bat, AND FIND THE PROCESS IT MADE.
+//
+// A .bat that `start`s something cannot hand a pid back, and everything after this line
+// in the launcher — the pilot claim, the wait for a window, the injection — needs one.
+// So the client is found afterwards, by the account on its command line (the same thing
+// m59-localclient.mjs matches clients on) and by having been created after we asked. The
+// timestamp is what excludes a second window somebody left open on the same account; a
+// client that never appears is reported rather than waited on for ever.
+//
+// dev.bat is (re)written first, so the file on disk is always the current tool's opinion.
+// Each argument is double-quoted for cmd inside PowerShell's single quotes — a password
+// with a space in it survives, one with a double quote does not, and no roster here has
+// either.
+function devStartLines(creds, host, port, character) {
+  const { path: bat } = ensureUniversalLauncher();
+  const args = universalLauncherArgs({ ...creds, character }, { host, port })
+    .map(a => `'"${String(a).replace(/'/g, "''")}"'`);
+  return [
+    `$t0 = (Get-Date).AddSeconds(-2)`,
+    `if (-not (Test-Path '${bat}')) { Write-Output 'NO dev.bat AT ${bat}'; exit 1 }`,
+    `Start-Process -FilePath '${bat}' -ArgumentList ${args.join(',')} -WindowStyle Hidden`,
+    `$c = $null; $t = 0`,
+    `while ($t -lt 60 -and -not $c) { $c = Get-CimInstance Win32_Process -Filter "Name='meridian.exe'" `
+      + `| Where-Object { $_.CommandLine -like '*/U:${creds.account} *' -and $_.CreationDate -ge $t0 } `
+      + `| Select-Object -First 1; if (-not $c) { Start-Sleep -Milliseconds 250; $t++ } }`,
+    `if (-not $c) { Write-Output 'NO CLIENT APPEARED within 15s of dev.bat — run shortcuts\\dev.bat by hand to see why'; exit 1 }`,
+    `$p = Get-Process -Id $c.ProcessId`,
+  ];
 }
 
 // SAY WHAT THIS INTERRUPTS — shared by both platforms, because what a character is in the
@@ -785,8 +876,26 @@ if (li >= 0) {
   if (!agent) { console.error('usage: m59-tui.mjs --launch <agent>'); exit(2); }
   // AWAITED, or the process exits before the broker has been told to watch for the
   // client this just started — and the automatic claim silently never happens.
-  await launch({ agent });
+  const logPath = join(REPO, 'substrate', 'm59-launch.log');
+  let before = 0;
+  try { before = readFileSync(logPath, 'utf8').length; } catch { /* no log yet */ }
+  const child = await launch({ agent });
   console.log(S.status.replace(/\x1b\[[0-9;]*m/g, ''));
+  // AND THEN WAIT FOR THE LAUNCHER, or it dies with us. On Windows, node puts a child it
+  // did not detach into a job object that is killed when node exits — and the launcher
+  // is deliberately not detached, because a detached powershell has no console and dies
+  // before its first statement. Interactively the terminal stays up for the ~20s the
+  // launcher needs; here nothing did, so the client was started, or not, and the log
+  // stopped at its header line. This waits, then prints what the launcher wrote, which
+  // is the whole point of running it from a command line.
+  // ref() undoes the unref() launch() did for the terminal's sake: an unref'd child is
+  // not a reason for node to keep running, and this await would otherwise be reported
+  // as unsettled and the process would exit anyway.
+  if (child?.pid) { child.ref(); await new Promise(r => { child.on('exit', r); child.on('error', r); }); }
+  try {
+    const tail = readFileSync(logPath, 'utf8').slice(before).trimEnd();
+    if (tail) console.log(tail);
+  } catch { /* nothing written */ }
   exit(0);
 }
 

@@ -146,6 +146,64 @@ only symptom was Node's "Detected unsettled top-level await" on the one code pat
 happened to be the last thing running.
 
 
+## The client `L` starts is the patched one, and it does not log itself off
+
+```bash
+node tools/m59-devclient.mjs --check                # is a patched client built, and where
+node tools/m59-devclient.mjs --universal            # write shortcuts/dev.bat and nothing else
+node tools/m59-devclient.mjs --fleet arena TESTER   # dev-TESTER.bat: one `call` line into dev.bat
+shortcuts\dev.bat <host> <port> <account> <password> [label]
+```
+
+There are two clients on this machine and they are different binaries. Steam's is a
+stock 32-bit retail build. The one in the source tree's `run/localclient/` is built from
+`clientd3d/` **as x64**, with `m59dbg.c` in it — the overlay, the caption that names the
+room and the square, the F5 signal, the help key that opens the room view — and, since
+2026-08-26, **without the idle logoff**. Stock, `LogoffTimerStart` arms a timer that quits
+the session after `[Miscellaneous] Timeout` minutes (20 by default) with no key or click,
+the setting is per-machine and rewritten on exit, and nothing on a launch line can turn it
+off; a client left up overnight to gather data was gone by morning with a clean `REQ_QUIT`
+in the log and no other trace. In the patched build the timer never arms. The Timeout
+dialog still saves its number and the number is not read. `M59_CLIENT` names the binary
+when it is not in the default tree; the build line is what `--check` prints when nothing is
+there (**`vcvars64`**, not 32 — the objects in `clientd3d
+elease` are x64, and one x86
+object among them fails the link rather than producing a wrong binary).
+
+**`shortcuts/dev.bat` is the one file that knows how to start it.** It names no character:
+the character is its five arguments, in the order host, port, account, password, label.
+The per-character `dev-<name>.bat` files are one `call` line each into it, and the fleet
+terminal's `L` key calls the same file with the same five arguments built by the same
+function (`universalLauncherArgs`), so the terminal and the shortcuts cannot start two
+different clients. Every launch that routes through it rewrites it first when it is stale,
+so the file on disk is always the current tool's opinion. What the calling environment
+already says — `M59_OVERLAY_DIR`, `M59_SIGNAL_PORT`, `M59_DEBUG_TITLE`, `M59_MAP_URL` —
+wins over what the file would set. The endpoint is decided at start-up, not when the file
+was written: `--endpoint <host> <port>` asks `substrate/proxies/` whether a live proxy is
+fronting that server and answers with the proxy if so, which is what lets the broker keep
+driving a character while you watch it. `M59_DEVCLIENT_DRYRUN=1` prints what it resolved
+and starts nothing, which is how `m59-devclient-test.mjs` (31) exercises the real file.
+
+The terminal prefers the patched client whenever `--check` would find one and falls back
+to Steam's otherwise; `M59_TUI_STOCK_CLIENT=1` asks for Steam's on purpose. A `.bat` that
+`start`s something cannot hand a pid back, and everything after the launch — the pilot
+claim, the wait for a window, the injection — needs one, so the client is found afterwards
+by the account on its command line and by having been created after the launch was asked
+for; a second window somebody left open on the same account is excluded by the timestamp,
+and a client that never appears is reported in `substrate/m59-launch.log` rather than
+waited on for ever.
+
+**Two architectures means two agent DLLs.** `m59agent.dll` is x86 and loads only into
+Steam's client; `m59agent64.dll` is the same `m59agent.c` built x64 for the patched one
+(`cl /LD /O2 /MT m59agent.c /link /OUT:m59agent64.dll ws2_32.lib user32.lib` under
+`vcvars64`). `LoadLibrary` of the wrong one returns NULL with no other symptom, so
+`m59-inject.ps1` asks each client which it is (`IsWow64Process`), injects the 64-bit
+clients from the 64-bit PowerShell it starts in, and re-launches as 32-bit for the rest.
+
+The password is on `dev.bat`'s command line rather than in its body, which is the same
+exposure as the client's own command line, readable to anything that can list processes;
+`shortcuts/` stays gitignored regardless.
+
 ## Backing the fleet up, and putting it back
 
 ```bash
