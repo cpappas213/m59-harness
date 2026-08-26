@@ -7,10 +7,18 @@
     {
       "room": 599,
       "room_name": "Ukgoth, Holy Land of Trolls",
-      "from": { "row": 36, "col": 16 },
-      "to": { "row": 38, "col": 10 },
+      "from": {
+        "row": 36,
+        "col": 16
+      },
+      "to": {
+        "row": 38,
+        "col": 10
+      },
       "kind": "fall",
-      "requires": { "running": true },
+      "requires": {
+        "running": true
+      },
       "note": "The notorious Ukgoth cliff jump. The ONLY doorway to Outside Castle Victoria is at row 1, col 27, on the cliff top this reaches; the eastern crossing the router used instead (row 1, col 62) goes through solid rock. Approximate endpoints as given by the operator — the take-off ledge runs out around 2.5 squares along this line.",
       "observed_by": "operator, 2026-08-20",
       "part_of_cycle": true
@@ -18,13 +26,97 @@
     {
       "room": 599,
       "room_name": "Ukgoth, Holy Land of Trolls",
-      "from": { "row": 8, "col": 26 },
-      "to": { "row": 10, "col": 28 },
+      "from": {
+        "row": 8,
+        "col": 26
+      },
+      "to": {
+        "row": 10,
+        "col": 28
+      },
       "kind": "fall",
-      "requires": { "running": true },
+      "requires": {
+        "running": true
+      },
       "note": "The return leg, closing the loop: walk up the winding ramp, drop over the gulley to ~38,10, up the western ramp, down to the winding eastern ramp, and round again. Approximate endpoints as given by the operator. Ukgoth is a CYCLE rather than a one-way — which matters because the bake's regions are strongly connected components, so a room whose halves are joined only by one-way falls reports as severed and a return leg the fleet can actually make would be refused.",
       "observed_by": "operator, 2026-08-20",
       "part_of_cycle": true
+    },
+    {
+      "room": 108,
+      "room_name": "The Sewers of Barloque",
+      "from": {
+        "row": 29,
+        "col": 43
+      },
+      "to": {
+        "row": 23,
+        "col": 43
+      },
+      "kind": "fall",
+      "requires": {
+        "running": true
+      },
+      "note": "The catwalk over the sewer pit, on the way to Roq. The coarse grid shows column 43 as continuous floor from row 29 to row 18, so nothing about it reads as a gap — the obstacle is VERTICAL and only the heights show it. Take-off 29,43 stands at 2080; row 28 is 2304 (a +224 step, walkable); row 27 drops to 820; and row 26 climbs back to 1920, which is +1100 against a MAX_STEP_HEIGHT of 384. So a character that walks north falls into row 27 and cannot get out again. The jump clears 28 and 27 and lands on the 1920 shelf, which runs from row 26 to row 22 — that is why it does not matter which square it lands on, and why players cannot say where they land: the sewers are dark and any of five squares does. Recorded to the far end of the shelf, 23,43, because that is where the walk continues to. The operator has made this jump; the reverse leg (south, over the pit, onto 29,43 at +160) is NOT declared here because nobody has confirmed it, and inventing a return that cannot be made is how a region gets reported as connected when it is not.",
+      "observed_by": "operator, 2026-08-25",
+      "part_of_cycle": false
+    },
+    {
+      "room": 579,
+      "room_name": "An ancient place, its origin forgotten",
+      "kind": "fall",
+      "requires": {
+        "running": true
+      },
+      "observed_by": "operator, 2026-08-25",
+      "part_of_cycle": false,
+      "from": {
+        "row": 40,
+        "col": 33
+      },
+      "to": {
+        "row": 40,
+        "col": 32
+      },
+      "note": "First of three, at the top of the long climb. The approach is the hard part and is not a jump at all: from 40,52 the route hugs the wall on the FINE grid round to 47,40 and then to 40,33, rising the whole way, and a step off it is a fall. One square on the coarse grid and refused as a step (3520 -> 3392) because what you land on is the ELEVATED PORTION of 40,32 rather than its centre — the coarse grid has one height per square and this square has two. From here the route continues toward 33,37."
+    },
+    {
+      "room": 579,
+      "room_name": "An ancient place, its origin forgotten",
+      "kind": "fall",
+      "requires": {
+        "running": true
+      },
+      "observed_by": "operator, 2026-08-25",
+      "part_of_cycle": false,
+      "from": {
+        "row": 38,
+        "col": 33
+      },
+      "to": {
+        "row": 38,
+        "col": 30
+      },
+      "note": "Second of three, and the one that reads as impossible. 38,30 is NOT walkable — no floor at its centre, it is mostly wall — and you jump into it anyway, because the footing is a sliver the coarse grid cannot express. The reason you must not fall short is 38,31: walkable, and 7488 below the take-off (10880 -> 3392). That is the valley, and landing in it costs the whole climb. Declared with a landing the grid calls solid on purpose; anything reading this must not assume the landing square is floor."
+    },
+    {
+      "room": 579,
+      "room_name": "An ancient place, its origin forgotten",
+      "kind": "fall",
+      "requires": {
+        "running": true
+      },
+      "observed_by": "operator, 2026-08-25",
+      "part_of_cycle": false,
+      "from": {
+        "row": 38,
+        "col": 30
+      },
+      "to": {
+        "row": 42,
+        "col": 30
+      },
+      "note": "Last of three, four squares south onto real floor at 4800. After this a short walk south reaches the mana node at 51,30 — the point of the whole climb. Take-off is the sliver at 38,30 that the previous jump lands on, so these two are a PAIR: a character that can make the second and not the third is standing on a square the map says does not exist."
     }
   ]
 }

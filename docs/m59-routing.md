@@ -396,6 +396,46 @@ view — that is lag compensation — so "I watched it happen" proves nothing ab
 Assert against our own validator, which is the only thing this repository controls.
 
 
+## The fine grid is the reality; a square is a summary
+
+The coarse grid has one answer per square: walkable or not, and one floor height. That is a
+fine index and a poor map, and on the ground this fleet keeps failing on it is simply false.
+
+Measured in room 579, An ancient place, its origin forgotten:
+
+| square | what the coarse grid says | what is actually there |
+|---|---|---|
+| 40,52 | `walkable: true` | **no floor at its centre.** 21 of 49 sampled interior points are standable; the middle is not one of them |
+| 38,30 | `walkable: false` | a sliver at 8000 you deliberately jump onto — 14 of 49 points |
+| 40,33 | one height | spans **3520 to 10880** — the valley floor and the high ledge, in one square |
+| 47,40 | one height | a ramp, 7600 to 10752 |
+
+Three failures in one day came from forgetting this, and they look nothing alike:
+
+1. **A walker aimed at square centres stepped off the ledge.** `walk_to` takes col/row and
+   aims at the middle, which is right in a room and is the drop on a ledge. A character
+   walked thirteen waypoints of the Ancient Place climb and then walked into the air.
+   `walk_to` now takes fine `x`/`y` for exactly this.
+2. **A jump finder could not see the first jump.** Searching for cross-region hops on the
+   coarse grid cannot find `40,33 -> 40,32`, because both the take-off and the landing are
+   inside squares the grid gives a single height to. The whole jump is sub-square.
+3. **A height profile read off single fine points swung by 7000 units.** One unit either side
+   of a ledge edge is a different sector, so sampling the exact point a client asked to move
+   to reports the valley as often as the ledge. A body has width; sample its footprint, or do
+   not report heights at all.
+
+The rule that follows: **squares are for talking to humans and for indexing the bake. Fine
+coordinates are for deciding anything.** Where to stand, whether a step lands, whether a jump
+clears, how high something is — ask the BSP at fine resolution, through `leafAtClient` and
+`floorBaseAtClient`, not `walkable(row, col)`.
+
+And the corollary that made the Ancient Place climb solvable at all: **a fall is a wall.** A
+ledge is not something to detect — it is what REMAINS when descending is forbidden. Running a
+never-descend closure from the bottom of the climb reduced 1,660 walkable squares to a
+41-square ribbon and reproduced a route the operator had walked, to an average of 0.79 squares
+across nineteen recorded positions. The operator's phrase for it is the right one: these are
+all just constraints in the bot's head.
+
 ## Exits, reach and the safe wall
 
 - **EXITS ARE NOT DOORS, AND THEY ARE NOT 1:1.** Walking from room A to room B through
