@@ -196,13 +196,14 @@ export function reachableOpenFightVigorBar(dangerBar, fightFloor) {
 // so only truthy reasons are denials.  Everything here is session-local: this chooses a
 // different room for the current keeper and never blocks the strategic goal.
 export function farmRoomDenials(noWallRooms = null, cappedRooms = null,
-                                { useSafeSpots = true } = {}) {
+                                { useSafeSpots = true, requireSafeWall = true } = {}) {
   const denied = new Map();
-  // A failed wall search is evidence about the wall strategy, not the room.  When the
-  // operator explicitly chooses open-field fighting, stale session wall evidence must
-  // not defer the assignment or remove the room from prey ranking.  Spawn-cap evidence
-  // still applies because it says the prey cannot spawn, regardless of positioning.
-  if (useSafeSpots) {
+  // A failed wall search is evidence about the mandatory-wall strategy, not the room.
+  // When the operator chooses open-field fighting OR keeps walls opportunistic, stale
+  // session wall evidence must not defer the assignment or remove the room from prey
+  // ranking. Spawn-cap evidence still applies because it says the prey cannot spawn,
+  // regardless of positioning.
+  if (useSafeSpots && requireSafeWall !== false) {
     for (const [room, why] of noWallRooms?.entries?.() ?? []) {
       if (why) denied.set(room, why);
     }
@@ -1101,6 +1102,20 @@ export function applyFightAboveVigor(policy, value) {
     throw new Error('fight_above_vigor must be a finite number from 0 to 200');
   policy.fightAboveVigor = threshold;
   policy.vigorFloor = threshold;
+  return policy;
+}
+
+// WALL USE AND WALL REQUIREMENT ARE TWO DIFFERENT ORDERS.
+//
+// `use_safe_spots` says to take and keep a useful wall when one is available. It must
+// not also mean "quarantine every room where wall detection fails": an operator may
+// deliberately prefer walls while still permitting a rested, bounded open-field fight.
+// Keep the public spellings here because the broker applies this helper for both a new
+// start and a live policy update; testing it pins the exact false value rather than
+// merely finding the argument name in the schema.
+export function applySafeSpotPolicy(policy, args = {}) {
+  if (args.use_safe_spots !== undefined) policy.useSafeSpots = !!args.use_safe_spots;
+  if (args.require_safe_wall !== undefined) policy.requireSafeWall = !!args.require_safe_wall;
   return policy;
 }
 
@@ -7533,7 +7548,8 @@ export class Autopilot {
 
   status({ full = false } = {}) {
     const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms,
-      { useSafeSpots: this.policy.useSafeSpots });
+      { useSafeSpots: this.policy.useSafeSpots,
+        requireSafeWall: this.policy.requireSafeWall });
     return {
       running: this.running, mode: this.mode, policy: this.policy,
       // Null unless a fleet update is waiting on this character. See park().
@@ -12495,7 +12511,8 @@ export class Autopilot {
         const isPrey0 = huntMatcher(spawns0, this.policy.hunt);
         const preyHere = here.some(x => isPrey0(x.creature));
         const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms,
-          { useSafeSpots: this.policy.useSafeSpots });
+          { useSafeSpots: this.policy.useSafeSpots,
+            requireSafeWall: this.policy.requireSafeWall });
         const assignmentDenied = this.policy.assignedRoom != null
           ? deniedFarmRooms.get(this.policy.assignedRoom) : null;
         const offAssignment = shouldRelocateToAssignedRoom(this.policy, room, deniedFarmRooms);
@@ -12632,7 +12649,8 @@ export class Autopilot {
             ' that this keeper will not safely fight';
           (this.cappedRooms ??= new Map()).set(room.num, reason);
           this.tally.rooms_denied = farmRoomDenials(this.noWallRooms, this.cappedRooms,
-            { useSafeSpots: this.policy.useSafeSpots }).size;
+            { useSafeSpots: this.policy.useSafeSpots,
+              requireSafeWall: this.policy.requireSafeWall }).size;
           this.note('this room is capped by things we will not fight', {
             room: room?.name, at_cap: `${capped.present}/${capped.cap}`,
             blocked_by: capped.blocked.map(b => `${b.count}x ${b.name} — ${b.why}`),
@@ -16381,7 +16399,8 @@ export class Autopilot {
     if (!spawns) return [];
     const ceiling = this.threatCeiling();
     const deniedFarmRooms = farmRoomDenials(this.noWallRooms, this.cappedRooms,
-      { useSafeSpots: this.policy.useSafeSpots });
+      { useSafeSpots: this.policy.useSafeSpots,
+        requireSafeWall: this.policy.requireSafeWall });
     // Do not truncate before looking for the assignment.  Ranking is global, whereas
     // assignedRoom is an operator/fleet decision and must be allowed to outrank it.
     const rooms = huntingGrounds(spawns, want,
