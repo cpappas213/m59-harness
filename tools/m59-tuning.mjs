@@ -62,9 +62,9 @@ export const TUNABLES = {
     'fight from a wall the monsters cannot reach through. Turning this off gives up the ' +
     'largest survival advantage in the game and is almost never right' },
   flee_below: { check: frac, why:
-    'the health fraction at which a character disengages. NOTE it is a FLOOR, not the ' +
-    'answer: safety() takes Math.max(this, 2*maxHit/max), so on a 41-health character ' +
-    'anything below about 0.68 is inert and the two-hits-of-margin rule wins' },
+    'the exact health fraction below which a character disengages. Supplying this ' +
+    'operator setting is authoritative over the adaptive two-hit default; equality does ' +
+    'not disengage, because the comparison is strictly below the configured fraction' },
   rest_below: { check: frac, why: 'the health fraction at which it breaks off and rests' },
   hold_resume_above: { check: frac, why:
     'in a safe spot, top up to this fraction before swinging again. Stopping costs nothing ' +
@@ -90,8 +90,8 @@ export const TUNABLES = {
     'the vigor needed before it will stop mid-journey to heal at a wall. Default 80, the ' +
     'resting cap; at 100 it never fires for a fleet that cannot cook' },
   fight_above_vigor: { check: posInt, why:
-    'the vigor floor for STARTING a fight. 100 is the lowest HONOURED value - fightFloor() ' +
-    'is Math.max(MIN_FIGHT_VIGOR, ...), so anything lower reads as applied and changes nothing' },
+    'the explicit vigor floor for STARTING a fight. It overrides the keeper default and strategy ' +
+    'floor; values above the resting cap of 80 require enough food to become reachable' },
   max_carry: { check: posInt, why: 'stacks before it wants a town trip' },
   bank_above: { check: posInt, why: 'purse before it walks to a bank. High means never' },
 };

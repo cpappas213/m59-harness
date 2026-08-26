@@ -141,8 +141,12 @@ console.log('\nattack transport keeps the whole exchange');
 }
 
 function combat(sequence, { start = 1, threshold = 0.6, equip = false,
-                            inventory = [], using = [] } = {}) {
+                            inventory = [], using = [], loot = false,
+                            holdPosition = true, lootStayPut = null,
+                            rounds = null, sustainWhileSafe = false,
+                            maxExtraRounds = 0 } = {}) {
   let health = start, calls = 0, uses = 0, inventoryReadsAfterAttack = 0;
+  const lootCalls = [];
   const names = new Map([[1, 'slime'], [2, 'Tester'], [3, 'Arena'],
                          [10, 'short sword'], [11, 'dagger']]);
   const foe = { id: 1, flags: OF.ATTACKABLE, col: 1, row: 0, nameRsc: 1 };
@@ -171,7 +175,10 @@ function combat(sequence, { start = 1, threshold = 0.6, equip = false,
       if (step.die) objects.delete(c.selfId);
       return { messages: step.messages ?? [], vitals: c.vitals(), aborted: step.aborted ?? null };
     },
-    async lootFloor() { return { taken: [], refused: [], carrying: [] }; },
+    async lootFloor(options) {
+      lootCalls.push(options);
+      return { taken: [], refused: [], carrying: [] };
+    },
   };
   return {
     calls: () => calls,
@@ -179,8 +186,10 @@ function combat(sequence, { start = 1, threshold = 0.6, equip = false,
     inventoryReadsAfterAttack: () => inventoryReadsAfterAttack,
     inventoryIds: () => c.inventory.map(item => item.id),
     equipped: () => [...c.using],
-    run: () => fight(s, { target: 'slime', preferId: 1, rounds: sequence.length,
-      disengageAt: threshold, loot: false, equip, holdPosition: true, reach: 3 }),
+    lootCalls: () => lootCalls,
+    run: () => fight(s, { target: 'slime', preferId: 1,
+      rounds: rounds ?? sequence.length, sustainWhileSafe, maxExtraRounds,
+      disengageAt: threshold, loot, lootStayPut, equip, holdPosition, reach: 3 }),
   };
 }
 
@@ -273,6 +282,75 @@ console.log('\nadaptive fight integration');
        won.landed_hits === 4,
      JSON.stringify(won));
 
+  // This is the shape of MANIAC's fatal fungus fight: the only condition reports were
+  // adjacent bands, so the intentionally conservative projection is null, but the target
+  // is below 20%, the character is near full health, and stopping at the ordinary budget
+  // would leave the engaged monster free to hit throughout the next keeper pass.
+  const fatalThreshold = 17 / 40;
+  const uncertainNearDeath = combat([
+    { health: 39 / 39, messages: ['Your short sword pokes the slime.',
+      'The slime is seriously wounded.'] },
+    { health: 36 / 39, messages: ['Your short sword pokes the slime.',
+      'The slime is weak, and near death.'] },
+    { health: 37 / 39, messages: ['Your short sword pokes the slime.'] },
+    { health: 37 / 39, messages: ['Your short sword pokes the slime.'] },
+    { health: 37 / 39, messages: ['Your short sword pokes the slime.'], kill: true },
+  ], { threshold: fatalThreshold, rounds: 3,
+       sustainWhileSafe: true, maxExtraRounds: 3 });
+  const uncertainNearDeathResult = await uncertainNearDeath.run();
+  ok('an uncertain near-death race continues past the nominal farm budget and kills',
+     uncertainNearDeathResult.killed === true && uncertainNearDeath.calls() === 5 &&
+       !uncertainNearDeathResult.projection &&
+       uncertainNearDeathResult.sustained_rounds === 2 &&
+       uncertainNearDeathResult.sustain_reason === 'near_death_with_exchange_margin' &&
+       !uncertainNearDeathResult.disengaged,
+     JSON.stringify(uncertainNearDeathResult));
+
+  const fixedRoundCaller = combat([
+    { health: 0.98, messages: ['The slime is seriously wounded.'] },
+    { health: 0.96, messages: ['The slime is weak, and near death.'] },
+    { health: 0.94, messages: [], kill: true },
+  ], { rounds: 2 });
+  const fixedRoundResult = await fixedRoundCaller.run();
+  ok('non-farm callers retain fixed-round semantics',
+     fixedRoundCaller.calls() === 2 && fixedRoundResult.killed === false &&
+       !fixedRoundResult.disengaged && fixedRoundResult.sustained_rounds === undefined,
+     JSON.stringify(fixedRoundResult));
+
+  const boundedNearDeath = combat([
+    { health: 0.98, messages: ['Your short sword pokes the slime.',
+      'The slime is seriously wounded.'] },
+    { health: 0.96, messages: ['Your short sword pokes the slime.',
+      'The slime is weak, and near death.'] },
+    { health: 0.95, messages: ['Your short sword pokes the slime.'] },
+    { health: 0.94, messages: ['Your short sword pokes the slime.'] },
+    { health: 0.93, messages: ['Your short sword pokes the slime.'], kill: true },
+  ], { threshold: 0.4, rounds: 2,
+       sustainWhileSafe: true, maxExtraRounds: 2 });
+  const boundedNearDeathResult = await boundedNearDeath.run();
+  ok('a never-finished sustained race explicitly disengages at its hard cap',
+     boundedNearDeath.calls() === 4 && boundedNearDeathResult.killed === false &&
+       boundedNearDeathResult.sustained_rounds === 2 &&
+       boundedNearDeathResult.disengaged?.round_limit === true &&
+       boundedNearDeathResult.disengaged?.hard_cap === true &&
+       /still alive/i.test(boundedNearDeathResult.disengaged?.reason || ''),
+     JSON.stringify(boundedNearDeathResult));
+
+  const extensionFloor = combat([
+    { health: 0.90, messages: ['The slime is seriously wounded.'] },
+    { health: 0.85, messages: ['The slime is weak, and near death.'] },
+    { health: 0.39, messages: [], aborted: { at_health: 0.39, swing: 1 } },
+    { health: 0.38, messages: [], kill: true },
+  ], { threshold: 0.4, rounds: 2,
+       sustainWhileSafe: true, maxExtraRounds: 3 });
+  const extensionFloorResult = await extensionFloor.run();
+  ok('the per-swing health floor remains authoritative inside the finishing window',
+     extensionFloor.calls() === 3 && extensionFloorResult.killed === false &&
+       extensionFloorResult.sustained_rounds === 1 &&
+       extensionFloorResult.disengaged?.mid_round === true &&
+       !extensionFloorResult.disengaged?.round_limit,
+     JSON.stringify(extensionFloorResult));
+
   const unfavorable = combat([
     { health: 0.90, messages: ['The slime is slightly wounded.'] },
     { health: 0.78, messages: ['The slime is clearly injured.'] },
@@ -318,6 +396,27 @@ console.log('\nadaptive fight integration');
      hardResult.disengaged?.mid_round === true && !hardResult.disengaged?.early &&
        hardFloor.calls() === 2,
      JSON.stringify(hardResult));
+}
+
+console.log('\npost-kill loot movement policy');
+{
+  const compatible = combat([
+    { health: 0.95, messages: ['Your short sword pokes the slime.'], kill: true },
+  ], { loot: true, holdPosition: false });
+  const compatibleResult = await compatible.run();
+  ok('an ordinary open-field fight retains the historical movable loot sweep by default',
+     compatibleResult.killed === true && compatible.lootCalls().length === 1 &&
+       compatible.lootCalls()[0].stayPut === false,
+     JSON.stringify({ result: compatibleResult, calls: compatible.lootCalls() }));
+
+  const farmSafe = combat([
+    { health: 0.95, messages: ['Your short sword pokes the slime.'], kill: true },
+  ], { loot: true, holdPosition: false, lootStayPut: true });
+  const farmSafeResult = await farmSafe.run();
+  ok('an autonomous caller can loot the kill without starting a movement-to-loot walk',
+     farmSafeResult.killed === true && farmSafe.lootCalls().length === 1 &&
+       farmSafe.lootCalls()[0].stayPut === true,
+     JSON.stringify({ result: farmSafeResult, calls: farmSafe.lootCalls() }));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

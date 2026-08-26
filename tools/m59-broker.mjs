@@ -84,7 +84,7 @@ import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup,
          TRAVEL_GUARD_KEYS,
-         applyFightAboveVigor } from './m59-autopilot.mjs';
+         applyFightAboveVigor, applySafeSpotPolicy } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import * as exitgap from './m59-exitgap.mjs';
@@ -6465,7 +6465,10 @@ const TOOLS = [
       mode: { type: 'string', enum: ['survive', 'farm', 'idle', 'tick'] },
       hunt: { type: 'string', description: 'creature name for farm mode — required, never guessed' },
       rest_below: { type: 'number', description: 'rest when a vital drops under this fraction, default 0.7' },
-      flee_below: { type: 'number', description: 'withdraw under this fraction, default 0.4' },
+      flee_below: { type: 'number',
+        description: 'withdraw when health/max is strictly below this fraction. When supplied, ' +
+          'this exact operator boundary overrides the adaptive two-hit margin; omit it to retain ' +
+          'the adaptive default' },
       max_carry: { type: 'number', description: 'stop farming at this many items, default 14' },
       max_weapons: { type: ['number', 'null'],
         description: 'weapons retained after selling, including the equipped weapon. Default 2; null removes the limit' },
@@ -6639,8 +6642,9 @@ const TOOLS = [
       fight_above_vigor: { type: 'number', minimum: 0, maximum: 200,
         description: 'configured minimum vigor for picking a fight; an exact match satisfies it. ' +
           'Resting alone tops out at 80 of 200, and above that only food will do it. The keeper ' +
-          'may apply its higher internal food-backed minimum, but falls back to the rest-reachable ' +
-          '80 when the larder is empty. An explicit value overrides the selected strategy floor ' +
+          'uses its higher internal food-backed minimum only when this argument is omitted, and ' +
+          'caps any requested floor to what resting plus carried food can actually reach. An ' +
+          'explicit value overrides both the internal minimum and the selected strategy floor ' +
           'and deliberately leaves its provisioning ceiling separate' },
       inky_reserve: { type: 'boolean',
         description: 'FIGHT BELOW THE VIGOR FLOOR WHILE HOLDING FOOD TOO BIG TO EAT. `eat` refuses ' +
@@ -6654,6 +6658,11 @@ const TOOLS = [
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
+      require_safe_wall: { type: 'boolean',
+        description: 'treat a room where no usable wall can be found as unavailable (default true). ' +
+          'Set false to keep taking and fighting from walls when available while permitting a bounded ' +
+          'open-field fight when none is found; wall-only room denials are then ignored, but spawn-cap ' +
+          'denials still apply' },
       hold_resume_above: { type: 'number',
         description: 'in a safe spot, top up to this fraction of health before swinging again, ' +
           'default 0.9. Stopping costs nothing there, so there is no reason to fight hurt' },
@@ -6935,7 +6944,9 @@ const TOOLS = [
       }
       if (a.hunt !== undefined) p.policy.hunt = a.hunt;
       if (a.rest_below !== undefined) p.policy.restBelow = Number(a.rest_below);
-      if (a.flee_below !== undefined) p.policy.fleeBelow = Number(a.flee_below);
+      // Explicit means exact. safetyFor retains its adaptive two-hit floor only for a
+      // default/implicit policy; the marker is persisted with the policy below.
+      skills.applyFleeBelowPolicy(p.policy, a.flee_below);
       if (a.max_carry !== undefined) p.policy.maxCarry = Number(a.max_carry);
       if (a.max_weapons !== undefined)
         p.policy.maxWeapons = a.max_weapons == null
@@ -7274,7 +7285,11 @@ const TOOLS = [
       if (a.inky_reserve !== undefined) p.policy.inkyReserve = !!a.inky_reserve;
       if (a.inky_reserve_floor !== undefined)
         p.policy.inkyReserveFloor = Math.max(0, Number(a.inky_reserve_floor) || 0);
-      if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
+      // Preference and mandate are independent: `true, false` keeps every benefit of a
+      // wall already held without turning a failed wall search into a room quarantine.
+      // This same path handles both `start` and a live update-style start call, and the
+      // persisted policy below therefore carries both exact booleans across restarts.
+      applySafeSpotPolicy(p.policy, a);
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
       // 0 or null means NO LIMIT, not "never pull anything". The safe default is eight;
       // this preserves an explicit operator override that removes the ceiling. Number(null)

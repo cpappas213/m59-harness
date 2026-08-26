@@ -138,10 +138,54 @@ assert.match(walk, /beforeMutation = null/);
 // unrelated argument, which teaches the next reader to loosen it rather than to look.
 assert.match(walk, /this[.]step[(]next[.]col, next[.]row, \{ beforeMutation[,}]/,
   'walkTo threads its final-packet mutation hook through the shared validated step');
+assert.match(walk, /retreatAlongBreadcrumbs[(]\{[\s\S]*beforeMutation/,
+  'a pocket escape keeps the same final-packet hook');
+assert.match(walk, /walkFine[(][\s\S]*beforeMutation/,
+  'fine-grid fallbacks keep the same final-packet hook');
+assert.match(walk, /walkPivots[(][\s\S]*beforeMutation/,
+  'proved pivot legs keep the same final-packet hook');
+assert.match(walk, /recentreInSquare[(]\{[\s\S]*beforeMutation/,
+  'wall recentring keeps the same final-packet hook');
+assert.match(walk, /beforeMutation[(]'move', \{ x: nx, y: ny, raw: true \}\)[\s\S]*c[.]moveTo/,
+  'the keeper raw fallback checks authority before its packet too');
+
+const pivotWalk = section('async walkPivots(planSteps, geo,', '\n  async step(col, row,');
+assert.match(pivotWalk, /beforeMutation[(]'turn'[\s\S]*c[.]face/,
+  'pivot turns check final-packet authority');
+assert.match(pivotWalk, /queueValidatedMove[\s\S]*beforeMutation/,
+  'pivot moves check final-packet authority');
+
+const fineStep = section('async stepFine(x, y,', '\n  // Walk to a fine coordinate');
+assert.match(fineStep, /queueValidatedMove[\s\S]*beforeMutation/,
+  'fine movement threads final-packet authority into validated movement');
+assert.match(fineStep, /beforeMutation[(]'move', \{ x, y, raw: true \}\)[\s\S]*c2[.]moveTo/,
+  'the fine raw fallback checks authority before its packet');
+
+const fineApproach = section('async approachFine(col, row,', '\n  async walkFine(destX, destY,');
+assert.match(fineApproach, /walkFine[\s\S]*beforeMutation/,
+  'the safe-wall fine approach forwards the packet hook');
+assert.match(fineApproach, /walkFine[\s\S]*stallSteps, beforeMutation/,
+  'the safe-wall fine approach forwards its tactical plateau limit');
+
+const fineWalk = section('async walkFine(destX, destY,', '\n  // THE WAY OUT OF A POCKET');
+assert.match(fineWalk, /stepFine[(]aimX, aimY, \{ beforeMutation \}\)/,
+  'every fanned fine-grid packet keeps the packet hook');
 
 const loot = section('async lootFloor({', '\n  // Offer one item to a merchant');
 assert.match(loot, /this[.]walkTo[\s\S]*beforeMutation:/,
   'loot movement carries the selected item id into the packet hook');
+assert.match(loot,
+  /const maxSteps = Math[.]max[(]30, spot[.]steps [+] 10[)][\s\S]*this[.]walkTo[(]spot[.]col, spot[.]row, \{\s*maxSteps, hardCap: maxSteps, stallSteps: 4, movementGeneration, controlToken,/,
+  'loot movement shares one hard step ceiling, stalls after four revisits, and keeps its authority');
+assert.match(loot,
+  /const cancelled = [(][)] =>[\s\S]*this[.]movementWasCancelled[(]movementGeneration, controlToken[)]/,
+  'loot cancellation includes the movement generation and control token, not only its tactical predicate');
+assert.match(loot,
+  /const walk = await this[.]walkTo[\s\S]*if [(]walk[.]cancelled [|][|] cancelled[(][)][)] \{ wasCancelled = true; break; \}[\s\S]*if [(]!walk[.]arrived[)]/,
+  'a cancelled loot walk terminates the enclosing loop before another candidate can re-arm it');
+assert.match(loot,
+  /pacer[.]submit[(]'get',[\s\S]*if [(]cancelled[(][)][)] \{ cancelledBeforeGet = true; return false; \}[\s\S]*c[.]get/,
+  'loot rechecks cancellation inside the pacer at the final get-packet boundary');
 assert.match(loot, /pacer[.]submit[(]'get'.*beforeMutation[(]'get'.*c[.]get/s,
   'loot revalidates exact item safety inside the get pacer callback');
 

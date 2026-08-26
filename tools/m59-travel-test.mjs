@@ -35,6 +35,9 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
     at: startAt,
     routeAvoids: [],
     movementGeneration: 0,
+    deathGeneration: 0,
+    dead: false,
+    leaveCalls: 0,
     reads: 0,
     noteTransit: () => {},
     pacer: { submit: async (_k, fn) => fn() },
@@ -47,7 +50,10 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
     world: {
       get room() {
         const n = rooms[s.at];
-        return n == null ? null : { num: n, name: `room ${n}` };
+        return n == null ? null : {
+          num: n,
+          name: s.dead && Number(n) === 1 ? 'The Underworld' : `room ${n}`,
+        };
       },
       route(to, { avoid } = {}) {
         s.routeAvoids.push(avoid ? [...avoid] : null);
@@ -78,6 +84,7 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
     railAcross() { return null; },
     // Each call consumes one scripted outcome; `true` moves us on, `false` refuses.
     async leaveViaAny(candidates) {
+      s.leaveCalls++;
       // A room the server will not let this character into answers the same way every
       // time, whatever we do first — which is the point of the barring.
       const to = candidates?.[0]?.to;
@@ -94,7 +101,21 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
       // DIED ON THE WAY. The server puts the dead in room 1, and from the journey's point of
       // view that is a room change to somewhere it did not ask for — indistinguishable, on
       // the wire, from a boundary that carries two exits.
-      if (outcome === 'died') { s.at = rooms.indexOf(1); return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
+      if (outcome === 'died') {
+        s.dead = true;
+        s.deathGeneration++;
+        s.at = rooms.indexOf(1);
+        return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } };
+      }
+      // The strongest death-boundary regression: the event is observed, then a very fast
+      // external recovery lands in the old destination before the awaiting crossing gets
+      // control back. Arrival must not erase the death epoch and revive the stale journey.
+      if (outcome === 'died-respawn-destination') {
+        s.deathGeneration++;
+        s.dead = false;
+        s.at = rooms.length - 1;
+        return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } };
+      }
       if (outcome) { s.at += 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } }; }
       return { left: false, reason: 'no floor anywhere on the north boundary' };
     },
@@ -469,9 +490,20 @@ console.log('THE ARRIVAL GUARD: ask whether we are there before reporting that w
   const dead = fakeSession({ rooms: [1, 2, 3, 4], startAt: 1, script: ['died'] });
   const d = await travel.call(dead, 4, { maxStumbles: 0 });
   ok('dying in transit is reported as a death rather than a wrong doorway',
-     /Underworld/.test(d.reason ?? ''), JSON.stringify(d.reason));
+     d.died === true && d.arrived === false && /death ended/.test(d.reason ?? ''),
+     JSON.stringify(d));
   ok('and the hop it died on is NOT learned as a bad crossing',
      !(d.log ?? []).some(e => e.blocked_hop), JSON.stringify(d.log?.slice(-2)));
+  ok('and no second leg is attempted from the Underworld',
+     dead.leaveCalls === 1, `leave calls=${dead.leaveCalls}`);
+
+  const instant = fakeSession({ rooms: [10, 20, 30], script: ['died-respawn-destination'] });
+  const stale = await travel.call(instant, 30, {});
+  ok('a quick respawn in the old destination cannot turn the dead journey into an arrival',
+     stale.died === true && stale.arrived === false && instant.world.room?.num === 30,
+     JSON.stringify(stale));
+  ok('the death epoch stops the old journey after its one in-flight crossing',
+     instant.leaveCalls === 1, `leave calls=${instant.leaveCalls}`);
 
   // The cheap case too: already standing there when asked.
   const already = fakeSession({ rooms: [7] });

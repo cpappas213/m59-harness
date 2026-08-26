@@ -712,6 +712,9 @@ export function nearestSafeSpot(geo, from, {
   // is what `discredited` records — this one is about the walk, not about the wall.
   // See `unreachableSpots` on the keeper for why it is session-scoped and expires.
   unreachable = null,
+  // After a live approach stalls, speculative neighboring wall squares are temporarily
+  // suppressed. Clean held evidence remains usable; this flag restricts the search to it.
+  provenOnly = false,
   // THE REACHABLE SET, WHEN THE CALLER ALREADY HAS ONE — because computing it is expensive
   // and a whole path shares one answer. See `canWalkThere` below.
   reachable = null,
@@ -777,6 +780,7 @@ export function nearestSafeSpot(geo, from, {
     const seen = known?.get(key(s.col, s.row)) || null;
     // Never send a character back to a square that has already been disproved.
     if (seen && book.discredited(seen)) continue;
+    if (provenOnly && !(seen?.held > 0)) continue;
     // NOR TO ONE WE HAVE JUST FAILED TO WALK TO. A wall that cannot be reached is not
     // shelter, and offering it again is how a hurt character spends a whole room choosing
     // the same unreachable square: measured in the Western border of the Twisted Wood, the

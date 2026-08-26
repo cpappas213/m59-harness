@@ -107,10 +107,10 @@ ok('defend_against_players is a tunable', !!TUNABLES.defend_against_players);
 ok('every tunable explains itself, for the human or agent about to flip it',
    Object.values(TUNABLES).every(s => typeof s.why === 'string' && s.why.length > 20));
 ok('every tunable can refuse a value', Object.values(TUNABLES).every(s => typeof s.check === 'function'));
-ok('flee_below warns that it is a FLOOR and can be inert',
-   /floor|inert|Math\.max/i.test(TUNABLES.flee_below.why));
-ok('fight_above_vigor warns that below 100 reads as applied and changes nothing',
-   /lowest HONOURED|changes nothing/i.test(TUNABLES.fight_above_vigor.why));
+ok('flee_below says an explicit value is the exact authoritative boundary',
+   /exact/i.test(TUNABLES.flee_below.why) && /authoritative/i.test(TUNABLES.flee_below.why));
+ok('fight_above_vigor says the explicit value overrides keeper defaults',
+   /explicit|overrides/i.test(TUNABLES.fight_above_vigor.why));
 
 rmSync(dir, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
