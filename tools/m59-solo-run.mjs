@@ -124,7 +124,7 @@ const REST_CREDIT_MS = Number(flag('rest-credit', 180)) * 1000;
 //   repository already documents everywhere else: no error has never meant success here.
 const KNOWN = new Set(['port', 'fleet', 'from', 'to', 'tour', 'recovery-wait', 'timeout',
                        'wall-below', 'hold-below', 'agents', 'dry-run', 'rest-credit',
-                       'stagger', 'stop', 'force', 'help']);
+                       'stagger', 'stop', 'force', 'help', 'on-shared-server']);
 if (has('help') || argv.includes('-h')) {
   console.log(readFileSync(new URL(import.meta.url), 'utf8')
     .split('\n').slice(1).filter(l => l.startsWith('//'))
@@ -230,10 +230,36 @@ if (!rostered) {
   console.error(`solo-run: ${rosterFile} does not name one game server.`);
   process.exit(2);
 }
+// A SHARED SERVER IS STILL REFUSED — BUT NAMING ONE VOLUNTEER IS NOT THE SAME REQUEST.
+//
+// The blanket refusal is right for what this tool normally does: it walks a WHOLE FLEET
+// into a corridor until it dies, and doing that where other people play is not a
+// configuration choice. What it cannot express is the one experiment we actually need —
+// send ONE expendable character down a road we suspect is broken, on the server whose
+// movement code we are trying to judge, because the lab server does not reproduce it.
+//
+// So the exemption is deliberately awkward to reach and cannot widen by accident:
+//   --on-shared-server  says out loud that you know where this is pointed, AND
+//   --agents <list>     must name every character, at most MAX_SHARED of them.
+// No flag combination reaches a shared server without an explicit roll-call. Without
+// --agents this still refuses, so a stray flag in a shell history cannot walk the fleet
+// off a cliff. `--dry-run` never needed any of this.
+const MAX_SHARED = 2;
 if (!LOOPBACK.has(rostered.host.toLowerCase())) {
-  console.error(`solo-run: REFUSING. Fleet "${FLEET}" is on ${rostered.host}:${rostered.port}, not loopback.`);
-  console.error(`          This walks characters into a corridor until they die. Lab servers only.`);
-  process.exit(2);
+  const named = ONLY ?? [];
+  if (!has('on-shared-server') || !named.length) {
+    console.error(`solo-run: REFUSING. Fleet "${FLEET}" is on ${rostered.host}:${rostered.port}, not loopback.`);
+    console.error(`          This walks characters into a corridor until they die. Lab servers only.`);
+    console.error(`          To send named volunteers anyway: --on-shared-server --agents <a,b>`);
+    process.exit(2);
+  }
+  if (named.length > MAX_SHARED) {
+    console.error(`solo-run: REFUSING. --on-shared-server allows at most ${MAX_SHARED} named ` +
+                  `character(s); you named ${named.length}.`);
+    process.exit(2);
+  }
+  console.error(`solo-run: SHARED SERVER (${rostered.host}:${rostered.port}). ` +
+                `Running only: ${named.join(', ')}. Everyone else is untouched.`);
 }
 
 const fleet = await call('fleet', {});

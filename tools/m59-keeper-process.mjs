@@ -98,6 +98,98 @@ let autopilot = null;
 let inGame = false;
 let startedAt = Date.now();
 
+// ------------------------------------------------------- the errand hold
+//
+// AN ERRAND'S HOLD ON A CHARACTER, WHICH THE BROKER USED TO TAKE BY REACHING INTO A
+// KEEPER OBJECT IT NO LONGER HAS.
+//
+// `supplyBetween` in m59-broker.mjs held both ends of a trade still with
+// `autopilotIfAny(name).stop(...)` and put them back with `.start()`. That was right when
+// the keeper ran inside the broker. It is now a no-op: `resumeFleet` calls
+// `dropAutopilot` for every keeper-backed character, so `autopilotIfAny` answers
+// undefined and the hold silently did nothing — both keepers kept driving straight
+// through the four-step trade handshake, which is the failure the hold was written to
+// prevent (see the note on `holdStill` over there: a receiver's keeper cancelling an
+// offer leaves the goods in a dead trade window, and the next three deliveries then
+// report "carrying nothing matching food").
+//
+// So the hold lives here now, with the body. Two drivers, two ways to stop one:
+//
+//   goap/bt  `goInert` — the documented state for an ERRAND (m59-autopilot.mjs:376 names
+//            a supply exchange as its example). The keeper keeps LOOKING; it stops
+//            moving, swinging, speaking and trading.
+//   tick     `loop._frozen` — the tick driver's own hold, already used by the cast
+//            override for the same reason: a decide at 10Hz sends move packets that
+//            interrupt whatever else is being attempted. `autopilot.stop()` is NOT usable
+//            here — in tick mode `start` is `() => {}`, so a stopped tick loop can never
+//            be restarted and the hold would be permanent.
+//
+// ONE HOLD AT A TIME, AND IT IS NAMED. A second caller is refused rather than layered,
+// because the failure that matters is two errands each reviving the other's hold. The
+// token is what a release must present, and a release with the wrong token is refused.
+//
+// AND IT HAS A DEADLINE. `goInert` carries its own (INERT_MAX_MS) and `_frozen` carries
+// none at all, so a broker that died mid-exchange would freeze a tick-driven character
+// for the rest of the session. The timer below is that floor, for both kinds.
+let errandHold = null;      // { token, why, at, maxMs, kind, timer }
+let errandHoldSeq = 0;
+
+function holdReport() {
+  if (!errandHold) return null;
+  return { token: errandHold.token, why: errandHold.why, kind: errandHold.kind,
+           since: errandHold.at, seconds: Math.round((Date.now() - errandHold.at) / 1000),
+           max_ms: errandHold.maxMs };
+}
+
+function holdKeeper(why, maxMs) {
+  if (errandHold)
+    return { held: false, ours: false, reason: `already held: ${errandHold.why}`, hold: holdReport() };
+  if (!autopilot)
+    return { held: false, reason: 'nothing is driving this character, so there is nothing to hold' };
+  const tick = !!autopilot._tickLoop;
+  if (tick) {
+    const loop = autopilot._tickLoop;
+    // Somebody else's freeze — the cast override holds it the same way. Leave it: taking
+    // it would mean releasing it, and releasing a cast's freeze breaks the cast.
+    if (loop._frozen)
+      return { held: false, reason: 'the tick loop is already frozen by something else' };
+    loop._frozen = true;
+  } else {
+    if (autopilot.inert)
+      return { held: false, reason: `already held: ${autopilot.inert.why ?? 'no reason given'}` };
+    autopilot.goInert?.(why, { maxMs });
+  }
+  errandHold = { token: `hold-${agent}-${++errandHoldSeq}`, why, at: Date.now(), maxMs,
+                 kind: tick ? 'tick' : 'inert' };
+  const token = errandHold.token;
+  errandHold.timer = setTimeout(() => {
+    if (errandHold?.token !== token) return;
+    console.error(`[keeper] ${agent} errand hold expired after ${Math.round(maxMs / 1000)}s — releasing`);
+    releaseKeeper('hold deadline — whoever took it never gave it back', token);
+  }, maxMs);
+  errandHold.timer.unref?.();
+  console.error(`[keeper] ${agent} held (${errandHold.kind}) — ${why}`);
+  return { held: true, ours: true, hold: holdReport() };
+}
+
+function releaseKeeper(why, token) {
+  if (!errandHold) return { released: false, reason: 'nothing was holding this character' };
+  if (token && token !== errandHold.token)
+    return { released: false, reason: 'that is not the hold in force', hold: holdReport() };
+  const h = errandHold;
+  errandHold = null;
+  clearTimeout(h.timer);
+  try {
+    if (h.kind === 'tick') { if (autopilot?._tickLoop) autopilot._tickLoop._frozen = false; }
+    else autopilot?.revive?.(why);
+  } catch (e) {
+    console.error(`[keeper] ${agent} release failed: ${e.message}`);
+    return { released: false, reason: e.message };
+  }
+  console.error(`[keeper] ${agent} released after ${Math.round((Date.now() - h.at) / 1000)}s — ${why}`);
+  return { released: true, held_ms: Date.now() - h.at, was: h.why };
+}
+
 // ---------------------------------------------------------------- join
 
 async function join() {
@@ -358,6 +450,12 @@ function state() {
     // caught by exactly this once before with a different cause. The job slot lives here,
     // with the body; the broker holds a snapshot and cannot see it.
     job: rtsJobReport(session.job) ?? null,
+    // AND WHETHER SOMEBODY ELSE IS HOLDING IT STILL. `KeeperProxy.status()` reported
+    // `inert: null` unconditionally, so a character standing still because a supply
+    // exchange had deliberately stopped its keeper was indistinguishable on the board from
+    // one that had stalled. That is the distinction m59-supervise.mjs unsticks on, and
+    // unsticking a character mid-trade is the contention the hold exists to prevent.
+    hold: holdReport(),
     goap: autopilot ? {
       goal: autopilot._goapKeeper?.state()?.goal ?? null,
       action: autopilot._currentAction ?? null,
@@ -438,6 +536,26 @@ const server = createServer(async (req, res) => {
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(data));
   };
+
+  // TWO `/action` HANDLERS, AND THE SECOND ONE HAS NEVER RUN.
+  //
+  // There are two `if (req.method === 'POST' && path === '/action')` blocks in this
+  // function. The first one answers every name it knows and answers `unknown action` with a
+  // 400 for everything else, so the second — `go`, `attack`, `cast`, `rawmove`, `movetest`,
+  // `shop`, `buyitem`, `use`, `equip`, `look` — is unreachable. Every one of those verbs
+  // has been dead on a keeper-backed broker, which is every broker now: `shop` and
+  // `buyitem` are how a character supplies itself, and `equip` is how it arms itself.
+  //
+  // It is the failure mode this file keeps writing down — code that looks written and does
+  // nothing — one level up, in the routing rather than in a method. Rather than merge two
+  // switches by hand and risk changing the half that works, the first one's `default` now
+  // hands the name down here instead of refusing it. A name neither switch knows still ends
+  // as `unknown action`, so nothing that was answered before is answered differently.
+  //
+  // The body is passed along already parsed. The request stream has been consumed by then,
+  // so re-reading it would give `{}` and turn every delegated call into `unknown action:
+  // undefined` — which is the same bug again, wearing the fix's clothes.
+  let actionFallthrough = null;
 
   try {
     if (req.method === 'GET' && path === '/health') {
@@ -694,14 +812,153 @@ const server = createServer(async (req, res) => {
             json(session.world?.route?.(dest) ?? { found: false, reason: 'no world' });
             return;
           }
-          default:
-            json({ error: `unknown action "${name}"` }, 400);
+          // STAND STILL WHILE SOMEBODY ELSE DRIVES. See holdKeeper above for why this is
+          // here rather than in the broker, and why the tick driver is held a different
+          // way from the goap one.
+          case 'hold': {
+            json(holdKeeper(String(args.why ?? 'an errand owns this character'),
+                            Math.max(5000, Math.min(Number(args.max_ms ?? 180000), 900000))));
             return;
+          }
+          case 'release': {
+            json(releaseKeeper(String(args.why ?? 'errand finished'), args.token ?? null));
+            return;
+          }
+          case 'hold_status': { json({ hold: holdReport() }); return; }
+
+          // WHO IS ACTUALLY STANDING HERE, ASKED RATHER THAN REMEMBERED.
+          //
+          // `/state` carries a room object list, but it is whatever the client last happened
+          // to be told — the poller never requests one — so after a walk it can still
+          // describe the room we left. A trade needs the receiver to be VISIBLE to the giver
+          // at the moment of the offer, and "X is not in the room with Y" while the two are
+          // standing together is what comes of reading a stale snapshot. This puts
+          // BP_SEND_ROOM_CONTENTS on the wire and waits for the reply.
+          case 'room_contents': {
+            const c = session.client;
+            if (!c) { json({ error: 'no client' }, 409); return; }
+            const since = c.evSeq;
+            await session.pacer.submit('read', () => c.roomContents());
+            const w = await c.waitFor({ since, kinds: ['room-contents'],
+                                        timeoutMs: Number(args.timeout_ms ?? 2500) })
+                             .catch(() => null);
+            const me = c.self;
+            json({
+              room: session.world?.room?.num ?? null,
+              answered: !!w && !w.timedOut,
+              you: me ? { col: me.col, row: me.row } : null,
+              objects: [...(c.room?.objects?.values?.() ?? [])]
+                .filter(o => o.id !== c.selfId)
+                .map(o => ({ id: o.id, name: c.rsc?.get?.(o.nameRsc) ?? '',
+                             flags: o.flags ?? 0, is_player: !!((o.flags ?? 0) & 0x0004),
+                             col: o.col ?? null, row: o.row ?? null })),
+            });
+            return;
+          }
+
+          // THE TRADE HANDSHAKE, ONE STEP PER CALL.
+          //
+          // A trade is offer -> counter-with-nothing -> accept, interleaved across TWO
+          // characters, and accepting before the counteroffer has arrived is logged by the
+          // server as cheating and cancels the trade. Both ends used to be driven from the
+          // broker against a live client it had in hand; on a keeper-backed broker there is
+          // no client and no event stream over there, so every one of those steps was either
+          // "not a function" or a `waitFor` that resolved null.
+          //
+          // The SEQUENCING stays in the broker — it is the only thing that can see both
+          // characters — and each step is executed here, by the process that owns the socket.
+          // Each waiting step takes an explicit `since` for a reason: the reply can arrive
+          // before the broker gets round to asking about it, and `waitFor`'s default `since`
+          // is "now", which steps straight over the event being waited for.
+          case 'trade': {
+            const c = session.client;
+            if (!c) { json({ error: 'no client' }, 409); return; }
+            const op = String(args.op ?? '');
+            const view = () => (c.trade
+              ? { role: c.trade.role ?? null, may_accept: c.trade.mayAccept ?? null,
+                  revision: c.trade.revision ?? null }
+              : null);
+            const idList = (xs) => [].concat(xs ?? []).map(i =>
+              (i && typeof i === 'object') ? { id: Number(i.id), amount: Number(i.amount) } : Number(i));
+            switch (op) {
+              // WHERE IN THE STREAM WE ARE, BEFORE ANYTHING IS SENT. The broker reads this
+              // off the receiver first, so its later `await_offer` cannot miss an offer that
+              // landed while the round trip was still in flight.
+              case 'seq': { json({ seq: c.evSeq, trade: view() }); return; }
+              case 'cancel': {
+                await session.pacer.submit('trade', () => c.cancelOffer()).catch(() => {});
+                json({ cancelled: true, seq: c.evSeq, trade: view() });
+                return;
+              }
+              case 'offer': {
+                const to = Number(args.to_id);
+                if (!Number.isFinite(to)) { json({ error: 'offer needs to_id' }, 400); return; }
+                // {id, amount} SURVIVES THE TRIP, because a bare id means ONE: the server
+                // reads "is there a quantity here" from the tag nibble alone. Flattening a
+                // stack to its id hands over a single item and reports complete — which is
+                // what it did, one shilling out of 1,647.
+                const items = idList(args.items);
+                if (!items.length) { json({ error: 'offer needs items' }, 400); return; }
+                const since = c.evSeq;
+                await session.pacer.submit('trade', () => c.offer(to, items));
+                json({ sent: true, since, to_id: to, count: items.length, trade: view() });
+                return;
+              }
+              case 'await_offer': {
+                const w = await c.waitFor({ since: args.since ?? undefined, kinds: ['offered-to-us'],
+                                            timeoutMs: Number(args.timeout_ms ?? 6000) })
+                                 .catch(() => null);
+                json({ saw: !!w?.events?.length, timed_out: w?.timedOut ?? true,
+                       seq: c.evSeq, trade: view() });
+                return;
+              }
+              // COUNTER WITH NOTHING. That is how a gift is accepted here, and it is what
+              // grants the GIVER permission to accept — `mayAccept` goes true on the
+              // offerer's side only once a counteroffer has arrived.
+              case 'counter': {
+                const items = idList(args.items);
+                const since = c.evSeq;
+                await session.pacer.submit('trade', () => c.counterOffer(items));
+                json({ sent: true, since, count: items.length, trade: view() });
+                return;
+              }
+              case 'await_countered': {
+                const w = await c.waitFor({ since: args.since ?? undefined, kinds: ['countered'],
+                                            timeoutMs: Number(args.timeout_ms ?? 6000) })
+                                 .catch(() => null);
+                json({ saw: !!w?.events?.length, timed_out: w?.timedOut ?? true,
+                       seq: c.evSeq, trade: view() });
+                return;
+              }
+              // THE ACCEPT, AND WHAT IT IS ALLOWED TO SAY ABOUT ITSELF. `may_accept` is
+              // reported rather than enforced: `trade` lies in both directions and the only
+              // proof that anything moved is the receiver's own count afterwards, which is
+              // what the broker checks. It is here so a failed exchange can be read back —
+              // a false `may_accept` means the counteroffer never arrived, and this accept
+              // ENDED the trade rather than completing it.
+              case 'accept': {
+                const before = view();
+                await session.pacer.submit('trade', () => c.acceptOffer());
+                json({ sent: true, may_accept_before: before?.may_accept ?? null, trade: view() });
+                return;
+              }
+              default:
+                json({ error: `unknown trade op "${op}"` }, 400);
+                return;
+            }
+          }
+
+          default:
+            // Not ours. See `actionFallthrough` at the top of this handler: the second
+            // `/action` switch below owns a dozen more verbs and has never been reached.
+            actionFallthrough = { name, args };
+            break;
         }
       } catch (e) {
         json({ error: e?.message ?? String(e) }, 500);
         return;
       }
+      if (!actionFallthrough) return;
     }
 
     // WHAT THIS CHARACTER HAS HEARD, because the broker cannot hear anything.
@@ -1296,9 +1553,12 @@ const server = createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === 'POST' && path === '/action') {
-      const body = JSON.parse(await readBody(req));
-      const { name, args } = body;
+    // THE SECOND `/action` SWITCH, REACHED ONLY BY FALLING OUT OF THE FIRST. Its guard used
+    // to be a second `path === '/action'` test, which the first block always won — see the
+    // note on `actionFallthrough` above. The body arrives already parsed because the request
+    // stream was consumed up there.
+    if (actionFallthrough) {
+      const { name, args } = actionFallthrough;
       try {
         let result;
         switch (name) {

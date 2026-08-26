@@ -114,6 +114,26 @@ function declaredFallJumpTable() {
 }
 export const FALL_MAX_SQUARES = Number(process.env.M59_FALL_MAX_SQUARES || 3);
 
+/**
+ * DOES THIS ROOM CONTAIN A DECLARED ONE-WAY DROP.
+ *
+ * A room-level question, where `declaredFallJumps` answers a square-level one. It exists
+ * because a fall is the one thing in this game that makes a room DIRECTED: the squares
+ * below Ukgoth's cliff can be reached from above and cannot reach it back, so "these two
+ * doors are in the same region" and "I can get from here to that door" stop being the same
+ * question — and every flood in this repository answers the first.
+ *
+ * Callers use it as a caution rather than as geometry: in a room with a declared drop, a
+ * door the live flood cannot reach from where a body is standing is probably genuinely
+ * unreachable from there, and a bake that walked it from the room's body is not evidence
+ * about the bottom of a cliff.
+ */
+export function roomHasDeclaredFallJump(roomNum) {
+  const table = declaredFallJumpTable();
+  const n = Number(roomNum);
+  return (table?.jumps ?? []).some(j => Number(j.room) === n && j?.from && j?.to);
+}
+
 // What a planned step onto ground the COARSE GRID calls solid is charged. The argument,
 // the measurement and why it is a cost rather than a refusal are all at `clipCost` in
 // `path`. Zero restores the behaviour from before it existed.

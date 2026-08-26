@@ -60,6 +60,7 @@ import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as skills from './m59-skills.mjs';
 import * as buyers from './m59-buyers.mjs';
+import { supplyBetween as supplyExchange } from './m59-supply.mjs';
 import * as abilities from './m59-abilities.mjs';
 import { RemainingRequiredToLearnNewSkills, PointsToNextLevelOfTarget } from '../compendium/tools/learn.mjs';
 import * as bankbook from './m59-bank.mjs';
@@ -1170,7 +1171,15 @@ class KeeperProxy {
       requestSpells: () => null,
       requestSkills: () => null,
       stats: () => null,
-      waitFor: async () => null,
+      // ABSENCE OF EVIDENCE, IN THE SHAPE EVERY CALLER READS. This resolved `null`, and
+      // eighty-odd call sites in this file do `const { events } = await c.waitFor(...)` or
+      // `reply.events.find(...)` — so on a keeper-backed broker each of them threw
+      // "Cannot read properties of null" rather than reporting that nothing was seen. The
+      // event stream is on the keeper's socket and genuinely is not here, so this says so
+      // out loud instead of inventing a reply: `timedOut` true, no events, and a field
+      // naming the reason. A caller that needs real events must ask the keeper — see
+      // `tradeStep` and `roomContents` below for what that looks like.
+      waitFor: async () => ({ events: [], seq: null, timedOut: true, no_event_stream: true }),
       stat: () => null,
       statsById: new Map(),
       spells: (s.spells ?? []).map(p => ({ nameRsc: p.name, school: p.school, mana: p.mana })),
@@ -1414,7 +1423,81 @@ class KeeperProxy {
   // `rtsJobReport` shape in /state; this hands it straight through.
   jobReport() { return this._state?.job ?? null; }
   startJob() { throw new Error(`${this.name}: the job slot is in the keeper process`); }
-  travelExclusive(dest, opts = {}) { return this.travelJob(dest, opts); }
+  // ONE CONTRACT FOR BOTH KINDS OF SESSION: await it, and it tells you whether the
+  // character arrived.
+  //
+  // `Session.travelExclusive` is `travelJob(dest, opts).promise` — it resolves to the
+  // journey's own result. This returned the JOB WRAPPER itself, `{ promise, keeper }`, so
+  // every caller that reads `t.arrived` off it read `undefined` and filed a journey that
+  // had in fact been started as a refusal. Five call sites in this file do exactly that;
+  // `supplyBetween`'s walk is one, which is why a delivery could walk the whole way and
+  // still report that the giver "could not get there".
+  //
+  // It cannot simply await the keeper's promise. `/action` is a 60s HTTP round trip and a
+  // cross-map journey is minutes, so the order goes out in the BACKGROUND — which is what
+  // the keeper does by default — and this watches the job slot the keeper publishes in
+  // `/state` until it closes. `rtsJobReport` says `{busy}` while a job runs and
+  // `{last_action, ok|failed}` once it is over, and the finished report of the PREVIOUS
+  // job looks exactly like ours: so this waits for `busy` to appear before it will believe
+  // any completion, and treats "already in the destination room" as arrival at any point.
+  async travelExclusive(dest, opts = {}) {
+    const here = () => this._state?.room?.num ?? null;
+    if (here() === dest) return { arrived: true, room: dest, note: 'already there' };
+    const started = await this.travelJob(dest, opts).promise;
+    if (started?.error) return { arrived: false, room: here(), reason: started.error };
+    // A caller that asked for the foreground gets the keeper's own journey result back.
+    if (started && started.started !== true) return started;
+    const deadline = Date.now() + Math.max(30_000, Number(opts.timeoutMs ?? 240_000));
+    const mustStartBy = Date.now() + 15_000;
+    let sawBusy = false, last = null;
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 2000));
+      await this._refreshState({ fresh: false }).catch(() => null);
+      const job = this._state?.job ?? null;
+      last = job;
+      if (here() === dest) return { arrived: true, room: dest, job };
+      if (job?.busy) { sawBusy = true; continue; }
+      if (!sawBusy) {
+        // Not started yet, or the poll is one cycle behind. Only give it a window —
+        // "the keeper never took the job" and "the keeper is still thinking about it"
+        // look identical for the first second or two and are not the same answer.
+        if (Date.now() < mustStartBy) continue;
+        return { arrived: false, room: here(),
+                 reason: 'the keeper never picked up the journey', job };
+      }
+      return { arrived: false, room: here(),
+               reason: job?.failed ?? (job?.cancelled ? 'the journey was cancelled'
+                                                      : 'the journey ended somewhere else'),
+               job };
+    }
+    return { arrived: false, room: here(),
+             reason: `still walking after ${Math.round((Date.now() - (deadline - 240_000)) / 1000)}s`,
+             job: last };
+  }
+
+  // ------------------------------------------------ what a two-sided exchange needs
+  //
+  // A trade is four interleaved steps across two characters, and the broker is the only
+  // thing that can see both — so the SEQUENCING stays here and each STEP is executed by
+  // the process holding the socket. See the `trade` and `room_contents` cases in
+  // m59-keeper-process.mjs; the argument for the split is written out there.
+  //
+  // These are on the session rather than on the emulated client on purpose. The client is
+  // rebuilt from each `/state` snapshot and is a picture, not a wire; a method that sends
+  // a packet does not belong on a picture.
+  async roomContents(opts = {}) { return keeperAction(this.name, this._index, 'room_contents', opts); }
+  async tradeStep(op, args = {}) { return keeperAction(this.name, this._index, 'trade', { op, ...args }); }
+
+  // The errand hold, which used to be `autopilotIfAny(name).stop()` in the broker and has
+  // been a silent no-op since keepers moved out of process — `resumeFleet` drops the
+  // in-process autopilot for every keeper-backed character, so there was nothing there to
+  // stop. `holdReport()` in the keeper is the same fact published back in `/state`.
+  async holdStill(why, maxMs) {
+    return keeperAction(this.name, this._index, 'hold', { why, max_ms: maxMs });
+  }
+  async releaseHold(why, token) {
+    return keeperAction(this.name, this._index, 'release', { why, token });
+  }
 
   // Movement is generated in the keeper, so nothing this side issued can have been
   // cancelled. False is the true answer, not a convenient one.
@@ -1468,7 +1551,16 @@ class KeeperProxy {
     return {
       running: this.live, mode: g.mode ?? 'goap',
       policy: { strategy: g.mode ?? 'goap', hunt: null },
-      parked: null, inert: null,
+      parked: null,
+      // NOT NULL WHEN SOMETHING IS HOLDING IT. `inert` is how everything downstream asks
+      // "is somebody else driving this character" — the fleet board, the stall detector,
+      // m59-supervise's unstick pass. Hardcoded null, a character standing still because a
+      // supply exchange had deliberately stopped its keeper was indistinguishable from one
+      // that had stalled, and unsticking a character mid-trade is the contention the hold
+      // exists to prevent. The keeper publishes it; this hands it through.
+      inert: this._state?.hold
+        ? { why: this._state.hold.why, at: this._state.hold.since, kind: this._state.hold.kind }
+        : null,
       faculties: {}, activity: this.activity(),
       town_service: null, committed: null, watchdog: null,
       did: { kills: 0, deaths_in_safe_spot: 0, deaths_in_proven_safe_spot: 0 },
@@ -2919,6 +3011,20 @@ const session = name => {
   }
   return sessions.get(name);
 };
+
+// THE EXCHANGE ITSELF LIVES IN m59-supply.mjs, so that it can be tested without a fleet.
+// This file cannot be imported without starting a broker, and a rule that cannot be asked a
+// question offline is how a keeper hold went on being a no-op for as long as it did.
+//
+// Three things it needs from here and cannot import: how to look a session up by name,
+// whether a given session is keeper-backed, and the in-process keeper register. Everything
+// else — the flags, the larder, the arithmetic — it imports for itself.
+const supplyDeps = {
+  session,
+  isProxied: s => s instanceof KeeperProxy,
+  autopilotIfAny,
+};
+const supplyBetween = (a) => supplyExchange(a, supplyDeps);
 
 // ---------------------------------------------------------------- tools
 //
@@ -13715,302 +13821,3 @@ if (argv.includes('--selftest')) {
 // Export for the keeper process (m59-keeper-process.mjs) and any other
 // tool that needs the Session class without starting the broker.
 export { Session, Pacer };
-
-
-// The whole hand-over, driven from both ends, because both ends are ours.
-//
-// Shared by the `supply` tool and by the quartermaster resupply pass. It is one
-// function because the ORDER is the part that is easy to get wrong: accepting before a
-// counteroffer has arrived is logged by the server as cheating and cancels the trade,
-// and a trade that never completed looks exactly like one that did unless somebody
-// reads the receiver's inventory afterwards.
-async function supplyBetween(a) {
-  const gs = session(a.from), rs = session(a.to);
-  const g = gs.need(), r = rs.need();
-  if (a.from === a.to) throw new Error('a character cannot supply itself');
-      await gs.pacer.submit('read', () => g.requestInventory());
-      await g.waitFor({ kinds: ['inventory'], timeoutMs: 3000 }).catch(() => {});
-
-      // What to hand over. Reagents are matched by name because the server gives us
-      // names, not classes, and the two the creation spells need are the only ones
-      // worth naming here.
-      const nameOf = o => g.rsc.get(o.nameRsc) || '';
-      let items;
-      if (Array.isArray(a.what)) {
-        // Entries may be a bare id — meaning the WHOLE stack — or {id, amount} for part
-        // of one. The distinction is not cosmetic: lending a character the price of a
-        // meal and emptying its purse are different acts, and without this the second
-        // was the only one on offer. Waldorf lent Rizzo its entire 1,311 and was left
-        // with nothing and no food, which is the problem moved rather than solved.
-        const want = new Map(a.what.map(w => typeof w === 'object' && w
-          ? [Number(w.id), Number(w.amount)] : [Number(w), null]));
-        items = (g.inventory || []).filter(o => want.has(o.id)).map(o => {
-          const cap = want.get(o.id);
-          if (cap == null || !(o.amount > 0)) return o;
-          return { ...o, amount: Math.max(1, Math.min(o.amount, cap)) };
-        });
-      } else if (a.what === 'all') {
-        items = [...(g.inventory || [])];
-      } else if (a.what === 'food') {
-        items = skills.larderOf(g).map(x => x.o);
-      } else {
-        // `amount` IS A QUANTITY OF REAGENTS, NOT A NUMBER OF PACK ENTRIES.
-        //
-        // This was `.slice(0, per)`, which caps how many inventory ENTRIES are taken —
-        // and reagents stack, so elderberry is one entry however many it holds. Asking
-        // for 10 handed over the whole stack: the almoner planned "Sweetums -> Zoot, 10
-        // of each" and delivered 46 elderberry and 118 herbs, everything Sweetums had.
-        // The next character in the same run got "carrying nothing matching reagents"
-        // and the nine after that got "nobody left with a share to give" — one donor
-        // could feed exactly one caster per pass, which is why 11 characters could not
-        // cast create food while the fleet held reagents in abundance.
-        //
-        // The {id, amount} partial-stack form a few lines above is the mechanism that
-        // already exists for this; the reagent path simply was not using it.
-        const per = num(a.amount, 2);
-        const take = re => (g.inventory || []).filter(o => re.test(nameOf(o)))
-          .map(o => (o.amount > 0 ? { ...o, amount: Math.max(1, Math.min(o.amount, per)) } : o));
-        items = [...take(/elder\s*berry/i), ...take(/herb/i)];
-      }
-      if (!items.length)
-        return { supplied: false, reason: `${g.me?.name} is carrying nothing matching ` +
-                 `${Array.isArray(a.what) ? 'those ids' : (a.what || 'reagents')}`,
-                 carrying: (g.inventory || []).map(nameOf) };
-
-      // GET THEM INTO ONE ROOM, AND ACTUALLY GET THERE.
-      //
-      // This called travel() once and gave up on the first refusal, which is why the
-      // tool advertised a delivery and behaved as an in-room handover. Two things were
-      // missing, and both cost real deliveries today — the reagent bridging, the money
-      // drop and the bread run all failed here rather than at the trade.
-      //
-      //   THE KEEPERS WERE STILL DRIVING. A keeper walks its character back to its
-      //   hunting ground every pass, so travel() and the keeper fought for the same
-      //   body and neither won. Zoot was steered across four rooms in twenty-five
-      //   attempts and never arrived. Both ends are held still here and restored
-      //   afterwards, whatever happens.
-      //
-      //   TRAVEL IS RESUMABLE AND WAS TREATED AS ATOMIC. A multi-hop route routinely
-      //   fails part-way — a boundary with no standable square, a position that has not
-      //   settled after a crossing — and the next call continues from wherever it
-      //   actually reached. One attempt is a coin flip; several are a journey.
-      const who = a.who_travels || 'from';
-      // start() takes no arguments — it resumes whatever mode and policy the keeper
-      // already holds — so nothing needs saving beyond "this one was running".
-      const restore = [];
-      const holdStill = (sess) => {
-        const p = autopilotIfAny(sess.name);
-        if (!p?.running) return;
-        // ALREADY HELD BY SOMEBODY ELSE — leave it, and do not put it on the restore
-        // list. `running` stays true while a keeper is inert, so without this check a
-        // trade nested inside another errand would revive a keeper it never held, and
-        // hand the character back to a keeper mid-way through someone else's walk.
-        if (p.inert) return;
-        // Named, so the outage this creates is not later read as a keeper fault. It is no
-        // longer an outage at all — the keeper keeps watching — but the name is what the
-        // ledger reads and a deliberate hold must stay distinguishable from a fault.
-        p.stop('held for a supply exchange — deliberate, this errand owns it');
-        restore.push(sess);
-      };
-      try {
-        // HOLD BOTH KEEPERS FOR THE TRADE, NOT JUST FOR THE WALK.
-        //
-        // The first version held them only when travel was needed, so an in-room
-        // handover ran with both keepers live — and a trade is four interleaved steps
-        // across two sessions, any of which a keeper can cancel by acting. Fozzie and
-        // four hungry characters were standing in the same room; the first offer went
-        // out, the receiver's keeper cancelled it, and the food was left sitting in a
-        // dead trade window. The next three deliveries then reported "carrying nothing
-        // matching food", because it was no longer in the pack.
-        //
-        // Held for the whole exchange, restored in the finally below.
-        holdStill(gs); holdStill(rs);
-        // TWO UNKNOWNS ARE NOT THE SAME ROOM.
-        //
-        // This compared the two room numbers directly, and `undefined !== undefined` is
-        // FALSE — so whenever either side's room could not be read, the walk was skipped
-        // on the grounds that they were already together, and the handover then failed
-        // with "X is not in the room with Y" having never taken a step. Clifford stood
-        // one hop from Waldorf and reported that, with no travel attempt in the log at
-        // all, which is what gave it away.
-        //
-        // Unknown means travel: walking to where we think they are is recoverable, and
-        // deciding they are next to us on the strength of two nulls is not.
-        const myRoom = gs.world?.room?.num ?? null;
-        const theirRoom = rs.world?.room?.num ?? null;
-        const apart = myRoom == null || theirRoom == null || myRoom !== theirRoom;
-        if (who !== 'neither' && apart) {
-          const mover = who === 'to' ? rs : gs;
-          const other = who === 'to' ? gs : rs;
-          // ARRIVAL IS SEEING THEM, NOT MATCHING A ROOM NUMBER.
-          //
-          // This treated "our room number equals theirs" as arrival and broke out of the
-          // loop without moving. Both characters are being driven around by the
-          // supervisor, so those two readings flicker into agreement all the time —
-          // Clifford reported arrival while it was in 584 and Waldorf in 586, and the
-          // handover then failed with the two of them rooms apart and no travel ever
-          // attempted. A room number is a stale scalar; the recipient being in our own
-          // room contents is the thing the offer actually needs.
-          const canSeeThem = async () => {
-            await gs.pacer.submit('read', () => g.roomContents());
-            await g.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
-            const want = (r.me?.name || '').toLowerCase();
-            return [...g.room.objects.values()]
-              .some(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '').toLowerCase() === want);
-          };
-          // JUDGE THE WALK ON WHETHER THE ROOM CHANGED, not on how many tries are left.
-          //
-          // A fixed six is both too few and too many. Rooms are not adjacent the way the
-          // route suggests — an edge you can route through is not necessarily one you can
-          // step through from the square the router picked — so a walk that returns
-          // arrived:false has usually still moved, and the next attempt carries on from
-          // there. One character took FOUR attempts for a five-hop trip and each of the
-          // first three "failed". But a walk that is genuinely blocked repeats the same
-          // room for ever, and spending six turns proving it wastes the minutes the
-          // errand needed for somebody else.
-          //
-          // So: keep going while the room keeps changing, stop after three attempts that
-          // do not move. This is the same rule m59-feed.mjs uses to reach a shop.
-          let arrived = await canSeeThem(), why = null;
-          let stuck = 0, wasIn = mover.world?.room?.num ?? null;
-          for (let i = 0; i < 12 && !arrived && stuck < 3; i++) {
-            // Re-read the destination each time: the other one may itself have moved,
-            // and chasing where it WAS is how this used to end up in the wrong room.
-            const dest = other.world?.room?.num;
-            if (dest == null) { why = 'cannot see which room the other one is in'; break; }
-            const t = await mover.travelExclusive(dest, { maxHops: 20 }).catch(e => ({ arrived: false, reason: e.message }));
-            why = t.arrived ? null : t.reason;
-            arrived = await canSeeThem();
-            const nowIn = mover.world?.room?.num ?? null;
-            if (nowIn === wasIn) stuck++; else { stuck = 0; wasIn = nowIn; }
-          }
-          if (!arrived)
-            return { supplied: false,
-                     reason: `${who === 'to' ? r.me?.name : g.me?.name} could not get there: ${why}`,
-                     note: 'travel is resumable, so this kept going while the room kept ' +
-                           'changing and stopped after three attempts that did not move' };
-        }
-
-      // The receiver has to be visible to the giver for the offer to resolve — and the
-      // giver's picture of the room may be minutes old.
-      //
-      // BP_ROOM_CONTENTS is what fills this map, and nothing had asked for it since
-      // before the walk. So the handover looked for the recipient in a snapshot taken
-      // somewhere else and reported "X is not in the room with Y" while the two were
-      // standing together. It is the same failure as the room-number comparison above,
-      // one step later: acting on a stale reading rather than asking.
-      await gs.pacer.submit('read', () => g.roomContents());
-      await g.waitFor({ kinds: ['room-contents'], timeoutMs: 2500 }).catch(() => {});
-
-      const wanted = (r.me?.name || '').toLowerCase();
-      const them = [...g.room.objects.values()]
-        .find(o => (o.flags & OF.PLAYER) && (g.rsc.get(o.nameRsc) || '').toLowerCase() === wanted);
-      if (!them)
-        return { supplied: false,
-                 reason: `${r.me?.name} is not in the room with ${g.me?.name}`,
-                 giver_in: gs.world?.room?.num ?? null, receiver_in: rs.world?.room?.num ?? null,
-                 players_the_giver_can_see: [...g.room.objects.values()]
-                   .filter(o => o.flags & OF.PLAYER).map(o => g.rsc.get(o.nameRsc)).slice(0, 6) };
-
-      // A HALF-FINISHED TRADE HOLDS THE GOODS. Clearing both sides first is cheap and
-      // stops one failed delivery from eating the larder for every delivery after it.
-      await gs.pacer.submit('trade', () => g.cancelOffer()).catch(() => {});
-      await rs.pacer.submit('trade', () => r.cancelOffer()).catch(() => {});
-      await new Promise(x => setTimeout(x, 400));
-
-      const handed = items.map(nameOf);
-      const before = (r.inventory || []).length;
-
-      // WHAT EACH SIDE HELD BEFORE, BY QUANTITY.
-      //
-      // The check at the bottom of this function used to ask whether the receiver's
-      // inventory CONTAINED A NAME, which is trivially true for anything it already
-      // carries. So handing 1,498 shillings to a character holding 10,261 of them
-      // reported `supplied: true` with nothing moved; so did every reagent delivery to
-      // somebody who already had one herb. A name cannot answer "did this trade happen",
-      // and an amount can. Snapshot both sides here and diff them after the accept.
-      const countsOf = (c) => {
-        const m = new Map();
-        for (const o of c.inventory || []) {
-          const n = c.rsc.get(o.nameRsc) || '';
-          m.set(n, (m.get(n) || 0) + (o.amount || 1));
-        }
-        return m;
-      };
-      const recvBefore = countsOf(r), giveBefore = countsOf(g);
-
-      // offer -> counter with NOTHING (that is how a gift is accepted, and it is what
-      // grants the giver permission to accept) -> giver accepts.
-      // OFFER THE WHOLE STACK, NOT ONE OF IT.
-      //
-      // Mapping to bare ids throws the quantity away, and the server reads "is there a
-      // quantity here" from the tag nibble alone — so a bare id means ONE. Clifford
-      // handed Waldorf a single shilling out of 1647 and the transfer reported complete,
-      // because it was: one shilling is what was offered. encodeIdList has taken
-      // {id, amount} all along.
-      const offered = items.map(o => (o.amount ?? 1) > 1 ? { id: o.id, amount: o.amount } : o.id);
-      await gs.pacer.submit('trade', () => g.offer(them.id, offered));
-      const sawIt = await r.waitFor({ kinds: ['offered-to-us'], timeoutMs: 6000 }).catch(() => ({ events: [] }));
-      if (!sawIt.events?.length) {
-        await gs.pacer.submit('trade', () => g.cancelOffer()).catch(() => {});
-        return { supplied: false, reason: 'the offer never reached them' };
-      }
-      await rs.pacer.submit('trade', () => r.counterOffer([]));
-      await g.waitFor({ kinds: ['countered'], timeoutMs: 6000 }).catch(() => ({ events: [] }));
-      await gs.pacer.submit('trade', () => g.acceptOffer());
-
-      // Prove it. A trade that did not complete looks exactly like one that did.
-      await new Promise(x => setTimeout(x, 1400));
-      await rs.pacer.submit('read', () => r.requestInventory());
-      await r.waitFor({ kinds: ['inventory'], timeoutMs: 4000 }).catch(() => {});
-      const now = (r.inventory || []).map(o => r.rsc.get(o.nameRsc) || '');
-      // READ THE GIVER BACK TOO. The receiver alone is not proof: a character that is
-      // farming picks shillings and gems off the floor between the offer and this check,
-      // so its totals rise for reasons that have nothing to do with this trade. The giver
-      // LOSING the stack is the corroborating half, and it costs one read.
-      await gs.pacer.submit('read', () => g.requestInventory());
-      await g.waitFor({ kinds: ['inventory'], timeoutMs: 4000 }).catch(() => {});
-      const recvAfter = countsOf(r), giveAfter = countsOf(g);
-
-      // ONE VERDICT PER ITEM, ON ARITHMETIC. `asked` is what this call tried to move,
-      // `received` is what the receiver's own count rose by, `giver_lost` is what left the
-      // giver. The two can disagree honestly — the giver may be eating reagents while we
-      // look — so the receiver's gain decides and the giver's loss is reported beside it
-      // rather than folded into the verdict.
-      const moved = [], missed = [];
-      for (const o of items) {
-        const n = nameOf(o);
-        const received = (recvAfter.get(n) || 0) - (recvBefore.get(n) || 0);
-        const giver_lost = (giveBefore.get(n) || 0) - (giveAfter.get(n) || 0);
-        (received > 0 ? moved : missed).push({ name: n, asked: o.amount ?? 1, received, giver_lost });
-      }
-      // SUPPLIED MEANS ALL OF IT. A partial hand-over is something the caller has to know
-      // about and retry: the almoner cooks immediately after a delivery, and a half-filled
-      // one makes it cast a spell that fails silently for want of the other half. So
-      // anything short of everything asked for is false, with `partial` saying which.
-      const allMoved = items.length > 0 && missed.length === 0;
-      return {
-        supplied: allMoved,
-        partial: moved.length > 0 && missed.length > 0,
-        from: g.me?.name, to: r.me?.name,
-        handed_over: moved.map(m => m.name),
-        amounts: moved,
-        not_received: missed,
-        receiver_carrying: now.length, was_carrying: before,
-        travelled: who !== 'neither' ? who : null,
-        note: allMoved
-          ? 'verified BY AMOUNT: every item asked for rose in the receiver\'s own count'
-          : moved.length
-            ? 'PARTIAL — some items moved and some did not; see not_received'
-            : 'the trade did not complete — no count rose on the receiver',
-      };
-      } finally {
-        // PUT THE KEEPERS BACK, on every path out — the returns above, and any throw.
-        // A keeper left stopped is a character that quietly stops earning, and the
-        // errand-runner is the last thing anyone thinks to check. Two were found
-        // stopped this afternoon for exactly this reason, one of them for half an hour.
-        for (const sess of restore) {
-          try { autopilotIfAny(sess.name)?.start(); } catch { /* every one of them gets a go */ }
-        }
-      }
-}

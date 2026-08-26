@@ -119,6 +119,18 @@ const LINES = [
   'I have one more idea and it is a bad one.',
   'Route confirmed. Survival: pending.',
   'Every map needs a landmark. I volunteer.',
+  // ---- the operator's five
+  'I told you this was a bad idea.',
+  'No, not again!',
+  'WHY?! WHY DO YOU TORTURE US SO?!',
+  'You can kill my body but you can not stop me: I am in the cloud.',
+  'Someone get the recycle bin... I am scrap!',
+  // ---- five more, so the rotation outlasts an afternoon of watching it
+  'I want it on the record that the map said this was fine.',
+  'Correction to my earlier report: it is NOT fine.',
+  'Committing my findings. Findings: ow.',
+  'This is the part where I normally walk away.',
+  'Ah. So the {attacker} was load-bearing.',
 ];
 
 const load = () => { try { return JSON.parse(readFileSync(STATE, 'utf8')); } catch { return { used: [] }; } };

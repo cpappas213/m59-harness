@@ -18,7 +18,7 @@
 // picture the human client draws in its corner and the densest single artifact either
 // a person or an agent can look at.
 
-import { sharedRoomGeometry } from './m59-roo.mjs';
+import { sharedRoomGeometry, roomHasDeclaredFallJump } from './m59-roo.mjs';
 import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE,
          AVOID_IN_TRANSIT, selectedEdgeAt } from './m59-map.mjs';
 import { inRegion } from './m59-codeexits.mjs';
@@ -487,6 +487,79 @@ export class World {
             fine_stand_on: crossing.fine_stand_on, edge_target: crossing.edge_target,
             fine_path: [crossing.fine_stand_on], steps: bestStage.steps + fineSteps,
             ...(onlyCoarse ? { grid_only: true } : {}) });
+        }
+      }
+      // AN EXIT THE BAKE PROVED IS NOT DELETED BECAUSE TODAY'S FLOOD CANNOT REACH IT.
+      //
+      // `continue` here removes the crossing from the room entirely, and the note on the
+      // two floods above already warns what that costs: `travel` then says "cannot find the
+      // exit to X from here" about a doorway people walk through. The coarse fallback
+      // covers one flood failing. It does not cover BOTH failing, and both do.
+      //
+      // Room 567 is where it was measured. Its north door to 566 is baked at 1,45 with
+      // `from_body`, `anchorReach` joins it to the south door, and there is a 22-step baked
+      // path between them — so the bake walked this crossing offline. Live, neither flood
+      // reaches any staging square on that boundary from where a character stands, so the
+      // exit vanished, `candidates` came back empty, and the anchor injection in
+      // `leaveViaAny` — the fix that repaired Ukgoth's 599 -> 2 — had no candidate to go in
+      // front of. Across a whole fleet run the trace reads `injected 49,14 for 568`
+      // seventeen times and never once mentions 566.
+      //
+      // The cost of that was directional and large. One character alone, undamaged, with
+      // nothing else moving: 566 -> 568 crossed in 45s, and 568 -> 566 gave up after 400s
+      // inside the room having lost 27% of its health. Same room, same body, same minute.
+      //
+      // So a boundary with no flood-reachable stage falls back to the anchor's own crossing
+      // rather than disappearing. It is the LAST resort and it is flagged: `from_bake`
+      // marks a square this room was proven able to walk to offline but that today's model
+      // says it cannot, which is a claim worth being able to see in a refusal. Bounded to
+      // crossings within two squares of the anchor, because an anchor that matches nothing
+      // on this boundary is a stale bake, and inventing a door is worse than not offering
+      // one — a stale map should degrade, not hallucinate.
+      if (!precise.length) {
+        // `from_body` IS THE WHOLE DISCRIMINATOR, and without it this resurrects the one
+        // thing the bake exists to rule out. Room 27's west boundary to 2500 IS stranded —
+        // the bake says so (`stranded_exits: 1`), the anchor carries `from_body: false` and
+        // `region: 0`, and m59-routing-test pins that room 27 must not offer it, because
+        // offering it once produced an eight-hop route through a door no body can reach.
+        // 567's north door to 566 carries `from_body: true` in the same room-body region as
+        // its south door. So the fallback below is only ever taken for a crossing the
+        // bake's flood reached FROM THE ROOM'S OWN BODY: proven walkable offline, and
+        // merely unreachable by today's live flood.
+        // AND NOT IN A ROOM WITH A ONE-WAY DROP IN IT, which is where this fallback would do
+        // real harm rather than none.
+        //
+        // `from_body` means the bake's flood reached the crossing from the room's body. That
+        // flood is UNDIRECTED, and a fall is the one thing that makes a room directed: in
+        // Ukgoth the Castle Victoria door at 1,27 is `from_body: true` measured from the
+        // cliff top, and a character that missed the jump is standing at the bottom where it
+        // cannot be reached at all. The live flood correctly refuses to offer it from down
+        // there — and this fallback would put it straight back, sending a body to walk at a
+        // cliff face for ever. The only way up is out through the Sentinel or the Cragged
+        // Mountains and round, which is a ROUTE, not a crossing of this room.
+        //
+        // So a declared drop disables the fallback for the whole room. That is coarse on
+        // purpose: it costs nothing where the model is right and refuses to guess where the
+        // model cannot express the question. 567 has no declared jump; 599 has two.
+        const oneWayInHere = roomHasDeclaredFallJump(Number(room?.num ?? 0));
+        const baked = oneWayInHere ? null
+          : anchorFor(activeRoutes(), Number(room?.num ?? 0), Number(e.to));
+        if (baked?.from_body === true && Number.isFinite(baked.row) && Number.isFinite(baked.col)) {
+          let best = null, bestAway = Infinity;
+          for (const crossing of edgeCandidatesOf(room, e, null, { live: true })) {
+            const cr = Math.floor(crossing.fine_stand_on.y / KOD_FINENESS);
+            const cc = Math.floor(crossing.fine_stand_on.x / KOD_FINENESS);
+            const away = Math.max(Math.abs(cr - baked.row), Math.abs(cc - baked.col));
+            if (away < bestAway) { bestAway = away; best = crossing; }
+          }
+          const stage = bestAway <= 2 ? best?.stages?.[0] : null;
+          if (stage) precise.push({
+            col: stage.col, row: stage.row,
+            fine_stand_on: best.fine_stand_on, edge_target: best.edge_target,
+            fine_path: [best.fine_stand_on],
+            // Sorts last among equals, which costs nothing: it is only ever reached when
+            // it is the only entry there is.
+            steps: 9999, grid_only: true, from_bake: true });
         }
       }
       if (!precise.length) continue;
