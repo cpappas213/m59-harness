@@ -6804,7 +6804,13 @@ class Session {
                     shouldCancel = null, explicitIdsOverride = true,
                     beforeMutation = null } = {}) {
     const c = this.need();
-    const cancelled = () => typeof shouldCancel === 'function' && shouldCancel();
+    // Both cancellation channels end the WHOLE loot operation. A tactical predicate can
+    // withdraw this particular intent; the generation/token guard can withdraw movement
+    // authority underneath it. Treating the latter as one item's refusal lets the loop
+    // start walking toward the next far item with authority it no longer owns.
+    const cancelled = () =>
+      (typeof shouldCancel === 'function' && shouldCancel()) ||
+      this.movementWasCancelled(movementGeneration, controlToken);
     if (cancelled())
       return { taken: [], refused: [], carrying: [], cancelled: true,
                note: 'loot intent was cancelled before its first server request' };
@@ -6912,14 +6918,20 @@ class Session {
             ? (packet, detail) => beforeMutation(packet, { ...detail, target_id: o.id })
             : null,
         });
+        if (walk.cancelled || cancelled()) { wasCancelled = true; break; }
         if (!walk.arrived) { refused.push({ id: o.id, name, why: walk.reason || 'could not get there' }); continue; }
       }
       if (cancelled()) { wasCancelled = true; break; }
       const before = c.evSeq;
+      let cancelledBeforeGet = false;
       await this.pacer.submit('get', () => {
+        // The pacer may wait. Recheck at the final packet boundary so damage or a
+        // watchdog cancellation during that wait cannot send a stale pickup request.
+        if (cancelled()) { cancelledBeforeGet = true; return false; }
         if (typeof beforeMutation === 'function') beforeMutation('get', { target_id: o.id });
         return c.get(o.id);
       });
+      if (cancelledBeforeGet) { wasCancelled = true; break; }
       const ev = await c.waitFor({ since: before, kinds: ['got', 'message', 'vanished'], timeoutMs: 3000 });
       const got = ev.events.find(e => e.kind === 'got');
       if (got) taken.push({ id: o.id, name, amount: o.amount || undefined });

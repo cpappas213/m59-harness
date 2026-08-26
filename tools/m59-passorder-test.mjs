@@ -43,7 +43,7 @@ console.log('\nthe order the keeper decides in');
 {
   // Urgency descending. Each line is a claim about what outranks what, and the comment is
   // the reason — change the array and you are changing one of these claims.
-  ok('there are eight stages', PASS_STAGES.length === 8);
+  ok('there are nine stages', PASS_STAGES.length === 9);
   ok('being dead is decided first — the Underworld has no graph exits, so a character ' +
      'left there stays there',
      PASS_STAGES[0] === 'passUnderworld');
@@ -65,7 +65,9 @@ console.log('\nthe order the keeper decides in');
      PASS_STAGES[5] === 'passOutside');
   ok('then an errand, which outranks farming and is outranked by everything above it',
      PASS_STAGES[6] === 'passErrand');
-  ok('and the actual job is last', PASS_STAGES[7] === 'passFarm');
+  ok('then bounded stay-put scavenging, below survival and every directional owner',
+     PASS_STAGES[7] === 'passScavenge');
+  ok('and the actual job is last', PASS_STAGES[8] === 'passFarm');
 
   ok('every stage names a real method on the keeper',
      PASS_STAGES.every(n => typeof Autopilot.prototype[n] === 'function'));
@@ -103,7 +105,7 @@ console.log('\nCONTINUE falls through, HANDLED stops the tick');
 {
   const { ap, calls, notes } = harness({});
   await runLadder(ap);
-  ok('with every stage returning CONTINUE, all seven run in order',
+  ok('with every stage returning CONTINUE, every stage runs in order',
      JSON.stringify(calls) === JSON.stringify(PASS_STAGES));
   ok('and nothing is reported as missing a verdict', notes.length === 0);
 }

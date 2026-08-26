@@ -141,8 +141,12 @@ console.log('\nattack transport keeps the whole exchange');
 }
 
 function combat(sequence, { start = 1, threshold = 0.6, equip = false,
-                            inventory = [], using = [] } = {}) {
+                            inventory = [], using = [], loot = false,
+                            holdPosition = true, lootStayPut = null,
+                            rounds = null, sustainWhileSafe = false,
+                            maxExtraRounds = 0 } = {}) {
   let health = start, calls = 0, uses = 0, inventoryReadsAfterAttack = 0;
+  const lootCalls = [];
   const names = new Map([[1, 'slime'], [2, 'Tester'], [3, 'Arena'],
                          [10, 'short sword'], [11, 'dagger']]);
   const foe = { id: 1, flags: OF.ATTACKABLE, col: 1, row: 0, nameRsc: 1 };
@@ -171,7 +175,10 @@ function combat(sequence, { start = 1, threshold = 0.6, equip = false,
       if (step.die) objects.delete(c.selfId);
       return { messages: step.messages ?? [], vitals: c.vitals(), aborted: step.aborted ?? null };
     },
-    async lootFloor() { return { taken: [], refused: [], carrying: [] }; },
+    async lootFloor(options) {
+      lootCalls.push(options);
+      return { taken: [], refused: [], carrying: [] };
+    },
   };
   return {
     calls: () => calls,
@@ -179,8 +186,10 @@ function combat(sequence, { start = 1, threshold = 0.6, equip = false,
     inventoryReadsAfterAttack: () => inventoryReadsAfterAttack,
     inventoryIds: () => c.inventory.map(item => item.id),
     equipped: () => [...c.using],
-    run: () => fight(s, { target: 'slime', preferId: 1, rounds: sequence.length,
-      disengageAt: threshold, loot: false, equip, holdPosition: true, reach: 3 }),
+    lootCalls: () => lootCalls,
+    run: () => fight(s, { target: 'slime', preferId: 1,
+      rounds: rounds ?? sequence.length, sustainWhileSafe, maxExtraRounds,
+      disengageAt: threshold, loot, lootStayPut, equip, holdPosition, reach: 3 }),
   };
 }
 
@@ -318,6 +327,27 @@ console.log('\nadaptive fight integration');
      hardResult.disengaged?.mid_round === true && !hardResult.disengaged?.early &&
        hardFloor.calls() === 2,
      JSON.stringify(hardResult));
+}
+
+console.log('\npost-kill loot movement policy');
+{
+  const compatible = combat([
+    { health: 0.95, messages: ['Your short sword pokes the slime.'], kill: true },
+  ], { loot: true, holdPosition: false });
+  const compatibleResult = await compatible.run();
+  ok('an ordinary open-field fight retains the historical movable loot sweep by default',
+     compatibleResult.killed === true && compatible.lootCalls().length === 1 &&
+       compatible.lootCalls()[0].stayPut === false,
+     JSON.stringify({ result: compatibleResult, calls: compatible.lootCalls() }));
+
+  const farmSafe = combat([
+    { health: 0.95, messages: ['Your short sword pokes the slime.'], kill: true },
+  ], { loot: true, holdPosition: false, lootStayPut: true });
+  const farmSafeResult = await farmSafe.run();
+  ok('an autonomous caller can loot the kill without starting a movement-to-loot walk',
+     farmSafeResult.killed === true && farmSafe.lootCalls().length === 1 &&
+       farmSafe.lootCalls()[0].stayPut === true,
+     JSON.stringify({ result: farmSafeResult, calls: farmSafe.lootCalls() }));
 }
 
 console.log(`\n${passed} passed, ${failed} failed`);

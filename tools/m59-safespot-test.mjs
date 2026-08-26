@@ -14,8 +14,8 @@
 // away the largest advantage in the game — a free heal to full in a monster room.
 import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; see that file
 import { unlinkSync, readFileSync } from 'node:fs';
-import { Autopilot, HANDLED, farmRoomDenials, releaseQuarry,
-         shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
+import { Autopilot, CONTINUE, HANDLED, farmRoomDenials, releaseQuarry,
+         shouldRelocateToAssignedRoom, rankNearbyValuableLoot } from './m59-autopilot.mjs';
 import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
 import { fight, returnToSpot } from './m59-skills.mjs';
 
@@ -64,6 +64,173 @@ function world({ col = 5, row = 5, health = 30, max = 30, vigor = 150, room = 99
 
 const { OF } = await import('./m59-parse.mjs');
 const MONSTER = OF.ATTACKABLE;
+
+console.log('\n--- nearby valuables are ranked without becoming a movement target ---');
+{
+  const me = { id: 99, col: 5, row: 5 };
+  const names = new Map([
+    [10, 'quest token'], [11, 'herb'], [12, 'shillings'], [13, 'mace'],
+    [14, 'loaf of bread'], [15, 'book'], [16, 'pebble'], [17, 'sapphire'],
+    [18, 'emerald'], [19, 'loadout keepsake'],
+  ]);
+  const obj = (id, nameRsc, col, row, flags = OF.GETTABLE, amount = 1) =>
+    ({ id, nameRsc, col, row, flags, amount });
+  const rows = rankNearbyValuableLoot([
+    obj(10, 10, 8, 5),                       // policy protected
+    obj(11, 11, 9, 5),                       // singular scarce reagent
+    obj(12, 12, 6, 5, OF.GETTABLE, 100),    // currency, even without a value-table row
+    obj(13, 13, 6, 6),                       // usable weapon
+    obj(14, 14, 7, 5),                       // actual Food subclass
+    obj(15, 15, 8, 6),                       // known aggregate merchant value
+    obj(16, 16, 5, 6),                       // unknown/cheap: not worth a GET
+    obj(17, 17, 13, 5),                      // valuable but eight squares away
+    obj(18, 18, 6, 5, 0),                    // valuable but not GETTABLE
+    obj(19, 19, 7, 6),                       // protected by the character's loadout
+  ], {
+    me,
+    nameOf: o => names.get(o.nameRsc),
+    protectedNames: ['quest token'],
+    loadoutKeep: name => name === 'loadout keepsake',
+    maxItems: 10,
+    slotsLeft: 10,
+  });
+  const got = rows.map(row => row.name);
+  ok('only useful, GETTABLE objects inside the server seven-square reach are admitted',
+     got.includes('quest token') && got.includes('loadout keepsake') &&
+       got.includes('herb') && got.includes('shillings') &&
+       got.includes('mace') && got.includes('loaf of bread') && got.includes('book') &&
+       !got.includes('pebble') && !got.includes('sapphire') && !got.includes('emerald'),
+     JSON.stringify(rows));
+  ok('utility outranks price and the singular herb gets its plural value-table value',
+     got.slice(0, 2).includes('quest token') && got.slice(0, 2).includes('loadout keepsake') &&
+       got[2] === 'herb' &&
+       rows.find(row => row.name === 'herb')?.value === 10,
+     JSON.stringify(rows));
+
+  const capped = rankNearbyValuableLoot([
+    obj(11, 11, 6, 5), obj(12, 12, 7, 5), obj(15, 15, 8, 5),
+  ], { me, nameOf: o => names.get(o.nameRsc), maxItems: 3, slotsLeft: 1 });
+  ok('pack headroom is a hard cap even when the sweep allows three items',
+     capped.length === 1 && capped[0].name === 'herb', JSON.stringify(capped));
+}
+
+function nearbyLootHarness({ holding = false, proven = holding, adjacent = false,
+                             inventory = [], lootResult = null } = {}) {
+  const names = new Map([[20, 'herb'], [21, 'sapphire'], [22, 'book'], [23, 'pebble']]);
+  const objects = new Map();
+  const c = {
+    selfId: 99,
+    room: { objects },
+    inventory: [...inventory],
+    rsc: { get: id => names.get(id) || `rsc${id}` },
+    _health: 40,
+    vitals: () => ({ health: { value: c._health, max: 40 } }),
+    get self() { return objects.get(this.selfId); },
+  };
+  objects.set(99, { id: 99, col: 5, row: 5, flags: 0 });
+  const calls = [];
+  const s = {
+    client: c,
+    lootFloor: async opts => {
+      calls.push(opts);
+      if (typeof lootResult === 'function') return lootResult(opts, c);
+      return lootResult ?? {
+        taken: opts.ids.map(id => {
+          const o = objects.get(id);
+          return { id, name: c.rsc.get(o.nameRsc), amount: o.amount || undefined };
+        }),
+        refused: [],
+      };
+    },
+  };
+  const notes = [], progress = [];
+  const p = Object.create(Autopilot.prototype);
+  Object.assign(p, {
+    s, mode: 'farm', policy: { maxCarry: 14, fleeBelow: 0.425 }, foeId: null,
+    tally: { looted: {} }, nearbyLootAt: 0, nearbyLootRefusals: new Map(),
+    holdingForFight: () => holding, holdWorks: () => proven,
+    inReachOfUs: () => adjacent ? [{}] : [],
+    loadout: () => null, packAsItems: () => [], protectedItemNames: () => [],
+    safety: () => ({ fleeAt: 0.425 }),
+    note: (message, detail) => notes.push({ message, detail }),
+    progress: why => progress.push(why),
+  });
+  const addLoot = (id, nameRsc, col, row, amount = 1) =>
+    objects.set(id, { id, nameRsc, col, row, amount, flags: OF.GETTABLE });
+  return { p, s, c, calls, notes, progress, addLoot };
+}
+
+console.log('\n--- opportunistic loot stays put and never delays an open fight ---');
+{
+  const h = nearbyLootHarness({ adjacent: true });
+  h.addLoot(201, 21, 6, 5, 10);
+  const result = await h.p.passScavenge({ c: h.c });
+  ok('an adjacent hostile on open ground keeps the combat tick',
+     result === CONTINUE && h.calls.length === 0);
+}
+{
+  const h = nearbyLootHarness();
+  h.addLoot(201, 21, 6, 5, 10);
+  h.addLoot(301, 20, 9, 5, 1);
+  h.p.foeId = 301;
+  const result = await h.p.passScavenge({ c: h.c });
+  ok('a wounded current quarry also outranks loot even when it is outside melee reach',
+     result === CONTINUE && h.calls.length === 0);
+}
+{
+  const h = nearbyLootHarness({ holding: true, proven: true, adjacent: true });
+  h.addLoot(201, 21, 6, 5, 10);
+  h.addLoot(202, 20, 8, 5, 2);
+  h.addLoot(203, 22, 9, 5, 1);
+  h.addLoot(204, 21, 13, 5, 50); // eight away: never supplied to lootFloor
+  const result = await h.p.passScavenge({ c: h.c });
+  const call = h.calls[0];
+  ok('a verified wall may collect the three best reachable stacks despite adjacent mobs',
+     result === HANDLED && h.calls.length === 1 && call.ids.length === 3,
+     JSON.stringify(call?.ids));
+  ok('the pickup is explicitly stay-put and does not treat ids as a broken-gear override',
+     call.stayPut === true && call.explicitIdsOverride === false && call.maxItems === 3 &&
+       !call.ids.includes(204), JSON.stringify(call));
+  ok('successful nearby loot updates the ordinary tally, progress, and journal',
+     h.p.tally.looted.herb === 2 && h.p.tally.looted.sapphire === 10 &&
+       h.progress.includes('picked up nearby valuables') &&
+       h.notes.some(note => note.message === 'picked up nearby valuables'),
+     JSON.stringify({ tally: h.p.tally, notes: h.notes }));
+}
+{
+  const h = nearbyLootHarness({ inventory: Array.from({ length: 13 }, (_, id) => ({ id })) });
+  h.addLoot(201, 21, 6, 5);
+  h.addLoot(202, 20, 7, 5);
+  const result = await h.p.passScavenge({ c: h.c });
+  ok('one free pack slot limits the live GET sweep to one object',
+     result === HANDLED && h.calls[0]?.ids.length === 1, JSON.stringify(h.calls[0]?.ids));
+}
+
+console.log('\n--- refused and interrupted nearby loot cannot monopolise the pass ---');
+{
+  const h = nearbyLootHarness({ lootResult: opts => ({
+    taken: [], refused: [{ id: opts.ids[0], name: 'sapphire', why: 'corpse protected' }],
+  }) });
+  h.addLoot(201, 21, 6, 5);
+  const first = await h.p.passScavenge({ c: h.c });
+  h.p.nearbyLootAt = 0; // look again now; the per-id backoff, not the sweep clock, must win
+  const second = await h.p.passScavenge({ c: h.c });
+  ok('a refusal falls through to farming and is not retried during its thirty-second backoff',
+     first === CONTINUE && second === CONTINUE && h.calls.length === 1 &&
+       h.p.nearbyLootRefusals.get(201) > Date.now(),
+     JSON.stringify({ calls: h.calls.length, refused: [...h.p.nearbyLootRefusals] }));
+}
+{
+  const h = nearbyLootHarness({ lootResult: (opts, c) => {
+    c._health--;
+    return { taken: [], refused: [], cancelled: opts.shouldCancel() };
+  } });
+  h.addLoot(201, 21, 6, 5);
+  const result = await h.p.passScavenge({ c: h.c });
+  ok('fresh damage cancels the sweep and owns the remainder of the pass for survival',
+     result === HANDLED && h.calls[0]?.shouldCancel() === true,
+     JSON.stringify({ health: h.c._health, calls: h.calls.length }));
+}
 
 console.log('\n--- hostile-room provisioning refusal reads initialized vigor ---');
 {

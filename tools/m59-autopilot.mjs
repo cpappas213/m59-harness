@@ -736,6 +736,10 @@ export const PASS_STAGES = [
   'passFollow',
   'passOutside',
   'passErrand',
+  // A bounded pickup from the room cache is below every survival and directional
+  // decision, but above farming so useful drops do not sit at our feet forever while
+  // the next quarry is selected. It never walks: UserGet already reaches seven squares.
+  'passScavenge',
   'passFarm',
 ];
 
@@ -872,6 +876,70 @@ const ITEM_VALUE = (() => {
     return JSON.parse(readFileSync(p, 'utf8')).values ?? {};
   } catch { return {}; }
 })();
+
+// THE SMALL PILE THAT IS ALREADY AT OUR FEET.
+//
+// This is deliberately a selector, not a loot action. It reads the pushed room cache,
+// admits only things the server can pick up without movement (Manhattan distance <= 7),
+// and ranks utility before merchant value. In particular, `shareKind()` recognises both
+// `herb` and `herbs`; the live value table contains only the plural spelling, so using
+// value alone made the scarcest half of create-food look worthless.
+//
+// Exported because the dangerous properties are pure and worth pinning offline: an
+// ungettable object, a tempting item eight squares away, or a cheap unknown must never
+// turn this convenience into another movement owner.
+export function rankNearbyValuableLoot(objects, {
+  me,
+  nameOf = () => '',
+  protectedNames = [],
+  loadoutKeep = null,
+  ignoredIds = new Set(),
+  maxItems = 3,
+  slotsLeft = maxItems,
+  minValue = 30,
+} = {}) {
+  if (!me || me.col == null || me.row == null) return [];
+  const ignored = ignoredIds instanceof Set ? ignoredIds : new Set(ignoredIds || []);
+  const limit = Math.max(0, Math.min(
+    Math.max(0, Math.floor(Number(maxItems) || 0)),
+    Math.max(0, Math.floor(Number(slotsLeft) || 0)),
+  ));
+  if (!limit) return [];
+
+  return [...(objects || [])]
+    .filter(o => o && o.id !== me.id && (o.flags & OF.GETTABLE) && !ignored.has(o.id))
+    .map(o => {
+      const distance = Math.abs(Number(o.col) - Number(me.col)) +
+                       Math.abs(Number(o.row) - Number(me.row));
+      const name = String(nameOf(o) || '');
+      const amount = Math.max(1, Number(o.amount) || 1);
+      const reagent = skills.shareKind(name);
+      // The values file uses `herbs`, while the room can call one object `herb`.
+      const valueKey = String(name).trim().toLowerCase();
+      const unitValue = Number(ITEM_VALUE[valueKey] ??
+        (reagent === 'herb' ? ITEM_VALUE.herbs : ITEM_VALUE[reagent])) || 0;
+      const value = unitValue * amount;
+      const protectedItem = skills.itemIsProtected(name, protectedNames) ||
+                            !!(typeof loadoutKeep === 'function' && loadoutKeep(name));
+      const currency = /\b(?:shillings?|diamond|emerald|ruby|sapphire|gems?)\b/i.test(name);
+      const gear = skills.weaponScore(name) > 0 || !!skills.armourKind(name);
+      const food = isFood(name);
+      const tier = protectedItem ? 6 : reagent ? 5 : currency ? 4 : gear ? 3 : food ? 2
+        : value >= minValue ? 1 : 0;
+      return { o, id: o.id, name, amount, distance, value, tier,
+               protected: protectedItem, reagent, currency, gear, food };
+    })
+    .filter(row => Number.isFinite(row.distance) && row.distance <= 7 && row.tier > 0)
+    .sort((a, b) => b.tier - a.tier || b.value - a.value ||
+                    a.distance - b.distance || a.id - b.id)
+    .slice(0, limit);
+}
+
+const NEARBY_LOOT_MAX_ITEMS = 3;
+const NEARBY_LOOT_SWEEP_MS = 8_000;
+// Corpse ownership normally expires after 25 seconds. Waiting thirty means a protected
+// drop gets one useful retry instead of one refused GET packet every keeper pass.
+const NEARBY_LOOT_REFUSAL_MS = 30_000;
 
 // What `create food` costs to cast — viMana on the Kraanan spell, the same number the
 // broker's `spells` tool reports out of the kod source. Reagents alone never made a cast
@@ -1545,6 +1613,11 @@ export class Autopilot {
     this.roamedRooms = 0;
     this.unreachable = new Set();   // spawn rooms we could not route to
     this.foeId = null;             // the creature we are part-way through killing
+    // Opportunistic floor loot is intentionally session-local. Object ids are live-world
+    // identities, and persisting either a refusal or a sweep time across reconnects would
+    // apply it to a different object later.
+    this.nearbyLootAt = 0;
+    this.nearbyLootRefusals = new Map();
     // WHERE THE TIME ACTUALLY GOES.
     //
     // "Stalled" was doing too much work as a word. The commonest reason a keeper
@@ -1556,7 +1629,8 @@ export class Autopilot {
     // So: seconds by activity, and STALLED means only one thing — standing about not
     // knowing what to do, while NOT recovering.
     this.time = { fighting: 0, pulling: 0, waiting: 0,
-                  recovering: 0, zoning: 0, travelling: 0, trading: 0, stalled: 0 };
+                  recovering: 0, zoning: 0, travelling: 0, trading: 0, looting: 0,
+                  stalled: 0 };
     this.doing = null;             // set during a pass; decides which bucket it lands in
     this.visited = new Set();
     // Where the hunting was actually good. Roaming without this wanders off down a
@@ -4441,6 +4515,7 @@ export class Autopilot {
       if (this.doing === 'fighting') return `fighting from a ${proven} safe spot`;
       if (this.doing === 'pulling') return `pulling quarry to a ${proven} safe spot`;
       if (this.doing === 'waiting') return `waiting at a ${proven} safe spot`;
+      if (this.doing === 'looting') return `picking up nearby valuables from a ${proven} safe spot`;
       return `holding a ${proven} safe spot`;
     }
     // One wording for the errand, shared with the commitment the board greys rows on —
@@ -4452,6 +4527,7 @@ export class Autopilot {
     if (this.doing === 'travelling') return 'travelling';
     if (this.doing === 'zoning') return 'changing map';
     if (this.doing === 'trading') return 'trading';
+    if (this.doing === 'looting') return 'picking up nearby valuables';
     if (this.doing === 'recovering') return this.climbing ? 'eating to raise vigor' : 'resting';
     if (this.doing === 'pulling') return 'pulling quarry into position';
     if (this.doing === 'waiting') return 'waiting for quarry contact';
@@ -7910,6 +7986,7 @@ export class Autopilot {
         return { fighting_s: r(t.fighting), pulling_s: r(t.pulling), waiting_s: r(t.waiting),
                  recovering_s: r(t.recovering), zoning_s: r(t.zoning),
                  travelling_s: r(t.travelling), trading_s: r(t.trading),
+                 looting_s: r(t.looting || 0),
                  stalled_s: r(t.stalled),
                  active_s: r(act),
                  stalled_pct: total ? +((100 * t.stalled) / total).toFixed(1) : 0 };
@@ -8742,7 +8819,8 @@ export class Autopilot {
 
   get activeSeconds() {
     const t = this.time;
-    return t.fighting + t.pulling + t.waiting + t.recovering + t.zoning + t.travelling + t.trading;
+    return t.fighting + t.pulling + t.waiting + t.recovering + t.zoning + t.travelling +
+           t.trading + (t.looting || 0);
   }
 
   // ------------------------------------------------------------------ the watchdog
@@ -12537,7 +12615,133 @@ export class Autopilot {
     const requested = this.policy.fightRounds ?? 30;
     const whole = Math.floor(Number(requested));
     const rounds = Number.isFinite(whole) && whole >= 1 ? whole : 30;
-    return skills.fight(this.s, { ...options, rounds });
+    // Autonomous kill loot is subject to the same boundary as the nearby-loot rung:
+    // UserGet reaches seven squares, so no corpse drop justifies a second navigator.
+    return skills.fight(this.s, {
+      ...options, rounds,
+      lootStayPut: true,
+    });
+  }
+
+  // A bounded pickup of valuable floor items already inside UserGet reach. Candidate
+  // discovery reads the pushed cache and the loot call is stay-put, so this can never
+  // turn a tempting pile into another movement owner.
+  async passScavenge({ c } = {}) {
+    if (this.mode !== 'farm' || !c?.self || !c?.room?.objects) return CONTINUE;
+
+    const now = Date.now();
+    if (now - (this.nearbyLootAt || 0) < NEARBY_LOOT_SWEEP_MS) return CONTINUE;
+    const slotsLeft = Math.max(0, (this.policy.maxCarry ?? 14) - (c.inventory?.length ?? 0));
+    if (!slotsLeft) return CONTINUE;
+
+    const refused = (this.nearbyLootRefusals ??= new Map());
+    for (const [id, until] of refused) if (until <= now) refused.delete(id);
+    const ignoredIds = new Set([...refused].filter(([, until]) => until > now).map(([id]) => id));
+
+    // The open-floor fight gets the tick. A verified wall is the exception: issuing GET
+    // cannot invite a new monster through the wall, and stayPut preserves the square.
+    // foeId catches a wounded quarry just outside melee reach; the adjacent scan catches
+    // a fresh hostile before a quarry has been selected.
+    const sheltered = !!(this.holdingForFight?.() && this.holdWorks?.());
+    const activeFoe = this.foeId != null && c.room.objects.has(this.foeId);
+    const adjacentHostile = (this.inReachOfUs?.() ?? []).length > 0;
+    if (!sheltered && (activeFoe || adjacentHostile)) return CONTINUE;
+
+    // Filter the in-memory cache before consulting loadout/guild protection, which can
+    // check mtimes. An empty room therefore remains a zero-request common path.
+    const cached = [...c.room.objects.values()].filter(o => {
+      if (!o || o.id === c.selfId || !(o.flags & OF.GETTABLE) || ignoredIds.has(o.id)) return false;
+      return Math.abs(Number(o.col) - Number(c.self.col)) +
+             Math.abs(Number(o.row) - Number(c.self.row)) <= 7;
+    });
+    if (!cached.length) return CONTINUE;
+
+    const loadoutKeep = keepTest(this.loadout?.(), this.packAsItems?.() ?? []);
+    const picks = rankNearbyValuableLoot(cached, {
+      me: c.self,
+      nameOf: o => c.rsc.get(o.nameRsc) || '',
+      protectedNames: this.protectedItemNames?.() ?? [],
+      loadoutKeep,
+      ignoredIds,
+      maxItems: NEARBY_LOOT_MAX_ITEMS,
+      slotsLeft,
+    });
+    if (!picks.length) return CONTINUE;
+
+    this.nearbyLootAt = now;
+    this.doing = 'looting';
+    this.tally.nearby_loot_sweeps = (this.tally.nearby_loot_sweeps || 0) + 1;
+    const healthAtStart = c.vitals?.()?.health?.value ?? null;
+    const fleeAt = this.safety?.().fleeAt ?? this.policy.fleeBelow ?? 0.4;
+    const shouldCancel = () => {
+      const health = c.vitals?.()?.health;
+      if (health?.value == null) return false;
+      const fraction = health.max ? health.value / health.max : null;
+      // Any fresh damage hands the next decision back to survival. The flee boundary is
+      // also terminal when the pushed starting value happened to be unavailable.
+      return (healthAtStart != null && health.value < healthAtStart) ||
+             (fraction != null && fraction < fleeAt);
+    };
+
+    let result;
+    try {
+      result = await this.s.lootFloor({
+        ids: picks.map(row => row.id),
+        maxItems: picks.length,
+        stayPut: true,
+        explicitIdsOverride: false,
+        shouldCancel,
+      });
+    } catch (error) {
+      for (const row of picks) refused.set(row.id, now + NEARBY_LOOT_REFUSAL_MS);
+      this.tally.nearby_loot_refused = (this.tally.nearby_loot_refused || 0) + picks.length;
+      this.note('nearby loot sweep failed', {
+        wanted: picks.map(row => row.name), why: error.message,
+        next_retry_s: NEARBY_LOOT_REFUSAL_MS / 1000,
+      });
+      return CONTINUE;
+    }
+
+    const taken = result?.taken || [];
+    const takenIds = new Set(taken.map(item => Number(item.id)));
+    const refusedRows = result?.refused || [];
+    const refusedIds = new Set(refusedRows.map(item => Number(item.id)).filter(Number.isFinite));
+    const refusedNames = new Set(refusedRows.map(item => String(item.name ?? item.item ?? '').toLowerCase())
+      .filter(Boolean));
+    // A completed sweep attempted every supplied id, so anything not taken gets a
+    // backoff. A cancelled sweep may not have reached later ids; remember only explicit
+    // refusals then so a safety interruption does not hide good loot.
+    for (const row of picks) {
+      const denied = refusedIds.has(Number(row.id)) || refusedNames.has(row.name.toLowerCase()) ||
+                     (!result?.cancelled && !takenIds.has(Number(row.id)));
+      if (denied) refused.set(row.id, now + NEARBY_LOOT_REFUSAL_MS);
+    }
+    this.tally.nearby_loot_refused = (this.tally.nearby_loot_refused || 0) + refusedRows.length;
+
+    const labels = taken.map(item => String(item.name || 'item') +
+      ((item.amount || 1) > 1 ? ` x${item.amount}` : ''));
+    if (labels.length) {
+      this.countLoot(labels);
+      this.tally.nearby_loot_items = (this.tally.nearby_loot_items || 0) +
+        taken.reduce((sum, item) => sum + (item.amount || 1), 0);
+      const value = picks.filter(row => takenIds.has(Number(row.id)))
+        .reduce((sum, row) => sum + row.value, 0);
+      this.progress('picked up nearby valuables');
+      this.note('picked up nearby valuables', {
+        took: labels, estimated_value: value, stayed_put: true,
+        refused: refusedRows.length || undefined,
+      });
+    } else if (refusedRows.length) {
+      this.note('nearby valuables were refused', {
+        wanted: picks.map(row => row.name), refused: refusedRows,
+        next_retry_s: NEARBY_LOOT_REFUSAL_MS / 1000,
+      });
+    }
+
+    // A safety cancellation owns this pass so the next starts at the survival ladder.
+    // An ordinary refusal or empty result falls through and cannot starve farming.
+    if (result?.cancelled) return HANDLED;
+    return labels.length ? HANDLED : CONTINUE;
   }
 
   async passFarm(ctx) {

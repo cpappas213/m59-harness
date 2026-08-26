@@ -1976,6 +1976,12 @@ export async function fight(s, {
   swingsPerRound = 1,
   disengageAt = DEFAULT_DISENGAGE_AT,
   loot = true,
+  // A farming kill does not need a second journey. Its drops land on the creature's
+  // square, which is already inside UserGet's seven-square reach when the final swing
+  // lands. Keep the historical one-shot behaviour by default (only a held position
+  // stays put), while allowing autonomous callers to make post-kill looting in-range
+  // only even when they fought in the open.
+  lootStayPut = null,
   equip = true,
   // FIGHT WITHOUT MOVING. In a safe spot the square IS the advantage, so approaching
   // is not a helpful convenience — it is throwing the fight's entire premise away to
@@ -2468,7 +2474,9 @@ export async function fight(s, {
   }
 
   if (loot) {
-    const l = await s.lootFloor({ stayPut: holdPosition });
+    const l = await s.lootFloor({
+      stayPut: lootStayPut == null ? holdPosition : !!lootStayPut,
+    });
     out.looted = l.taken;
     out.refused = l.refused?.length ? l.refused : undefined;
     out.carrying = l.carrying;
