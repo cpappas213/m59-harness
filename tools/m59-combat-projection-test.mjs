@@ -140,19 +140,24 @@ console.log('\nattack transport keeps the whole exchange');
      !result.messages.includes(imitation.text), JSON.stringify(result.messages));
 }
 
-function combat(sequence, { start = 1, threshold = 0.6 } = {}) {
-  let health = start, calls = 0;
-  const names = new Map([[1, 'slime'], [2, 'Tester'], [3, 'Arena']]);
+function combat(sequence, { start = 1, threshold = 0.6, equip = false,
+                            inventory = [], using = [] } = {}) {
+  let health = start, calls = 0, uses = 0, inventoryReadsAfterAttack = 0;
+  const names = new Map([[1, 'slime'], [2, 'Tester'], [3, 'Arena'],
+                         [10, 'short sword'], [11, 'dagger']]);
   const foe = { id: 1, flags: OF.ATTACKABLE, col: 1, row: 0, nameRsc: 1 };
   const self = { id: 99, col: 0, row: 0, nameRsc: 2 };
   const objects = new Map([[1, foe], [99, self]]);
   const c = {
-    selfId: 99, self, room: { objects }, roomNameRsc: 3, inventory: [], evSeq: 0,
+    selfId: 99, self, room: { objects }, roomNameRsc: 3, inventory, using: new Set(using), evSeq: 0,
     rsc: { get: id => names.get(id) ?? '?' }, lookup: id => names.get(id) ?? '?',
     vitals: () => ({ health: { value: Math.round(health * 100), max: 100 },
                      vigor: { value: 100, scale_max: 200 } }),
     stats: () => {}, waitFor: async () => ({ events: [], timedOut: true }),
-    roomContents: () => {}, face: async () => {},
+    roomContents: () => {},
+    requestInventory: () => { if (calls > 0) inventoryReadsAfterAttack++; },
+    face: async () => {},
+    use: id => { uses++; c.using.clear(); c.using.add(id); },
   };
   const s = {
     need: () => c,
@@ -161,16 +166,92 @@ function combat(sequence, { start = 1, threshold = 0.6 } = {}) {
     async attackRounds(id) {
       const step = sequence[calls++] ?? { health, messages: [] };
       health = step.health;
+      if (step.shattered != null) c.using.delete(step.shattered);
       if (step.kill) objects.delete(id);
+      if (step.die) objects.delete(c.selfId);
       return { messages: step.messages ?? [], vitals: c.vitals(), aborted: step.aborted ?? null };
     },
     async lootFloor() { return { taken: [], refused: [], carrying: [] }; },
   };
   return {
     calls: () => calls,
+    uses: () => uses,
+    inventoryReadsAfterAttack: () => inventoryReadsAfterAttack,
+    inventoryIds: () => c.inventory.map(item => item.id),
+    equipped: () => [...c.using],
     run: () => fight(s, { target: 'slime', preferId: 1, rounds: sequence.length,
-      disengageAt: threshold, loot: false, equip: false, holdPosition: true, reach: 3 }),
+      disengageAt: threshold, loot: false, equip, holdPosition: true, reach: 3 }),
   };
+}
+
+console.log('\nweapon loss integration');
+{
+  const sword = { id: 8079, nameRsc: 10 };
+  const dagger = { id: 8080, nameRsc: 11 };
+  const shattered = 'Your short sword shatters into pieces!';
+
+  const noSpare = combat([
+    { health: 0.95, messages: [shattered], shattered: sword.id },
+    { health: 0.90, messages: ['You punch the slime.'] },
+  ], { equip: true, inventory: [sword], using: [sword.id] });
+  const noSpareResult = await noSpare.run();
+  ok('a mid-fight shatter with no verified spare stops before any punch',
+     noSpare.calls() === 1 && noSpareResult.disengaged?.unarmed === true &&
+       noSpareResult.disengaged?.weapon_id === sword.id &&
+       /weapon shattered/i.test(noSpareResult.disengaged?.reason ?? '') &&
+       /No further attack was sent/i.test(noSpareResult.note ?? ''),
+     JSON.stringify(noSpareResult));
+
+  const withSpare = combat([
+    { health: 0.95, messages: [shattered], shattered: sword.id },
+    { health: 0.20, messages: ['Your dagger pokes the slime.',
+        'Your dagger shatters into pieces!'], shattered: dagger.id, kill: true,
+      aborted: { swing: 1, at_health: 0.20 } },
+  ], { equip: true, inventory: [sword, dagger], using: [sword.id] });
+  const withSpareResult = await withSpare.run();
+  ok('a verified spare continues, then its low-health killing shatter still wins over abort',
+     withSpareResult.killed === true && !withSpareResult.disengaged &&
+       withSpare.calls() === 2 && withSpare.uses() === 1 &&
+       withSpare.inventoryReadsAfterAttack() === 1 &&
+       withSpareResult.log.some(row => row.stage === 're-armed' && row.verified === true),
+     JSON.stringify(withSpareResult));
+
+  const lethalSelfShatter = combat([
+    { health: 0, messages: [shattered], shattered: sword.id, die: true,
+      aborted: { swing: 1, at_health: 0 } },
+    { health: 0, messages: ['You punch the slime.'] },
+  ], { equip: true, inventory: [sword, dagger], using: [sword.id] });
+  const lethalSelfResult = await lethalSelfShatter.run();
+  ok('a lethal shattering exchange reports death without trying to re-arm',
+     lethalSelfResult.died === true && lethalSelfResult.killed === false &&
+       lethalSelfShatter.calls() === 1 && lethalSelfShatter.uses() === 0 &&
+       lethalSelfShatter.inventoryReadsAfterAttack() === 0 &&
+       lethalSelfShatter.inventoryIds().join(',') === `${sword.id},${dagger.id}`,
+     JSON.stringify(lethalSelfResult));
+
+  const killingShatter = combat([
+    { health: 0.20, messages: [shattered], shattered: sword.id, kill: true,
+      aborted: { swing: 1, at_health: 0.20 } },
+    { health: 0.90, messages: ['You punch the slime.'] },
+  ], { equip: true, inventory: [sword, dagger], using: [sword.id] });
+  const killingShatterResult = await killingShatter.run();
+  ok('a low-health aborted killing shatter remains a kill and does not re-arm',
+     killingShatterResult.killed === true && !killingShatterResult.disengaged &&
+       killingShatter.calls() === 1 && killingShatter.uses() === 0 &&
+       killingShatter.inventoryReadsAfterAttack() === 0 &&
+       killingShatter.inventoryIds().join(',') === `${sword.id},${dagger.id}`,
+     JSON.stringify(killingShatterResult));
+
+  const rearmDisabled = combat([
+    { health: 0.95, messages: [shattered], shattered: sword.id },
+    { health: 0.90, messages: ['You punch the slime.'] },
+  ], { equip: false, inventory: [sword], using: [sword.id] });
+  const rearmDisabledResult = await rearmDisabled.run();
+  ok('equip=false never mutates equipment and still stops safely after the shatter',
+     rearmDisabledResult.disengaged?.unarmed === true &&
+       rearmDisabledResult.disengaged?.rearm_disabled === true &&
+       rearmDisabled.calls() === 1 && rearmDisabled.uses() === 0,
+     JSON.stringify(rearmDisabledResult));
 }
 
 console.log('\nadaptive fight integration');
