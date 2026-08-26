@@ -9,7 +9,8 @@
 // floor collapses provisioning's band into a threshold and gives up the health
 // regeneration the food was bought for. shouldWaitForProvision is what stops a fed
 // character idling in an inn, and it is pinned in m59-combat-test.mjs.
-import { applyFightAboveVigor, STRATEGIES, reachableFightFloor } from './m59-autopilot.mjs';
+import { applyFightAboveVigor, applySafeSpotPolicy,
+         STRATEGIES, reachableFightFloor } from './m59-autopilot.mjs';
 
 let failed = 0;
 const ok = (label, condition, detail = '') => {
@@ -30,6 +31,19 @@ console.log('--- explicit fight vigor overrides strategy provisioning ---');
   ok('and the strategy ceiling is left where it was — the band is not collapsed',
      policy.vigorCeiling === undefined,
      `baseline default is ${STRATEGIES.baseline.vigorCeiling}`);
+}
+
+console.log('\n--- wall preference is independent from a mandatory wall ---');
+{
+  const policy = { useSafeSpots: false, requireSafeWall: true };
+  applySafeSpotPolicy(policy, { use_safe_spots: true, require_safe_wall: false });
+  ok('an opportunistic-wall order keeps safe-spot use enabled', policy.useSafeSpots === true);
+  ok('and preserves the exact false mandatory-wall value', policy.requireSafeWall === false);
+
+  applySafeSpotPolicy(policy, {});
+  ok('an update that omits both wall arguments preserves both values',
+     policy.useSafeSpots === true && policy.requireSafeWall === false,
+     JSON.stringify(policy));
 }
 
 console.log('\n--- invalid thresholds fail at the broker boundary ---');
@@ -69,4 +83,4 @@ if (failed) {
   console.error(`\n${failed} failed`);
   process.exit(1);
 }
-console.log('\n14 passed');
+console.log('\n17 passed');
