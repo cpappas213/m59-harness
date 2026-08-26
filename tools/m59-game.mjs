@@ -242,6 +242,54 @@ const MOVE_HOP_MAX_SQUARES = Number(process.env.M59_MOVE_HOP_MAX || 8);
 // unchanged and still ends the walk honestly on its own budget.
 const OFFPLAN_BEFORE_FINE = Number(process.env.M59_OFFPLAN_BEFORE_FINE || 3);
 
+// HOW FAR ONE FINE STEP MAY REACH, AND WHY IT USED TO BE A SIXTH OF A REAL CLIENT'S.
+//
+// Measured on the live fleet before this existed: a six-square fine walk on open floor in
+// North Barloque took 7518ms over 8 steps — 940ms a step, 0.80 SQUARES PER SECOND. A person
+// running covers about five. So the fleet walked its hardest ground at a sixth of the pace
+// of the client it is imitating, and the whole cost was in two constants and one blocking
+// read.
+//
+// The stride is the first. 48 KOD units is three quarters of a square, and it could never
+// grow: the loop halves it when a step is refused and restores it on success, but the
+// restore was capped at the stride it STARTED with, so open floor was walked at exactly the
+// reach chosen for squeezing through a gap. The adaptation was already there and only ever
+// pointed downwards.
+//
+// 80 units — a square and a quarter — is not a taste. At the 250ms move pacing that is
+// 5 squares a second, which is USER_RUNNING_SPEED's 5.0 in SQUARES_PER_SECOND: the fleet
+// now moves at a client's pace and not faster. The server's own teleport check
+// (user.kod:3072) trips at a squared distance of 200 from the last second boundary, about
+// 14 squares, so this stays a long way inside the rule it has to respect.
+//
+// IT ONLY APPLIES TO THE DEFAULT STRIDE. Three call sites deliberately pass 24, 32 and 40
+// for delicate work — the last mile into a safe spot, an edge nudge, a two-step recovery —
+// and a ceiling that overrode those would make every careful walk careless. See `strideMax`.
+const FINE_STRIDE     = Number(process.env.M59_FINE_STRIDE || 48);
+const FINE_STRIDE_MAX = Number(process.env.M59_FINE_STRIDE_MAX || 80);
+
+// HOW MANY FINE STEPS MAY BE PREDICTED BEFORE ONE IS READ BACK.
+//
+// The second constant. Every fine step blocked on `confirmPosition()` — a full room-contents
+// round trip, measured at 203ms on a healthy character — and that is not merely latency:
+// it DOUBLES the packet rate. One move plus one read, four times a second, is eight packets
+// a second against a server that drops anything over five (INCOMING_PACKET_THROTTLE). The
+// fleet was rate-limiting itself into the throttle and then waiting for the replies it had
+// caused to be dropped, which is where 940ms a step comes from rather than the 450ms the
+// pacing and the read account for.
+//
+// The read is also unnecessary most of the time, and the comment that demanded it says why
+// without meaning to: it argues that fine movement may clip or slide, so prediction cannot
+// know the endpoint. But `validateFineTarget` COMPUTES the slide, `queueValidatedMove`
+// sends `validation.target` — the already-clipped point — and the server takes whatever
+// coordinates it is sent. The endpoint is known before the packet leaves. `predictSelf` is
+// the established answer and three other movement paths already use it.
+//
+// Not never, though. A prediction is not a confirmation and drift is real, so one step in
+// six is read back, and any step that could have gone somewhere unexpected is read back
+// immediately — see `mustConfirm`. Set to 1 to restore a confirm on every step.
+const FINE_CONFIRM_EVERY = Number(process.env.M59_FINE_CONFIRM_EVERY || 6);
+
 // HOW CLOSE A TRACED LINE MUST LAND TO COUNT AS ARRIVING, when deciding whether several
 // planned squares can be crossed in one packet.
 //
@@ -2987,12 +3035,50 @@ class Session {
       };
     }
     const target = queued.target;
-    // THIS ONE HAS TO BLOCK, and it is the most expensive thing in the file. Fine
-    // movement may clip or slide to a sub-square point, so prediction cannot establish
-    // the exact starting point for its next local collision pass.
+    // THIS USED TO BLOCK ON EVERY STEP, and it was the most expensive thing in the file.
+    //
+    // The old note said fine movement may clip or slide to a sub-square point, so prediction
+    // cannot establish the starting point for the next local collision pass. That is the
+    // right worry and the wrong conclusion: `validateFineTarget` COMPUTES the slide, the
+    // packet carries `validation.target` — the already-clipped point — and the server takes
+    // the coordinates it is sent. The endpoint is known before the packet leaves.
+    //
+    // See FINE_CONFIRM_EVERY for the measurement. Briefly: the read costs 203ms and, worse,
+    // doubles the packet rate into a server that drops anything over five a second.
+    //
+    // A STEP THAT COULD HAVE GONE SOMEWHERE UNEXPECTED IS STILL READ BACK, IMMEDIATELY.
+    // Prediction is only safe where this side already knows the answer, so anything that
+    // means it might not — a room that changed under us, a clipped endpoint, a fall, or
+    // simply too many predictions in a row — takes the round trip.
+    const roomChanged = c.room.id !== startRoom;
+    const clipped = validation.blocked === true
+      || target.x !== Math.round(x) || target.y !== Math.round(y);
+    this._finePredicted = (this._finePredicted ?? 0) + 1;
+    const mustConfirm = roomChanged || clipped
+      || this._finePredicted >= FINE_CONFIRM_EVERY
+      || FINE_CONFIRM_EVERY <= 1;
+
+    if (!mustConfirm) {
+      // The same call the pivot walk and the breadcrumb retreat already make. `predicted`
+      // is set on the object, and the client clears it the moment the server says anything
+      // about us — so a caller that genuinely needs to know whether a step HAPPENED can
+      // still tell that it has not been told.
+      c.predictSelf({ x: target.x, y: target.y,
+                      col: Math.floor(target.x / KOD_FINENESS),
+                      row: Math.floor(target.y / KOD_FINENESS) });
+      const sentFrom0 = queued.before ?? before;
+      return { moved: target.x !== sentFrom0.x || target.y !== sentFrom0.y,
+               position: { x: target.x, y: target.y,
+                           col: Math.floor(target.x / KOD_FINENESS),
+                           row: Math.floor(target.y / KOD_FINENESS) },
+               left_room: false, locally_validated: true, predicted: true,
+               travelled: Math.hypot(target.x - sentFrom0.x, target.y - sentFrom0.y) };
+    }
+
     const tFine = Date.now();
     const confirmed = await this.confirmPosition();
     Pacer.note('step_fine', 'blocked', Date.now() - tFine);
+    this._finePredicted = 0;
     if (!confirmed) {
       this.finePositionUnknown = true;
       return { moved: false, position: null, left_room: c.room.id !== startRoom,
@@ -3089,7 +3175,13 @@ class Session {
     // that actually reaches a boundary. See wrongExitSquares.
     avoidSquares = null,
     maxSteps = 120,
-    stride = 48,
+    stride = FINE_STRIDE,
+    // THE CEILING THE STRIDE MAY GROW TO, and it is deliberately NOT `stride` for the
+    // default caller and exactly `stride` for everyone else. Three sites pass 24, 32 and 40
+    // on purpose — the last mile into a safe spot, an edge nudge, a two-step recovery — and
+    // those are small because the ground is delicate, so raising their ceiling would make
+    // every careful walk careless. A caller that took the default gets to run.
+    strideMax = stride >= FINE_STRIDE ? Math.max(FINE_STRIDE_MAX, stride) : stride,
     arriveWithin = 40,
     movementGeneration = this.movementGeneration,
     controlToken,
@@ -3102,7 +3194,6 @@ class Session {
 
     const log = [];
     let stalls = 0, lastStep = null;
-    const stride0 = stride;          // what a healthy step is, to restore after a halving
     let closest = Infinity, sinceCloser = 0;
     const geometryRejections = new Set();
     // Headings to try, in order: straight at it, then fanned out to either side.
@@ -3219,9 +3310,12 @@ class Session {
         const gained = now ? remaining - Math.hypot(destX - now.x, destY - now.y) : 0;
         if (gained > 1) {
           progressed = true;
-          // A step that gained ground gets the full stride back. The halving is for a body
-          // wedged in a gap, and this one is not wedged.
-          stride = Math.min(stride * 2, stride0);
+          // A step that gained ground gets a LONGER stride, not merely the one it started
+          // with. The halving below is for a body wedged in a gap; a step that just gained
+          // ground is not wedged, and on open floor there is no reason to keep asking for
+          // three quarters of a square at a time. Capped at `strideMax` — see FINE_STRIDE_MAX
+          // for why that number is a client's pace rather than a preference.
+          stride = Math.min(stride * 2, strideMax);
           if (off !== 0) log.push({ step: i, slid: Number(off.toFixed(2)), to: r.position });
           break;
         }

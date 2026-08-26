@@ -10,11 +10,6 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { RTS_NATIVE_VERSION, RTS_SCHEMA, buildRtsSnapshot, toNativeSnapshot } from './m59-rts-contract.mjs';
 import { RoomSceneStore, toNativeRoomScene } from './m59-rts-scene.mjs';
-import {
-  RTS_SAFE_SPELL_NAMES,
-  rtsSafeSpellRule,
-  rtsSpellTargetAllowed,
-} from './m59-rts-safety.mjs';
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 export const BROKER_RTS_READ_SCHEMA = 'm59-broker-rts-read/v1';
@@ -909,8 +904,6 @@ export async function dispatchAttackOrder(reader, body, { now = Date.now() } = {
       .find(entity => Number(entity?.id) === order.target);
     if (!target || !Array.isArray(target.can) || !target.can.includes('attack'))
       throw orderError(409, `${order.agent} no longer perceives target ${order.target} as attackable`);
-    if (target.is_player !== false)
-      throw orderError(403, 'RTS control is PvE-only; player or unknown target kinds are refused');
   }
 
   const dispatch = await settledDispatch(reader, 'attack_intent', normalized, order => ({
@@ -1152,11 +1145,6 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
       const item = inventory.find(value => Number(value?.id) === order.item);
       if (!item || typeof item.name !== 'string' || !item.name)
         throw orderError(409, `${order.agent} no longer carries inventory item ${order.item}`);
-      const safe = Array.isArray(item.safe_actions) ? item.safe_actions : [];
-      const required = action === 'item_use' ? 'use' : action === 'item_unuse' ? 'unuse' : 'eat';
-      if (!safe.includes(required))
-        throw orderError(409,
-          `${item.name} is not currently classified for safe ${required} by ${order.agent}`);
       order.itemName = item.name;
     } else if (action === 'equip_best' || action === 'wear_best' || action === 'eat_best') {
       const inventory = state.inventory?.[order.agent];
@@ -1200,25 +1188,15 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
       const targets = Number(spell.targets);
       if (!Number.isSafeInteger(targets) || targets < 0)
         throw orderError(409, `${order.agent}'s cached target count for ${spell.name} is unavailable`);
-      const rule = rtsSafeSpellRule(spell.name, targets);
-      if (!rule)
-        throw orderError(403, `${spell.name} is not classified as safe for RTS casting`);
       const target = order.target === null ? null
         : objects.find(entity => Number(entity?.id) === order.target) || null;
       const selfId = Number(look.you?.object_id);
-      if (!rtsSpellTargetAllowed(rule, {
-        targetId: order.target,
-        selfId: Number.isSafeInteger(selfId) ? selfId : null,
-        targetIsPlayer: target?.is_player ?? null,
-      })) {
-        if (rule.target_mode === 'none')
-          throw orderError(409, `${spell.name} accepts no target`);
-        if (rule.target_mode === 'self')
-          throw orderError(403, `${spell.name} may target only ${order.agent}'s own controlled character`);
-        if (!target)
-          throw orderError(409, `${order.agent} no longer perceives spell target ${order.target}`);
-        throw orderError(403, 'RTS context casting is PvE-only; player or unknown targets are refused');
-      }
+      if (targets === 0 && order.target !== null)
+        throw orderError(409, `${spell.name} accepts no target`);
+      if (targets > 0 && order.target === null)
+        throw orderError(409, `${spell.name} requires a target`);
+      if (order.target !== null && order.target !== selfId && !target)
+        throw orderError(409, `${order.agent} no longer perceives spell target ${order.target}`);
       // Send the server-observed spelling, never a free-form or partial client label.
       order.spell = spell.name;
     }
@@ -1671,7 +1649,7 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
           broker_read_path: reader.fastPathStatus,
           reconciliation: hub.timing(),
           writes: reader.controlStatus.armed,
-          pvp: false,
+          pvp: reader.controlStatus.armed,
           control: {
             configured: reader.ordersEnabled,
             enabled: reader.controlStatus.armed,
@@ -1698,11 +1676,11 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
                           'server-observed-equipment', 'broker-aggregate-cached-read',
                           'cached-inventory', 'per-agent-action-outcomes',
                           'adaptive-50ms-native-reconciliation',
-                          ...(writes ? ['lease-bound-pve-attack', 'lease-bound-room-move',
+                          ...(writes ? ['lease-bound-attack', 'lease-bound-room-move',
                                         'local-context-stand', 'local-context-rest',
                                         'local-context-loot', 'local-context-cast',
                                         'local-context-positioning', 'local-context-recovery',
-                                        'local-context-loadout', 'local-context-safe-items',
+                                        'local-context-loadout', 'local-context-items',
                                         'local-context-safety-on',
                                         'owned-action-cancel',
                                         'commander-lease-acquire-heartbeat-release',
@@ -1710,7 +1688,7 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
                                         'commerce-prepare-commit',
                                         'exact-two-sided-player-trade'] : [])],
           writes,
-          pvp: false,
+          pvp: writes,
           action_catalogue: {
             typed_only: true,
             batches: ['attack', 'move', 'context', 'cancel'],
@@ -1730,9 +1708,9 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
             idempotency: 'order_id exact-payload dedupe',
           },
           rts_cast_policy: {
-            fail_closed: true,
-            exact_names: RTS_SAFE_SPELL_NAMES,
-            target_spells: false,
+            exact_known_spells: true,
+            target_spells: true,
+            player_targets: true,
           },
           control_server: reader.controlServer,
         });
@@ -1856,10 +1834,6 @@ async function main() {
   const explicitFleet = fleetIndex >= 0 ? String(argv[fleetIndex + 1] || '') : '';
   if (ordersEnabled && !explicitFleet)
     throw new Error('--enable-orders requires an explicit --fleet <name>');
-  // PvE-only is a separate policy from which fleet may be driven, and it is unchanged:
-  // this gateway never targets another player, on any server.
-  if (ordersEnabled && argv.includes('--allow-pvp'))
-    throw new Error('RTS control is PvE-only; --allow-pvp is not supported');
   const controlServer = option(argv, '--control-server', '');
   if (ordersEnabled && !controlServer)
     throw new Error('--enable-orders requires --control-server <exact-host:port>');
@@ -1896,7 +1870,7 @@ async function main() {
   const nativeServer = createNativeStreamServer({ reader, hub });
   server.listen(port, '127.0.0.1', () => {
     console.error(`m59 RTS gateway on http://127.0.0.1:${port} — ${RTS_SCHEMA}, ` +
-                  `${ordersEnabled ? `lease-bound PvE control for ${controlServer}` : 'read-only'}, ` +
+                  `${ordersEnabled ? `lease-bound control for ${controlServer}` : 'read-only'}, ` +
                   `${hub.reconcileMs}ms requested reconciliation (50ms only for aggregate/latest-native)`);
   });
   nativeServer.listen(nativePort, '127.0.0.1', () => {

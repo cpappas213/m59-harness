@@ -145,10 +145,14 @@ await assert.rejects(() => dispatchAttackOrder(actorSpecific, {
 assert.equal(calls.length, 2, 'a rejected actor-specific batch dispatches nothing');
 
 const playerReader = { ...reader, controlState: async () => state({ t1: look(true, true) }) };
-await assert.rejects(() => dispatchAttackOrder(playerReader, {
+const beforePlayerAttack = calls.length;
+const playerAttack = await dispatchAttackOrder(playerReader, {
   type: 'attack', generation, order_id: 'player-target-1',
   orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }],
-}, { now }), /PvE-only/);
+}, { now });
+assert.equal(playerAttack.accepted, true);
+assert.equal(calls[beforePlayerAttack].args.target, 900,
+  'player targets pass through when the writable commander is armed');
 
 const partialReader = { ...reader, order: async (name, args) => {
   if (args.agent === 't2') throw new Error('target moved during broker recheck');
@@ -290,10 +294,13 @@ for (const [action, itemId, name] of [
   assert.equal(calls[beforeContext].args.item, itemId);
   assert.equal(calls[beforeContext].args.expected_item_name, name);
 }
-await assert.rejects(() => dispatchContextOrder(contextReader, {
+beforeContext = calls.length;
+await dispatchContextOrder(contextReader, {
   type: 'context', action: 'item_use', generation, order_id: 'context-item-bad1',
   orders: [{ agent: 't1', room: 200, item_id: 4574 }],
-}, { now, sceneStore }), /not currently classified for safe use/);
+}, { now, sceneStore });
+assert.equal(calls[beforeContext].args.expected_item_name, 'shilling',
+  'exact carried items are not hidden behind a gateway classification allowlist');
 await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'stand', generation, order_id: 'context-extra-001',
   orders: [{ agent: 't1', room: 200, item_id: 4573 }],
@@ -392,21 +399,21 @@ await dispatchContextOrder(contextReader, {
 }, { now, sceneStore });
 assert.equal(calls[beforeContext].args.spell, 'blink');
 assert.equal(Object.hasOwn(calls[beforeContext].args, 'target'), false);
-const beforeUnsafeCast = calls.length;
-await assert.rejects(() => dispatchContextOrder(contextReader, {
+const beforeUnrestrictedCast = calls.length;
+await dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-quake',
   orders: [{ agent: 't1', room: 200, spell: 'earthquake' }],
-}, { now, sceneStore }), /not classified as safe/);
-await assert.rejects(() => dispatchContextOrder(contextReader, {
+}, { now, sceneStore });
+await dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-target',
   orders: [{ agent: 't1', room: 200, spell: 'resist magic', target_id: 501 }],
-}, { now, sceneStore }), /not classified as safe/);
+}, { now, sceneStore });
 await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-arity',
   orders: [{ agent: 't1', room: 200, spell: 'create weapon', target_id: 900 }],
 }, { now, sceneStore }), /accepts no target/);
-assert.equal(calls.length, beforeUnsafeCast,
-  'unsafe, unaudited, and arity-invalid spells dispatch nothing');
+assert.equal(calls.length, beforeUnrestrictedCast + 2,
+  'known offensive and targeted spells dispatch while invalid wire arity does not');
 await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-unkn',
   orders: [{ agent: 't1', room: 200, spell: 'not a spell' }],
@@ -671,9 +678,9 @@ try {
   assert.equal(contract.status, 200);
   const contractBody = await contract.json();
   assert.deepEqual(contractBody.rts_cast_policy, {
-    fail_closed: true,
-    exact_names: ['create food', 'create weapon', 'blink'],
-    target_spells: false,
+    exact_known_spells: true,
+    target_spells: true,
+    player_targets: true,
   });
   assert.deepEqual(contractBody.action_catalogue.context, [
     'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',

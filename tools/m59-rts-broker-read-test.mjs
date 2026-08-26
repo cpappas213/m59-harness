@@ -118,6 +118,26 @@ try {
     ['buy', 'sell', 'offer', 'trade_counter_empty', 'trade_accept', 'trade_cancel']);
 
   const source = readFileSync(broker, 'utf8');
+  assert.match(source,
+    /function brokerGameEndpoints[\s\S]*?s[.]credentials [??][?] fleetState[.]get[(]agent[)][?][.]credentials/s,
+    'keeper-backed health attests the exact game endpoint from the roster used to spawn the keeper');
+  assert.match(source,
+    /function requireControlEndpoint[\s\S]*?s[.]credentials [??][?] fleetState[.]get[(]s[?][.]name[)][?][.]credentials/s,
+    'the final write boundary retains exact endpoint checks for KeeperProxy sessions');
+  assert.match(source,
+    /function commanderKeeper[(]agent[)][\s\S]*?s instanceof KeeperProxy [?] s : autopilotIfAny[(]agent[)]/s,
+    'commander ownership follows the keeper across the process boundary');
+  assert.match(source,
+    /name: 'commander_lease'[\s\S]*?run: async [(]a, caller[)][\s\S]*?await p[.]claimFaculties/s,
+    'commander acquisition awaits the keeper process faculty claim before granting a lease');
+  const keeperProcess = readFileSync(fileURLToPath(
+    new URL('./m59-keeper-process.mjs', import.meta.url)), 'utf8');
+  for (const action of ['commander_claim', 'commander_heartbeat',
+                         'commander_release', 'commander_free_busy',
+                         'rts_move_intent', 'rts_attack_intent',
+                         'rts_context_intent', 'rts_cancel'])
+    assert.match(keeperProcess, new RegExp(`case ['"]${action}['"]`),
+      `keeper process exposes ${action}`);
   const aggregateStart = source.indexOf('async function brokerRtsRead(url)');
   // Matched on the name alone, not on the parameter list. Pinning the whole signature made
   // this fail the day `serveHttp` gained a second argument — a source-text marker should
@@ -146,8 +166,9 @@ try {
     'aggregate spell rows convert the zero-based wire school to Meridian one-based numbering');
   assert.doesNotMatch(aggregateSource, /requestSpells|requestInventory|pacer[.]submit/,
     'aggregate spell and inventory rows never issue Meridian requests');
-  assert.match(aggregateSource, /filter[(]spell => rtsSafeSpellRule[(]spell[.]name, spell[.]targets[)][)]/,
-    'broker aggregate exposes only spells admitted by the shared fail-closed policy');
+  assert.match(aggregateSource,
+    /filter[(]spell => typeof spell[.]name === 'string'[\s\S]*?Number[.]isSafeInteger[(]spell[.]targets[)]/,
+    'broker aggregate exposes every exactly named spell with a known wire arity');
   assert.match(aggregateSource, /control\[agent\]/,
     'aggregate carries per-agent commander lease/keeper telemetry');
   assert.match(aggregateSource, /commerce\[agent\]/,
@@ -187,14 +208,14 @@ try {
   const attackIntentStart = source.indexOf("name: 'attack_intent'");
   const attackIntentEnd = source.indexOf("name: 'move_intent'", attackIntentStart);
   const attackIntentSource = source.slice(attackIntentStart, attackIntentEnd);
-  assert.match(attackIntentSource, /swings > 1 \? \{ stop_below: 0[.]35 \}/,
-    'multi-swing RTS attacks carry a fixed 35% health disengage floor');
-  assert.match(attackIntentSource, /fraction > 0[.]35/,
-    'multi-swing health is rechecked from the final pacer callback');
+  assert.doesNotMatch(attackIntentSource, /stop_below|fraction > 0[.]35/,
+    'commander attacks are not silently narrowed by a broker health-floor policy');
   assert.match(attackIntentSource, /sameRtsIdentity.*OF[.]ATTACKABLE/s,
     'the final attack callback rechecks exact target identity and attackability');
-  assert.match(attackIntentSource, /current[.]flags & OF[.]PLAYER/,
-    'the final attack callback repeats the broker PvE-only rule');
+  assert.doesNotMatch(attackIntentSource, /current[.]flags & OF[.]PLAYER|may not target players/,
+    'an armed commander is allowed to target players');
+  assert.match(attackIntentSource, /s instanceof KeeperProxy[\s\S]*?rtsIntent[(]'attack'/,
+    'keeper-backed attacks execute as typed jobs beside the live Meridian socket');
 
   const cancelSource = source.slice(contextEnd,
     source.indexOf("name: 'commerce_status'", contextEnd));

@@ -30,6 +30,7 @@ import * as watchdog from './m59-watchdog.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { rtsJobReport } from './m59-rts-safety.mjs';
+import { OF } from './m59-parse.mjs';
 import * as skills from './m59-skills.mjs';
 import {
   configureSpotClaimStore, rememberFileSpotPartner, spotClaimNamespace,
@@ -412,7 +413,10 @@ function state() {
     // — see the rawmove note below — so a reader that treats one false sample as death
     // will rejoin healthy characters. Judge them together, with hysteresis.
     connected: !!session.live,
-    room: room ? { name: c?.rsc?.get?.(room.nameRsc) ?? room.name, num: room.num } : null,
+    // Stable room RID and live room object id are different namespaces. The latter is
+    // renumbered by server saves and is the generation guard used by RTS packets.
+    room: room ? { name: c?.rsc?.get?.(room.nameRsc) ?? room.name, num: room.num,
+                   object_id: c?.room?.id ?? null } : null,
     hp: v.health ? { value: v.health.value, max: v.health.max } : null,
     vigor: v.vigor ? { value: v.vigor.value, max: v.vigor.max } : null,
     mana: v.mana ? { value: v.mana.value, max: v.mana.max } : null,
@@ -623,6 +627,44 @@ function log(line) {
   console.error(line);
 }
 
+// The broker owns lease issuance; this process owns the socket and therefore performs
+// the final authority check immediately before every RTS mutation. Exact-room and
+// exact-faculty checks are correctness boundaries, not an artificial local/prod gate.
+const RTS_COMMANDER_FACULTIES = ['work', 'movement', 'economy', 'social'];
+
+function requireKeeperRtsAuthority(args, packet = 'action') {
+  const expectedHost = String(args.server_host ?? '').trim().toLowerCase();
+  const expectedPort = Number(args.server_port);
+  if (String(credHost).trim().toLowerCase() !== expectedHost || Number(credPort) !== expectedPort)
+    throw new Error(`RTS ${packet} server mismatch: keeper is on ${credHost}:${credPort}`);
+  const room = Number(args.room);
+  const actualRoom = Number(session.world?.room?.num);
+  if (!Number.isSafeInteger(room) || room !== actualRoom)
+    throw new Error(`RTS ${packet} room mismatch: expected ${room}, keeper is in ${actualRoom}`);
+  const expectedRoomObjectId = Number(args.room_object_id);
+  const actualRoomObjectId = Number(session.client?.room?.id);
+  if (Number.isSafeInteger(expectedRoomObjectId) && Number.isSafeInteger(actualRoomObjectId) &&
+      expectedRoomObjectId !== actualRoomObjectId)
+    throw new Error(`RTS ${packet} room generation changed`);
+  const owner = String(args.commander_owner ?? '');
+  if (!owner) throw new Error(`RTS ${packet} has no commander owner`);
+  if (!autopilot?.running || typeof autopilot.facultyOwner !== 'function')
+    throw new Error(`RTS ${packet} has no running keeper authority`);
+  for (const faculty of RTS_COMMANDER_FACULTIES) {
+    const heldBy = autopilot.facultyOwner(faculty);
+    if (heldBy !== owner)
+      throw new Error(`RTS ${packet} lost ${faculty}; owner is ${heldBy}`);
+  }
+  return session.client;
+}
+
+function keeperRtsCancelled(controlToken) {
+  const job = session.job;
+  return !job || job.done || job.controlToken !== controlToken ||
+    job.cancelled === true || job.cancelRequestedAt != null ||
+    session.movementWasCancelled(job.generation, controlToken);
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://127.0.0.1:${port}`);
   const path = url.pathname;
@@ -651,6 +693,52 @@ const server = createServer(async (req, res) => {
   // so re-reading it would give `{}` and turn every delegated call into `unknown action:
   // undefined` — which is the same bug again, wearing the fix's clothes.
   let actionFallthrough = null;
+
+  // AN ORDER ADDRESSED TO SOMEBODY ELSE IS REFUSED, AND THIS PROCESS IS THE ONLY ONE THAT
+  // CAN TELL.
+  //
+  // Keeper ports are `KEEPER_PORT_BASE + index` with no override, so every broker on a
+  // machine allocates from the same number and a broker that lost a slot falls back to
+  // GUESSING that number — `keeperPort()` in m59-broker.mjs — and then commands whatever is
+  // listening there. Its read path checks the reply's `agent` and refuses; its write paths
+  // did not check anything at all.
+  //
+  // Measured 2026-08-26 with three brokers up: an `arena` broker posted its 45s `/rejoin`
+  // sweep to a `shadow` fleet's keepers, and the server logged `ACCOUNT 64 (shadow05) in
+  // use; new connection overrides old one` every 90 seconds for that broker's whole life,
+  // wrecking a set of timed tours that had nothing to do with it. Nothing on either side
+  // said a word.
+  //
+  // The check is here rather than there because a caller that has guessed a port has by
+  // definition already lost track of who is on it. 409 rather than 400: it is a conflict
+  // about identity, and the broker turns that into "drop the allocation and respawn".
+  //
+  // FAILS OPEN ON AN UNADDRESSED REQUEST. An older broker sends no `agent` field, and
+  // refusing those would strand every character the moment the two halves disagreed about
+  // versions. An order that names the wrong agent is a mistake; one that names nobody is
+  // merely old.
+  const addressedToUs = (claimed) => {
+    if (claimed === undefined || claimed === null || claimed === '') return true;
+    return String(claimed) === String(agent);
+  };
+  const addressedToUsQuery = (u) => addressedToUs(u.searchParams.get('agent'));
+  const refuseMisaddressed = (claimed) => {
+    console.error(`[keeper] ${agent} refused an order addressed to "${claimed}" — ` +
+                  `another broker is guessing this port`);
+    json({ error: `this keeper is "${agent}", not "${claimed}"`, agent }, 409);
+  };
+
+  // A READ IS ADDRESSED THE SAME WAY, in the query string. `/chat` is a character's whole
+  // transcript and `/room-view` is where it is standing; handed to a broker that guessed
+  // this port, both come back looking exactly like answers about ITS character. `/health`
+  // and `/state` are deliberately exempt — they NAME their own agent in the reply and the
+  // broker checks it, and they are how a caller discovers whose port this is in the first
+  // place. Refusing those would take away the tool that resolves the confusion.
+  if (req.method === 'GET' && path !== '/health' && path !== '/state' &&
+      !addressedToUsQuery(url)) {
+    refuseMisaddressed(url.searchParams.get('agent'));
+    return;
+  }
 
   try {
     if (req.method === 'GET' && path === '/health') {
@@ -711,11 +799,304 @@ const server = createServer(async (req, res) => {
       let ask;
       try { ask = JSON.parse(body || '{}'); }
       catch (e) { json({ error: `unparseable action: ${e.message}` }, 400); return; }
+      // Before anything is executed, and before `inGame` — a stranger's order must not even
+      // learn whether this character is logged in.
+      if (!addressedToUs(ask?.agent)) { refuseMisaddressed(ask.agent); return; }
       const name = String(ask?.name ?? '');
       const args = ask?.args ?? {};
       if (!inGame) { json({ error: `${agent}: not in game` }, 409); return; }
       try {
         switch (name) {
+          case 'rts_move_intent': {
+            const c = requireKeeperRtsAuthority(args, 'move-intent');
+            const col = Number(args.col), row = Number(args.row);
+            if (!Number.isSafeInteger(col) || !Number.isSafeInteger(row)) {
+              json({ error: 'move intent destination must be an integer col/row square' }, 400);
+              return;
+            }
+            const geometry = session.world?.geometry;
+            if (!geometry || row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
+                !geometry.standable(row, col)) {
+              json({ error: `move intent destination ${col},${row} is outside the walkable room floor` }, 409);
+              return;
+            }
+            const controlToken = String(args.control_token ?? '');
+            const leaseToken = String(args.lease_token ?? '');
+            const maxSteps = Math.max(1, Math.min(400, Math.trunc(Number(args.max_steps ?? 120))));
+            const job = session.startJob('move',
+              `move to ${col},${row} in room ${Number(args.room)}`,
+              movementGeneration => session.walkTo(col, row, {
+                maxSteps, hardCap: 400, movementGeneration, controlToken,
+                beforeMutation: (packet, detail) => {
+                  requireKeeperRtsAuthority(args, packet);
+                  if (keeperRtsCancelled(controlToken))
+                    throw new Error(`RTS ${packet} cancelled before mutation`);
+                  if (!detail || !Number.isSafeInteger(detail.col) ||
+                      !Number.isSafeInteger(detail.row))
+                    throw new Error(`RTS ${packet} has no exact next-step square`);
+                  const liveGeometry = session.world?.geometry;
+                  if (!liveGeometry || detail.row < 1 || detail.row > liveGeometry.rows ||
+                      detail.col < 1 || detail.col > liveGeometry.cols ||
+                      !liveGeometry.standable(detail.row, detail.col))
+                    throw new Error(`RTS ${packet} next step ${detail.col},${detail.row} is not walkable`);
+                },
+              }),
+              { controlToken, leaseToken });
+            json({ accepted: true, started_at: job.startedAt, destination: { col, row }, max_steps: maxSteps });
+            return;
+          }
+          case 'rts_attack_intent': {
+            const c = requireKeeperRtsAuthority(args, 'attack-intent');
+            const target = Number(args.target);
+            const liveTarget = c.room?.objects?.get?.(target);
+            if (!Number.isSafeInteger(target) || !liveTarget || !(liveTarget.flags & OF.ATTACKABLE)) {
+              json({ error: `attack target ${target} is absent or not attackable` }, 409);
+              return;
+            }
+            const controlToken = String(args.control_token ?? '');
+            const leaseToken = String(args.lease_token ?? '');
+            const swings = Math.max(1, Math.min(20, Math.trunc(Number(args.swings ?? 20))));
+            const job = session.startJob('attack',
+              `attack ${target} in room ${Number(args.room)}`, async () => {
+                const log = [];
+                for (let swing = 1; swing <= swings; swing++) {
+                  if (keeperRtsCancelled(controlToken))
+                    return { target, swings: log, cancelled: true };
+                  const currentClient = requireKeeperRtsAuthority(args, 'attack');
+                  const current = currentClient.room?.objects?.get?.(target);
+                  if (!current || !(current.flags & OF.ATTACKABLE)) {
+                    log.push({ swing, result: 'target is no longer here or attackable' });
+                    break;
+                  }
+                  await session.faceToward(current, {
+                    beforePacket: packet => requireKeeperRtsAuthority(args, packet),
+                  });
+                  const since = c.evSeq;
+                  await session.pacer.submit('attack', () => {
+                    requireKeeperRtsAuthority(args, 'attack');
+                    if (keeperRtsCancelled(controlToken))
+                      throw new Error('RTS attack cancelled before mutation');
+                    return c.attack(target);
+                  }, 1050);
+                  const observed = await c.waitFor({ since, timeoutMs: 2500 })
+                    .catch(() => ({ events: [] }));
+                  log.push({ swing,
+                    messages: (observed.events ?? []).filter(event => event.text)
+                      .map(event => String(event.text)) });
+                  if (!c.room?.objects?.has?.(target)) break;
+                }
+                return { target, swings: log };
+              }, { controlToken, leaseToken });
+            json({ accepted: true, started_at: job.startedAt, target, swings });
+            return;
+          }
+          case 'rts_context_intent': {
+            const c = requireKeeperRtsAuthority(args, 'context-intent');
+            const action = String(args.action ?? '');
+            const actions = new Set([
+              'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
+              'approach', 'face', 'equip_best', 'wear_best', 'eat_best', 'prepare',
+              'item_use', 'item_unuse', 'item_eat', 'safety_on',
+            ]);
+            if (!actions.has(action)) { json({ error: `unknown RTS context action ${action}` }, 400); return; }
+            const controlToken = String(args.control_token ?? '');
+            const leaseToken = String(args.lease_token ?? '');
+            const col = Number(args.col), row = Number(args.row);
+            const target = Number(args.target), itemId = Number(args.item);
+            const targets = action === 'take' ? [target]
+              : Array.isArray(args.targets) ? args.targets.map(Number) : [];
+            const spellName = String(args.spell ?? '').trim();
+            let item = null, itemName = null, spell = null;
+
+            if (action === 'rest_here' || action === 'recover_here') {
+              const geometry = session.world?.geometry;
+              if (!Number.isSafeInteger(col) || !Number.isSafeInteger(row) || !geometry ||
+                  row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
+                  !geometry.standable(row, col)) {
+                json({ error: `${action} destination ${col},${row} is outside the walkable room floor` }, 409);
+                return;
+              }
+            } else if (action === 'take' || action === 'grab_nearby') {
+              if (!targets.length || targets.length > 12 ||
+                  targets.some(id => !Number.isSafeInteger(id) || id < 1) ||
+                  new Set(targets).size !== targets.length) {
+                json({ error: `${action} requires 1-12 unique positive object ids` }, 400);
+                return;
+              }
+              const missing = targets.find(id => {
+                const object = c.room?.objects?.get?.(id);
+                return !object || !(object.flags & OF.GETTABLE);
+              });
+              if (missing != null) {
+                json({ error: `object ${missing} is absent or no longer gettable` }, 409);
+                return;
+              }
+            } else if (action === 'approach' || action === 'face') {
+              const object = c.room?.objects?.get?.(target);
+              if (!Number.isSafeInteger(target) || !object ||
+                  !Number.isFinite(object.col) || !Number.isFinite(object.row)) {
+                json({ error: `target ${target} is no longer perceived` }, 409);
+                return;
+              }
+            } else if (action.startsWith('item_')) {
+              item = (c.inventory ?? []).find(value => value.id === itemId) ?? null;
+              itemName = item ? c.rsc?.get?.(item.nameRsc) ?? '' : '';
+              if (!item || !Number.isSafeInteger(itemId) ||
+                  String(args.expected_item_name ?? '') !== itemName) {
+                json({ error: `inventory item ${itemId} is absent or changed` }, 409);
+                return;
+              }
+            } else if (action === 'cast') {
+              spell = (c.spells ?? []).find(value =>
+                String(c.rsc?.get?.(value.nameRsc) ?? '').toLowerCase() === spellName.toLowerCase()) ?? null;
+              if (!spell || !spellName) {
+                json({ error: `spell not found: ${spellName}` }, 409);
+                return;
+              }
+            }
+
+            const guard = (packet, detail = null) => {
+              const live = requireKeeperRtsAuthority(args, packet);
+              if (keeperRtsCancelled(controlToken))
+                throw new Error(`RTS ${packet} cancelled before mutation`);
+              if (detail && Number.isSafeInteger(detail.col) && Number.isSafeInteger(detail.row)) {
+                const geometry = session.world?.geometry;
+                if (!geometry || detail.row < 1 || detail.row > geometry.rows ||
+                    detail.col < 1 || detail.col > geometry.cols ||
+                    !geometry.standable(detail.row, detail.col))
+                  throw new Error(`RTS ${packet} next step ${detail.col},${detail.row} is not walkable`);
+              }
+              return live;
+            };
+            const cancelled = () => keeperRtsCancelled(controlToken);
+            const label = action === 'stand' ? `stand in room ${Number(args.room)}`
+              : action === 'rest_here' ? `rest at ${col},${row} in room ${Number(args.room)}`
+              : action === 'recover_here' ? `recover at ${col},${row} in room ${Number(args.room)}`
+              : action === 'take' ? `take ${target} in room ${Number(args.room)}`
+              : action === 'grab_nearby' ? `grab ${targets.length} nearby item(s)`
+              : action === 'approach' || action === 'face' ? `${action} ${target}`
+              : action.startsWith('item_') ? `${action.slice(5)} ${itemName}`
+              : action === 'cast' ? `cast ${spellName}` : action.replaceAll('_', ' ');
+            const job = session.startJob(`context:${action}`, label, async movementGeneration => {
+              if (cancelled()) return { cancelled: true };
+              if (action === 'stand') {
+                await session.pacer.submit('rest', () => { guard('stand'); return c.stand(); });
+                return { resting: false };
+              }
+              if (action === 'rest_here' || action === 'recover_here') {
+                const walk = await session.walkTo(col, row, {
+                  maxSteps: 120, hardCap: 400, movementGeneration, controlToken,
+                  beforeMutation: guard,
+                });
+                if (!walk.arrived || cancelled())
+                  return { walk, resting: false, ...(cancelled() ? { cancelled: true } : {}) };
+                if (action === 'rest_here') {
+                  await session.pacer.submit('rest', () => { guard('rest'); return c.rest(); });
+                  return { walk, resting: true };
+                }
+                const recovery = await skills.restUntil(session, {
+                  health: 0.9, vigor: 0.9, maxSeconds: 120,
+                  beforeMutation: guard, beforeCleanup: guard, shouldCancel: cancelled,
+                });
+                return { walk, recovery };
+              }
+              if (action === 'take' || action === 'grab_nearby')
+                return session.lootFloor({
+                  ids: targets, maxItems: Math.min(12, targets.length),
+                  movementGeneration, controlToken, shouldCancel: cancelled,
+                  stayPut: action === 'grab_nearby',
+                  explicitIdsOverride: action !== 'grab_nearby', beforeMutation: guard,
+                });
+              if (action === 'approach' || action === 'face') {
+                let walk = null;
+                let object = c.room?.objects?.get?.(target);
+                if (action === 'approach') {
+                  const me = c.self;
+                  const distance = me && object
+                    ? Math.hypot(object.col - me.col, object.row - me.row) : Infinity;
+                  if (distance > 1.5) {
+                    const spot = object ? session.world?.approachSquare?.(object.col, object.row) : null;
+                    if (!spot) return { target, in_position: false, reason: 'no reachable adjacent square' };
+                    walk = await session.walkTo(spot.col, spot.row, {
+                      maxSteps: Math.max(30, Math.min(400, (spot.steps ?? 0) + 10)), hardCap: 400,
+                      movementGeneration, controlToken, beforeMutation: guard,
+                    });
+                  }
+                }
+                object = c.room?.objects?.get?.(target);
+                if (!object) return { target, walk, reason: 'target left the room' };
+                const facing = await session.faceToward(object, { beforePacket: guard });
+                return { target, walk, facing_degrees: facing };
+              }
+              const options = { beforeMutation: guard, shouldCancel: cancelled };
+              if (action === 'equip_best') return skills.equipBest(session, options);
+              if (action === 'wear_best') return skills.wearBest(session, options);
+              if (action === 'eat_best')
+                return skills.eat(session, { maxItems: 1, upToVigor: skills.VIGOR_MAX, ...options });
+              if (action === 'prepare') {
+                const weapon = await skills.equipBest(session, options);
+                const armour = cancelled() ? null
+                  : await skills.wearBest(session, { ...options, refresh: false });
+                return { weapon, armour, ...(cancelled() ? { cancelled: true } : {}) };
+              }
+              if (action === 'safety_on') {
+                await session.pacer.submit('safety', () => { guard('safety'); return c.safety(true); });
+                return { requested: true };
+              }
+              if (action === 'item_use' || action === 'item_unuse') {
+                await session.pacer.submit('use', () => {
+                  guard(action === 'item_use' ? 'use' : 'unuse');
+                  return action === 'item_use' ? c.use(itemId) : c.unuse(itemId);
+                });
+                return { item: itemId, name: itemName };
+              }
+              if (action === 'item_eat') {
+                await session.pacer.submit('act', () => { guard('eat'); return c.apply(itemId, c.selfId); }, 1050);
+                return { item: itemId, name: itemName };
+              }
+              await session.pacer.submit('cast', () => {
+                guard('cast');
+                return c.cast(spell.id, Number.isSafeInteger(target) ? [target] : []);
+              });
+              return { spell: spellName, ...(Number.isSafeInteger(target) ? { target } : {}) };
+            }, { controlToken, leaseToken });
+            json({ accepted: true, started_at: job.startedAt, action,
+                   ...(['rest_here', 'recover_here'].includes(action)
+                     ? { destination: { col, row } } : {}),
+                   ...(['take', 'approach', 'face'].includes(action) ? { target } : {}),
+                   ...(action === 'grab_nearby' ? { targets } : {}),
+                   ...(action === 'cast' ? { spell: spellName } : {}),
+                   ...(action.startsWith('item_') ? { item: itemId, name: itemName } : {}) });
+            return;
+          }
+          case 'rts_cancel': {
+            const expectedHost = String(args.server_host ?? '').trim().toLowerCase();
+            const expectedPort = Number(args.server_port);
+            if (String(credHost).trim().toLowerCase() !== expectedHost ||
+                Number(credPort) !== expectedPort) {
+              json({ error: `RTS cancel server mismatch: keeper is on ${credHost}:${credPort}` }, 409);
+              return;
+            }
+            const job = session.job && !session.job.done ? session.job : null;
+            if (!job) { json({ cancelled: false, note: 'no background action is active' }); return; }
+            if (!job.controlToken || job.controlToken !== String(args.control_token ?? '')) {
+              json({ error: 'control_token does not own the active background action' }, 409);
+              return;
+            }
+            if (!job.leaseToken || job.leaseToken !== String(args.lease_token ?? '')) {
+              json({ error: 'lease_token does not own the active background action' }, 409);
+              return;
+            }
+            if (job.kind === 'move' || job.kind.startsWith('context:')) {
+              json(session.cancelMovement(job.controlToken, 'RTS controller cancellation'));
+              return;
+            }
+            job.cancelled = true;
+            job.cancelRequestedAt = Date.now();
+            json({ cancelled: true, interrupted: { kind: job.kind, label: job.label },
+                   note: 'action will stop before its next paced packet' });
+            return;
+          }
           case 'travel': {
             // BACKGROUND BY DEFAULT, because a journey outlives any sane HTTP timeout and
             // the caller polls /state to watch it. `travelJob` is the one definition of the
@@ -943,6 +1324,58 @@ const server = createServer(async (req, res) => {
             return;
           }
           case 'hold_status': { json({ hold: holdReport() }); return; }
+
+          // The broker owns the short commander capability; this process owns the
+          // Autopilot and its per-faculty claims. Preserve that ownership API across the
+          // keeper-process boundary so a split keeper can be driven without stopping its
+          // survival, recovery, mortality, or identity faculties.
+          case 'commander_claim': {
+            if (!autopilot?.running || typeof autopilot.claimFaculties !== 'function') {
+              json({ error: 'running keeper does not expose faculty ownership' }, 409);
+              return;
+            }
+            json(autopilot.claimFaculties({
+              faculties: Array.isArray(args.faculties) ? args.faculties : [],
+              by: String(args.by ?? ''),
+              leaseMs: Math.max(1000,
+                Math.min(Number(args.leaseMs ?? args.lease_ms ?? 20000), 30000)),
+              why: String(args.why ?? 'RTS commander lease'),
+              mayYield: Array.isArray(args.mayYield ?? args.may_yield)
+                ? (args.mayYield ?? args.may_yield) : [],
+            }));
+            return;
+          }
+          case 'commander_heartbeat': {
+            if (!autopilot?.running || typeof autopilot.heartbeatFaculties !== 'function') {
+              json({ error: 'running keeper does not expose faculty ownership' }, 409);
+              return;
+            }
+            json(autopilot.heartbeatFaculties({
+              by: String(args.by ?? ''),
+              leaseMs: Math.max(1000,
+                Math.min(Number(args.leaseMs ?? args.lease_ms ?? 20000), 30000)),
+            }));
+            return;
+          }
+          case 'commander_release': {
+            if (!autopilot || typeof autopilot.releaseFaculties !== 'function') {
+              json({ released: [], faculties: {} });
+              return;
+            }
+            json(autopilot.releaseFaculties({
+              faculties: Array.isArray(args.faculties) ? args.faculties : null,
+              by: String(args.by ?? ''),
+            }));
+            return;
+          }
+          case 'commander_free_busy': {
+            if (!autopilot || typeof autopilot.freeBusy !== 'function') {
+              json({ busy: null, was: null });
+              return;
+            }
+            json(autopilot.freeBusy({ by: String(args.by ?? '') }));
+            return;
+          }
 
           // WHO IS ACTUALLY STANDING HERE, ASKED RATHER THAN REMEMBERED.
           //
@@ -1603,6 +2036,14 @@ const server = createServer(async (req, res) => {
     }
 
     if (req.method === 'POST' && path === '/rejoin') {
+      // THE ONE THAT ACTUALLY DID THE DAMAGE. This handler ignores the posted body entirely
+      // — `join()` below takes no arguments and uses this process's own account and
+      // password — so a misaddressed rejoin never logged anybody in as somebody else. What
+      // it did was drop a stranger's socket and re-log them in as themselves, every 45s, for
+      // as long as the guessing broker was up. That is the `ACCOUNT ... in use; new
+      // connection overrides old one` line in the server log.
+      const asked = JSON.parse(await readBody(req).catch(() => '{}') || '{}');
+      if (!addressedToUs(asked?.agent)) { refuseMisaddressed(asked.agent); return; }
       if (autopilot) autopilot.stop('rejoin');
       if (session.client) {
         try { session.client.close(); } catch {}

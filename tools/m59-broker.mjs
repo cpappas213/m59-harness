@@ -940,6 +940,19 @@ async function spawnKeeperInner(agent, index, credentials) {
     try {
       const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(2000) });
       if (res.ok) {
+        // AND IT HAS TO BE OURS. This accepted any healthy reply, so a broker that lost the
+        // bind race concluded a STRANGER'S keeper was the one it had just spawned, recorded
+        // that port in `keeperProcesses`, and from then on addressed it with total
+        // confidence — `keeperPort()` prefers a recorded port over everything. That is the
+        // root of the whole misaddressing family: `stopKeeper` posts `/stop` to
+        // `kp.port` without further question, so a mis-recorded port is a licence to kill
+        // another fleet's keeper. `/health` names its own agent; ask.
+        const who = await res.json().catch(() => null);
+        if (who?.agent && String(who.agent) !== String(agent)) {
+          console.error(`[keeper] ${agent}: port ${port} came up as "${who.agent}" — ` +
+                        `not the keeper we spawned; not adopting it`);
+          return false;
+        }
         console.error(`[keeper] ${agent} ready after ${((Date.now() - began) / 1000).toFixed(1)}s`);
         return true;
       }
@@ -1025,9 +1038,15 @@ async function keeperState(agent, index, { fresh = false } = {}) {
 // endpoints, and a tool that wants one of them should not have to hand-roll a fetch and a
 // port lookup each time. Same failure shape as keeperAction: `{error}` rather than a throw,
 // because every caller here is a tool run that must report rather than crash.
+//
+// ADDRESSED TOO. A guessed port answers a read as readily as it takes an order, and the
+// things behind these endpoints are a character's chat transcript and the room it is
+// standing in — a stranger's, filed under our own character's name, with nothing in the
+// answer to say otherwise. Same `agent` stamp as `keeperEnvelope`, in the query string
+// because these are GETs; the keeper answers 409 when it is somebody else.
 async function keeperGet(agent, index, path, params = {}) {
   const port = keeperPort(agent, index);
-  const q = new URLSearchParams(Object.entries(params)
+  const q = new URLSearchParams(Object.entries({ ...params, agent })
     .filter(([, v]) => v !== undefined && v !== null && v !== ''));
   try {
     const res = await fetch(`http://127.0.0.1:${port}/${path}${q.toString() ? '?' + q : ''}`,
@@ -1039,13 +1058,38 @@ async function keeperGet(agent, index, path, params = {}) {
   }
 }
 
+// WHO WE THINK WE ARE TALKING TO, SENT WITH EVERY ORDER.
+//
+// `keeperState` above refuses a port that answers for another agent — it checks `j.agent`,
+// drops the allocation and says so. Every WRITE path did not: `keeperPort()` falls back to
+// `KEEPER_PORT_BASE + index` whenever this broker never got its own keeper up on that slot,
+// and the order then went to whatever process was listening there. So the read half of the
+// proxy was identity-checked and the write half was not.
+//
+// It is not hypothetical. Measured 2026-08-26 with three brokers on this machine: an `arena`
+// broker that had lost slots 4 and 5 posted its 45s `/rejoin` sweep to a `shadow` fleet's
+// keepers on 8915 and 8916, and the server logged `ACCOUNT 64 (shadow05) in use; new
+// connection overrides old one` every 90 seconds for as long as that broker lived. It ran
+// somebody else's tours into the ground while reporting itself healthy.
+//
+// TO BE EXACT ABOUT THE DAMAGE, because the scary reading is the wrong one: the keeper's
+// `/rejoin` handler IGNORES the posted body and calls `join()`, which uses its OWN
+// module-level account and password. No credential crosses and nobody is logged in as
+// somebody else's character. What happens is a forced logout and re-login of a stranger's
+// character, on repeat — which is bad enough, and is what those server log lines are.
+//
+// The fix belongs on the receiving end, because the keeper is the only one that knows who it
+// is. Stamping the intended agent costs no round trip, and a keeper on older code that
+// ignores the field is no worse off than before.
+const keeperEnvelope = (agent, body) => JSON.stringify({ ...body, agent });
+
 async function keeperAction(agent, index, name, args) {
   const port = keeperPort(agent, index);
   try {
     const res = await fetch(`http://127.0.0.1:${port}/action`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name, args }),
+      body: keeperEnvelope(agent, { name, args }),
       signal: AbortSignal.timeout(60000),
     });
     return await res.json();
@@ -1261,7 +1305,9 @@ class KeeperProxy {
       // obviously empty one, because the empty one fails at the first read and this failed
       // at the second.
       room: {
-        id: s.room?.num ?? null, num: s.room?.num ?? null,
+        // Never substitute the save-stable RID for Meridian's live room object id.
+        // They are different namespaces and the latter changes across server saves.
+        id: s.room?.object_id ?? null, num: s.room?.num ?? null,
         name: s.room?.name ?? null,
         objects: new Map((s.objects ?? []).map(o => [o.id, {
           id: o.id, nameRsc: o.name, name: o.name,
@@ -1442,6 +1488,23 @@ class KeeperProxy {
     return keeperAction(this.name, this._index, 'cancel', {});
   }
 
+  // RTS orders are jobs in the process that owns the Meridian socket. A JavaScript
+  // callback cannot be serialized across that boundary, so forwarding `startJob(fn)`
+  // was never a viable keeper architecture: either the callback ran against this
+  // snapshot-only proxy, or `startJob` threw before a packet was sent. Send a typed
+  // intent instead; the keeper validates it again and installs the real Session job.
+  async rtsIntent(kind, args = {}) {
+    const result = await keeperAction(this.name, this._index, `rts_${kind}_intent`, args);
+    if (result?.error) throw new Error(result.error);
+    return result;
+  }
+
+  async cancelRtsAction(args = {}) {
+    const result = await keeperAction(this.name, this._index, 'rts_cancel', args);
+    if (result?.error) throw new Error(result.error);
+    return result;
+  }
+
   // Autopilot methods — proxy to keeper
   async autopilot(action, args = {}) {
     if (action === 'start') return keeperAction(this.name, this._index, 'pass', {});
@@ -1554,6 +1617,65 @@ class KeeperProxy {
     return keeperAction(this.name, this._index, 'release', { why, token });
   }
 
+  // COMMANDER OWNERSHIP LIVES BESIDE THE KEEPER THAT OWNS THE SOCKET.
+  //
+  // The RTS seam was written while Autopilot lived in this broker process. After the
+  // keeper split, commander_lease still called autopilotIfAny(), which correctly returns
+  // null here: the real Autopilot is in the child process. These methods preserve the
+  // existing faculty contract across that process boundary.
+  _commanderStatus() { return this._state?.autopilot_status ?? null; }
+
+  get inert() {
+    return this._commanderStatus()?.inert ?? (this._state?.hold
+      ? { why: this._state.hold.why, at: this._state.hold.since, kind: this._state.hold.kind }
+      : null);
+  }
+
+  facultyStatus() {
+    const remote = this._commanderStatus()?.faculties;
+    if (remote && typeof remote === 'object') return remote;
+    return Object.fromEntries(
+      ['identity', 'mortality', 'survival', 'recovery',
+       'work', 'movement', 'economy', 'social'].map(f => [f, 'unheld']));
+  }
+
+  facultyOwner(faculty) {
+    const value = this.facultyStatus()?.[faculty];
+    if (typeof value === 'string') return value;
+    return value && typeof value.owner === 'string' ? value.owner : 'unheld';
+  }
+
+  _applyCommanderFaculties(result) {
+    if (!result?.faculties || typeof result.faculties !== 'object') return result;
+    if (this._state?.autopilot_status)
+      this._state.autopilot_status.faculties = result.faculties;
+    return result;
+  }
+
+  async claimFaculties(options = {}) {
+    const result = await keeperAction(this.name, this._index, 'commander_claim', options);
+    if (result?.error) throw new Error(result.error);
+    return this._applyCommanderFaculties(result);
+  }
+
+  async releaseFaculties(options = {}) {
+    const result = await keeperAction(this.name, this._index, 'commander_release', options);
+    if (result?.error) throw new Error(result.error);
+    return this._applyCommanderFaculties(result);
+  }
+
+  async heartbeatFaculties(options = {}) {
+    const result = await keeperAction(this.name, this._index, 'commander_heartbeat', options);
+    if (result?.error) throw new Error(result.error);
+    return this._applyCommanderFaculties(result);
+  }
+
+  async freeBusy(options = {}) {
+    const result = await keeperAction(this.name, this._index, 'commander_free_busy', options);
+    if (result?.error) throw new Error(result.error);
+    return result;
+  }
+
   // Movement is generated in the keeper, so nothing this side issued can have been
   // cancelled. False is the true answer, not a convenient one.
   movementWasCancelled() { return false; }
@@ -1663,7 +1785,8 @@ class KeeperProxy {
   async roomView() {
     const port = keeperPort(this.name, this._index);
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/room-view`, { signal: AbortSignal.timeout(5000) });
+      const res = await fetch(`http://127.0.0.1:${port}/room-view?agent=${encodeURIComponent(this.name)}`,
+                              { signal: AbortSignal.timeout(5000) });
       if (res.ok) return await res.json();
     } catch {}
     return null;
@@ -1673,7 +1796,8 @@ class KeeperProxy {
   async path3d() {
     const port = keeperPort(this.name, this._index);
     try {
-      const res = await fetch(`http://127.0.0.1:${port}/path3d`, { signal: AbortSignal.timeout(8000) });
+      const res = await fetch(`http://127.0.0.1:${port}/path3d?agent=${encodeURIComponent(this.name)}`,
+                              { signal: AbortSignal.timeout(8000) });
       if (res.ok) return await res.json();
     } catch {}
     return null;
@@ -2505,12 +2629,28 @@ async function reconcileFleet() {
         const index = agentIndices.get(agent);
         const port = keeperPort(agent, index);
         try {
-          await fetch(`http://127.0.0.1:${port}/rejoin`, {
+          // NAMED, so a keeper that is not ours refuses instead of logging its own
+          // character out. This sweep is the loudest of the unaddressed writes — it fires
+          // every 45s for the life of the broker. See `keeperEnvelope`.
+          const r = await fetch(`http://127.0.0.1:${port}/rejoin`, {
             method: 'POST',
             headers: { 'content-type': 'application/json' },
-            body: JSON.stringify(credentials),
+            body: keeperEnvelope(agent, credentials),
             signal: AbortSignal.timeout(30000),
           });
+          if (r.status === 409) {
+            // Somebody else's keeper is on our port. Forget the allocation so the next
+            // spawn re-picks — the same thing `keeperState` does when a read comes back
+            // wearing the wrong name — and respawn rather than hammering a stranger.
+            const who = await r.json().catch(() => ({}));
+            console.error(`[rejoin] ${agent}: port ${port} belongs to "${who.agent ?? '?'}" — ` +
+                          `not ours, dropping that allocation and respawning`);
+            keeperPorts.delete(agent);
+            const rec = keeperProcesses.get(agent);
+            if (rec && rec.port === port) keeperProcesses.delete(agent);
+            const ok = await spawnKeeper(agent, index, credentials);
+            if (!ok) throw new Error('keeper respawn failed');
+          }
         } catch (e) {
           // Keeper process is dead — respawn it
           console.error(`[rejoin] ${agent} keeper not reachable, respawning`);
@@ -3182,9 +3322,12 @@ function requireControlEndpoint(s, hostValue, portValue) {
   if (!/^[a-z0-9.\-]{1,255}$/.test(expectedHost) ||
       !Number.isInteger(expectedPort) || expectedPort < 1 || expectedPort > 65535)
     throw new Error('RTS control requires an explicit game server host and port');
-  const actualHost = typeof s.credentials?.host === 'string'
-    ? s.credentials.host.trim().toLowerCase() : '';
-  const actualPort = Number(s.credentials?.port);
+  // A KeeperProxy owns no credential copy on the proxy object. Its credentials remain
+  // in fleetState, which is the exact roster record used to spawn that keeper.
+  const credentials = s.credentials ?? fleetState.get(s?.name)?.credentials ?? null;
+  const actualHost = typeof credentials?.host === 'string'
+    ? credentials.host.trim().toLowerCase() : String(HOST).trim().toLowerCase();
+  const actualPort = Number(credentials?.port ?? PORT);
   if (actualHost !== expectedHost || actualPort !== expectedPort)
     throw new Error(`RTS control server mismatch: session is on ${actualHost || '?'}:${actualPort || '?'}`);
   return { host: expectedHost, port: expectedPort };
@@ -3217,7 +3360,9 @@ function requireCommanderLease(s, leaseToken, faculties = COMMANDER_FACULTIES) {
   if (!row) throw new Error(`commander lease does not include ${s.name}`);
   exactRosterAuthority(s, row);
   requireControlEndpoint(s, record.server.host, record.server.port);
-  const keeper = autopilotIfAny(s.name);
+  // In the split-process architecture autopilotIfAny() is deliberately empty in the
+  // broker. The KeeperProxy is the ownership facade for the real remote Autopilot.
+  const keeper = commanderKeeper(s.name);
   if (!keeper?.running)
     throw new Error(`commander lease lost the running keeper for ${s.name}; fail-back and survival telemetry are unavailable`);
   for (const faculty of faculties) {
@@ -3314,8 +3459,13 @@ function commanderRows(value) {
   });
 }
 
+function commanderKeeper(agent) {
+  const s = sessions.get(agent);
+  return s instanceof KeeperProxy ? s : autopilotIfAny(agent);
+}
+
 function commanderKeeperState(agent) {
-  const p = autopilotIfAny(agent);
+  const p = commanderKeeper(agent);
   if (!p) return { keeper_state: 'none', faculties: Object.fromEntries(COMMANDER_FACULTIES.map(f => [f, 'unheld'])) };
   return {
     keeper_state: p.inert ? 'inert' : p.running ? 'running' : 'stopped',
@@ -3342,14 +3492,14 @@ function commanderLeaseView(record, rows = null) {
   };
 }
 
-function releaseCommanderClaims(record, agents = record.agents) {
+async function releaseCommanderClaims(record, agents = record.agents) {
   const outcomes = [];
   for (const row of agents) {
-    const p = autopilotIfAny(row.agent);
+    const p = commanderKeeper(row.agent);
     const released = p
-      ? p.releaseFaculties({ faculties: COMMANDER_FACULTIES, by: record.owner }).released
+      ? (await p.releaseFaculties({ faculties: COMMANDER_FACULTIES, by: record.owner })).released
       : [];
-    p?.freeBusy({ by: record.owner });
+    if (p) await p.freeBusy({ by: record.owner });
     outcomes.push({ agent: row.agent, character: row.character, released,
                     ...commanderKeeperState(row.agent) });
   }
@@ -5198,7 +5348,7 @@ const TOOLS = [
       lease_token: { type: 'string', description: 'required after acquire' },
       lease_ms: { type: 'number', description: '5000-30000; default 20000' },
     }, required: ['action', 'fleet', 'broker_pid', 'server_host', 'server_port'] },
-    run: (a, caller) => {
+    run: async (a, caller) => {
       const endpoint = commanderAuth(a, caller);
       if (a.action === 'status') {
         if (a.lease_token) {
@@ -5231,8 +5381,9 @@ const TOOLS = [
             if (s.job && !s.job.done) throw new Error(`agent is busy: ${s.job.label}`);
             const held = commanderLeases.activeForAgent(row.agent);
             if (held) throw new Error(`agent is already held by lease ${held.leaseId}`);
-            const p = autopilotIfAny(row.agent);
+            const p = commanderKeeper(row.agent);
             if (!p) throw new Error('agent has no keeper to preserve survival/telemetry and fail back to');
+            if (p instanceof KeeperProxy) await p.refreshSnapshot();
             if (!p.running) throw new Error('keeper is stopped; start it before acquiring commander control');
             if (p?.inert) throw new Error(`keeper is already inert: ${p.inert.why || 'another controller holds it'}`);
             const foreign = COMMANDER_FACULTIES
@@ -5263,13 +5414,13 @@ const TOOLS = [
         const leaseMs = Math.max(1_000, record.expiresAt - Date.now());
         const actuallyGranted = [];
         for (const row of [...record.agents]) {
-          const p = autopilotIfAny(row.agent);
+          const p = commanderKeeper(row.agent);
           if (!p?.running) {
             const out = outcomes.find(value => value.agent === row.agent);
             Object.assign(out, { granted: false, blocked_reason: 'running keeper vanished during acquisition' });
             continue;
           }
-          const claimed = p.claimFaculties({
+          const claimed = await p.claimFaculties({
             faculties: COMMANDER_FACULTIES, by: record.owner, leaseMs,
             why: `RTS commander lease ${record.leaseId}`, mayYield: fleetMayYield(),
           });
@@ -5277,7 +5428,7 @@ const TOOLS = [
             actuallyGranted.push(row);
             continue;
           }
-          p.releaseFaculties({ faculties: COMMANDER_FACULTIES, by: record.owner });
+          await p.releaseFaculties({ faculties: COMMANDER_FACULTIES, by: record.owner });
           const out = outcomes.find(value => value.agent === row.agent);
           Object.assign(out, { granted: false, blocked_reason: 'keeper refused directional faculty claim' });
         }
@@ -5305,7 +5456,7 @@ const TOOLS = [
         throw new Error('commander agents do not exactly match the leased roster set');
 
       if (a.action === 'release') {
-        const outcomes = releaseCommanderClaims(record);
+        const outcomes = await releaseCommanderClaims(record);
         if (!record.releasedAt) commanderLeases.release(record.token);
         return { ...commanderLeaseView(record, outcomes), owner: record.clientOwner };
       }
@@ -5319,15 +5470,29 @@ const TOOLS = [
           s.need();
           exactRosterAuthority(s, row);
           requireControlEndpoint(s, record.server.host, record.server.port);
-          const p = autopilotIfAny(row.agent);
+          const p = commanderKeeper(row.agent);
           if (!p?.running) throw new Error('running keeper is no longer available for fail-back');
-          for (const faculty of COMMANDER_FACULTIES)
-            if (p.facultyOwner(faculty) !== record.owner)
-              throw new Error(`${faculty} is no longer owned by this commander`);
+          if (p instanceof KeeperProxy) {
+            // The keeper's /state is deliberately cached. Immediately after acquire it
+            // can still describe the pre-claim generation, so refreshing that snapshot
+            // and treating it as ownership revoked a valid lease on its first heartbeat.
+            // Renewal is the authoritative operation in the process that owns the claims.
+            const renewed = await p.heartbeatFaculties({
+              by: record.owner,
+              leaseMs: Math.max(1000, record.expiresAt - Date.now()),
+            });
+            for (const faculty of COMMANDER_FACULTIES)
+              if (!renewed.renewed?.includes(faculty))
+                throw new Error(`${faculty} is no longer owned by this commander`);
+          } else {
+            for (const faculty of COMMANDER_FACULTIES)
+              if (p.facultyOwner(faculty) !== record.owner)
+                throw new Error(`${faculty} is no longer owned by this commander`);
+          }
           retained.push(row);
           outcomes.push({ agent: row.agent, character: row.character, granted: true });
         } catch (error) {
-          releaseCommanderClaims(record, [row]);
+          await releaseCommanderClaims(record, [row]);
           outcomes.push({ agent: row.agent, character: row.character, granted: false,
                           blocked_reason: String(error?.message || error) });
         }
@@ -5339,8 +5504,10 @@ const TOOLS = [
       }
       commanderLeases.renew(record.token, a.lease_ms ?? COMMANDER_DEFAULT_TTL_MS);
       const leaseMs = record.expiresAt - Date.now();
-      for (const row of retained)
-        autopilotIfAny(row.agent)?.heartbeatFaculties({ by: record.owner, leaseMs });
+      for (const row of retained) {
+        const p = commanderKeeper(row.agent);
+        if (p) await p.heartbeatFaculties({ by: record.owner, leaseMs });
+      }
       for (const out of outcomes) Object.assign(out, commanderKeeperState(out.agent));
       return { ...commanderLeaseView(record, outcomes), owner: record.clientOwner,
                lease_token: record.token };
@@ -5351,10 +5518,9 @@ const TOOLS = [
     description:
       'Start an exact-id attack as a background session job and return immediately. This is the ' +
       'RTS control seam: it validates that the id is attackable in the stated room before accepting, ' +
-      'then rechecks endpoint, keeper, room, exact non-player target, cancellation, and the multi-swing ' +
-      'health floor inside every turn/attack pacer callback. Object ids are generation-local; a ' +
-      'room mismatch is rejected before any packet is sent. Multi-swing RTS attacks also stop at ' +
-      '35% health. Use cancel_action to stop between swings.',
+      'then rechecks endpoint, keeper, room, exact target, and cancellation inside every turn/attack ' +
+      'pacer callback. Object ids are generation-local; a room mismatch is rejected before any packet ' +
+      'is sent. Player targets are allowed when View Only is off. Use cancel_action to stop between swings.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       room: { type: 'number' },
@@ -5365,21 +5531,30 @@ const TOOLS = [
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'room', 'target', 'control_token', 'lease_token', 'server_host', 'server_port'] },
-    run: (a, caller) => {
+    run: async (a, caller) => {
       const s = session(a.agent), c = s.need();
       const token = controlToken(a.control_token);
-      requireControlSession(s, caller, a.server_host, a.server_port, a.lease_token);
+      const authority = requireControlSession(
+        s, caller, a.server_host, a.server_port, a.lease_token);
       const roomBinding = requireRtsRoom(s, Number(a.room), 'attack-intent');
       const actualRoom = roomBinding.room_num;
       const target = resolveTarget(s, Number(a.target));
       const object = c.room.objects.get(target.id);
       if (!object || !(object.flags & OF.ATTACKABLE))
         throw new Error('stale attack intent: target is absent or no longer attackable');
-      // This seam is deliberately PvE-only. A gateway flag is not an authority boundary:
-      // the broker is the last process before the game packet and must fail closed too.
-      if (object.flags & OF.PLAYER)
-        throw new Error('RTS attack intents may not target players');
       const swings = Math.max(1, Math.min(Math.trunc(num(a.swings, 20)), 20));
+      if (s instanceof KeeperProxy) {
+        const started = await s.rtsIntent('attack', {
+          room: actualRoom, room_object_id: roomBinding.room_object_id,
+          target: target.id, swings,
+          control_token: token, lease_token: a.lease_token,
+          commander_owner: authority.lease.record.owner,
+          server_host: a.server_host, server_port: a.server_port,
+        });
+        return { accepted: true, agent: a.agent, room: actualRoom, target: target.id,
+                 swings, control_token: token, lease_token: a.lease_token,
+                 started_at: started.started_at ?? Date.now(), keeper: true };
+      }
       const expectedTarget = rtsIdentity(c, object);
       const guard = rtsPacketAuthority({
         s, host: a.server_host, port: a.server_port, room: actualRoom, token,
@@ -5389,26 +5564,15 @@ const TOOLS = [
           const current = c.room.objects.get(target.id);
           if (!sameRtsIdentity(c, current, expectedTarget) || !(current.flags & OF.ATTACKABLE))
             throw new Error(`RTS ${packet} refused: exact target ${target.id} is absent, changed, or not attackable`);
-          if (current.flags & OF.PLAYER)
-            throw new Error(`RTS ${packet} refused: target ${target.id} is now a player`);
-          if (swings > 1) {
-            const health = c.vitals()?.health;
-            const maximum = health?.max ?? health?.scale_max;
-            const fraction = Number.isFinite(health?.value) && Number.isFinite(maximum) && maximum > 0
-              ? health.value / maximum : null;
-            if (!(fraction > 0.35))
-              throw new Error(`RTS ${packet} refused: multi-swing health must remain above 35%`);
-          }
         },
       });
       const job = s.startJob('attack', `attack ${target.id} in room ${actualRoom}`,
         () => callTool('attack', { agent: a.agent, target: target.id, swings,
-                                   ...(swings > 1 ? { stop_below: 0.35 } : {}),
                                    [RTS_MUTATION_GUARD]: guard }),
         { controlToken: token, leaseToken: a.lease_token });
       return { accepted: true, agent: a.agent, room: actualRoom, target: target.id,
-               swings, ...(swings > 1 ? { stop_below: 0.35 } : {}),
-               control_token: token, lease_token: a.lease_token, started_at: job.startedAt };
+               swings, control_token: token, lease_token: a.lease_token,
+               started_at: job.startedAt };
     },
   },
   {
@@ -5430,23 +5594,37 @@ const TOOLS = [
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'room', 'col', 'row', 'control_token', 'lease_token', 'server_host', 'server_port'] },
-    run: (a, caller) => {
+    run: async (a, caller) => {
       const s = session(a.agent);
       s.need();
       const token = controlToken(a.control_token);
-      requireControlSession(s, caller, a.server_host, a.server_port, a.lease_token);
+      const authority = requireControlSession(
+        s, caller, a.server_host, a.server_port, a.lease_token);
       const room = Number(a.room), col = Number(a.col), row = Number(a.row);
       const roomBinding = requireRtsRoom(s, room, 'move-intent');
       const actualRoom = roomBinding.room_num;
       if (!Number.isSafeInteger(col) || !Number.isSafeInteger(row))
         throw new Error('move intent destination must be an integer col/row square');
+      const maxSteps = Math.max(1, Math.min(400, Math.trunc(num(a.max_steps, 120))));
+      if (s instanceof KeeperProxy) {
+        const started = await s.rtsIntent('move', {
+          room: actualRoom, room_object_id: roomBinding.room_object_id,
+          col, row, max_steps: maxSteps,
+          control_token: token, lease_token: a.lease_token,
+          commander_owner: authority.lease.record.owner,
+          server_host: a.server_host, server_port: a.server_port,
+        });
+        return { accepted: true, agent: a.agent, room: actualRoom,
+                 destination: { col, row }, max_steps: maxSteps,
+                 control_token: token, lease_token: a.lease_token,
+                 started_at: started.started_at ?? Date.now(), keeper: true };
+      }
       const geometry = s.world?.geometry;
       if (!geometry)
         throw new Error(`move intent refused: room ${room} has no local ROO geometry`);
       if (row < 1 || row > geometry.rows || col < 1 || col > geometry.cols ||
           !geometry.standable(row, col))
         throw new Error(`move intent destination ${col},${row} is outside the walkable room floor`);
-      const maxSteps = Math.max(1, Math.min(400, Math.trunc(num(a.max_steps, 120))));
       const guard = rtsPacketAuthority({
         s, host: a.server_host, port: a.server_port, room, token,
         roomObjectId: roomBinding.room_object_id,
@@ -5512,10 +5690,11 @@ const TOOLS = [
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'room', 'action', 'control_token', 'lease_token', 'server_host', 'server_port'] },
-    run: (a, caller) => {
+    run: async (a, caller) => {
       const s = session(a.agent), c = s.need();
       const token = controlToken(a.control_token);
-      requireControlSession(s, caller, a.server_host, a.server_port, a.lease_token);
+      const authority = requireControlSession(
+        s, caller, a.server_host, a.server_port, a.lease_token);
       const action = typeof a.action === 'string' ? a.action : '';
       if (![
         'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',
@@ -5526,6 +5705,32 @@ const TOOLS = [
       const room = Number(a.room);
       const roomBinding = requireRtsRoom(s, room, 'context-intent');
       const actualRoom = roomBinding.room_num;
+
+      if (s instanceof KeeperProxy) {
+        const started = await s.rtsIntent('context', {
+          room: actualRoom, room_object_id: roomBinding.room_object_id, action,
+          ...(a.col === undefined ? {} : { col: a.col }),
+          ...(a.row === undefined ? {} : { row: a.row }),
+          ...(a.target === undefined ? {} : { target: a.target }),
+          ...(a.item === undefined ? {} : { item: a.item }),
+          ...(a.expected_item_name === undefined ? {} : { expected_item_name: a.expected_item_name }),
+          ...(a.targets === undefined ? {} : { targets: a.targets }),
+          ...(a.spell === undefined ? {} : { spell: a.spell }),
+          control_token: token, lease_token: a.lease_token,
+          commander_owner: authority.lease.record.owner,
+          server_host: a.server_host, server_port: a.server_port,
+        });
+        return {
+          accepted: true, agent: a.agent, room: actualRoom, action,
+          ...(started.destination ? { destination: started.destination } : {}),
+          ...(started.target == null ? {} : { target: started.target }),
+          ...(started.targets ? { targets: started.targets } : {}),
+          ...(started.spell ? { spell: started.spell } : {}),
+          ...(started.item ? { item: started.item, name: started.name ?? null } : {}),
+          control_token: token, lease_token: a.lease_token,
+          started_at: started.started_at ?? Date.now(), keeper: true,
+        };
+      }
 
       let col = null, row = null, target = null, targets = [], spell = null;
       let inventoryItem = null, inventoryName = null, inventoryIdentity = null;
@@ -5940,7 +6145,7 @@ const TOOLS = [
       server_host: { type: 'string', description: 'exact game host authorized by the gateway; must equal this session\'s own' },
       server_port: { type: 'number', description: 'exact game port authorized by the gateway; must equal this session\'s own' },
     }, required: ['agent', 'control_token', 'lease_token', 'server_host', 'server_port'] },
-    run: (a, caller) => {
+    run: async (a, caller) => {
       const s = session(a.agent);
       const token = controlToken(a.control_token);
       // Cancellation is the one control call that remains valid after a keeper resumes:
@@ -5948,6 +6153,12 @@ const TOOLS = [
       // caller, endpoint equality, and exact token ownership remain mandatory.
       requireRtsLocalCaller(caller);
       requireControlEndpoint(s, a.server_host, a.server_port);
+      if (s instanceof KeeperProxy) {
+        return await s.cancelRtsAction({
+          control_token: token, lease_token: a.lease_token,
+          server_host: a.server_host, server_port: a.server_port,
+        });
+      }
       const job = s.job && !s.job.done ? s.job : null;
       if (!job) return { cancelled: false, note: 'no background action is active' };
       if (!job.controlToken || job.controlToken !== token)
@@ -12459,8 +12670,12 @@ let rtsReadFleetCache = null;
 function brokerGameEndpoints() {
   const sessionGameServers = Object.create(null);
   for (const [agent, s] of sessions) {
-    const host = typeof s.credentials?.host === 'string' ? s.credentials.host.trim() : '';
-    const port = Number(s.credentials?.port);
+    // KeeperProxy deliberately has no socket credentials of its own; the exact
+    // credentials used to spawn it remain in fleetState.
+    const credentials = s.credentials ?? fleetState.get(agent)?.credentials ?? null;
+    const host = typeof credentials?.host === 'string'
+      ? credentials.host.trim() : String(HOST).trim();
+    const port = Number(credentials?.port ?? PORT);
     if (host && Number.isInteger(port) && port > 0 && port <= 65535)
       sessionGameServers[agent] = { host, port };
   }
@@ -12757,7 +12972,8 @@ async function brokerRtsRead(url) {
           // number is one-based (Kraanan=1 through Riija=6).
           school: Number.isInteger(spell.school) ? spell.school + 1 : null,
         }))
-        .filter(spell => rtsSafeSpellRule(spell.name, spell.targets));
+        .filter(spell => typeof spell.name === 'string' && spell.name.length > 0 &&
+          Number.isSafeInteger(spell.targets) && spell.targets >= 0);
     } catch (error) {
       spells[agent] = { error: String(error?.message || error).slice(0, 240) };
     }
@@ -12807,9 +13023,9 @@ async function brokerRtsRead(url) {
       let blocked = null;
       if (!settings.enabled) blocked = 'commander is unavailable';
       else if (piloted.has(agent)) blocked = 'agent is being played by a local Meridian client';
-      else if (!autopilotIfAny(agent)) blocked = 'agent has no keeper for survival telemetry/fail-back';
-      else if (!autopilotIfAny(agent)?.running) blocked = 'keeper is stopped';
-      else if (autopilotIfAny(agent)?.inert) blocked = 'keeper is already inert for another controller';
+      else if (!commanderKeeper(agent)) blocked = 'agent has no keeper for survival telemetry/fail-back';
+      else if (!commanderKeeper(agent)?.running) blocked = 'keeper is stopped';
+      else if (commanderKeeper(agent)?.inert) blocked = 'keeper is already inert for another controller';
       control[agent] = {
         lease_state: lease ? 'active' : blocked ? 'blocked' : 'available',
         lease_id: lease?.leaseId ?? null,

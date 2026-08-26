@@ -581,6 +581,67 @@ section('THE KEEPER ANSWERS EVERY STEP THE EXCHANGE ASKS FOR');
   ok('a goap keeper goes inert, which keeps it looking', holdFn.includes('autopilot.goInert?.('));
 }
 
+// ---------------------------------------------------------------- the transport
+//
+// Every step above travels to the keeper over a loopback port chosen as
+// `KEEPER_PORT_BASE + index`, with no override — so every broker on a machine allocates
+// from the same number, and one that lost a slot falls back to GUESSING it. The read path
+// checked the reply's `agent` and refused; the write paths checked nothing, and the four
+// verbs this file adds are write paths, one of which stops a keeper.
+//
+// Measured 2026-08-26 with three brokers up: an `arena` broker posted its 45s `/rejoin`
+// sweep to a `shadow` fleet's keepers on two ports, and the server logged
+// `ACCOUNT 64 (shadow05) in use; new connection overrides old one` every 90 seconds for as
+// long as that broker lived, wrecking a set of timed tours that had nothing to do with it.
+// Nothing on either side said a word.
+//
+// TO BE EXACT, because the alarming reading is the wrong one: `/rejoin` ignores the posted
+// body and calls `join()`, which uses the keeper's OWN account and password. No credential
+// crosses and nobody is logged in as somebody else. It is a forced logout and re-login of a
+// stranger's character, on repeat.
+section('AN ORDER ADDRESSED TO ANOTHER FLEET IS REFUSED BY THE PROCESS THAT KNOWS ITS OWN NAME');
+{
+  const keeper = readFileSync(join(HERE, 'm59-keeper-process.mjs'), 'utf8');
+  const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');
+
+  ok('every order carries the agent it is addressed to',
+     /const keeperEnvelope = \(agent, body\)/.test(broker) &&
+     /body: keeperEnvelope\(agent, \{ name, args \}\)/.test(broker));
+  ok('so does the rejoin sweep, which is the one that did the damage',
+     /body: keeperEnvelope\(agent, credentials\)/.test(broker));
+  ok('and a read, because a chat ring and a room view are a character\'s too',
+     /new URLSearchParams\(Object\.entries\(\{ \.\.\.params, agent \}\)/.test(broker));
+
+  ok('the keeper refuses an order that names somebody else',
+     keeper.includes('if (!addressedToUs(ask?.agent)) { refuseMisaddressed(ask.agent); return; }'));
+  ok('and a rejoin that does', keeper.includes('if (!addressedToUs(asked?.agent))'));
+  ok('and a read that does', /!addressedToUsQuery\(url\)/.test(keeper));
+  // A conflict about identity, not a malformed request — and the broker turns 409 into
+  // "drop the allocation and respawn" rather than retrying into the same stranger.
+  ok('it answers 409, naming itself', /\}, 409\);\n\s*\};/.test(keeper) &&
+     keeper.includes('this keeper is "${agent}", not "${claimed}"'));
+  ok('and the broker drops the allocation rather than hammering it',
+     /if \(r\.status === 409\)/.test(broker) && /keeperPorts\.delete\(agent\)/.test(broker));
+
+  // FAILS OPEN ON AN UNADDRESSED REQUEST. An older broker sends no `agent` field, and
+  // refusing those would strand every character the moment the two halves disagreed about
+  // versions. Naming the wrong agent is a mistake; naming nobody is merely old.
+  ok('an unaddressed order is still answered, because an older broker sends none',
+     /if \(claimed === undefined \|\| claimed === null \|\| claimed === ''\) return true;/.test(keeper));
+  // `/health` and `/state` NAME their own agent in the reply and the broker checks it —
+  // they are how a caller discovers whose port this is. Refusing them would remove the only
+  // tool that resolves the confusion.
+  ok('/health and /state stay answerable, since they are how a stranger is identified',
+     /path !== '\/health' && path !== '\/state'/.test(keeper));
+
+  // THE ROOT OF THE FAMILY. This accepted any healthy reply as the keeper it had just
+  // spawned and recorded that port, and `keeperPort()` prefers a recorded port over
+  // everything — so a lost bind race became total confidence. `stopKeeper` posts `/stop` to
+  // that recorded port without further question.
+  ok('a keeper that comes up wearing another name is not adopted as ours',
+     /not the keeper we spawned; not adopting it/.test(broker));
+}
+
 section('AND THE BROKER SIDE OF THE PROXY ANSWERS IN THE SHAPE THE CALLERS READ');
 {
   const broker = readFileSync(join(HERE, 'm59-broker.mjs'), 'utf8');

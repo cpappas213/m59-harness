@@ -1048,7 +1048,13 @@ const queueValidatedMove = compileSessionMethod(brokerSource,
 const confirmPosition = compileSessionMethod(brokerSource,
   'async confirmPosition() {', 'confirmPosition', { Pacer: { note() {} } });
 const stepFine = compileSessionMethod(brokerSource,
-  'async stepFine(x, y) {', 'stepFine', { MOVE_INTERVAL_MS: 0, Pacer: { note() {} } });
+  'async stepFine(x, y) {', 'stepFine',
+  // FINE_CONFIRM_EVERY and KOD_FINENESS arrived with the predict-instead-of-block change
+  // and the dependency guard above named both before the ReferenceError could be blamed
+  // on anything else. FINE_CONFIRM_EVERY is 1 here on purpose: these fixtures assert what a
+  // CONFIRMED step reports, so the suite keeps testing the read-back path rather than
+  // silently switching to the predicted one.
+  { MOVE_INTERVAL_MS: 0, Pacer: { note() {} }, FINE_CONFIRM_EVERY: 1, KOD_FINENESS: 64 });
 const ordinaryStep = compileSessionMethod(brokerSource,
   'async step(col, row, {', 'step', {
     MOVE_INTERVAL_MS: 0, ROOM_RESYNC_MS: Number.POSITIVE_INFINITY,
@@ -1077,7 +1083,12 @@ const walkFine = compileSessionMethod(brokerSource,
   'async walkFine(destX, destY, {', 'walkFine', {
     // Stubbed rather than imported, the same way the other lifted methods take it: this
     // suite is about what the walk DECIDES, and the tracer is a recorder with its own suite.
-    traceMove: () => {}, isTerminalMovementReason, KOD_FINENESS });
+    // THE REAL NUMBERS. These two set how far one fine step reaches and how far the
+    // stride may grow on clean ground, and the growth is a behaviour rather than a
+    // tuning detail — a fixture that walked with a stubbed ceiling would assert the
+    // reach of a walker nobody runs.
+    traceMove: () => {}, isTerminalMovementReason, KOD_FINENESS,
+    FINE_STRIDE: 48, FINE_STRIDE_MAX: 80 });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     provedSquares,
