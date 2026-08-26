@@ -1954,8 +1954,26 @@ export class RoomGeometry {
       const mine = (table?.jumps ?? []).filter(j => Number(j.room) === Number(this.roomNum ?? this.num ?? -1));
       for (const j of mine) {
         if (!j?.from || !j?.to) continue;                       // unmeasured: inert
-        if (!this.standable(j.to.row, j.to.col)) continue;       // nowhere to land
-        const a = this.standPoint(j.from.row, j.from.col), b = this.standPoint(j.to.row, j.to.col);
+        // FINE COORDINATES WIN WHEN THE DECLARATION CARRIES THEM.
+        //
+        // A square is a summary and on jumping ground it is a false one — 40,33 in the
+        // Ancient Place spans 3520 to 10880, the valley floor and the high ledge in one
+        // square with one stand point. Validating a jump at stand points therefore asks
+        // about a place the jump has nothing to do with: two candidates derived between
+        // real footings were refused as "uphill" because the SQUARES read uphill while the
+        // points did not.
+        //
+        // So `from_fine`/`to_fine` — client units, the same space `leafAtClient` speaks —
+        // are used for every height and footing test when present, and the squares stay as
+        // the index callers ask by. A declaration without them behaves exactly as before.
+        const a = j.from_fine ?? this.standPoint(j.from.row, j.from.col);
+        const b = j.to_fine ?? this.standPoint(j.to.row, j.to.col);
+        // NOWHERE TO LAND is asked of the point when there is one, because the landing is
+        // routinely a sliver: 38,30 is `walkable: false` and you jump onto it deliberately.
+        if (j.to_fine) {
+          const f = this.floorBaseAtClient(b.x, b.y, this.leafAtClient(b.x, b.y));
+          if (!Number.isFinite(f)) continue;                     // no floor at the named point
+        } else if (!this.standable(j.to.row, j.to.col)) continue; // nowhere to land
         if (a && b) {
           const fa = this.floorBaseAtClient(a.x, a.y), fb = this.floorBaseAtClient(b.x, b.y);
           if (Number.isFinite(fa) && Number.isFinite(fb) && fb > fa) continue;   // uphill is not a fall

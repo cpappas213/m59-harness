@@ -99,6 +99,28 @@ function standAt(x, y) {
   return best;
 }
 
+// A POINT WITH NO FLOOR IS NOT A PLACE, AND `standAt` WILL HAPPILY NAME ONE.
+//
+// The search reasons with a footprint — the highest floor under a body's width — because one
+// infinitely thin sample at a ledge edge lands in whichever sector contains it. That is right
+// for deciding whether a body can be somewhere and wrong for WRITING DOWN where: it names the
+// centre of the footprint, which may itself be over the void, and `declaredFallJumps`
+// validates the named point exactly. Both candidates for the Ancient Place were refused for
+// precisely this — `to_fine` had `floorBaseAtClient` of null while the footprint around it was
+// solid.
+//
+// So anything that leaves this tool is snapped to a point that has real floor under it.
+function snapToFloor(pt) {
+  if (floorAt(pt.x, pt.y) != null) return pt;
+  for (let r = 40; r <= 320; r += 40)
+    for (let a = 0; a < 12; a++) {
+      const ang = a * Math.PI / 6;
+      const x = Math.round(pt.x + Math.cos(ang) * r), y = Math.round(pt.y + Math.sin(ang) * r);
+      if (floorAt(x, y) != null) return { x, y };
+    }
+  return null;
+}
+
 const key = (x, y) => ((x / STEP) | 0) + '|' + ((y / STEP) | 0);
 const sqOf = (x, y) => ({ row: ((y / F) | 0) + 1, col: ((x / F) | 0) + 1 });
 
@@ -297,9 +319,22 @@ for (let depth = 0; depth <= MAX_JUMPS && !answer; depth++) {
     if (depth === MAX_JUMPS) continue;
     const cands = jumpsFrom(seen).slice(0, Number(flag('branch', 12)));
     for (const c of cands) {
-      const a = sqOf(c.from.x, c.from.y), b = sqOf(c.to.x, c.to.y);
-      next.push({ at: c.to, path: [...node.path, {
-        from: a, to: b, fromFine: c.from, toFine: c.to, drop: c.drop,
+      const fromPt = snapToFloor(c.from), toPt = snapToFloor(c.to);
+      if (!fromPt || !toPt) continue;          // cannot name it, will not propose it
+      // RE-VALIDATE ON THE POINTS ACTUALLY NAMED. The search reasons with footprint maxima
+      // and then snaps to real floor, and those are not the same place: one candidate was
+      // computed as "down 3152" from the footprint and is 3744 -> 4800 UPHILL at the points
+      // that went into the file. The geometry refused it, correctly, and the tool had
+      // written a fall that falls upward. Whatever is proposed must survive the physics at
+      // the coordinates proposed, not at the ones it was found with.
+      const fa = floorAt(fromPt.x, fromPt.y), fb = floorAt(toPt.x, toPt.y);
+      if (fa == null || fb == null) continue;
+      const realDrop = fa - fb;
+      if (realDrop <= 0) continue;             // a fall does not go up
+      if (!clearBetween(fromPt, toPt, fa, fb)) continue;
+      const a = sqOf(fromPt.x, fromPt.y), b = sqOf(toPt.x, toPt.y);
+      next.push({ at: toPt, path: [...node.path, {
+        from: a, to: b, fromFine: fromPt, toFine: toPt, drop: realDrop,
         label: `${a.row},${a.col}->${b.row},${b.col}`,
       }] });
     }

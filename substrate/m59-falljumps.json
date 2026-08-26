@@ -2,7 +2,7 @@
   "_what": "Places joined only by running off a ledge and staying in the air — a fall, not a climb. The mover's one vertical rule (MAX_STEP_HEIGHT) gates climbing, so none of these can be expressed as a step, and without them the router either cannot reach the far side or reaches it through a wall. See tools/m59-falljump.mjs.",
   "_declared_not_derived": "The arc is computable and was computed; against the one jump with operator-supplied endpoints the fall curve tracks the stepped terrain within ~25-35 client units, a thirtieth of a square. A model that decides on rounding cannot be the gate. So these are walked and written down, and the physics is evidence to argue with.",
   "_citation": "GRAVITY_ACCELERATION = -5 * FINENESS (clientd3d/moveobj.h:15); FALL_VELOCITY_0 = -FINENESS*2/3 (move.h:17); MOVEUNITS/MOVE_DELAY give 5 squares/second at a run (move.c:49,184).",
-  "_coordinates": "row, col — the same order the harness uses everywhere. Not the client's display order.",
+  "_coordinates": "row, col — the same order the harness uses everywhere. Not the client's display order. OPTIONAL `from_fine`/`to_fine` carry {x,y} in CLIENT units (1024 to the square), and when present they are what the geometry validates against: a square is a summary and on jumping ground it is a false one — 40,33 spans 3520 to 10880, the valley floor and the high ledge in one square with one stand point. The squares remain the index every caller asks by; the fine points are the truth. See docs/m59-routing.md.",
   "jumps": [
     {
       "room": 599,
@@ -117,6 +117,33 @@
         "col": 30
       },
       "note": "Last of three, four squares south onto real floor at 4800. After this a short walk south reaches the mana node at 51,30 — the point of the whole climb. Take-off is the sliver at 38,30 that the previous jump lands on, so these two are a PAIR: a character that can make the second and not the third is standing on a square the map says does not exist."
+    },
+    {
+      "room": 579,
+      "room_name": "An ancient place, its origin forgotten",
+      "from": {
+        "row": 47,
+        "col": 39
+      },
+      "to": {
+        "row": 49,
+        "col": 36
+      },
+      "from_fine": {
+        "x": 39296,
+        "y": 47360
+      },
+      "to_fine": {
+        "x": 36340,
+        "y": 50152
+      },
+      "kind": "fall",
+      "requires": {
+        "running": true
+      },
+      "part_of_cycle": false,
+      "observed_by": "m59-jumpfinder.mjs, confirmed by Cccc 2026-08-26 — keeper reported arrival 5/5, independently observed 3/5",
+      "note": "THE FIRST JUMP IN THIS FILE NOBODY DESCRIBED. Found by carving the room with a never-descend closure and asking the client's own fall physics what a 4208 drop buys — 0.96s of air and about 4.8 squares, against the 4 this needs. Then executed by a character: `{jumped:true, asked:{49,36}, landed:{49,36}, arrived:true}`. Declared with fine points because the SQUARES read uphill and the points do not; the square-only form of this entry was refused by the geometry, correctly. The 3/5 in observed_by is my own checker lagging, not a miss: the broker's `look` serves a two-second snapshot and twice reported the take-off while the keeper had already reported the landing. The keeper reads the live client and said 5/5."
     }
   ]
 }
