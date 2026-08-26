@@ -17,7 +17,7 @@ import { unlinkSync, readFileSync } from 'node:fs';
 import { Autopilot, HANDLED, farmRoomDenials, releaseQuarry,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
 import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
-import { returnToSpot } from './m59-skills.mjs';
+import { fight, returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
 let pass = 0, fail = 0;
@@ -1345,6 +1345,21 @@ console.log('\n--- a denied assignment cannot fight its own relocation ---');
   ok('open-field policy still respects strategy-independent spawn-cap refusals',
      openFieldDenials.has(563) && openFieldDenials.size === 1);
 
+  const opportunisticWallDenials = farmRoomDenials(
+    new Map([[557, 'three wall samples failed']]),
+    new Map([[563, 'spawn cap 8/8 is occupied by 1x rebel soldier']]),
+    { useSafeSpots: true, requireSafeWall: false });
+  ok('opportunistic-wall policy ignores wall-only room denials',
+     !opportunisticWallDenials.has(557));
+  ok('opportunistic-wall policy still retains spawn-cap room denials',
+     opportunisticWallDenials.has(563) && opportunisticWallDenials.size === 1);
+
+  const broker = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+  ok('the broker publishes require_safe_wall as a boolean argument',
+     /require_safe_wall:\s*\{\s*type:\s*'boolean'/.test(broker));
+  ok('the shared start/update path applies both wall arguments before persistence',
+     /applySafeSpotPolicy\(p\.policy,\s*a\);[\s\S]*rememberAutopilot/.test(broker));
+
   const w = world({ room: 566 });
   const p = keeper(w);
   p.policy.assignedRoom = 557;
@@ -1352,6 +1367,14 @@ console.log('\n--- a denied assignment cannot fight its own relocation ---');
   p.noWallRooms = new Map([[557, 'three wall samples failed']]);
   ok('status no longer reports a wall-denied open-field assignment as deferred',
      p.status().placement?.assignment_deferred === false);
+
+  p.policy.useSafeSpots = true;
+  p.policy.requireSafeWall = false;
+  ok('status also ignores wall denial when walls are preferred but not mandatory',
+     p.status().placement?.assignment_deferred === false);
+  p.cappedRooms = new Map([[557, 'spawn cap cannot recover']]);
+  ok('status still reports a cap-denied assignment as deferred under that policy',
+     p.status().placement?.assignment_deferred === true);
 }
 
 console.log('\n--- proving a spot that works ---');
@@ -2166,6 +2189,50 @@ console.log('\n--- nobody starts a fight tired ---');
      'which is why no character has ever rested for being tired');
   ok('the new one reads it', Math.round(vigorPct(vitals) * 100) === 31,
      `61 of 200 = ${Math.round(vigorPct(vitals) * 100)}%`);
+}
+
+console.log('\n--- a held fight chooses only among targets reachable from the wall ---');
+{
+  const w = world();
+  w.s.name = 'held-target-choice';
+  // Two rats can be hit without leaving the square; a third, previously preferred rat
+  // is across the room. Room insertion order deliberately agrees with neither rule.
+  w.addMonster(23, 8, 0, MONSTER);
+  w.addMonster(22, 2, 0, MONSTER);
+  w.addMonster(21, 1, 0, MONSTER);
+  for (const id of [21, 22, 23]) w.c.room.objects.get(id).nameRsc = 1;
+  w.s.need = () => w.c;
+  w.s.pacer = { submit: async (_kind, action) => action() };
+  w.c.stats = () => {};
+  w.c.waitFor = async () => ({ events: [] });
+  w.c.face = async () => {};
+  w.c.lookup = id => w.c.room.objects.get(id);
+  const attacked = [];
+  let moved = 0;
+  w.s.attackRounds = async id => {
+    attacked.push(id);
+    return { messages: [], aborted: null, vitals: w.c.vitals() };
+  };
+  w.s.walkTo = async () => { moved++; return { arrived: true }; };
+  w.s.walkFine = async () => { moved++; return { arrived: true }; };
+
+  const fromWall = options => fight(w.s, {
+    target: 'giant rat', rounds: 1, disengageAt: 0.1,
+    loot: false, equip: false, holdPosition: true, reach: 3,
+    ...options,
+  });
+
+  const farPreference = await fromWall({ preferId: 23 });
+  ok('a far preferred id cannot pull a held fighter off its nearest in-reach target',
+     attacked[0] === 21 && farPreference.foe_id === 21,
+     JSON.stringify({ attacked, foe: farPreference.foe_id }));
+  ok('that held-position selection performs no movement', moved === 0, `moves=${moved}`);
+
+  const reachablePreference = await fromWall({ preferId: 22 });
+  ok('an unfinished preferred target wins only while it remains in reach',
+     attacked[1] === 22 && reachablePreference.foe_id === 22,
+     JSON.stringify({ attacked, foe: reachablePreference.foe_id }));
+  ok('resuming the in-reach target also performs no movement', moved === 0, `moves=${moved}`);
 }
 
 console.log('\n--- a character can be a service ---');

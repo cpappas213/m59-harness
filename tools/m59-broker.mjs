@@ -86,7 +86,7 @@ import * as uptime from './m59-uptime.mjs';
 import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRATEGIES,
          POSTMORTEM_DIR, setPilotLookup,
          TRAVEL_GUARD_KEYS,
-         applyFightAboveVigor } from './m59-autopilot.mjs';
+         applyFightAboveVigor, applySafeSpotPolicy } from './m59-autopilot.mjs';
 import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import * as exitgap from './m59-exitgap.mjs';
@@ -7633,6 +7633,11 @@ const TOOLS = [
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
+      require_safe_wall: { type: 'boolean',
+        description: 'treat a room where no usable wall can be found as unavailable (default true). ' +
+          'Set false to keep taking and fighting from walls when available while permitting a bounded ' +
+          'open-field fight when none is found; wall-only room denials are then ignored, but spawn-cap ' +
+          'denials still apply' },
       hold_resume_above: { type: 'number',
         description: 'in a safe spot, top up to this fraction of health before swinging again, ' +
           'default 0.9. Stopping costs nothing there, so there is no reason to fight hurt' },
@@ -8257,7 +8262,11 @@ const TOOLS = [
       if (a.inky_reserve !== undefined) p.policy.inkyReserve = !!a.inky_reserve;
       if (a.inky_reserve_floor !== undefined)
         p.policy.inkyReserveFloor = Math.max(0, Number(a.inky_reserve_floor) || 0);
-      if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
+      // Preference and mandate are independent: `true, false` keeps every benefit of a
+      // wall already held without turning a failed wall search into a room quarantine.
+      // This same path handles both `start` and a live update-style start call, and the
+      // persisted policy below therefore carries both exact booleans across restarts.
+      applySafeSpotPolicy(p.policy, a);
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
       // 0 or null means NO LIMIT, not "never pull anything". The safe default is eight;
       // this preserves an explicit operator override that removes the ceiling. Number(null)
