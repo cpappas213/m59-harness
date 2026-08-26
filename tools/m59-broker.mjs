@@ -42,7 +42,7 @@ import { loadResources } from './m59-rsc.mjs';
 import { describeObject, affordances, OF, blocksMovement, prepareActTarget } from './m59-parse.mjs';
 import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
-import { renderProjection } from './m59-render-projection.mjs';
+import { keeperView } from './m59-render-projection.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
   from './m59-map.mjs';
 // UNION OF BOTH SIDES. Ours added loadRoo/buildAllRoomGeometry for the keeper split;
@@ -1085,8 +1085,37 @@ class KeeperProxy {
             }),
           ],
       abilitiesAt: { skills: 0, spells: 0 },
-      self: null,
-      selfId: null,
+      // WHERE THE BODY IS. `self` was null, and `c.self` is how nearly everything asks —
+      // the status tool's `where`, the travel guard's "what is within two squares of us",
+      // `armedForSure`'s owner, the stall detector. With it null, `status` reported a room
+      // and no square, so a caller watching a character walk could not tell whether it had
+      // moved. Thirty-one walk_to calls were verified against `undefined,undefined` before
+      // anybody noticed the walker had not moved at all.
+      //
+      // The keeper publishes it in /state; this is that, in the shape the callers read.
+      self: s.you ? { col: s.you.col, row: s.you.row, x: s.you.x, y: s.you.y,
+                      id: -1, flags: 0, facing: s.you.facing ?? null } : null,
+      selfId: s.you ? -1 : null,
+      // AND THE ROOM THEY ARE STANDING IN, because giving `self` a value without this
+      // CRASHED THE BROKER on resume. Every caller that reads `c.self` goes on to read
+      // `c.room.objects` a line later — `threat()` does exactly that — and the emulated
+      // client had no `room` at all, so the moment `self` stopped being null the guard that
+      // had been accidentally protecting them stopped firing:
+      //
+      //     TypeError: Cannot read properties of undefined (reading 'objects')
+      //         at Autopilot.threat ... at resumeFleet
+      //
+      // Twenty-one characters failed to resume. A half-built emulation is worse than an
+      // obviously empty one, because the empty one fails at the first read and this failed
+      // at the second.
+      room: {
+        id: s.room?.num ?? null, num: s.room?.num ?? null,
+        name: s.room?.name ?? null,
+        objects: new Map((s.objects ?? []).map(o => [o.id, {
+          id: o.id, nameRsc: o.name, name: o.name,
+          flags: o.flags ?? 0, col: o.col ?? null, row: o.row ?? null,
+        }])),
+      },
     };
     this._client = client;
     this._client._stateAt = this._stateAt;
@@ -1173,17 +1202,16 @@ class KeeperProxy {
   //
   // The reshape itself is `m59-render-projection.mjs`, deliberately not here: this file
   // cannot be imported without starting a broker, so a rule written in it cannot be tested
-  // offline. `m59-render-test.mjs` pins them.
-  async _renderProjection() {
-    const rv = await this._roomViewCached();
-    const mapRoom = rv?.room_num != null ? worldMap?.rooms?.[rv.room_num] ?? null : null;
-    return renderProjection(rv, mapRoom);
-  }
+  // offline. `m59-render-test.mjs` pins them. `view()` below is where it is applied.
 
   // One frame's worth. `view()` is called far more often than a character moves, and each
-  // call is an HTTP round trip to the keeper, so the answer is held for a frame rather than
-  // re-asked per caller. 250ms is four frames a second — faster than the game's own paced
-  // step, and slower than a poll loop can spin.
+  // call is a loopback HTTP round trip to the keeper, so the answer is held for a frame
+  // rather than re-asked per caller. 250ms is four frames a second — faster than the game's
+  // own paced step, and slower than a poll loop can spin.
+  //
+  // This is NOT a game round trip. `look cached=true` promises to skip the wire and still
+  // does: the keeper answers out of its protocol client's own memory and sends no packet.
+  // What is being crossed is a process boundary that did not exist when that was written.
   async _roomViewCached() {
     const now = Date.now();
     if (this._roomViewAt && now - this._roomViewAt < 250) return this._roomView;
@@ -1202,32 +1230,31 @@ class KeeperProxy {
   // keeper-backed broker. That is the whole of "twenty-one of twenty-one travels refused":
   // not a movement bug, a shape bug one property deep, in the half of the proxy that reads.
   //
-  // The state and the render projection are both already CACHED by the poller, so nothing
-  // here needs to await anything — it composes what is in hand. A caller that wants better
-  // than a two-second-old answer asks through the pacer, which forces a fresh read; the
-  // projection refreshes on its own clock and `as_of_ms` says how old the rest is.
+  // So this composes what is in hand and awaits nothing. `refresh()` is the awaitable one,
+  // for callers that have a moment; `perception()` stays awaitable because a renderer wants
+  // the current frame rather than whatever the last caller happened to leave behind.
   //
-  // `refresh()` is the awaitable one, for callers that have a moment.
+  // AND THE TWO CACHES ARE RECONCILED RATHER THAN MERGED. The state poll and the room view
+  // are on different clocks, so right after a hop the state can name the new room while the
+  // room view still describes the old one. A position from a DIFFERENT room is worse than no
+  // position — it is `arrivalReport` saying what is standing next to you in a room you have
+  // left — so the projection is used only when its room number agrees, and `stale_render`
+  // says so when it does not.
   view() {
-    const s = this._state ?? {};
-    return {
-      ...s,
-      ...(this._roomView ?? {}),
-      room: s.room ? { num: s.room.num, name: s.room.name } : null,
-      you: s.you ?? null,
-      vitals: { health: s.hp ?? null, mana: s.mana ?? null, vigor: s.vigor ?? null },
-      objects: Array.isArray(s.objects) ? s.objects : [],
-      exits: Array.isArray(s.exits) ? s.exits : [],
-      scenery: { total: 0 },
-      as_of_ms: s.as_of_ms ?? null,
-      source: 'keeper snapshot — /room-view on the keeper has the full contents',
-    };
+    return keeperView(this._state, this._roomView,
+      num => (num != null ? worldMap?.rooms?.[num] ?? null : null));
   }
-  perception() { return this.view(); }
+  // Awaited by `/rts/v1/read` and by `look projection=render`, so it may refresh first. A
+  // renderer reading a frame that is however stale the last unrelated caller left it is the
+  // failure this whole projection exists to undo, one clock along.
+  async perception() {
+    await this._roomViewCached().catch(() => null);
+    return this.view();
+  }
   snapshot(note) { return this.view(); }
   async refresh(opts = {}) {
     await this._refreshState({ fresh: true }).catch(() => null);
-    await this._renderProjection().catch(() => null);
+    await this._roomViewCached().catch(() => null);
     return this.view();
   }
 
@@ -1288,7 +1315,8 @@ class KeeperProxy {
   joinAsNewCharacter() { throw new Error(`${this.name}: keeper-backed sessions cannot create a character`); }
 
   // Reads: answer from the snapshot, and refresh it rather than pretending it is current.
-  async refresh() { return this._refreshState(); }
+  // (the forcing `refresh` is defined above; a second definition here used to override it
+  //  silently, which is how a method that looks written stops doing anything)
   abilityBook() { return this._state?.abilities ?? null; }
   recordAbilities() { return null; }
 
@@ -1375,21 +1403,42 @@ class KeeperProxy {
   armourKind() { return null; }
   carryCapacity() { return null; }
   cleanDescription() { return null; }
-  confirmPosition() { return false; }
+  async confirmPosition() { const r = await keeperAction(this.name, this._index, 'confirm_position', {}); return !!r?.confirmed; }
   consume() { return null; }
   equipBest() { return null; }
   equippedNow() { return []; }
-  escapeUnderworld() { return Promise.resolve(null); }
+  // FORWARDED, NOT STUBBED. Each of these used to be `Promise.resolve(null)`: a method that
+  // moves nobody, changes nothing, and reports success by saying nothing at all. With
+  // `movement_mode fine` on, every walk_to took the fine branch and returned null, so a
+  // keeper-backed character could not walk in fine coordinates AT ALL — thirty-one calls in
+  // a row, and the body never left its square.
+  //
+  // That is the same failure as the pacer refusal and the `view()` shape, and it is the
+  // worse version of it: those threw or came back malformed, and these looked like success.
+  // `m59-broker.mjs` already learned this once — see `methodsThatMayNoOp`, and the commit
+  // that removed a catch-all which "answered every unknown property and defeated every
+  // guard in the file".
+  async escapeUnderworld(opts = {}) { return keeperAction(this.name, this._index, 'escape_underworld', opts); }
   estimateJourney() { return null; }
-  faceToward() { return Promise.resolve(null); }
+  async faceToward(target, opts = {}) { return keeperAction(this.name, this._index, 'face', { target, ...opts }); }
   hitBook() { return null; }
   isFresh() { return false; }
-  leaveVia() { return Promise.resolve(null); }
-  leaveViaAny() { return Promise.resolve(null); }
-  rest() { return Promise.resolve(null); }
+  // A ROOM CROSSING BELONGS TO THE PROCESS HOLDING THE BODY, and the keeper already does
+  // it — `travelJob` reaches `leaveVia` inside the keeper, which is where the
+  // `[exit] injected ...` lines come from. What must not happen is the BROKER answering
+  // this with null, because a caller then believes the character tried to leave and did
+  // not. Refusing out loud is the honest answer and points at the verb that does work.
+  leaveVia() { throw new Error(`${this.name}: leaveVia is the keeper's; travel through /action`); }
+  // A ROOM CROSSING BELONGS TO THE PROCESS HOLDING THE BODY, and the keeper already does
+  // it — `travelJob` reaches `leaveViaAny` inside the keeper, which is where the
+  // `[exit] injected ...` lines come from. What must not happen is the BROKER answering
+  // this with null, because a caller then believes the character tried to leave and did
+  // not. Refusing out loud is the honest answer and points at the verb that does work.
+  leaveViaAny() { throw new Error(`${this.name}: leaveViaAny is the keeper's; travel through /action`); }
+  async rest(opts = {}) { return keeperAction(this.name, this._index, 'rest', opts); }
   setPolicy() { return null; }
-  stepFine() { return Promise.resolve(null); }
-  walkFine() { return Promise.resolve(null); }
+  async stepFine(x, y) { return keeperAction(this.name, this._index, 'step_fine', { x, y }); }
+  async walkFine(x, y, opts = {}) { return keeperAction(this.name, this._index, 'walk_fine', { x, y, ...opts }); }
 }
 
 // Wrap KeeperProxy instances with a Proxy that returns null for any

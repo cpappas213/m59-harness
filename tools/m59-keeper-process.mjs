@@ -280,10 +280,17 @@ function state() {
           .map(o => ({
             id: o.id,
             name: c.rsc?.get?.(o.nameRsc) ?? '',
-            is_player: !!(o.flags & 0x00000001),
-            can: [
-              (o.flags & 0x04) ? 'attack' : null,
-            ].filter(Boolean),
+            // THE RAW FLAGS, not a guess at what they mean. The broker rebuilds an object
+            // list from this and its callers test `o.flags & OF.ATTACKABLE` themselves —
+            // 0x0008 attackable, 0x0004 player, per m59-bt-combat.mjs. Re-deriving booleans
+            // here and flags there is two homes for one fact, and the second one is always
+            // the one that is wrong.
+            flags: o.flags ?? 0,
+            is_player: !!((o.flags ?? 0) & 0x0004),
+            // AND WHERE IT IS. The travel guard asks `Math.hypot(o.col - me.col, o.row -
+            // me.row) <= 2` — "what is close enough to be swinging at us" — so an object
+            // list without positions answers "nothing is near" for a character being eaten.
+            col: o.col ?? null, row: o.row ?? null,
           }));
       } catch { return []; }
     })(),
@@ -490,6 +497,55 @@ const server = createServer(async (req, res) => {
           case 'loot': {
             const r = await session.lootFloor?.(args);
             json(r ?? { ok: true });
+            return;
+          }
+          // FINE MOVEMENT, WHICH THE PROXY ANSWERED WITH null AND NOTHING ELSE.
+          //
+          // `KeeperProxy.walkFine` was `return Promise.resolve(null)` — a stub that moves
+          // nobody and reports success by saying nothing at all. With `movement_mode fine`
+          // on, EVERY walk_to took that branch, so a keeper-backed character could not walk
+          // in fine coordinates at all. Thirty-one calls in a row returned null and the
+          // character never left its square.
+          //
+          // Fine movement is not a nicety here: the coarse grid is 64 units to the square
+          // and cannot represent a walkable strip narrower than one, which is exactly what
+          // the ledges in 579 and the catwalk in 108 are. Without this a bot cannot walk a
+          // sliver, and slivers are where the interesting places in this game are.
+          case 'walk_fine': {
+            const r = await session.walkFine(Number(args.x), Number(args.y), {
+              maxSteps: Number(args.max_steps ?? args.maxSteps ?? 60),
+              stride: args.stride != null ? Number(args.stride) : undefined,
+              controlToken: args.control_token ?? args.controlToken,
+            });
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'step_fine': {
+            const r = await session.stepFine(Number(args.x), Number(args.y));
+            json(r ?? { ok: true });
+            return;
+          }
+          // AND THE SURVIVAL VERBS. Same failure, higher stakes: `rest` and
+          // `escapeUnderworld` were also `Promise.resolve(null)`, so a keeper-backed
+          // character asked to recover did nothing and said it was fine.
+          case 'rest': {
+            const r = await session.rest?.(args);
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'escape_underworld': {
+            const r = await session.escapeUnderworld?.(args);
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'face': {
+            const r = await session.faceToward?.(args.target ?? args, {});
+            json(r ?? { ok: true });
+            return;
+          }
+          case 'confirm_position': {
+            const r = await session.confirmPosition?.();
+            json({ confirmed: r ?? false });
             return;
           }
           case 'stand': {
