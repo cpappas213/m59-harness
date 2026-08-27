@@ -198,9 +198,12 @@ assert.match(attack, /pacer[.]submit[(]'attack'.*beforeRtsMutation[(]a, 'attack'
 const attackIntent = section("name: 'attack_intent',", "name: 'move_intent',");
 assert.match(attackIntent, /rtsPacketAuthority[(]\{/);
 assert.match(attackIntent, /sameRtsIdentity.*OF[.]ATTACKABLE/s);
-assert.match(attackIntent, /current[.]flags & OF[.]PLAYER/);
-assert.match(attackIntent, /fraction > 0[.]35/,
-  'multi-swing HP must still exceed 35% at the final callback');
+assert.doesNotMatch(attackIntent, /current[.]flags & OF[.]PLAYER|may not target players/,
+  'an armed commander is not silently narrowed to PvE at the broker seam');
+assert.doesNotMatch(attackIntent, /stop_below|fraction > 0[.]35/,
+  'commander attacks are not silently narrowed by a broker health-floor policy');
+assert.match(attackIntent, /s instanceof KeeperProxy[\s\S]*?rtsIntent[(]'attack'/,
+  'keeper-backed attacks execute as typed jobs beside the live Meridian socket');
 assert.match(attackIntent, /\[RTS_MUTATION_GUARD\]: guard/);
 
 const moveIntent = section("name: 'move_intent',", "name: 'context_intent',");
@@ -288,8 +291,8 @@ for (const [tool, next] of [["name: 'attack_intent',", "name: 'move_intent',"],
                             ["name: 'move_intent',", "name: 'context_intent',"],
                             ["name: 'context_intent',", "name: 'cancel_action',"]]) {
   const body = section(tool, next);
-  assert.match(body, /run: \(a, caller\) =>/, `${tool} does not receive its caller`);
-  assert.match(body, /requireControlSession\(s, caller,/, `${tool} does not check its caller`);
+  assert.match(body, /run: async \(a, caller\) =>/, `${tool} does not receive its caller`);
+  assert.match(body, /requireControlSession\([\s\S]*?s,\s*caller,/, `${tool} does not check its caller`);
 }
 // And the endpoint check itself no longer decides locality — it binds to one server.
 assert.doesNotMatch(broker, /requireLocalControlEndpoint\(/,
