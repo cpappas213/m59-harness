@@ -26,6 +26,7 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { sanitizeOutbound } from './m59-inbox.mjs';
+import { conflictsPath } from './m59-intel.mjs';
 
 // ============================================================================
 // CONFIG
@@ -42,7 +43,10 @@ const DEFAULTS = {
 
 const JOURNAL_PATH  = new URL('../substrate/ai-director.log', import.meta.url);
 const STATUS_PATH   = new URL('../substrate/ai-director-status.json', import.meta.url);
-const CONFLICTS_PATH = new URL('../substrate/active-conflicts.json', import.meta.url);
+// PER FLEET, and asked of `m59-intel.mjs` rather than rebuilt here. A conflict book is an
+// order to move bodies, and two fleets run on this machine — see the note there. A reader
+// left on the old fixed name does not error, it just reports no conflicts for ever.
+const CONFLICTS_PATH = () => pathToFileURL(conflictsPath());
 const TARGETS_PATH   = new URL('../substrate/targets.json', import.meta.url);
 
 // Closed allowlist: every directive kind is validated against this before execution.
@@ -381,7 +385,7 @@ export async function runPass(cfg, journal, status) {
   const events = await fetchRecentEvents(cfg.brokerPort, sinceMs);
   if (events.length) _lastEventAt = Math.max(...events.map(e => Number(e.at) || sinceMs));
 
-  const conflicts = readJsonOrEmpty(new URL(CONFLICTS_PATH));
+  const conflicts = readJsonOrEmpty(CONFLICTS_PATH());
   const targets   = readJsonOrEmpty(new URL(TARGETS_PATH));
   const summary = buildSummary({ fleet, events, conflicts, targets });
 

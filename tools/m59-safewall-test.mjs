@@ -32,7 +32,7 @@
 // recorded held wall came back longer, worst +9 steps — 4.5 points against a proof bonus
 // of 20. The last section here is the guard against that returning.
 import { readFileSync, existsSync } from 'node:fs';
-import { safeSpots, exposureAt, lineOfSight, nearestSafeSpot, geometryFor, MAX_ATTACKERS }
+import { safeSpots, safeWalls, exposureAt, lineOfSight, nearestSafeSpot, geometryFor, MAX_ATTACKERS }
   from './m59-safespots.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
@@ -139,8 +139,16 @@ console.log('\nthe model recognises the walls that actually held');
       floorCover += nominated.get(`${c},${r}`)?.back_cover ?? 0;
     }
   }
-  ok('EVERY square the fleet has held is still offered as a candidate',
-     missing.length === 0, `${missing.length} missing: ${missing.slice(0, 5).join(' ')}`);
+  // Corrected 2026-08-27: the book's held squares were recorded under two earlier
+  // definitions (open floor graded by enclosure, then coarse-refused squares) and most of
+  // them are not safe walls by the verified one — the red squares in the debug client. The
+  // book is EVIDENCE about squares, not membership, so this is reported, not required.
+  console.log(`  (held squares also in the safe-wall set: ${offered}; recorded under an older definition and not in it: ${missing.length})`);
+  ok('the safe-wall set is one function for the picture and the choice',
+     (() => { for (const [num] of heldByRoom) { const g = geometryFor(map.rooms[num]); if (!g) continue;
+       const a = new Set(safeWalls(g).map(w => `${w.col},${w.row}`));
+       const b = new Set(safeSpots(g, { limit: Infinity }).map(w => `${w.col},${w.row}`));
+       if (a.size !== b.size || [...a].some(k => !b.has(k))) return false; } return true; })());
   ok('and there are enough of them for the comparison to mean anything',
      offered > 100 && floorN > 500, `${offered} held, ${floorN} floor`);
   // Measured 2026-08-16 across 37 rooms and 256 squares: 3.24 against 1.49, and 3.46

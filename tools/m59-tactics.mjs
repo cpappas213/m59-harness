@@ -33,6 +33,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fleetName } from './m59-fleetpath.mjs';
+import { sameEpoch, epochId } from './m59-epoch.mjs';
 
 // WHICH FLEET, ASKED THE ONE WAY THIS REPOSITORY ASKS IT.
 //
@@ -97,6 +98,10 @@ export function recordTactic(row = {}) {
   try {
     const entry = {
       t: row.at ?? Date.now(),
+      // WHICH CODE THIS ROW IS ABOUT — see tools/m59-epoch.mjs and the `#movement` tag.
+      // A tactic's success rate is a statement about the walker that ran it, and the walker
+      // changes; without this every summary silently averages over versions.
+      epoch: epochId('movement'),
       character: row.character ?? null,
       room: row.room ?? null,
       tactic: row.tactic ?? 'unknown',
@@ -134,6 +139,78 @@ export function recordTactic(row = {}) {
   } catch { return null; }
 }
 
+// HOW LONG A TACTIC ROW IS EVIDENCE, AND HOW LONG IT IS JUST WEIGHT.
+//
+// This file was append-only for ever, and the cost of that is not disk — it is that every
+// measurement taken from it silently averages over code that no longer exists. Measured on
+// 2026-08-27, asking "what fraction of crossings ride a baked rail":
+//
+//     all time (5 days, 52,047 rows)   27.0% rode a rail, 33.2% "no baked line"
+//     last 90 minutes                  48.5% rode a rail,  1.6% "no baked line"
+//
+// The 33.2% is a lookup bug that was fixed days ago. Reading the whole file made a solved
+// problem look like the dominant one, and the number an operator would have acted on was
+// wrong by a factor of two in the OTHER direction as well. Nothing in the file is false;
+// all of it is stale, and stale evidence about a moving target is worse than none because
+// it carries the authority of a measurement.
+//
+// `readTactics` already defaults to a 24h window — the consumers knew. What was missing is
+// that the file itself never forgot, so any ad-hoc analysis (`cat`, a one-off script, a
+// question asked in a hurry) got the whole five days by default.
+//
+// TRIMMED ON A BYTE THRESHOLD, NOT ON EVERY WRITE. This sits on the movement path with
+// twenty-one sessions sharing an event loop, so the rewrite has to be rare and the check
+// has to be a `statSync`. At 4 MB a trim is a few hundred milliseconds every few hours.
+const RETAIN_HOURS = Number(process.env.M59_TACTICS_RETAIN_HOURS || 48);
+const TRIM_ABOVE_BYTES = Number(process.env.M59_TACTICS_TRIM_BYTES || 4 * 1024 * 1024);
+
+/**
+ * Drop rows older than the retention window. Never throws — an instrument that can break
+ * the thing it measures is worse than no instrument, and that applies to its housekeeping
+ * as much as to its writes.
+ *
+ * Returns the number of rows dropped, or 0 if nothing was done.
+ */
+export function trimTactics(fleet = FLEET(), { force = false } = {}) {
+  const file = tacticsFile(fleet);
+  try {
+    if (!force) {
+      let size = 0;
+      try { size = fs.statSync(file).size; } catch { return 0; }
+      if (size < TRIM_ABOVE_BYTES) return 0;
+    }
+    const since = Date.now() - RETAIN_HOURS * 3600000;
+    const text = fs.readFileSync(file, 'utf8');
+    const keep = [];
+    let dropped = 0;
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      // A ROW THAT WILL NOT PARSE IS DROPPED, NOT KEPT FOR EVER. The writer appends whole
+      // lines, so the only unparseable row is a torn last write — which `readTactics`
+      // already tolerates and which nothing can use.
+      let t = null, epoch = null;
+      try { const r = JSON.parse(line); t = r.t ?? null; epoch = r.epoch ?? null; }
+      catch { dropped++; continue; }
+      // THE COMMIT DECIDES WHERE IT CAN. A row from a superseded movement epoch is not old
+      // evidence, it is evidence about different code, and no window makes it relevant
+      // again. The clock only rules on rows the epoch cannot speak for: written before this
+      // existed, or recorded in a checkout with no git.
+      const known = sameEpoch(epoch, 'movement');
+      if (known === false) { dropped++; continue; }
+      if (known === true) { keep.push(line); continue; }
+      if (t === null || t >= since) keep.push(line); else dropped++;
+    }
+    if (!dropped) return 0;
+    // Through a temp file, because this runs while the broker is writing: a truncate-then-
+    // write leaves the ledger empty for as long as the write takes, and a crash in that
+    // window loses everything rather than the old half.
+    const tmp = file + '.trim';
+    fs.writeFileSync(tmp, keep.length ? keep.join('\n') + '\n' : '');
+    fs.renameSync(tmp, file);
+    return dropped;
+  } catch { return 0; }
+}
+
 export function flushTactics(fleet = FLEET()) {
   if (flushTimer) { clearTimeout(flushTimer); flushTimer = null; }
   if (!buffer.length) return 0;
@@ -141,6 +218,7 @@ export function flushTactics(fleet = FLEET()) {
   try {
     fs.mkdirSync(TACTICS_DIR, { recursive: true });
     fs.appendFileSync(tacticsFile(fleet), rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+    trimTactics(fleet);
     return rows.length;
   } catch { return 0; }
 }

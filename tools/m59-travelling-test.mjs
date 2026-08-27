@@ -146,9 +146,32 @@ console.log('\nthe guard: what a journey leaves switched on');
   // ordinary ladder could freeze, and freezing is now refused anywhere but a proven safe
   // spot because it recovers vigor and NEVER health. The doomed rung it gated still exists
   // and is gated on `flee` instead — see "inside two hits of death" below.
-  ok('all five faculties default to ON — a character with no opinion still defends itself',
-     TRAVEL_GUARD_KEYS.length === 5 && TRAVEL_GUARD_KEYS.every(key => TRAVEL_GUARD_DEFAULTS[key] === true),
+  // ONLY A PERSON AND DYING MAY END A JOURNEY — operator's doctrine, 2026-08-27, measured
+  // off 37 road deaths (median 119s to die, median 68s below the flee line, 1.9% of frames
+  // holding a spot). Everything else that happens on a road has ONE answer: park on the next
+  // route-adjacent safe spot, play dead once, rest full, carry on.
+  //
+  // So the defaults are no longer uniform, and which ones are on is the doctrine written down:
+  //
+  //   flee        ON  — gated on `worthEnding`, PEOPLE ONLY under travel_flee_from
+  //   fight_back  ON  — same gate; it is the "a PERSON is emptying the bar" abandon
+  //   rest        ON  — a hop-boundary pause, never an abandon
+  //   safe_spot   ON  — the whole replacement behaviour
+  //   arm         OFF — the ONLY one that could fire for a monster, at full health
+  //
+  // The last line is the change. Pinned as an explicit map rather than "all of them", because
+  // "every faculty is true" is exactly the assertion that cannot express a doctrine.
+  ok('the guard permits a PERSON and a rate, and nothing a monster can cause',
+     JSON.stringify(TRAVEL_GUARD_DEFAULTS) ===
+       JSON.stringify({ flee: true, fight_back: true, arm: false, rest: true, safe_spot: true }),
      JSON.stringify(TRAVEL_GUARD_DEFAULTS));
+  ok('and there are still exactly five of them', TRAVEL_GUARD_KEYS.length === 5,
+     JSON.stringify(TRAVEL_GUARD_KEYS));
+  // THE RULE BEHIND THE MAP, so a faculty added later has to answer this question too: can
+  // this fire because of a MONSTER? If it can, it does not default on.
+  ok('nothing that a monster alone can trigger is on by default',
+     TRAVEL_GUARD_DEFAULTS.arm === false,
+     'arm cancels at full health on a fact about the pack, in rooms that kill in nine seconds');
   ok('and every one of them says which clock it is on',
      TRAVEL_GUARD_KEYS.every(key => ['mid-hop', 'hop boundary', 'both'].includes(TRAVEL_GUARD_CLOCK[key])),
      JSON.stringify(TRAVEL_GUARD_CLOCK));
@@ -227,8 +250,14 @@ console.log('\nthe guard: what a journey leaves switched on');
 
   const k = keeper({ policy: { travelGuard: { flee: false } } });
   ok('a policy switch turns exactly one faculty off', k.travelGuard().flee === false);
-  ok('and leaves the other five alone',
-     TRAVEL_GUARD_KEYS.filter(key => key !== 'flee').every(key => k.travelGuard()[key] === true));
+  // AGAINST THE DEFAULTS, NOT AGAINST `true`. The point of this assertion is that switching
+  // one faculty does not disturb its neighbours, and once the defaults stopped being uniform
+  // "everything else is true" stopped expressing that — it would fail on a correct switch and
+  // pass on a broken one that happened to turn everything on.
+  ok('and leaves every other faculty at its default',
+     TRAVEL_GUARD_KEYS.filter(key => key !== 'flee')
+       .every(key => k.travelGuard()[key] === TRAVEL_GUARD_DEFAULTS[key]),
+     JSON.stringify(k.travelGuard()));
   ok('an explicit override beats the policy',
      k.travelGuard({ flee: true }).flee === true);
   // The rule from docs/m59-policy.md: an unrecognised key is never merged into a shape the
@@ -248,8 +277,17 @@ console.log('\ntravelling is not inert, and cannot become it by accident');
   ok('and it still reads as held to everything that asks the old question',
      k.inertStatus()?.inert === true);
   ok('the status says which stand-down it is', k.inertStatus()?.state === 'travelling');
+  // THE LIST IS WHAT IS STILL ON, AND IT IS NO LONGER ALL OF THEM. That is precisely what an
+  // operator needs to read before a death: `arm` being absent here is the doctrine visible
+  // from outside, and a status that always listed five could never have shown it.
   ok('and lists what is still allowed, so an operator can see it before a death',
-     Array.isArray(k.inertStatus()?.may_still) && k.inertStatus().may_still.length === 5);
+     Array.isArray(k.inertStatus()?.may_still) &&
+     JSON.stringify([...k.inertStatus().may_still].sort()) ===
+       JSON.stringify(TRAVEL_GUARD_KEYS.filter(f => TRAVEL_GUARD_DEFAULTS[f]).sort()),
+     JSON.stringify(k.inertStatus()?.may_still));
+  ok('and switched_off names the faculty this doctrine turned off',
+     (k.inertStatus()?.switched_off ?? []).includes('arm'),
+     JSON.stringify(k.inertStatus()?.switched_off));
 
   const errand = keeper();
   errand.goInert('m59-outfit: buying a weapon');
@@ -448,16 +486,30 @@ console.log('\nthe triggers — none of them ask whether the body is moving');
                           guard: { flee: false, fight_back: false },
                           pulses: ring({ from: 8, perSample: 0 }) }))).took);
 
-  // ---- THE WEAPON IS GONE. Ahead of everything else, because being unarmed is WHY the
-  // next room goes badly.
+  // ---- THE WEAPON IS GONE, AND THE JOURNEY CARRIES ON ANYWAY.
+  //
+  // This rung used to be ahead of everything else, on the argument that being unarmed is WHY
+  // the next room goes badly. True, and it is still not a reason to STOP ON THE ROAD: it is
+  // the one faculty of the five a MONSTER can trigger, it fires at FULL HEALTH on a fact
+  // about the pack, and it cancels a crossing in rooms measured to take a character from
+  // full to dead in about nine seconds. Under the road doctrine the answer to "something is
+  // wrong out here" is always the route-adjacent safe spot, which takes the body off the
+  // road first; re-arming is something to do parked, and `loadout` does it at the far end.
+  //
+  // Kept as a switch rather than deleted — `arm: true` restores it per character.
   const bare = keeper({ health: 36, max: 37, adjacent: 0, armed: false, guard: {},
                         pulses: ring({ from: 36, perSample: 0 }) });
   const r5 = await run(bare);
-  ok('an unarmed character is taken back at full health', r5.took);
-  ok('and the reason is the weapon, not the damage',
-     bare.notes.some(n => n.detail?.trigger === 'unarmed'));
-  ok('with arm off it walks on unarmed',
-     !(await run(keeper({ health: 36, max: 37, armed: false, guard: { arm: false },
+  ok('an unarmed character is NOT taken back — being unarmed is not worth stopping on a road for',
+     !r5.took, JSON.stringify(bare.notes.map(n => n.detail?.trigger)));
+  ok('and no rung claims to have taken it back for the weapon',
+     !bare.notes.some(n => n.detail?.trigger === 'unarmed'),
+     JSON.stringify(bare.notes.map(n => n.detail?.trigger)));
+  ok('and the journey still holds the character', !!bare.travelling);
+  // THE SWITCH STILL WORKS IN BOTH DIRECTIONS, which is what "optional and default off"
+  // means and is the half a default change usually forgets to pin.
+  ok('with arm switched back ON it is taken back at full health',
+     (await run(keeper({ health: 36, max: 37, adjacent: 0, armed: false, guard: { arm: true },
                           pulses: ring({ from: 36, perSample: 0 }) }))).took);
 
   // ---- NOTHING WRONG. The journey keeps the character, and this must not read as a stall
@@ -652,6 +704,197 @@ console.log('NOT EVEN THE WATCHDOG STOPS A JOURNEY');
   // nobody "fixes" it into symmetry with the other one.
   ok('the blind-walk watchdog was already skipping travelling characters',
      /if \(blockedFor < WATCHDOG_BLOCKED_MS\) return;[\s\S]{0,400}if \(this\.inert\) return;/.test(AUTOPILOT_SRC));
+}
+
+// ---------------------------------------------------------------------------
+// THE ROAD DOCTRINE, 2026-08-27: ONE ANSWER TO EVERYTHING THAT IS NOT A PERSON OR DEATH.
+//
+// Measured off 37 shadow road deaths across two five-inn pilgrimages. All `mode: idle` —
+// pure travel — and 36 of 37 in five corridor rooms, none in a town:
+//
+//     decline from peak health to death   median 119s, 32 of 37 over a minute
+//     time spent BELOW the flee line      median  68s, max 243s
+//     regenerated 5hp+ mid-decline        23 of 37, several by +20 to +25
+//     frames `stalled`                    1,155 of 1,498
+//     frames holding a safe spot             29 of 1,498  (1.9%)
+//     15 attackers at once                26 of 37
+//
+// An enormous window, and nothing used it. The answers the ladder had were not answers:
+// walking away does not work on a monster (vision 4 + difficulty/2, and they follow), and
+// changing objective for an inn is the same move with more road attached — begun at the
+// health that made it an emergency, through the rooms that caused it.
+//
+// So: park on the next safe spot within `travel_shelter_detour` of the planned route, play
+// dead ONCE to shed what is chasing, rest to FULL, carry on. These pin the settings that
+// express that, IN BOTH DIRECTIONS, because "optional and default off" is a claim about two
+// behaviours and a default change usually only pins one.
+console.log('');
+console.log('THE ROAD DOCTRINE: park, play dead once, rest full, carry on');
+{
+  // THE ROAD FLOOR, NOT THE FIGHTING ONE. `holdResumeAbove` (0.9) decides when a HUNTING
+  // character gets up off a wall to swing again; a road has its own floor and it is 1. Those
+  // are two different decisions and I conflated them once already — pinning the wrong one
+  // here would make a combat-pacing change look like the travel doctrine.
+  ok('a traveller that stops to mend rests FULL, and by its own floor',
+     /travelHoldResumeAbove \?\? 1/.test(AUTOPILOT_SRC) && /const onARoad =/.test(AUTOPILOT_SRC),
+     'the onARoad branch of the leave-the-wall test');
+  ok('and the fighting floor is left alone at nine tenths',
+     /holdResumeAbove: 0\.9,/.test(AUTOPILOT_SRC),
+     'raising this would change hunting, not travelling');
+  ok('a safe spot counts as route-adjacent within five squares of the planned path',
+     /travelShelterDetour \?\? 5/.test(AUTOPILOT_SRC));
+  ok('and every fallback agrees, so no path quietly uses a different adjacency',
+     !/maxDetour \?\? 4/.test(AUTOPILOT_SRC) && !/maxDetour \?\? 4/.test(BROKER_SRC),
+     'a second default is a second doctrine');
+
+  // CHANGING OBJECTIVE FOR AN INN IS OFF, AND REFUSES OUT LOUD. A behaviour that is off and
+  // silent is indistinguishable from one that is broken, which is why the refusal is a
+  // `note` naming the switch that brings it back.
+  const stranded = keeper({ health: 8, max: 37 });
+  stranded.s.world.room.num = 598;               // The Cragged Mountains — a road, not a town
+  const refused = await stranded.retreatToSafety({ because: 'test' });
+  ok('a character in trouble on a road does NOT change objective for an inn',
+     refused?.arrived === false && refused?.refused === 'retreat_to_inn is off',
+     JSON.stringify(refused));
+  ok('and says so, naming the switch that would bring it back',
+     stranded.notes.some(n => n.what === 'not changing objective for an inn' &&
+                              n.detail?.enable_with === 'retreat_to_inn: true'),
+     JSON.stringify(stranded.notes.map(n => n.what)));
+
+  // AND THE SWITCH WORKS. Without this, the assertion above is satisfied by a function that
+  // always refuses — which is deletion wearing a policy flag.
+  const allowed = keeper({ health: 8, max: 37, policy: { retreatToInn: true } });
+  allowed.s.world.room.num = 598;
+  const tried = await allowed.retreatToSafety({ because: 'test' }).catch(e => ({ threw: e.message }));
+  ok('with retreat_to_inn ON it gets past the refusal and tries',
+     tried?.refused !== 'retreat_to_inn is off', JSON.stringify(tried));
+
+  // THE ONE THING THAT OUTRANKS THE DOCTRINE. Standing on a wall that has held IS safety,
+  // and that guard is older than this change — it must not have been swallowed by the new
+  // gate, which sits BELOW it on purpose.
+  const onAWall = keeper({ health: 8, max: 37 });
+  onAWall.s.world.room.num = 598;
+  onAWall.hold = { col: 20, row: 45 };
+  onAWall.holdWorks = () => true;
+  const stays = await onAWall.retreatToSafety({ because: 'test' });
+  ok('a character already on a wall that has held stays on it, doctrine or no doctrine',
+     stays?.arrived === true && stays?.held_spot === true, JSON.stringify(stays));
+}
+
+// ---------------------------------------------------------------------------
+// AN EXHAUSTED TRAVELLER IS A STRANDED ONE — the vigor floor, 2026-08-27.
+//
+// Mmmm is the case, and it is the clearest single failure in the five-inn run. It crossed
+// ELEVEN ROOMS IN FOUR MINUTES, every leg `ok`, 6 to 43 seconds each:
+//
+//     202 -> 200 -> 535 -> 545 -> 554 -> 564 -> 150 -> 575 -> 576 -> 587 -> 598 -> 599
+//
+// then entered Ukgoth and spent FORTY-THREE MINUTES failing to leave it:
+//
+//     10:01  599 -> 2   FAIL   353s   every square for that exit refused (4 tried)
+//     10:20  599 -> 2   FAIL  1512s   every square for that exit refused (4 tried)
+//     10:36  599 -> 598 FAIL  1061s   every square for that exit refused (3 tried)
+//
+// It was at vigor ONE. `RUN_VIGOR_FLOOR` is 12, so it could not run: five squares a second
+// became two and a half, the 86-126 step climb out of that valley exhausted `leaveViaAny`'s
+// candidate budget every time, and the failure was reported against the DOORWAY. An energy
+// problem wearing a geometry verdict — the same crossing runs in 24-27s, six times of six.
+//
+// THE HALF THAT IS EASY TO LEAVE OUT is getting up again. `REST_VIGOR_WORTH_WAITING` already
+// said "do not wait for vigor from the bottom", so a floor that only decides when to STOP
+// would have produced a character that stops for nothing and walks away exactly as tired as
+// it arrived. Both halves are pinned here.
+console.log('');
+console.log('THE VIGOR FLOOR: never arrive at a hard crossing unable to run');
+{
+  const onRoad = (vigor) => {
+    const k = keeper({ vigor, guard: {} });
+    return k;
+  };
+  ok('a traveller below the floor is too tired to be on a road',
+     onRoad(1).tooTiredToTravel() === true);
+  ok('and one above it is not', onRoad(80).tooTiredToTravel() === false);
+  ok('the floor is well above the server rule of 12 — it is about ARRIVING able to run',
+     /M59_TRAVEL_VIGOR_FLOOR \?\? 40/.test(AUTOPILOT_SRC));
+  // A CHARACTER NOT ON A ROAD IS NOT IN TROUBLE. Vigor 3 in a town is between errands, and
+  // `restBelow` governs that; firing here would make every idle character stop for a wall.
+  const inTown = keeper({ vigor: 1 });
+  ok('a character with no journey is never "too tired to travel"',
+     inTown.tooTiredToTravel() === false);
+  // AND IT IS SETTABLE, because 40 is this fleet's number rather than this game's.
+  ok('the floor is a policy, not a constant nobody can reach',
+     onRoad(1).policy && keeper({ vigor: 30, guard: {}, policy: { travelVigorFloor: 10 } })
+       .tooTiredToTravel() === false);
+  ok('and it is exposed on the autopilot tool', /travel_vigor_floor: \{ type: 'number'/.test(BROKER_SRC));
+  ok('and applied when set', /p\.policy\.travelVigorFloor = Number\(a\.travel_vigor_floor\)/.test(BROKER_SRC));
+
+  // GETTING UP IS THE OTHER HALF. Both travel rests must fill to the cap when the stop was
+  // FOR vigor, overriding the "do not wait from the bottom" rule that stranded Mmmm.
+  ok('the mid-journey wall fills vigor to the cap when the stop was for exhaustion',
+     /vigor: this\.tooTiredToTravel\(\) \? REST_VIGOR_CAP/.test(AUTOPILOT_SRC));
+  ok('and so does the sanctuary rest',
+     /const wantVigor = this\.tooTiredToTravel\(\) \|\| \(vig \?\? 0\) >= REST_VIGOR_WORTH_WAITING/
+       .test(AUTOPILOT_SRC));
+  ok('and the refuge mend already asked for the cap unconditionally',
+     /health: 1, vigor: REST_VIGOR_CAP/.test(AUTOPILOT_SRC));
+  // ONE QUESTION IN THREE PLACES. A floor that decides when to stop but not when to get up is
+  // a character that stops for nothing — which is what the two halves did before this.
+  ok('all three sites ask the same predicate rather than re-deriving it',
+     (AUTOPILOT_SRC.match(/tooTiredToTravel\(/g) ?? []).length >= 4,
+     'definition plus the shelter trigger and both rests');
+}
+
+// ---------------------------------------------------------------------------
+// THE LAST HOLE IN THE ROAD DOCTRINE, 2026-08-27.
+//
+// `travel_guard` was narrowed to a person and dying. `retreat_to_inn` was switched off. The
+// flee rung was removed long before either. And a walk through a dangerous room was STILL
+// cancelled after two or three steps — from a completely different code path, on a threshold
+// none of those settings can see:
+//
+//     cancelled_by: "the watchdog pulling us out of a blind walk below the flee line"
+//
+// Measured in the row-29 corridor of the Western border of the Twisted Wood with eight bodies
+// parked along it: FOUR separate live crossings cut off after two or three steps, every one by
+// that line. Held off, the same walk ran nineteen. It is also what made every live movement
+// measurement in a dangerous room meaningless — the thing being measured was the watchdog.
+//
+// The operator's rule, verbatim: "My bots either complete their travel orders, get interrupted
+// by PVP, or die."
+//
+// A doctrine with an exception nobody configured is not a doctrine, so this pins the switch in
+// both directions AND pins that the OTHER half of the watchdog survives — the pinned-wedge
+// rung fires at FULL health on a character that has covered no ground for minutes, which is a
+// stuck bot rather than a hurt one, and nothing else in the file interrupts it.
+console.log('');
+console.log('THE BLIND-WALK WATCHDOG IS OFF, AND ONLY THAT HALF');
+{
+  ok('the hurt half is gated behind a policy that defaults off',
+     /if \(this\.policy\.blindWalkWatchdog !== true\) \{/.test(AUTOPILOT_SRC));
+  ok('and it says the walk stands rather than going silent',
+     /travelling — hurt, and the walk stands/.test(AUTOPILOT_SRC));
+  // THE GATE MUST SIT ABOVE THE CANCEL, not below it. A guard placed after the call is a
+  // guard that does nothing — which is exactly the mistake made earlier the same day in
+  // `aimInto`, where a body check below an early return threaded nothing.
+  const gate = AUTOPILOT_SRC.indexOf('if (this.policy.blindWalkWatchdog !== true)');
+  const cancel = AUTOPILOT_SRC.indexOf('the watchdog pulling us out of a blind walk below the flee line');
+  ok('and the gate is ABOVE the cancel it guards', gate > 0 && cancel > gate,
+     `gate at ${gate}, cancel at ${cancel}`);
+
+  // THE OTHER HALF STAYS. It is the one that unsticks a healthy character going nowhere, and
+  // it is gated on `frac >= fleeAt` — full health — so it cannot fire on a hurt traveller.
+  ok('the pinned-wedge half is untouched and still fires at full health',
+     /WATCHDOG — broke a wedge that was not hurting anybody/.test(AUTOPILOT_SRC));
+  ok('and it is still reached only when health is AT OR ABOVE the flee line',
+     /if \(frac >= fleeAt\) \{[\s\S]{0,400}pinnedFor < WATCHDOG_PINNED_MS/.test(AUTOPILOT_SRC));
+
+  // KEPT, NOT DELETED — the repository's standing rule for a behaviour being retired.
+  ok('the cancel itself is still in the file, switchable back on',
+     /the watchdog pulling us out of a blind walk below the flee line/.test(AUTOPILOT_SRC));
+  ok('and the switch is offered on the autopilot tool',
+     /blind_walk_watchdog: \{ type: 'boolean'/.test(BROKER_SRC));
+  ok('and applied when set',
+     /p\.policy\.blindWalkWatchdog = a\.blind_walk_watchdog === true/.test(BROKER_SRC));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

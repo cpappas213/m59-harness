@@ -5,14 +5,18 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NAV, STYLE, esc, ago } from './m59-page-chrome.mjs';
-import { readHistory, roomHeatmap, playerStats, movementTrail,
+import { conflictsPath,
+         readHistory, roomHeatmap, playerStats, movementTrail,
          timeOfDayPattern, zonePattern, followingDetection, ZONE_MAP } from './m59-intel.mjs';
 
 const HERE      = dirname(fileURLToPath(import.meta.url));
 const SUBSTRATE = join(HERE, '..', 'substrate');
 const SEEN_PATH       = join(SUBSTRATE, 'players-seen.json');
 const TARGETS_PATH    = join(SUBSTRATE, 'targets.json');
-const CONFLICTS_PATH  = join(SUBSTRATE, 'active-conflicts.json');
+// PER FLEET, and asked of the one resolver rather than rebuilt here — a reader left on the
+// old fixed name shows an empty board instead of erroring, which is the quietest way for a
+// rename to go wrong. See the note in m59-intel.mjs.
+const CONFLICTS_PATH = conflictsPath;
 const HISTORY_DIR     = join(SUBSTRATE, 'player-history');
 
 function readJSON(path) {
@@ -39,7 +43,7 @@ function knownPlayerNames() {
 export function renderPlayers(query = '') {
   const seen      = readJSON(SEEN_PATH);
   const targets   = readJSON(TARGETS_PATH);
-  const conflicts = readJSON(CONFLICTS_PATH);
+  const conflicts = readJSON(CONFLICTS_PATH());
   const now       = Date.now();
 
   const SUSPICIOUS_WINDOW_MS = 10 * 60_000;

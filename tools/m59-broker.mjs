@@ -2499,7 +2499,11 @@ async function heldByLocalClients(saved) {
     held.set(c.agent, { pid: c.pid, character });
     // claimPilot reads the session for an object id and a keeper; there is neither yet,
     // which is correct — there is nothing to stop and nothing to renumber.
-    claimPilot(c.agent, c.pid, { character });
+    // No session yet, so nothing to ask — but the roster says whether this character
+    // has standing orders, and that is what "was the keeper running" means at a resume.
+    const orders = saved[c.agent]?.autopilot ?? null;
+    const keeperWasRunning = !!orders && orders.mode !== 'idle';
+    claimPilot(c.agent, c.pid, { character, keeperWasRunning });
     console.error(`[state] ${c.agent}${character ? ` (${character})` : ''} is being played here ` +
                   `(pid ${c.pid}) — NOT logging it in`);
   }
@@ -2906,7 +2910,7 @@ setPilotLookup(() => {
   return null;
 });
 
-function claimPilot(agent, pid, { character = null } = {}) {
+function claimPilot(agent, pid, { character = null, keeperWasRunning: claimedRunning = null } = {}) {
   const s = sessions.get(agent);
   const objectId = s?.client?.selfId ?? null;
   const keeper = autopilotIfAny(agent);
@@ -2929,8 +2933,18 @@ function claimPilot(agent, pid, { character = null } = {}) {
   //
   // The proxy already caches the keeper's own /state, so this stays synchronous.
   const proxied = s instanceof KeeperProxy ? s : null;
-  const keeperWasRunning = proxied
-    ? !!proxied._state?.goap?.running
+  // A SECOND CLAIM MUST NOT FORGET WHAT THE FIRST ONE KNEW. Claiming stops the keeper, so
+  // any later recomputation reads "stopped" — and the broker resume path claims every
+  // character a local client is holding BEFORE it has a session to ask, which reads
+  // "stopped" for the same reason. Robin, 2026-08-27: claimed "keeper was running" at
+  // 06:05, re-claimed "keeper was stopped" at broker resume, released as "stays stopped",
+  // and rejoined with no keeper — driven by nothing until somebody noticed. So: an
+  // existing claim's answer stands; a caller that knows (the resume path reads the
+  // roster's standing orders) is believed; only with neither do we ask the shell.
+  const prior = piloted.get(agent);
+  const keeperWasRunning = prior ? !!prior.keeperWasRunning
+    : claimedRunning != null ? !!claimedRunning
+    : proxied ? !!proxied._state?.goap?.running
     : (!!keeper?.running && !keeper?.inert);
   if (keeperWasRunning && keeper && !proxied) keeper.stop('a person took the controls — deliberate');
   piloted.set(agent, { pid, since: Date.now(), objectId,
@@ -7637,6 +7651,14 @@ const TOOLS = [
       fight_rounds: { type: 'number',
         description: 'how many rounds to fight a target before breaking off. Default 30. ' +
           'Increase for characters without weapon skills who deal low damage per swing.' },
+      ask_for_help: { type: 'boolean',
+        description: 'broadcast a plea to other players when badly hurt with nothing to heal ' +
+          'with, or unarmed after a death. Default false since 2026-08-27 — a fleet on a shared ' +
+          'server does not beg in public. Re-equipping and conjuring a blade happen either way.' },
+      fight_back_after_s: { type: 'number', minimum: 0,
+        description: 'the fight-back edict: being hit for this many seconds while not swinging ' +
+          'makes the nearest attacker inside the engagement band the target now, ahead of ' +
+          'every wall, pull and walk. Fleeing still outranks it. 0 (the default) is off.' },
       use_bt: { type: 'boolean',
         description: 'hand the get-armed decision to the behaviour tree (m59-bt-nodes.mjs) ' +
           'instead of the sequential path, for this character only. Off by default: the ' +
@@ -7659,6 +7681,12 @@ const TOOLS = [
           'time, as each character wakes in a town and walks to the best room it knows. Set this ' +
           'and it goes here instead. Still refused if the room cannot generate the prey. ' +
           'null clears it. `spread` sets these for a whole fleet at once' },
+      banned_destinations: { type: 'array', items: { type: 'number' },
+        description: 'ROOMS THIS CHARACTER MUST NOT SET OUT FOR — not to sell, not to bank, not to farm. ' +
+          'A DESTINATION ban: a route that merely passes through one is not rerouted. ' +
+          'Room numbers; [] clears it. A trip whose every destination is struck is dropped and ' +
+          'noted once rather than routed elsewhere. Written for 110 (Roq, "A shadowy corner"): ' +
+          'the road there crosses a lupogg on a jump and the sale does not pay well anyway' },
       max_bots_per_safe_spot: { type: ['number', 'null'],
         description: 'maximum bots sharing one safe square when a fleet spread strategy is enabled. ' +
           'Default null means no occupancy-based spreading; 3 reproduces the historical keeper cap' },
@@ -7754,7 +7782,41 @@ const TOOLS = [
           'keeper, which meant it could never be persisted and never survived a restart' },
       hold_resume_above: { type: 'number',
         description: 'in a safe spot, top up to this fraction of health before swinging again, ' +
-          'default 0.9. Stopping costs nothing there, so there is no reason to fight hurt' },
+          'default 1.0 — rest FULL. Stopping costs nothing there, so there is no reason to fight ' +
+          'hurt, and on a road a tenth of the bar missing is a tenth of the margin missing' },
+      blind_walk_watchdog: { type: 'boolean',
+        description: 'OFF by default and deliberately so. The watchdog rung that cancels a ' +
+          'walk when health is under the flee line and the pass has been inside one await for ' +
+          'three seconds. On an ordinary road that is most of a crossing: four live crossings ' +
+          'of the row-29 corridor in the Western border of the Twisted Wood were cut off after ' +
+          'two or three steps by this line alone, and ran nineteen steps with it held off. It ' +
+          'was the last hole in the road doctrine — travel_guard, retreat_to_inn and the flee ' +
+          'rung all say only a person or death may stop a journey, and this cancelled it anyway ' +
+          'from another code path on a threshold none of them can see. Being hurt on a road is ' +
+          'answered by the route-adjacent safe spot instead. The pinned-wedge half of the ' +
+          'watchdog is unaffected: that fires at FULL health on a character covering no ground' },
+      travel_vigor_floor: { type: 'number',
+        description: 'raw vigor a traveller must not drop below on an ordinary road, default 40. ' +
+          'Below it the journey stops at the next route-adjacent safe spot, fills up to the ' +
+          'resting cap (80 of 200 — the rest has to be eaten) and carries on, keeping its ' +
+          'objective. Well above the server rule of 12 on purpose: the floor is not "run for one ' +
+          'more second", it is "never arrive at a hard crossing unable to run at all". Measured ' +
+          'case: a character reached Ukgoth at vigor 1 having crossed eleven rooms in four ' +
+          'minutes, then spent 43 minutes failing to leave a crossing that runs in 24-27s' },
+      travel_shelter_detour: { type: 'number',
+        description: 'how far off the PLANNED ROUTE a safe spot may be and still count as ' +
+          'route-adjacent, in squares, default 5. This is the whole definition of which spot a ' +
+          'traveller in trouble parks at: the next one ahead within this many squares of the road ' +
+          'it is already on. Further than that is not shelter — a full bar is about nine seconds ' +
+          'on these roads — it is a longer way to die' },
+      retreat_to_inn: { type: 'boolean',
+        description: 'OFF by default. When a character is in trouble, may it change objective and ' +
+          'walk to a sanctuary? It may not, because the rooms that produce the emergency ARE the ' +
+          'roads — 36 of 37 measured road deaths were in five corridor rooms and none in a town — ' +
+          'so the walk crosses more of what is killing it, begun at the health that made it an ' +
+          'emergency. The replacement is the route-adjacent safe spot: park, play dead once, rest ' +
+          'full, carry on. Kept as a switch because a character with no spot in reach at all is a ' +
+          'case nobody has isolated yet' },
       pull_within: { type: 'number',
         description: 'how many steps it may go to fetch a monster that will not come to the wall, ' +
           'default 8. It hits it once and walks straight back' },
@@ -8313,11 +8375,20 @@ const TOOLS = [
       if (a.roam !== undefined) p.policy.roam = !!a.roam;
       if (a.assigned_room !== undefined)
         p.policy.assignedRoom = a.assigned_room == null ? null : Number(a.assigned_room);
+      if (a.banned_destinations !== undefined) {
+        if (!Array.isArray(a.banned_destinations) || a.banned_destinations.some(r => !Number.isFinite(Number(r))))
+          throw new Error('banned_destinations must be a list of room numbers');
+        p.policy.bannedDestinations = a.banned_destinations.map(Number);
+      }
       if (a.max_bots_per_safe_spot !== undefined)
         p.policy.maxBotsPerSafeSpot = a.max_bots_per_safe_spot == null
           ? null : Math.max(1, Math.floor(Number(a.max_bots_per_safe_spot) || 1));
       if (a.fight_rounds !== undefined)
         p.policy.fightRounds = Math.max(1, Math.floor(Number(a.fight_rounds) || 30));
+      if (a.fight_back_after_s !== undefined) {
+        const secs = Number(a.fight_back_after_s);
+        p.policy.fightBackAfterMs = Number.isFinite(secs) && secs > 0 ? Math.floor(secs * 1000) : null;
+      }
       // BOTH OF THESE WERE REACHABLE ONLY FROM A FILE THAT COULD NOT SET THEM. `useBT`
       // gated a whole behaviour-tree path and had no setter anywhere — not here, and not
       // in the loadout, whose normalise() dropped the block it was supposed to live in.
@@ -8380,6 +8451,10 @@ const TOOLS = [
       // retries for ever and the character never swings at prey standing next to it.
       if (a.require_safe_wall !== undefined) p.policy.requireSafeWall = !!a.require_safe_wall;
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
+      if (a.blind_walk_watchdog !== undefined) p.policy.blindWalkWatchdog = a.blind_walk_watchdog === true;
+      if (a.travel_vigor_floor !== undefined) p.policy.travelVigorFloor = Number(a.travel_vigor_floor);
+      if (a.travel_shelter_detour !== undefined) p.policy.travelShelterDetour = Number(a.travel_shelter_detour);
+      if (a.retreat_to_inn !== undefined) p.policy.retreatToInn = a.retreat_to_inn === true;
       // 0 or null means NO LIMIT, not "never pull anything". There is no sensible reading
       // of "fetch things within zero steps", and the default is unlimited — see pull() —
       // so this is the only way to express "put the ceiling back where it was" and then
@@ -8393,6 +8468,7 @@ const TOOLS = [
           Math.floor(Number(a.barren_spots_before_room_decision) || 1));
       if (a.defend_against_players !== undefined)
         p.policy.defendAgainstPlayers = !!a.defend_against_players;
+      if (a.ask_for_help !== undefined) p.policy.askForHelp = !!a.ask_for_help;
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };

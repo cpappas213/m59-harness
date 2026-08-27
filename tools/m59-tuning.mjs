@@ -92,6 +92,16 @@ export const TUNABLES = {
   fight_above_vigor: { check: posInt, why:
     'the vigor floor for STARTING a fight. 100 is the lowest HONOURED value - fightFloor() ' +
     'is Math.max(MIN_FIGHT_VIGOR, ...), so anything lower reads as applied and changes nothing' },
+  fight_back_after_s: { check: posInt, why:
+    'the fight-back edict: being hit for this many seconds while not swinging makes the ' +
+    'nearest attacker inside the engagement band the target NOW, ahead of every wall, pull ' +
+    'and walk. Fleeing still outranks it. 0 is off, which is the default and the behaviour ' +
+    'that was already there' },
+  ask_for_help: { check: bool, why:
+    'broadcast a plea to other players when badly hurt with nothing to heal with, or unarmed ' +
+    'after a death ("if anyone can spare a flask or cast a heal on me..."). OFF by default ' +
+    'since 2026-08-27: a fleet on a shared server does not beg in public. The re-equip and ' +
+    'conjure-a-blade attempts that precede the plea run either way' },
   max_carry: { check: posInt, why: 'stacks before it wants a town trip' },
   bank_above: { check: posInt, why: 'purse before it walks to a bank. High means never' },
 };

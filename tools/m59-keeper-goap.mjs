@@ -199,6 +199,7 @@ export class GOAPKeeper {
     this._lastPlan = null;
     this._passCount = 0;
     this._passBracket = 0;
+    this._pullTargetCooldowns = new Map();
 
     // ── THE OUT-OF-BAND GUARD ───────────────────────────────────────────────
     //
@@ -777,6 +778,10 @@ export class GOAPKeeper {
         const band = isArmedNow ? fullBand : Math.floor(fullBand / 2);
         const ceiling = huntLevel + band;
 
+        const cooldowns = (this._pullTargetCooldowns ??= new Map());
+        const targetNow = Date.now();
+        for (const [id, until] of cooldowns)
+          if (until <= targetNow) cooldowns.delete(id);
         const hostiles = list.filter(o => {
           // Raw room objects have o.flags (bit flags), NOT o.can (action list).
           // The action list is derived from flags via affordances(). Using o.can
@@ -788,7 +793,11 @@ export class GOAPKeeper {
           // affordance in their flags but are not hostiles. "Living tree"
           // is a good creature, not a hostile — exclude it too.
           if (/^(tree|living tree|flagpole|fence|wall|door|window|rock|boulder|bush|grass|flower|mushroom|log|stump)/i.test(name)) return false;
-          return can.includes('attack')
+          const cooling = cooldowns.has(Number(o.id ?? o.obj_id));
+          const me = c.self;
+          const urgent = me
+            && Math.hypot((o.col ?? 0) - me.col, (o.row ?? 0) - me.row) <= 2;
+          return (!cooling || urgent) && can.includes('attack')
             && !/friendly|pet|tame/i.test(name)
             && !(o.flags & OF.PLAYER); // players are handled separately by the PVP gate
         });
@@ -1642,7 +1651,14 @@ export class GOAPKeeper {
     // character walks toward a mob it should be running from.
     const charLevel2 = c.vitals?.()?.health?.max ?? 20;
     const mapRoomNum = resolveMapRoom(c.room?.num ?? c.room?.id ?? null, this._roomName());
-    const execArgs = { threatCeiling: ws._threatCeiling ?? null, targetInBand: ws.target_in_band ?? null, huntLevel: this.policy.huntLevel ?? charLevel2, threatBand: this.policy.threatBand ?? Math.floor(charLevel2 / 2), mapRoomNum };
+    const execArgs = {
+      threatCeiling: ws._threatCeiling ?? null,
+      targetInBand: ws.target_in_band ?? null,
+      targetId: ws._targetId ?? null,
+      huntLevel: this.policy.huntLevel ?? charLevel2,
+      threatBand: this.policy.threatBand ?? Math.floor(charLevel2 / 2),
+      mapRoomNum,
+    };
     // MAX PASS GUARD: if this step takes longer than 8s, the broker's
     // event loop has been monopolised for too long. We cannot abort the
     // atomic mid-flight (it's awaiting socket I/O), but we log the
@@ -1665,16 +1681,41 @@ export class GOAPKeeper {
 
     const stepName = p.names?.[0] ?? result.action ?? '';
 
+    // A quarry that stopped closing is a target/aggro failure, not bad geometry and not
+    // a bad wall. Cool that exact id briefly, clear the persisted choice, and let the
+    // next pass choose another quarry before recomputing its safe spot.
+    if (stepName === 'scavenge' && result.result?.pull_stalled) {
+      const stalled = result.result;
+      const stalledId = Number(stalled.stalled_target_id ?? this._persistedTargetId);
+      if (Number.isFinite(stalledId))
+        (this._pullTargetCooldowns ??= new Map()).set(
+          stalledId, Date.now() + Math.max(3_000, Number(this.policy.pullTargetCooldownMs ?? 30_000)));
+      console.error(`[goap] ${who} quarry ${stalledId} stopped closing; cooling it and re-picking target+wall`);
+      this.note('disengaging from a quarry that stopped following', {
+        target_id: stalledId, wall: stalled.wall ?? null,
+        last_position: stalled.last_position ?? null,
+        last_distance: stalled.last_distance ?? null,
+        best_distance: stalled.best_distance ?? null,
+        doing_instead: 'selecting another target, then its closest coarse-valid safe spot',
+      });
+      this._persistedTargetId = null;
+      this._persistedTargetLevel = null;
+      this._persistedThreatCeiling = null;
+      this._persistedTargetIsPlayer = null;
+      this._persistedTargetAggro = null;
+      this._scavFailCount = 0;
+      this._scavFailRoom = null;
     // If scavenge failed because targets were unreachable, clear the
     // persisted target so the next pass picks a different one. Without
     // this, the GOAP keeps re-picking the same unreachable target every
     // pass and the character stands still.
-    if (stepName === 'scavenge' && /could not reach|could not get|unreachable|no approach|ran out of steps|nothing here matches/i.test(result.reason ?? '')) {
+    } else if (stepName === 'scavenge' && /could not reach|could not get|could not pull|unreachable|no approach|ran out of steps|nothing here matches|selected target .* no longer available|no target-valid safe spot|could not establish a pull/i.test(result.reason ?? '')) {
       console.error(`[goap] ${who} scavenge unreachable, clearing target ${this._persistedTargetId} for re-pick`);
       this._persistedTargetId = null;
       this._persistedTargetLevel = null;
       this._persistedThreatCeiling = null;
       this._persistedTargetIsPlayer = null;
+      this._persistedTargetAggro = null;
       // Track scavenge failures per room. After 3 failures in the
       // same room, the geometry is broken — force a room change.
       const roomNum = c.room?.num ?? c.room?.id;

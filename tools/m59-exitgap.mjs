@@ -42,6 +42,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { sameEpoch, epochId } from './m59-epoch.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = join(HERE, '..');
@@ -73,6 +74,56 @@ function current() {
   return cache.value;
 }
 
+// HOW LONG A REFUSAL IS STILL TRUE.
+//
+// These counters were cumulative for ever, and a doorway that was broken on Tuesday and
+// fixed on Wednesday still reads as broken. Ukgoth's north door is the case: `refused 182,
+// crossings 0` — a boundary that had never once been crossed — while on the day it was
+// read the same door was crossing in three seconds, six times out of six. Every refusal in
+// that count was real; none of them was about the code now running.
+//
+// That matters more here than in most ledgers, because this file is explicitly the thing an
+// operator reads to choose what to go and fix. A number that cannot come down is not a
+// measurement, it is a monument — it sends somebody to repair a door that works and it hides
+// the one that broke this morning underneath five days of history.
+//
+// THE CLOCK IS THE FALLBACK. THE CODE EPOCH IS THE ANSWER.
+//
+// A time window is a guess about how fast this repository changes, and it is wrong in both
+// directions at once: a fortnight of quiet evidence is still good, and four-hour-old
+// evidence is worthless if the mover was rewritten in between. What actually invalidates a
+// refusal is a change to the code that produced it, so that is what these rows are keyed
+// on — see tools/m59-epoch.mjs and the `#movement` commit tag.
+//
+// The hours remain underneath for the two cases the epoch cannot cover: a checkout with no
+// git, and a row written before this existed. Both answer `null` from `sameEpoch`, which
+// means "cannot say" and must never be read as stale.
+const RETAIN_HOURS = Number(process.env.M59_EXITGAP_RETAIN_HOURS || 24);
+
+/**
+ * Is this row still about the code in play, and has it been touched recently enough to be
+ * evidence rather than history. Reset it if not.
+ */
+function freshen(row, at) {
+  if (!row || !Number.isFinite(row.at)) return row;
+  const wasEpoch = sameEpoch(row.epoch ?? null, 'movement');
+  const supersededByCode = wasEpoch === false;
+  // Only consult the clock when the epoch cannot answer. Where it CAN, the commit is a
+  // better statement about this row than any number of hours.
+  const goneQuiet = wasEpoch === null && (at - row.at >= RETAIN_HOURS * 3600000);
+  if (!supersededByCode && !goneQuiet) return row;
+  return { ...row, refused: 0, escaped: 0, crossings: 0, approaches: 0,
+           actual: [], deltas: {}, tried: undefined,
+           // Kept on purpose — "this doorway has been trouble before" is worth knowing and
+           // is a different claim from "this doorway is trouble now".
+           first: row.first ?? row.at, stale_reset_at: at, previously_refused: row.refused,
+           // WHY it was reset, because "the code changed" and "nobody has been here for a
+           // day" are different facts and an operator reading the book needs to tell them
+           // apart before deciding whether a zero means fixed or means untested.
+           reset_because: supersededByCode ? 'movement code changed' : 'no sighting in the window',
+           superseded_epoch: supersededByCode ? row.epoch : undefined };
+}
+
 /**
  * The model could not offer a way out of this room in this direction.
  *
@@ -85,11 +136,14 @@ export function noteRefused(room, direction, {
 } = {}) {
   const gaps = readAll();
   const k = key(room, direction);
-  const row = gaps[k] ?? { room, direction: String(direction ?? '?').toLowerCase(),
+  const row = freshen(gaps[k], at) ?? { room, direction: String(direction ?? '?').toLowerCase(),
                            refused: 0, escaped: 0, first: at, at,
                            crossings, approaches, believed: null, actual: [], deltas: {} };
   row.refused++;
   row.at = at;
+  // WHICH CODE THIS SIGHTING IS ABOUT. Written on every touch rather than only at creation,
+  // because a row that survives into a new epoch has just been re-proved under it.
+  row.epoch = epochId('movement');
   row.crossings = crossings;
   row.approaches = approaches;
   if (believed) row.believed = { col: believed.col, row: believed.row };
@@ -111,11 +165,12 @@ export function noteEscaped(room, direction, actual, { at = Date.now() } = {}) {
   if (!actual || !Number.isInteger(actual.col) || !Number.isInteger(actual.row)) return null;
   const gaps = readAll();
   const k = key(room, direction);
-  const row = gaps[k] ?? { room, direction: String(direction ?? '?').toLowerCase(),
+  const row = freshen(gaps[k], at) ?? { room, direction: String(direction ?? '?').toLowerCase(),
                            refused: 0, escaped: 0, first: at, at,
                            crossings: 0, approaches: 0, believed: null, actual: [], deltas: {} };
   row.escaped++;
   row.at = at;
+  row.epoch = epochId('movement');
   const seen = (row.actual ??= []);
   if (!seen.some(s => s.col === actual.col && s.row === actual.row)) {
     seen.push({ col: actual.col, row: actual.row });

@@ -1888,7 +1888,10 @@ export async function fight(s, {
   });
   const inReach = holdPosition ? sorted.filter(within) : sorted;
   if (holdPosition && !inReach.length) {
-    const nearest = candidates[0];
+    // Preserve the quarry the caller selected before choosing its wall. Returning the
+    // room-list head here could validate a spot for one monster, then make pull() fetch a
+    // different one. If the preferred quarry is still present, it owns this result.
+    const nearest = (preferId != null && sorted.find(o => o.id === preferId)) || sorted[0];
     return {
       fought: false, out_of_reach: true,
       reason: 'holding position and nothing matching is within reach',
@@ -1950,11 +1953,10 @@ export async function fight(s, {
                foe_id: foe.id, reason: `target ${rawDist.toFixed(0)} cells away — too far to approach this pass`,
                nearest: { distance: +rawDist.toFixed(1) }, log, note: 'the GOAP will travel closer on the next pass' };
     }
-    let walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.min(10, Math.max(6, spot.steps * 2)), arriveWithin: 512 });
+    let walk = await s.walkTo(spot.col, spot.row, { maxSteps: Math.min(10, Math.max(6, spot.steps * 2)), arriveWithin: KOD_FINENESS });
     say('approached', { arrived: walk.arrived, steps: walk.steps, reason: walk.reason });
     if (!walk.arrived) {
       // COARSE GRID FAILED — TRY FINE
-      const KOD_FINENESS = 512;
       const half = KOD_FINENESS >> 1;
       const fx = spot.col * KOD_FINENESS + half;
       const fy = spot.row * KOD_FINENESS + half;
@@ -1964,9 +1966,9 @@ export async function fight(s, {
       // re-plans every second, so a longer walk is better done
       // across multiple passes.
       const distCells = spot.steps || 10;
-      const fineMaxSteps = Math.min(10, Math.max(8, Math.ceil(distCells * 512 / 48)));
+      const fineMaxSteps = Math.min(10, Math.max(8, Math.ceil(distCells * KOD_FINENESS / 48)));
       say('fine_fallback', { to: [fx, fy], reason: walk.reason, maxSteps: fineMaxSteps });
-      walk = await s.walkFine(fx, fy, { maxSteps: fineMaxSteps, stride: 48, arriveWithin: 512 })
+      walk = await s.walkFine(fx, fy, { maxSteps: fineMaxSteps, stride: 48, arriveWithin: KOD_FINENESS })
                      .catch(e => ({ arrived: false, reason: e.message }));
       say('fine_result', { arrived: walk.arrived, steps: walk.steps, reason: walk.reason });
     }
@@ -1979,9 +1981,8 @@ export async function fight(s, {
                  note: 'neither coarse-grid walkTo nor fine-grid walkFine could reach the target' };
       }
     }
-  } else if (!spot && !foeNearby) {
+  } else if (!holdPosition && !spot && !foeNearby) {
     // NO COARSE APPROACH SQUARE AT ALL AND NOT NEARBY — try fine grid
-    const KOD_FINENESS = 512;
     const half = KOD_FINENESS >> 1;
     const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
     let fineArrived = false;
@@ -1989,8 +1990,8 @@ export async function fight(s, {
       const fx = (foe.col + dc) * KOD_FINENESS + half;
       const fy = (foe.row + dr) * KOD_FINENESS + half;
       const distCells = Math.hypot((foe.col ?? 0) - (meBefore?.col ?? 0), (foe.row ?? 0) - (meBefore?.row ?? 0));
-      const fineMaxSteps2 = Math.max(60, Math.ceil(distCells * 512 / 48) * 2);
-      const r = await s.walkFine(fx, fy, { maxSteps: fineMaxSteps2, stride: 48, arriveWithin: 512 })
+      const fineMaxSteps2 = Math.max(60, Math.ceil(distCells * KOD_FINENESS / 48) * 2);
+      const r = await s.walkFine(fx, fy, { maxSteps: fineMaxSteps2, stride: 48, arriveWithin: KOD_FINENESS })
                      .catch(e => ({ arrived: false, reason: e.message }));
       if (r.arrived) { fineArrived = true; break; }
     }
@@ -2127,6 +2128,9 @@ export async function fight(s, {
 
   const out = {
     fought: true, target: foeName, killed, rounds: roundsFought,
+    // Stable even when killed (foe_id deliberately becomes null on a kill). Callers that
+    // monitor one exact pull need to know which object actually made contact.
+    target_id: foe.id,
     landed_hits: landed.hits,
     damage_dealt: landed.damage,
     health: { before: before.health, after: after.health },

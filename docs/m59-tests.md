@@ -2,7 +2,10 @@
 
 Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time; they open no socket and touch no roster.
 
-- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (116),
+- Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (187 — pins, among
+  the rest, that **the safe walls are the red squares in the debug client**: `safeWalls()` is
+  one function for the picture and the keeper's choice, `safeSpots()` iterates it with no
+  membership gate, and the overlay has no second set that could drift from it),
   `node tools/m59-render-test.mjs` (81 — **what a renderer gets from a keeper-backed
   broker**, which for a while was nothing at all. Out-of-process keepers are the default and
   the broker holds a snapshot rather than a World, so `look` and `/rts/v1/read` answered a map
@@ -158,6 +161,18 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   and an unknown condition never holds) and
   `node tools/m59-commitment-test.mjs` (71 — what counts as being spoken for, and the
   distinction between a bot OWNING a character and being mid-operation on it) and
+  `node tools/m59-epoch-test.mjs` (20 — **the standard that decides which evidence is still
+  about the code in play**, and the mechanism's whole job is to throw measurements away, so
+  every way it can be wrong is expensive in one direction or the other. THE THREE ANSWERS
+  ARE THE POINT: `sameEpoch` returns true, false, and `null` for "this checkout cannot say",
+  and a caller that reads `null` as *stale* empties the ledger on every clone that has no
+  `.git`. Pinned here in both directions — a row from a superseded `#movement` commit is
+  dropped **however recent it is**, and a fortnight-old row from the current epoch is
+  **kept**, because the clock does not overrule the commit. Also pins that the exit-gap book
+  says WHY it reset a row: "movement code changed" and "no sighting in the window" are
+  different facts, and a zero meaning *fixed* against a zero meaning *untested* is exactly
+  the confusion that made Ukgoth's north door read `refused 182, crossings 0` on a day it
+  crossed six times out of six. See [`m59-evidence.md`](m59-evidence.md)) and
   `node tools/m59-which-test.mjs` (16 — **the gate every `/m59*` command runs first, and the
   one tool that may never name the wrong fleet**. It builds a throwaway checkout in TEMP and
   runs the real `m59-which.mjs` against fake brokers, so it opens sockets only to itself and
@@ -203,9 +218,99 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   shape. **The scan reads the whole machine**, so the assertions are scoped to accounts
   nobody plays — a live Kermit failed five of them by being correctly detected) and
   `node tools/m59-bank-test.mjs` (52) and
+  `node tools/m59-supply-test.mjs` (115 — **moving supplies between two characters one broker
+  is driving, on the architecture production actually runs**. `supplyBetween` was written when
+  the broker WAS the keeper and the pacer and the socket; per-character keeper processes have
+  been the default since the split, and on that arrangement the exchange could not move a
+  single item — while, in each case, failing in a way that sounded like the game's fault. The
+  keeper hold was a SILENT NO-OP (`autopilotIfAny` answers undefined for a keeper-backed
+  character, so nothing was stopped and both keepers drove straight through a four-step
+  handshake any one of their actions cancels), `waitFor` resolved null, `roomContents` was not
+  a function, the four trade packets did not exist on a snapshot, and `travelExclusive`
+  returned the JOB WRAPPER so `t.arrived` was undefined and a walk that worked read as a
+  refusal. This pins the fixed version against fakes of BOTH kinds of session: the handshake's
+  order — accepting before the counteroffer arrives is logged by the server as cheating — that
+  a delivery is judged on an arithmetic difference in the receiver's own count and never on a
+  name it already carries, that whoever is standing still is held and the WALKER IS NOT
+  (`goInert` switches the survival ladder off, which is the Cccc post-mortem), that a hold
+  another errand holds is left alone but our own is RENEWED by presenting its token — an
+  inert keeper wakes on a deadline, and a hold taken before a five-minute walk lapses in the
+  seconds between arriving and offering — and that both ends are handed back on every path
+  out including a throw. And the offer encoding, which cost a live run: THE TEST IS THE TAG, NOT
+  WHETHER THERE IS MORE THAN ONE. A stack with ONE left carries amount 1 and went out as a
+  bare id, which contributes nothing to the parallel number list the server pairs
+  POSITIONALLY against the ids it thinks are NumberItems — so one untagged stack slides every
+  count after it onto the wrong item and the whole offer moves nothing. Measured on shadow:
+  Hhhh, holding one elderberry and one herb, could hand Jjjj neither, in either direction,
+  with the handshake completing and `may_accept` true both times. Nobody was full; the packet
+  was malformed. It is a separate file from `m59-broker.mjs` for the reason this whole
+  document exists — that file cannot be imported without starting a broker, and a rule nobody
+  can ask a question offline is how a no-op hold survived as long as it did) and
+  `node tools/m59-policypush-test.mjs` (20 — **does an order reach the process that will obey
+  it?** `autopilot action=start` wrote to exactly two places and neither of them was the
+  character: the broker's own in-process Autopilot shell, which on a keeper-backed broker
+  drives nobody, and the roster on disk, which a keeper reads ONCE at startup. So a policy
+  change applied cleanly, persisted correctly, answered `running: true, mode: "farm"` — and
+  the keeper went on running the orders it booted with. Measured on prod 2026-08-26: nine
+  characters in Familiars switched to farm / "fungus beast" / `assigned_room` 544 /
+  confinement released were right on disk and all nine were still `survive` with the old
+  confinement in the live keeper a minute later, with nothing erroring anywhere. The second
+  half of the bug has a longer fuse: `join()` ends by re-imposing the roster snapshot the
+  keeper process read at STARTUP, so a push that updated only the live Autopilot object works
+  and then silently reverts at the next rejoin sweep, phantom recovery or pilot hand-back —
+  which is why the boot orders are `let` and the push moves them too. This pins both halves,
+  plus the three things that make the push safe rather than merely present: that the write is
+  identity-stamped and refused BEFORE it applies anything, because `keeperPort()` falls back
+  to a guessed port and a policy is the least visible thing you can change on a stranger's
+  character; that `mode` and `agent` are stripped out of the body so neither can land in
+  `policy` as a key that looks authoritative and is read by nothing, which is how `purpose`
+  sat outside a schema for a year; and that the wire format stays FLAT, because an older
+  keeper handles the body as `Object.assign(autopilot.policy, body)` and a `{policy:{…}}`
+  wrapper would make every keeper predating the change silently ignore the whole order. It
+  reads source rather than opening a socket, for the reason this document exists — the
+  behaviour needs a live broker and a live keeper, and this has to be answerable on a clone
+  with no fleet) and
+  `node tools/m59-lru-test.mjs` (26 — **the broker's geometry cache has a ceiling**.
+  `_walkableCache` was a bare `new Map()` with no eviction, and its name undersold it: nine
+  key prefixes, and the largest entries are whole decoded `.roo` rooms, one per room per
+  prefix across 264 rooms, resident for the life of the process. Not a runaway leak — it is
+  bounded by the world — and exactly the shape that hurt anyway. Measured on prod
+  2026-08-27: the broker at 0.8-1.4 GB RSS taking ~10,700 page faults a second while Windows
+  trimmed its working set, and a full GC over a heap that size produced a **736-second**
+  event-loop stall. The tell was the shape of the failure — connections to 8901 were
+  REFUSED, not slow, while the port sat listening, which is the accept backlog filling
+  because nothing was calling `accept()`. This pins that the ceiling is enforced on the way
+  in and that what falls out is the least recently USED rather than the least recently
+  written: the fleet stands in a handful of rooms and asks about them repeatedly while a
+  room-view sweep drags in a long tail, so insertion-order eviction would throw away the
+  room the fleet is fighting in and keep the sweep's leftovers — trading bounded memory for
+  a `.roo` re-parse on the one event loop every session shares, which is the worse bug. It
+  is its own module for the reason this document exists: `m59-broker.mjs` cannot be imported
+  without taking the fleet lock and starting rejoin timers) and
   `node tools/m59-describe-test.mjs` (52) and
-  `node tools/m59-party-test.mjs` (57) and
+  `node tools/m59-fightback-test.mjs` (36 — **the fight-back edict**, an operator's order
+  that is off by default: that the watchdog half counts blows only with something in reach,
+  asks for a fight at ten seconds and not nine, pulls the handbrake once per pass, and stays
+  silent below the flee line, while fighting, and under an errand; and that the pass half
+  answers with the nearest thing inside the engagement band, fights in place from a wall,
+  bookkeeps a kill exactly as passFarm does, and steps aside for the survival ladder, for an
+  unarmed character, for a stale request, and for a target the band refuses) and
+  `node tools/m59-party-test.mjs` (95 — pairing, shared walls, armour ranking, and **who is
+  us in a process with no broker in it**: that the file-backed roster source the keeper
+  process installs names every roster character and nobody else, folds case, follows the
+  file's mtime, keeps its last answer when the file cannot be read, and that a red
+  fleet-mate with a grudge on file is refused as "one of ours" — the assertion that was
+  missing when the fleet killed Statler; it reads `m59-keeper-process.mjs` to check the
+  source is still installed) and
   `node tools/m59-hits-test.mjs` (41) and
+  `node tools/m59-devclient-test.mjs` (31 — the one file every patched-client launch goes
+  through: that `shortcuts/dev.bat` names no character and carries no password, that its FOR
+  variable is `%%a` and not the `%%%%a` the first version wrote — which cmd rejects, so every
+  launcher it generated died on its endpoint lookup before starting anything — that a
+  per-character file is one `call` line with the five arguments in dev.bat's order, and, on
+  Windows, that the generated file actually runs: usage and exit 2 on too few arguments, exit 3
+  with a message when no client is built, and under `M59_DEVCLIENT_DRYRUN` the endpoint it
+  resolved and the account it would log in as, never the password) and
   `node tools/m59-loadout-test.mjs` (126 — the loadout format, the learning arithmetic, the
   composed sell decision, and the fleet-wide gear write, against scratch directories; it sets
   `M59_LOADOUT_DIR` so it never reads the real one, which a live keeper is reading every
@@ -234,14 +339,6 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   `node tools/m59-profiles-test.mjs` (87 — **the contract test for a posture whose whole
   value is in what it REFUSES**: that the town is a curated room set rather than a name
   match (the Deep Dark Woods *of Tos* is wilderness; Familiars and The Crypt are indoors
-  `node tools/m59-devclient-test.mjs` (31 — the one file every patched-client launch goes
-  through: that `shortcuts/dev.bat` names no character and carries no password, that its FOR
-  variable is `%%a` and not the `%%%%a` the first version wrote — which cmd rejects, so every
-  launcher it generated died on its endpoint lookup before starting anything — that a
-  per-character file is one `call` line with the five arguments in dev.bat's order, and, on
-  Windows, that the generated file actually runs: usage and exit 2 on too few arguments, exit 3
-  with a message when no client is built, and under `M59_DEVCLIENT_DRYRUN` the endpoint it
-  resolved and the account it would log in as, never the password) and
   and say neither), that a farm room outside the walls and a character standing outside
   them are both refused rather than quietly walked, that an unknown current room is the one
   thing allowed to be a note instead, and above all that every one of the thirteen policy
@@ -282,12 +379,27 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
   is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
-  `node tools/m59-collision-test.mjs` (191 — **the fail-closed contract for all
+  `node tools/m59-collision-test.mjs` (319 — **the fail-closed contract for all
   movement**: compact collision metadata survives a bake, legacy maps cannot authorize
   a coordinate packet, the player cylinder catches wall bodies and corners, long strides
   cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
-  emitted packet is revalidated, and the documented Brownestone, Limping Toad, Icky,
-  Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable) and
+  emitted packet is revalidated, a body on `walkFine`'s direct line comes back as
+  `object_blocked` after three fans rather than a shuffle that spends the budget, **the
+  client's own object rule is transcribed rather than modelled** — endpoint not swept,
+  ending inside the zone allowed while moving away, and a slide instead of a refusal,
+  all of `clientd3d/move.c:666-697` — and the documented Brownestone, Limping Toad, Icky,
+  Farol, Ukgoth, Cor Noth, Temple, and Fey precision cases remain usable),
+  `node tools/m59-needle-test.mjs` (30 — **getting past a body without treating its square
+  as blocked**. You may share a SQUARE with a spider, never a fine position, so a corridor
+  one square wide with a body in every square is still walkable. Pins the arithmetic
+  (`MIN_NOMOVEON`, 16 kod, one exclusion zone — not two player radii, which is the wall
+  rule and double the truth), that the .roo under a "one square wide" corridor is 82 to 110
+  fine units rather than 64, two hand-built dead-centre configurations, a 200-corridor
+  randomised sweep against an independent breadth-first search, and a negative case — three
+  bodies abreast in one square — without which a modelling artefact let a body teleport
+  through them. **Its verdicts have been wrong three times and a person walking the corridor
+  caught it every time**; `tools/m59-needle-lay.mjs` lays any of those nine out on a live
+  server so that keeps being possible) and
   `node tools/m59-routing-test.mjs` (90 — **the contract test for planning on the map the
   mover enforces**: that `moverStepLands` and not `stepAllowedByCollision` is the question
   that decides anything, that the quantizer has one answer for the planning half and the

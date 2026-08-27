@@ -76,7 +76,7 @@ const RING = [
 const MONSTER_REACH = 3;
 // Our own worst case, which is the pessimistic direction for a DIFFERENT reason — it is
 // the range we are sure we can strike at, so it is the range a free shot must be within.
-const PLAYER_REACH = 2;
+export const PLAYER_REACH = 2;
 
 function disc(radius) {
   const out = [];
@@ -268,6 +268,56 @@ export function reachableFrom(geo, from, cap = REACH_CAP) {
   return seen;
 }
 
+// THE QUARRY'S COARSE COMPONENT, MEASURED ONCE PER WALL SEARCH.
+//
+// A wall can be two squares from a monster on the picture and still be on the other side
+// of a door, cliff, or one-way grid edge. Straight-line distance cannot answer whether a
+// pull can ever convert. Monsters on the stock server move on the coarse grid, so flood
+// that directed graph from the selected quarry once, then answer each candidate by asking
+// whether any reachable coarse square lies inside OUR combat disc around the wall.
+//
+// The returned function has the same `(col, row) -> reach result` shape nearestSafeSpot
+// already accepts. `steps` is the shortest coarse walk to an attack position, not to the
+// safe square itself — the monster never needs to stand on the player.
+export function coarseCombatReachFrom(geo, from,
+                                      { reach = PLAYER_REACH, cap = REACH_CAP } = {}) {
+  if (!geo || !from || typeof geo.openDirections !== 'function'
+      || typeof geo.walkable !== 'function' || typeof geo.inBounds !== 'function') return null;
+  const r0 = Number(from.row), c0 = Number(from.col);
+  if (!Number.isFinite(r0) || !Number.isFinite(c0) || !geo.inBounds(r0, c0)) return null;
+
+  const distance = new Map([[`${r0},${c0}`, 0]]);
+  const queue = [[r0, c0]];
+  for (let at = 0; at < queue.length && distance.size < cap; at++) {
+    const [row, col] = queue[at];
+    const steps = distance.get(`${row},${col}`) ?? 0;
+    let directions = [];
+    try { directions = geo.openDirections(row, col, { fine: false }) || []; } catch { directions = []; }
+    for (const d of directions) {
+      const r = row + d.dr, c = col + d.dc, key = `${r},${c}`;
+      if (distance.has(key) || !geo.inBounds(r, c) || !geo.walkable(r, c)) continue;
+      distance.set(key, steps + 1);
+      queue.push([r, c]);
+    }
+  }
+
+  const combatDisc = disc(reach);
+  return (col, row) => {
+    let best = null;
+    for (const [dr, dc] of combatDisc) {
+      const attackRow = row + dr, attackCol = col + dc;
+      const steps = distance.get(`${attackRow},${attackCol}`);
+      if (steps == null || (best && steps >= best.steps)) continue;
+      best = { steps, row: attackRow, col: attackCol };
+    }
+    return best
+      ? { reachable: true, steps: best.steps, grid: 'coarse', combat_reach: reach,
+          attack_position: { col: best.col, row: best.row } }
+      : { reachable: false, steps: null, grid: 'coarse', combat_reach: reach,
+          why: `the quarry's coarse component never comes within ${reach} squares of this spot` };
+  };
+}
+
 export function escapeRoom(geo, row, col, minEscape = 24) {
   if (!geo || typeof geo.moverStepLands !== 'function') return true;   // cannot tell: allow
   const seen = new Set([`${row},${col}`]);
@@ -303,189 +353,115 @@ function backCover(blocked) {
   return best;
 }
 
-// Score every walkable square in a room for how defensible it is.
+// THE SAFE WALLS ARE THE RED SQUARES IN THE DEBUG CLIENT. THAT IS THE DEFINITION.
 //
-// `openNeighbours` is the number of squares a monster could stand on to melee you.
-// `backCover` is the longest contiguous wall arc behind you. Both matter, and they
-// are not the same: a doorway has few open neighbours but no back cover, while a
-// long flat wall has plenty of open neighbours and excellent cover.
-export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
-                                // How many squares a shelter has to be able to reach before
-                                // it counts as somewhere you can leave. See escapeRoom.
-                                minEscape = 24 } = {}) {
+// Corrected 2026-08-27, by the operator, against the picture: the squares the client paints
+// red on its minimap were checked by eye, room by room, and they are right. So the keeper
+// chooses from EXACTLY that set, computed by EXACTLY this function, and the overlay paints
+// EXACTLY this function. If the picture and the choice ever differ again, this file is
+// wrong — not the eye.
+//
+// What a red square is, in the terms of the two grids:
+//
+//   * it is a square the COARSE grid admits — the grid monsters path and see on;
+//   * from no square within a monster's reach (MONSTER_DISC, radius 3) does the coarse
+//     line of sight — Room.LineOfSight, transcribed in lineOfSight() — arrive at it, so
+//     `attackers` is 0: as far as the monster's grid is concerned, nothing can ever get a
+//     swing at a body standing here;
+//   * and at least one square within OUR reach (PLAYER_DISC, radius 2) can be hit from
+//     here while its line back is blocked, so `free_shots` is above 0: we can fight from it.
+//
+// That is the coarse grid and the fine one disagreeing about the same square — the
+// monster's grid says "cannot reach", ours says "can hit" — and it is the whole of the
+// mechanism. Nothing else is a candidate, and nothing else removes one: not escape room,
+// not exposure, not standability, not the outer ring. Those are all still MEASURED, and
+// they ORDER the list (see safeSpots), because a wall you cannot leave or one on the room's
+// rim is a worse wall; they no longer decide what is a wall.
+//
+// This replaced a scan that admitted only squares the coarse grid REFUSED (2026-08-23),
+// which was the opposite set and disjoint from the picture by construction — 506
+// candidates in the Valley of Ileria and not one of them a red square. The fleet stood next
+// to hundreds of verified walls and was told there were none it could use.
+export function safeWalls(geo, { los = 0 } = {}) {
   if (!geo) return [];
   // Which grid governs the thing trying to hit us. LOS_OLD is the server default, so
   // monsters move and see on the COARSE grid — see RoomGeometry.LOS.
   const fine = RoomGeometry.monsterUsesFine(los);
   const out = [];
-  // A SAFE SPOT IS THE TWO GRIDS DISAGREEING. NOTHING ELSE IS A CANDIDATE.
-  //
-  // This loop used to open `if (!geo.walkable(r, c)) continue;` — only ever considering
-  // squares the COARSE grid admits, which is the grid monsters path on. That excluded, by
-  // construction, every square that IS the mechanism, and left the search choosing between
-  // pieces of open floor on the strength of how enclosed they looked.
-  //
-  // Measured 2026-08-23 against the shadow fleet's own book, on the three rooms it dies in:
-  //
-  //     room                      in the book      real walls in the room
-  //     598 Cragged Mountains      15 squares      1778
-  //     597 The Twisted Wood        8 squares       112
-  //     587 W border Twisted Wood 140 squares       277
-  //
-  // and EVERY square in the book, in all three rooms — including the ones recorded as having
-  // HELD — read `coarse=true, fine=true`. Ordinary grass. Not one wall among them. So nine
-  // travel shelters in a row "failed", the book wrote those failures down as facts about the
-  // squares, the search walked further out to the next patch of grass, and a character at 7
-  // of 46 was sent eighteen steps across the Cragged Mountains to stand in a field.
-  //
-  // The operator's account is the other half of the evidence and it is worth recording as
-  // such: a wall chosen by grid disagreement has never once been seen to fail, and the
-  // failures in this book are suspected to be poison — which damages through any geometry
-  // and which `failed()` already declines to blame a square for.
-  //
-  // So the candidate set is now exactly the squares where the grids disagree, in either of
-  // the two ways that matters:
-  //
-  //   THE SQUARE ITSELF   coarse refuses it, the BSP allows a body in it. The strongest
-  //                       form there is: a monster's pather will not target the square at
-  //                       all, because as far as it is concerned there is no floor here.
-  //   THE APPROACHES      the coarse grid offers ways in and the mover refuses them. The
-  //                       monster paths to a square it believes is adjacent and mills about
-  //                       outside a wall it thinks it is standing next to.
-  //
-  // AND WHERE IT CANNOT BE MEASURED, NOTHING IS OFFERED. `moverStepLands` answers true for
-  // everything when collision is not ready, so accepting candidates in that state would
-  // silently restore exactly the behaviour above — the search would go back to grading open
-  // floor and would look like it was working. This module already refuses to read that as
-  // "no disagreement"; refusing to read it as "good enough" is the same rule applied one
-  // level up. An empty answer is a fact; a plausible one is a fault.
-  if (!geo.collisionReady || typeof geo.moverStepLands !== 'function') return [];
-  for (let r = 1; r <= geo.rows; r++) {
+  for (let r = 1; r <= geo.rows; r++)
     for (let c = 1; c <= geo.cols; c++) {
-      // A body has to fit. This is the BSP question, and it is the only one asked of the
-      // square itself — `walkable` is deliberately not consulted here any more.
-      if (typeof geo.standable === 'function' && !geo.standable(r, c)) continue;
-      // Never recommend the outermost ring. Walking past row 1 / piRows or col 1 /
-      // piCols is what triggers StandardLeaveDir, so a "safe corner" on the boundary
-      // is a square that quietly ejects you from the room mid-fight — the opposite of
-      // what it is being chosen for.
-      if (r <= 1 || c <= 1 || r >= geo.rows || c >= geo.cols) continue;
-      // AND A BODY HAS TO BE ABLE TO LEAVE. One mover step out is the whole bar.
-      //
-      // A safe spot is by definition a square the two grids disagree about, and some of
-      // those cannot be left at all. 45,29 in room 587 is `walkable: false` with ZERO mover
-      // steps out, and it was offered as shelter to character after character: each
-      // diverted there at around 90% health, stopped moving, and was eaten over 65 to 176
-      // seconds by spiders and centipedes while its keeper watched, health trails flat at
-      // full and then falling to 3 without the character moving a square. Fleeing needs
-      // somewhere to flee to.
-      //
-      // Not two steps, and not a path back to the road: being hemmed in is the POINT of a
-      // safe spot, and asking for room to manoeuvre would refuse the good ones along with
-      // the fatal ones. Zero is a different thing from tight, and zero is all that is
-      // refused here. Checked in the scan rather than at one selector because both
-      // `nearestSafeSpot` and `shelterAhead` read this list — fixing only the second one
-      // left characters dying on the same square.
-      if (!RING.some(([dr, dc]) => geo.moverStepLands(r, c, r + dr, c + dc) === true)) continue;
-      const blocked = RING.map(([dr, dc]) => !geo.walkable(r + dr, c + dc));
-      const open = blocked.filter(b => !b).length;
-      // THE NUMBER THAT DECIDES EVERYTHING, and it is not `open`. See MONSTER_DISC.
-      const { attackers, free_shots, our_ground } = exposureAt(geo, r, c, { fine });
-      // A square nothing can stand within reach of is a cell, not a fighting position:
-      // we could hold it for ever and never kill anything. Measured on OUR reach, which
-      // is the one that has to find a target.
-      if (our_ground === 0) continue;
-      // Nor is a square that hides from nothing worth naming. Fully exposed is exactly
-      // as good as open floor, which is what the caller already has.
-      if (attackers >= MAX_ATTACKERS) continue;
-      const cover = backCover(blocked);
-      // LEDGE EDGE: if any orthogonal neighbour is a drop (floor falls more than one
-      // step), a spot here is one mistimed step from a fall. That is the wrong kind
-      // of cover to fight from. Penalise hard; a clifftop corner must not score well.
-      // Only matters in multi-level rooms; flat rooms have no height data or all-equal
-      // heights, so this is a no-op there.
-      let ledge = false;
-      if (typeof geo.heightStepOk === 'function') {
-        if (!geo.heightStepOk(r, c, r + 1, c) || !geo.heightStepOk(r, c, r - 1, c) ||
-            !geo.heightStepOk(r, c, r, c + 1) || !geo.heightStepOk(r, c, r, c - 1))
-          ledge = true;
-      }
-      // WHICH WAY THE WALL IS, so a character can be put against it rather than in the
-      // middle of the square.
-      //
-      // This matters more than it looks. The real mechanic is finer than this grid —
-      // it is in the BSP walls and the angles — and moveToSquare aims at the CENTRE of
-      // a square (col*64+32). A spot that works by hugging a wall can be most of a
-      // square away from that centre, so a character sent to a good square by name
-      // stands in the middle of it, gets hit, and the square is written down as one
-      // that does not work. Every FIRST visit was made that way, which is a mechanism
-      // for manufacturing false failures out of good walls.
-      //
-      // The sum of the blocked directions points into the wall. Normalised to at most
-      // one step on each axis, because it is used as a direction, not a distance.
-      let dr = 0, dc = 0;
-      for (let i = 0; i < RING.length; i++) {
-        if (!blocked[i]) continue;
-        dr += RING[i][0]; dc += RING[i][1];
-      }
-      const wall = (dr || dc) ? { dr: Math.sign(dr), dc: Math.sign(dc) } : null;
-      // The two grids disagreeing, which is what actually makes a wall hold. Computed per
-      // candidate rather than per returned spot: callers filter and sort on it, so it has
-      // to exist before the narrowing rather than be attached to the survivors.
-      const disagree = gridDisagreementAt(geo, r, c);
-      // THE GATE, AND IT IS THE SQUARE ITSELF — NOT ITS APPROACHES.
-      //
-      // A safe wall IS the two grids disagreeing about the square you are standing on:
-      // the coarse grid says you cannot be there, the fine geometry says you can. That
-      // is the whole mechanism, and it is what makes the square unreachable to anything
-      // pathing on the coarse grid.
-      //
-      // This used to be an OR — coarse refuses the square, or merely one APPROACH to it is
-      // refused. The second half admits squares the coarse grid calls perfectly walkable,
-      // which is open floor with an awkward doorway: something can still path to it and
-      // stand next to you. Those are the candidates that get taken under attack and then
-      // do not hold. Measured over twelve rooms, the approach-only half was 834 of 2228
-      // candidates — 37% of everything on offer, and none of it a wall.
-      //
-      // Narrowing costs nothing in supply: 1394 survive, including 100 in The Twisted
-      // Wood, 185 in the Cragged Mountains and 179 in Ukgoth — the three rooms where the
-      // fleet actually dies.
-      const coarseRefusesIt = geo.walkable(r, c) !== true;
-      if (!coarseRefusesIt) continue;
-      // ...AND YOU HAVE TO BE ABLE TO LEAVE IT AGAIN. See escapeRoom: a five-square island
-      // in The Twisted Wood cost four hundred and fifty seconds a leg and was recorded in
-      // the book as a square that had HELD, because nothing could reach the character there.
-      if (!escapeRoom(geo, r, c, minEscape)) continue;
-      out.push({
-        col: c, row: r,
-        // APPROACHES THE COARSE GRID OFFERS AND THE MOVER REFUSES. null when collision is
-        // not baked for this room — "cannot tell", never "none". See gridDisagreementAt.
-        refused_approaches: disagree ? disagree.refused : null,
-        offered_approaches: disagree ? disagree.offered : null,
-        // How many squares something can actually swing at us from. The old field name
-        // is kept because it is written into the book and the fleet page, but it now
-        // counts the disc rather than the eight neighbours, so it runs 0..28 not 0..8.
-        can_reach_you: attackers,
-        // Squares within OUR reach whose line back to us is blocked: stand here, hit
-        // whatever walks into one, and it cannot answer. The thing players call a safe
-        // wall. Worth more than any amount of ordinary cover.
-        free_shots,
-        open_neighbours: open,
-        back_cover: cover,
-        wall,
-        // How much better than standing in the open.
-        attackers_avoided: MAX_ATTACKERS - attackers,
-        // Exposure dominates, and a free shot is worth about three squares of it: it is
-        // not merely safer, it is the only arrangement that lets a fight be won without
-        // taking a hit. Cover stays in as a tie-break — it is cheap and it correlates.
-        score: (MAX_ATTACKERS - attackers) + free_shots * 3 + cover * 0.5 - (ledge ? 50 : 0),
-        ledge,
-      });
+      if (!geo.walkable(r, c)) continue;
+      let ex = null;
+      try { ex = exposureAt(geo, r, c, { fine }); } catch { continue; }
+      if (!ex || ex.attackers !== 0 || (ex.free_shots ?? 0) <= 0) continue;
+      out.push({ row: r, col: c, ...ex });
     }
+  return out;
+}
+
+// Every safe wall in a room, DESCRIBED and ORDERED. Membership is safeWalls() and nothing
+// here narrows it; everything computed below is for ranking and for the book.
+export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
+                                // How many squares a shelter has to be able to reach before
+                                // it counts as somewhere you can leave. See escapeRoom.
+                                // Measured and scored, never a gate.
+                                minEscape = 24 } = {}) {
+  if (!geo) return [];
+  const out = [];
+  for (const w of safeWalls(geo, { los })) {
+    const { row: r, col: c, attackers, free_shots, our_ground } = w;
+    const blocked = RING.map(([dr, dc]) => !geo.walkable(r + dr, c + dc));
+    const open = blocked.filter(b => !b).length;
+    const cover = backCover(blocked);
+    // LEDGE EDGE: if any orthogonal neighbour is a drop (floor falls more than one step),
+    // a spot here is one mistimed step from a fall. Ranked down hard; a clifftop corner
+    // must not score well. Only matters in multi-level rooms.
+    let ledge = false;
+    if (typeof geo.heightStepOk === 'function') {
+      if (!geo.heightStepOk(r, c, r + 1, c) || !geo.heightStepOk(r, c, r - 1, c) ||
+          !geo.heightStepOk(r, c, r, c + 1) || !geo.heightStepOk(r, c, r, c - 1))
+        ledge = true;
+    }
+    // WHICH WAY THE WALL IS, so a character can be put against it rather than in the
+    // middle of the square. The sum of the blocked directions points into the wall,
+    // normalised to at most one step on each axis because it is a direction.
+    let dr = 0, dc = 0;
+    for (let i = 0; i < RING.length; i++) {
+      if (!blocked[i]) continue;
+      dr += RING[i][0]; dc += RING[i][1];
+    }
+    const wall = (dr || dc) ? { dr: Math.sign(dr), dc: Math.sign(dc) } : null;
+    // Approaches the coarse grid offers and the mover refuses — reported, ranked on, and
+    // null where collision is not baked ("cannot tell", never "none"). See gridDisagreementAt.
+    const disagree = gridDisagreementAt(geo, r, c);
+    // A wall you cannot leave is a worse wall (see escapeRoom for the five-square island in
+    // The Twisted Wood); the room's outermost ring ejects you (StandardLeaveDir). Both are
+    // ranked down, neither is struck: the picture is the definition.
+    const escapes = escapeRoom(geo, r, c, minEscape);
+    const rim = r <= 1 || c <= 1 || r >= geo.rows || c >= geo.cols;
+    out.push({
+      col: c, row: r,
+      refused_approaches: disagree ? disagree.refused : null,
+      offered_approaches: disagree ? disagree.offered : null,
+      // The old field name is kept because it is written into the book and the fleet page;
+      // it counts the monster disc, so it runs 0..28. For a safe wall it is always 0.
+      can_reach_you: attackers,
+      free_shots,
+      open_neighbours: open,
+      back_cover: cover,
+      wall,
+      attackers_avoided: MAX_ATTACKERS - attackers,
+      escapes,
+      rim,
+      score: (MAX_ATTACKERS - attackers) + free_shots * 3 + cover * 0.5
+             + (disagree ? disagree.refused : 0)
+             - (ledge ? 50 : 0) - (escapes ? 0 : 60) - (rim ? 80 : 0)
+             - (our_ground === 0 ? 40 : 0),
+      ledge,
+    });
   }
   out.sort((a, b) => b.score - a.score || a.can_reach_you - b.can_reach_you);
 
-  // Optionally keep only spots we can actually path to from where we are.
   const picked = [];
   for (const s of out) {
     if (mustReach) {
@@ -754,10 +730,36 @@ export function shelterAhead(shelters, atStep,
   return ahead[0];
 }
 
+// TARGET-FIRST WALL ORDERING. Eligibility is settled before this comparison: the square
+// is a safe wall, the player can reach it, nobody is standing there, and (when supplied)
+// the selected quarry's coarse component reaches our combat disc. Among those valid
+// answers, "closest to the monster" is literal. Existing defensibility/proof/path value
+// only breaks a tie; it can no longer buy a wall thirty squares across the room.
+export function preferSafeSpotCandidate(candidate, current, { closestToToward = false } = {}) {
+  if (!current) return true;
+  if (closestToToward) {
+    const candidateDistance = Number.isFinite(candidate?.target_distance)
+      ? candidate.target_distance : Infinity;
+    const currentDistance = Number.isFinite(current?.target_distance)
+      ? current.target_distance : Infinity;
+    if (candidateDistance !== currentDistance) return candidateDistance < currentDistance;
+
+    // Equal geometric distance can still hide a long route around an internal wall. Both
+    // candidates have passed the hard reach check; prefer the shorter coarse approach.
+    const candidateSteps = Number.isFinite(candidate?.quarry_steps)
+      ? candidate.quarry_steps : Infinity;
+    const currentSteps = Number.isFinite(current?.quarry_steps)
+      ? current.quarry_steps : Infinity;
+    if (candidateSteps !== currentSteps) return candidateSteps < currentSteps;
+  }
+  return (candidate?.value ?? -Infinity) > (current?.value ?? -Infinity);
+}
+
 export function nearestSafeSpot(geo, from, {
   within = 12, minAvoided = 20, reach = null, book = null, room = null, toward = null,
   quarryReach = null, strictQuarryReach = false, stats = null, los = 0,
   rule = 'wall', minBackCover = 1, fromFightWeight = 0.3,
+  closestToToward = false,
   // SQUARES WE COULD NOT GET TO. A different fact from a square that failed to HOLD, which
   // is what `discredited` records — this one is about the walk, not about the wall.
   // See `unreachableSpots` on the keeper for why it is session-scoped and expires.
@@ -851,16 +853,16 @@ export function nearestSafeSpot(geo, from, {
     // goes from 113 candidates to about 1300. That is the point — the disc rule was
     // rejecting most of the room on a number that does not predict holding, and a wider
     // net with an honest ranking beats a narrow one built on a trough.
-    const gate = rule === 'disc'
-      ? s.attackers_avoided >= minAvoided
-      : s.back_cover >= minBackCover;
+    // MEMBERSHIP IS THE DEFINITION — see safeWalls. `rule`, `minAvoided` and
+    // `minBackCover` used to gate here and are still accepted so callers need not change;
+    // they no longer remove a wall the picture shows. Corrected 2026-08-27.
+    void rule; void minAvoided; void minBackCover;
     // `retest` keeps a REINSTATED square eligible without making it trusted. A square
     // put back by m59-safespot-retest.mjs has had its held count zeroed — it is being
     // asked to prove itself again from nothing — and zeroing it would otherwise drop any
     // square that qualified only BECAUSE it had held, so the reassessment could never
     // happen. It grants no proof bonus below, and it does not survive discredited()
     // above: fail again and the square is out for good, exactly as before.
-    if (!gate && !(seen && (seen.held > 0 || seen.retest))) continue;
     eligible++;
 
     // THE MONSTER GRID IS A PRIOR, NOT A VERDICT.
@@ -914,6 +916,7 @@ export function nearestSafeSpot(geo, from, {
     // its predicted-reachable partition is good enough; if that partition is empty, the
     // best doubtful one is tested live instead of being forbidden by the map.
     const fromFight = toward ? Math.max(Math.abs(s.col - toward.col), Math.abs(s.row - toward.row)) : 0;
+    const targetDistance = toward ? Math.hypot(s.col - toward.col, s.row - toward.row) : 0;
     // RANK ON THE THING THAT PREDICTS HOLDING. `score` is the disc composite; under the
     // wall rule the back arc leads and the disc score stays as a weak tie-break, at
     // roughly the ratio their correlations earn.
@@ -922,6 +925,11 @@ export function nearestSafeSpot(geo, from, {
     const value = defensibility + proof - (p.steps ?? d) * 0.5 - fromFight * fromFightWeight;
     const candidate = {
       ...s, steps_away: p.steps ?? d, value, from_fight: toward ? fromFight : null,
+      target_distance: toward ? targetDistance : null,
+      quarry_steps: quarryPrediction?.reachable && Number.isFinite(quarryPrediction.steps)
+        ? quarryPrediction.steps : null,
+      quarry_attack_position: quarryPrediction?.reachable
+        ? quarryPrediction.attack_position ?? null : null,
       // This is an invitation to TEST the prediction, not a statement that the square
       // works. The empirical pull detector is the authority after arrival.
       predicted_unreachable_by_quarry: predictedUnreachable || undefined,
@@ -934,9 +942,9 @@ export function nearestSafeSpot(geo, from, {
       fine: seen?.x != null ? { x: seen.x, y: seen.y } : null,
     };
     if (predictedUnreachable) {
-      if (!bestPredictedUnreachable || value > bestPredictedUnreachable.value)
+      if (preferSafeSpotCandidate(candidate, bestPredictedUnreachable, { closestToToward }))
         bestPredictedUnreachable = candidate;
-    } else if (!best || value > best.value) {
+    } else if (preferSafeSpotCandidate(candidate, best, { closestToToward })) {
       best = candidate;
     }
   }

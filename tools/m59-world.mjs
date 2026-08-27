@@ -823,6 +823,24 @@ export class World {
         id: o.id,
         name: c.rsc.get(o.nameRsc),
         col: o.col, row: o.row,
+        // AND WHERE IN THE SQUARE, WHICH IS THE ONLY RESOLUTION THAT CAN ANSWER "CAN I GET
+        // PAST IT". This projection stopped at col/row, and everything downstream inherited
+        // that — `threatsHere` builds a threat list of squares, the router penalises squares,
+        // and the conclusion "this corridor is one square wide, therefore it is blocked" is
+        // reached without anyone ever asking where the body actually is.
+        //
+        // It is wrong for the reason CLAUDE.md puts in capitals: THE FINE GRID IS THE
+        // REALITY, A SQUARE IS A SUMMARY. A square is 64 kod units across and a body is
+        // PLAYER_RADIUS = 248 client units, which is 15.5 kod — about 31 across. Two of them
+        // fit side by side inside one square with half a body's width to spare. A spider
+        // standing on the north side of 29,44 leaves the south side of 29,44 free, and that
+        // is how a person walks the one-square corridor in the Western border of the Twisted
+        // Wood that this fleet has been dying in.
+        //
+        // The wire has carried this the whole time — `extractCoordinates` returns y and x in
+        // kod fine units and both BP_CREATE and BP_MOVE spread them onto the stored object.
+        // Only the projection threw them away.
+        x: o.x, y: o.y,
         distance: straight,
         facing: o.degrees != null ? dirName(o.degrees) : null,
         can,

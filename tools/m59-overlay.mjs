@@ -29,9 +29,10 @@
 //
 // SEVEN LAYERS, AND THEY ANSWER DIFFERENT QUESTIONS. Do not read them as one hazard map:
 //
+//   fortress   a SAFE WALL — the red squares: no monster-reach square has line of sight
+//              and we have a free shot. The keeper chooses from exactly this set
 //   safe       a square the fleet has STOOD ON and taken nothing — the recorded book
 //   burned     a square that held at least once AND failed at least once
-//   nominated  geometry says this is a safe wall; nobody has tested it
 //   trap       the body can walk IN and cannot walk back OUT. The one that costs a
 //              character, and the one the fleet walks into on purpose
 //   isolated   the body can neither enter nor leave. Usually a doorway or a ledge
@@ -52,7 +53,7 @@ import { fileURLToPath } from 'node:url';
 import { RoomGeometry, protocolToClient } from './m59-roo.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 import { wedgesIn } from './m59-wedges.mjs';
-import { safeSpots, safeSpotBook, exposureAt } from './m59-safespots.mjs';
+import { safeWalls, safeSpotBook } from './m59-safespots.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
 import { WALKS_DIR } from './m59-crossings.mjs';
 
@@ -72,11 +73,10 @@ const SAFESPOT_FILE = process.env.M59_SAFESPOT_FILE ||
 // block; the client looks it up and draws nothing at all for a char it has no colour
 // for, which is what makes adding a layer safe.
 export const LAYERS = [
-  { key: 'fortress',  ch: 'F', color: 'FF2020', style: 'solid', label: 'NOTHING in the room can reach this square' },
+  { key: 'fortress',  ch: 'F', color: 'FF2020', style: 'solid', label: 'SAFE WALL — nothing in monster reach has line of sight, and we have a free shot; exactly what the keeper chooses from' },
   { key: 'safe',      ch: 'S', color: 'FF9090', style: 'solid', label: 'held, and the geometry agrees' },
   { key: 'lucky',     ch: 'L', color: 'FF80C0', style: 'cross', label: 'held ONCE but the geometry does NOT nominate it' },
   { key: 'burned',    ch: 'B', color: '803030', style: 'cross', label: 'held AND failed here' },
-  { key: 'nominated', ch: 'N', color: 'FF8000', style: 'hatch', label: 'geometry says safe wall, untested' },
   { key: 'trap',      ch: 'T', color: 'FF00FF', style: 'cross', label: 'TRAP — can walk in, cannot walk out' },
   { key: 'isolated',  ch: 'I', color: '9040FF', style: 'diag',  label: 'isolated — cannot enter or leave' },
   { key: 'detour',    ch: 'd', color: 'C0C000', style: 'diag',  label: 'detour — cannot enter, can leave' },
@@ -98,9 +98,9 @@ export const LAYERS = [
 // trap and a proven safe wall is drawn as the safe wall, because that is the more
 // surprising fact and it is the one a person is standing there to check.
 const PAINT_ORDER = ['floor', 'disagree', 'refused', 'detour', 'isolated', 'trap',
-                     'nominated', 'burned', 'lucky', 'safe', 'walked', 'fortress', 'route'];
+                     'fortress', 'burned', 'lucky', 'safe', 'walked', 'route'];
 
-export const DEFAULT_LAYERS = ['fortress', 'safe', 'lucky', 'burned', 'nominated',
+export const DEFAULT_LAYERS = ['fortress', 'safe', 'lucky', 'burned',
                                'trap', 'isolated', 'refused', 'disagree'];
 
 const layerOf = key => LAYERS.find(l => l.key === key) ?? null;
@@ -270,18 +270,16 @@ export function layersFor(geometry, {
   // Validated live in room 575: the square the operator called a real safe wall reads
   // attackers 0 / free_shots 6 / attackers_avoided 28, and the one they correctly rejected
   // reads attackers 6.
-  if (wanted.has('fortress')) {
-    for (let r = 1; r <= geometry.rows; r++)
-      for (let c = 1; c <= geometry.cols; c++) {
-        if (!geometry.walkable(r, c)) continue;
-        let ex = null;
-        try { ex = exposureAt(geometry, r, c); } catch { continue; }
-        // FREE SHOTS TOO, because a square nothing can reach and from which you can reach
-        // nothing is a cupboard, not a fighting position — safe and worthless, and
-        // painting it the same colour would send the fleet to stand in corners.
-        if (ex && ex.attackers === 0 && (ex.free_shots ?? 0) > 0) put(r, c, 'fortress');
-      }
-  }
+  // THE RED SQUARES ARE THE KEEPER'S CANDIDATES, BY CONSTRUCTION. The rule that painted
+  // them — coarse-walkable, no attacker in monster reach, a free shot for us — was checked
+  // by eye in the client, room by room, and found right. It now lives in ONE function,
+  // safeWalls(), which the keeper's search iterates and this layer paints. Corrected
+  // 2026-08-27: until then the keeper chose from a different, disjoint set.
+  const walls = new Set();
+  if (wanted.has('fortress') || wanted.has('safe') || wanted.has('lucky'))
+    for (const w of safeWalls(geometry)) walls.add(`${w.row},${w.col}`);
+  if (wanted.has('fortress'))
+    for (const w of safeWalls(geometry)) put(w.row, w.col, 'fortress');
 
   const w = wedges ?? wedgesIn(geometry);
   if (w) {
@@ -296,16 +294,6 @@ export function layersFor(geometry, {
   //
   // Computed even when the layer is not wanted, because `safe` versus `lucky` turns on
   // it — see below.
-  let nominated = new Set();
-  try {
-    for (const s of safeSpots(geometry, { limit: 200 }) ?? [])
-      nominated.add(`${s.row},${s.col}`);
-  } catch { /* a room the model cannot score is not an error worth stopping for */ }
-  if (wanted.has('nominated'))
-    for (const k of nominated) {
-      const [r, c] = k.split(',').map(Number);
-      put(r, c, 'nominated');
-    }
 
   // THE BOOK IS EVIDENCE, AND IT IS MUCH WEAKER EVIDENCE THAN ITS COLOUR USED TO SUGGEST.
   //
@@ -339,7 +327,7 @@ export function layersFor(geometry, {
       if ((entry.held ?? 0) <= 0) continue;
       if ((entry.failed ?? 0) > 0) { put(entry.row, entry.col, 'burned'); continue; }
       put(entry.row, entry.col,
-          nominated.has(`${entry.row},${entry.col}`) ? 'safe' : 'lucky');
+          walls.has(`${entry.row},${entry.col}`) ? 'safe' : 'lucky');
     }
   }
 

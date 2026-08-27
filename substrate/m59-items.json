@@ -1,5 +1,5 @@
 {
- "builtAt": "2026-08-05T02:52:29.099Z",
+ "builtAt": "2026-08-27T06:11:02.752Z",
  "source": "compendium/data/koddb.json",
  "defaults": {
   "weight": 10,
@@ -8,8 +8,8 @@
  },
  "capacity_formula": "1700 + might * 20, for weight AND bulk (player.kod:10456, :10461)",
  "counts": {
-  "item_classes": 217,
-  "distinct_names": 212,
+  "item_classes": 251,
+  "distinct_names": 246,
   "used_defaults": 0,
   "foods": 21,
   "weapons": 21
@@ -786,6 +786,30 @@
    },
    "also": []
   },
+  "generic scroll": {
+   "name": "generic scroll",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "Scroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "generic wand": {
+   "name": "generic wand",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "Wand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
   "gift": {
    "name": "gift",
    "weight": 50,
@@ -1093,6 +1117,18 @@
     "bulk": "LightRobe"
    },
    "also": []
+  },
+  "lightning wand": {
+   "name": "lightning wand",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "LightningWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
   },
   "loaf of bread": {
    "name": "loaf of bread",
@@ -1809,6 +1845,198 @@
    },
    "also": []
   },
+  "scroll of darkness": {
+   "name": "scroll of darkness",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "DarknessScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of discord": {
+   "name": "scroll of discord",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "DiscordScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of dispelling": {
+   "name": "scroll of dispelling",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "DispellIllusionScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of earthquake": {
+   "name": "scroll of earthquake",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "EarthquakeScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of final rites": {
+   "name": "scroll of final rites",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "FinalRitesScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of flash": {
+   "name": "scroll of flash",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "FlashScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of forces of light": {
+   "name": "scroll of forces of light",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "ForcesOfLightScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of heat": {
+   "name": "scroll of heat",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "HeatScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of killing fields": {
+   "name": "scroll of killing fields",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "KillingFieldScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of light": {
+   "name": "scroll of light",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "LightScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of martyrs battleground": {
+   "name": "scroll of Martyrs Battleground",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "MartyrScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of poison fog": {
+   "name": "scroll of poison fog",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "summonpoisonfogScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of spore burst": {
+   "name": "scroll of spore burst",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "SporeBurstScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of truce": {
+   "name": "scroll of truce",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "TruceScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll of winds": {
+   "name": "scroll of winds",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "WindScroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "scroll": {
+   "name": "scroll",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "Scroll",
+   "declared_by": {
+    "weight": "Scroll",
+    "bulk": "Scroll"
+   },
+   "also": [],
+   "unidentified": true
+  },
   "shaman blood": {
    "name": "shaman blood",
    "weight": 4,
@@ -2266,6 +2494,78 @@
    },
    "also": []
   },
+  "wand of blinding": {
+   "name": "wand of blinding",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "BlindWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of branding": {
+   "name": "wand of branding",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "MarkOfDishonorWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of charming": {
+   "name": "wand of charming",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "SeduceWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of dementia": {
+   "name": "wand of dementia",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "DementWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of destruction": {
+   "name": "wand of destruction",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "ShatterWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of filching": {
+   "name": "wand of filching",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "SwapWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
   "wand of fire": {
    "name": "wand of fire",
    "weight": 25,
@@ -2276,6 +2576,18 @@
     "bulk": "FireWand"
    },
    "also": []
+  },
+  "wand of forgetfulness": {
+   "name": "wand of forgetfulness",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "ForgetWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
   },
   "wand of healing": {
    "name": "wand of healing",
@@ -2288,6 +2600,66 @@
    },
    "also": []
   },
+  "wand of identification": {
+   "name": "wand of identification",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "IdentifyWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of immobilization": {
+   "name": "wand of immobilization",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "HoldWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of magical cleansing": {
+   "name": "wand of magical cleansing",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "PurifyWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of rejuvenation": {
+   "name": "wand of rejuvenation",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "HospiceWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of striking": {
+   "name": "wand of striking",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "SlitherWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
   "wand of vampiric shock": {
    "name": "wand of vampiric shock",
    "weight": 25,
@@ -2298,6 +2670,42 @@
     "bulk": "VampireWand"
    },
    "also": []
+  },
+  "wand of weakness": {
+   "name": "wand of weakness",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "EnfeebleWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand of weapon weakening": {
+   "name": "wand of weapon weakening",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "BrittleWand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "identified_label": true
+  },
+  "wand": {
+   "name": "wand",
+   "weight": 3,
+   "bulk": 5,
+   "cls": "Wand",
+   "declared_by": {
+    "weight": "SpellItem",
+    "bulk": "SpellItem"
+   },
+   "also": [],
+   "unidentified": true
   },
   "war pendant": {
    "name": "war pendant",

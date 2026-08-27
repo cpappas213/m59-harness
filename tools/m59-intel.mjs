@@ -19,7 +19,7 @@
 //   substrate/players-seen.json          — index: one entry per player, last-seen summary
 //   substrate/player-history/<name>.jsonl — full append-only sighting trail per player
 //   substrate/targets.json               — auto-attack target list
-//   substrate/active-conflicts.json      — live fleet conflicts (TTL-based)
+//   substrate/active-conflicts-<fleet>.json  — live fleet conflicts (TTL-based), PER FLEET
 //
 // CLI:
 //   node tools/m59-intel.mjs                     — sightings summary
@@ -33,13 +33,36 @@ import { readFileSync, writeFileSync, existsSync,
          mkdirSync, appendFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fleetName } from './m59-fleetpath.mjs';
 
 const HERE      = dirname(fileURLToPath(import.meta.url));
 const SUBSTRATE = join(HERE, '..', 'substrate');
 
 const SEEN_PATH       = join(SUBSTRATE, 'players-seen.json');
 const TARGETS_PATH    = join(SUBSTRATE, 'targets.json');
-const CONFLICTS_PATH  = join(SUBSTRATE, 'active-conflicts.json');
+// A CONFLICT BOOK IS PER FLEET, BECAUSE A CALL FOR HELP IS AN ORDER TO MOVE.
+//
+// This was one file for the whole machine, and two fleets run here. Measured 2026-08-27:
+// ten SHADOW characters that had just arrived at Outside Castle Victoria left it within two
+// seconds of each other and crossed into Ukgoth — the most dangerous room on their route —
+// because a PROD character was in a fight. The keeper's own journal said so in plain words:
+//
+//     "Scooter is fighting Morpheus — travelling to assist"
+//
+// Scooter is prod. Aaaa is shadow. They are different accounts on different servers, and one
+// fleet answered the other's call because they shared a file.
+//
+// Everything else per-fleet in this repository is already named for its fleet —
+// `tactics/<fleet>.jsonl`, `broker-<fleet>.log`, `fleets/<fleet>.json` — and resolved through
+// `fleetName()` rather than by reading the environment here. The tithe book and the tactics
+// ledger were each caught getting exactly this wrong; see the note at the top of
+// m59-tactics.mjs.
+// EXPORTED, so the two read-only consumers ask this rather than rebuilding the name. A
+// reader left pointing at the old fixed path does not error — it finds no file and shows an
+// empty board, which is the quietest possible way for a rename to go wrong.
+export const conflictsPath = () =>
+  join(SUBSTRATE, `active-conflicts-${String(fleetName() || 'default').replace(/[^\w.-]/g, '_')}.json`);
+const CONFLICTS_PATH = conflictsPath;
 const HISTORY_DIR     = join(SUBSTRATE, 'player-history');
 const MAP_PATH        = join(SUBSTRATE, 'm59-map.json');
 
@@ -75,8 +98,8 @@ function readSeen()        { return readJSON(SEEN_PATH)    ?? {}; }
 function saveSeen(d)       { writeJSON(SEEN_PATH, d); }
 function readTargets()     { return readJSON(TARGETS_PATH) ?? {}; }
 function saveTargets(d)    { writeJSON(TARGETS_PATH, d); }
-function readConflicts()   { return readJSON(CONFLICTS_PATH) ?? {}; }
-function saveConflicts(d)  { writeJSON(CONFLICTS_PATH, d); }
+function readConflicts()   { return readJSON(CONFLICTS_PATH()) ?? {}; }
+function saveConflicts(d)  { writeJSON(CONFLICTS_PATH(), d); }
 
 // ------------------------------------------------------------------ per-player history
 
@@ -264,6 +287,13 @@ export function declareConflict(reporter, targetName, room) {
     room,
     room_name:  roomName(room),
     reporter,
+    // WHOSE CALL THIS IS. The file is already per fleet, so this is belt and braces — but
+    // the failure it guards against is a file that OUTLIVES the split: an
+    // `active-conflicts.json` left on disk from before the rename, copied between checkouts,
+    // or written by an older broker still running. A record that cannot say which fleet it
+    // belongs to is one `activeConflicts` has to either trust or discard, and trusting it is
+    // how ten shadow characters answered a prod fight.
+    fleet:      fleetName() || null,
     started_at: conflicts[targetName]?.started_at ?? now,
     updated_at: now,
     expires_at: now + CONFLICT_TTL_MS,
@@ -281,10 +311,16 @@ export function clearConflict(targetName) {
 export function activeConflicts() {
   const now       = Date.now();
   const conflicts = readConflicts();
+  const mine      = fleetName() || null;
   const live      = {};
   let changed     = false;
   for (const [name, c] of Object.entries(conflicts)) {
-    if (now < c.expires_at) { live[name] = c; } else { changed = true; }
+    if (now >= c.expires_at) { changed = true; continue; }
+    // A CALL FROM ANOTHER FLEET IS NOT A CALL. Dropped rather than returned, and dropped
+    // SILENTLY rather than saved away — an old shared file should empty itself out through
+    // the TTL rather than be rewritten into this fleet's book under this fleet's name.
+    if (c.fleet && mine && c.fleet !== mine) { changed = true; continue; }
+    live[name] = c;
   }
   if (changed) saveConflicts(live);
   return live;

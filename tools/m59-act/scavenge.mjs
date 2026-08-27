@@ -33,7 +33,15 @@ function frac(v) {
 
 import { wanderAway } from '../m59-wander.mjs';
 import { affordances, OF } from '../m59-parse.mjs';
+import { beginPullProgress, samplePullProgress } from '../m59-pull-progress.mjs';
 import { readFileSync, existsSync } from 'node:fs';
+
+// One live pull experiment per character. The GOAP re-enters this atomic every pass;
+// without persistent state it tags the same creature again instead of watching whether
+// that exact id is actually following to the chosen wall.
+const _pullProgress = new Map();
+const pullProgressKey = (client, session) =>
+  client?.me?.name ?? session?.name ?? session?.s?.name ?? 'unknown';
 
 // Compendium spawn data: room number -> [{creature, level, ...}].
 // Used to filter targets by level when the wire protocol doesn't
@@ -195,6 +203,19 @@ export async function scavenge(client, session, opts = {}) {
     }
     return (a.max_health ?? a.health ?? 999) - (b.max_health ?? b.health ?? 999);
   });
+  // The keeper already selected and persisted one quarry. Wall choice, pull monitoring,
+  // and combat must all use that exact id; silently falling back to sorted[0] validates
+  // one monster in the planner and attacks another in the atomic.
+  if (opts.targetId != null) {
+    const at = sorted.findIndex(o => Number(o.id ?? o.obj_id) === Number(opts.targetId));
+    if (at < 0) {
+      _pullProgress.delete(pullProgressKey(client, session));
+      return { sent: false, killed: false,
+        reason: `selected target ${opts.targetId} is no longer available, reachable, or in band`,
+        target_unavailable: true, target_id: Number(opts.targetId) };
+    }
+    if (at > 0) sorted.unshift(...sorted.splice(at, 1));
+  }
   const hpFrac = frac(client?.vitals?.()?.health);
   const { fight: doFight } = await import('../m59-skills.mjs');
 
@@ -305,93 +326,126 @@ export async function scavenge(client, session, opts = {}) {
       ? Math.hypot(targetCol - mePos.col, targetRow - mePos.row) : null;
     console.error(`[scavenge] ${nm} targeting ${targetName} at (${targetCol},${targetRow}) dist=${dist ? dist.toFixed(1) : '?'}`);
 
-    // PHASE 0: If the target is far and NOT aggroed, walk toward it
-    // first. A non-aggroed mob won't come to us — we have to go to it.
-    // The safe spot is taken AFTER closing the gap, so the character
-    // ends up at a wall near the target, not a wall across the room.
-    if (dist != null && dist > 8 && targetCol != null && targetRow != null) {
-      const isAggroed0 = !!(target.flags & OF.ENEMY);
-      if (!isAggroed0) {
-        const approach0 = session.world?.approachSquare?.(targetCol, targetRow);
-        if (approach0 && approach0.steps > 0) {
-          console.error(`[scavenge] ${nm} ${targetName} not aggroed, ${dist.toFixed(1)} away — walking to close gap before safe spot (maxSteps=${Math.min(approach0.steps, 8)})`);
-          const walk0 = await session.walkTo(approach0.col, approach0.row, { maxSteps: Math.min(approach0.steps, 8) }).catch(e => ({ arrived: false, reason: e.message }));
-          console.error(`[scavenge] ${nm} walk result: arrived=${walk0?.arrived} reason=${walk0?.reason ?? 'n/a'}`);
-          // Re-check position after the walk
-          const meAfter = client.self;
-          if (meAfter) {
-            const newDist = targetCol != null && targetRow != null
-              ? Math.hypot(targetCol - meAfter.col, targetRow - meAfter.row) : null;
-            console.error(`[scavenge] ${nm} closed gap, now at (${meAfter.col},${meAfter.row}), dist=${newDist ? newDist.toFixed(1) : '?'}`);
-            // Update targetCol/targetRow references for the safe-spot phase
-            // (mePos is const, so we just log the new position)
-          }
-        }
-      }
+    // PHASE 1: The quarry is selected first; now take the closest unoccupied safe spot
+    // that its coarse movement component can bring within combat distance. A pending
+    // experiment keeps the exact wall and target id from the previous pass.
+    const progressKey = pullProgressKey(client, session);
+    const progressRoom = roomNum ?? room?.num ?? room?.id ?? null;
+    let pending = _pullProgress.get(progressKey) ?? null;
+    if (pending && (pending.target_id !== foeId || pending.room !== progressRoom)) {
+      _pullProgress.delete(progressKey);
+      pending = null;
     }
 
-    // PHASE 1: Take a safe spot (wall/corner) BEFORE engaging.
-    // The legacy keeper does this first: the safe spot is the anchor,
-    // and the fight happens at the wall, not where the mob spawned.
-    let spotCol = null, spotRow = null;
-    let atWall = false;
-    if (!opts.noSafeSpot) {
-      const spotResult = await takeSafeSpot(client, session, { maxSteps: 8 }).catch(() => null);
+    let spotCol = pending?.wall?.col ?? null;
+    let spotRow = pending?.wall?.row ?? null;
+    let atWall = !!pending && client.self?.col === spotCol && client.self?.row === spotRow;
+
+    if (pending) {
+      const liveFoe = client.room?.objects?.get?.(foeId);
+      const observed = samplePullProgress(pending, liveFoe, {
+        sampleEveryMs: opts.pullProgressSampleMs ?? 3_000,
+        stalledSamples: opts.pullProgressStalledSamples ?? 3,
+        minCloser: opts.pullProgressMinCloser ?? 0.25,
+      });
+      if (observed.missing) {
+        _pullProgress.delete(progressKey);
+        return { sent: false, killed: false,
+          reason: `selected target ${foeId} disappeared while following`,
+          target_unavailable: true, target_id: foeId };
+      }
+      pending = observed.state;
+      _pullProgress.set(progressKey, pending);
+      if (observed.stalled) {
+        _pullProgress.delete(progressKey);
+        return { sent: false, killed: false,
+          reason: `${targetName} stopped getting closer to safe spot (${observed.stalled_samples} sampled checks)`,
+          pull_stalled: true, stalled_target_id: foeId,
+          wall: pending.wall, last_position: pending.last_position,
+          last_distance: pending.last_distance, best_distance: pending.best_distance };
+      }
+      if (!atWall) {
+        const back = await session.walkTo(spotCol, spotRow, { maxSteps: 8 })
+                                  .catch(() => ({ arrived: false, reason: 'walk failed' }));
+        return { sent: true, killed: false,
+          reason: back.arrived ? 'returned to the pull safe spot; rechecking the quarry'
+                               : `could not return to pull safe spot: ${back.reason ?? 'walk failed'}`,
+          holding: !!back.arrived, target_id: foeId };
+      }
+    } else if (!opts.noSafeSpot) {
+      const spotResult = await takeSafeSpot(client, session, {
+        maxSteps: opts.safeSpotMaxSteps ?? 8,
+        mapRoomNum: progressRoom,
+        target: { id: foeId, col: targetCol, row: targetRow },
+      }).catch(e => ({ sent: false, at_wall: false, reason: e.message }));
       if (spotResult?.at_wall && spotResult.spot) {
         spotCol = spotResult.spot.col;
         spotRow = spotResult.spot.row;
         atWall = true;
         console.error(`[scavenge] ${nm} at safe spot (${spotCol},${spotRow}), pulling ${targetName}`);
-      } else if (spotResult?.at_wall) {
-        // Already at a wall but no specific spot coordinates.
-        // Still hold position — the character is at a wall, even if
-        // we don't know which one.
-        atWall = true;
-        console.error(`[scavenge] ${nm} already at a wall, holding position`);
       } else {
-        console.error(`[scavenge] ${nm} no safe spot found (${spotResult?.reason ?? 'unknown'}), fighting in the open`);
+        // A bounded walk may need several passes; do not fight in the open between them.
+        return { sent: !!spotResult?.sent, killed: false,
+          reason: spotResult?.sent
+            ? (spotResult.in_progress
+                ? `moving to the selected quarry's safe spot; bounded leg complete`
+                : `moving to the selected quarry's safe spot: ${spotResult.reason ?? 'walk in progress'}`)
+            : `no target-valid safe spot: ${spotResult?.reason ?? 'unknown'}`,
+          pull_wall_in_progress: !!spotResult?.in_progress,
+          target_id: foeId };
       }
     }
 
-    // PHASE 2: If we have a safe spot, PULL the mob to it.
-    // Walk out to the mob, swing once (engages it), walk back.
-    // The mob follows because it's now hostile.
-    //
-    // BUDGET: the pull is only worth it for nearby mobs. Each walkTo step
-    // costs 250ms (coarse) or 1s (fine grid), and the pull is two walks.
-    // For a mob 20 steps away, that's 40+ seconds of walking — which blocks
-    // the broker's event loop for the entire time. The GOAP re-plans every
-    // second, so if the mob is far, we'll try again next pass when it's
-    // closer (or we'll have walked toward it during travel).
-    // Cap: only pull if the mob is within 12 steps.
-    if (spotCol != null && targetCol != null && targetRow != null) {
+    // PHASE 2: Tag once, return to the wall, then leave the exact target to the progress
+    // watcher. Re-pulling every pass destroys the observation we need and can make a bot
+    // walk wall-to-quarry forever.
+    if (atWall && !pending && spotCol != null && targetCol != null && targetRow != null) {
       const c = client;
       const s = session;
-      const approach = s.world?.approachSquare?.(targetCol, targetRow);
-      if (approach && approach.steps > 0 && approach.steps <= 12) {
-        const out = await s.walkTo(approach.col, approach.row, { maxSteps: approach.steps + 4 }).catch(() => ({ arrived: false }));
-        if (out.arrived) {
-          // Swing once to engage the mob
-          const liveFoe = c.room?.objects?.get?.(foeId);
-          if (liveFoe) {
-            const deg = Math.atan2(liveFoe.row - c.self.row, liveFoe.col - c.self.col) * 180 / Math.PI;
-            await s.pacer.submit('move', () => c.face(deg), 200).catch(() => {});
-            await s.pacer.submit('attack', () => c.attack(foeId), 1050).catch(() => {});
-            console.error(`[scavenge] ${nm} swung at ${targetName} to engage`);
-          }
-          // Walk back to the safe spot
-          const back = await s.walkTo(spotCol, spotRow, { maxSteps: approach.steps + 4 }).catch(() => ({ arrived: false }));
-          if (back.arrived) {
-            console.error(`[scavenge] ${nm} back at safe spot (${spotCol},${spotRow}), ${targetName} following`);
-          } else {
-            console.error(`[scavenge] ${nm} could not get back to safe spot: ${back.reason}`);
-          }
-        } else {
-          console.error(`[scavenge] ${nm} could not reach ${targetName} to pull: ${out.reason}`);
-        }
-      } else if (approach && approach.steps > 12) {
-        console.error(`[scavenge] ${nm} mob ${approach.steps} steps away — too far to pull, fighting in place`);
+      const liveBefore = c.room?.objects?.get?.(foeId);
+      const approach = liveBefore
+        ? s.world?.approachSquare?.(liveBefore.col, liveBefore.row) : null;
+      if (!approach)
+        return { sent: false, killed: false,
+          reason: `no approach to selected target ${targetName}`, target_id: foeId };
+      if (approach.steps > 12)
+        return { sent: false, killed: false,
+          reason: `could not pull selected target ${targetName}: approach is ${approach.steps} steps`,
+          target_id: foeId };
+
+      if (approach.steps > 0) {
+        const out = await s.walkTo(approach.col, approach.row, { maxSteps: approach.steps + 4 })
+                           .catch(() => ({ arrived: false, reason: 'walk failed' }));
+        if (!out.arrived)
+          return { sent: true, killed: false,
+            reason: `could not reach selected target ${targetName}: ${out.reason ?? 'walk failed'}`,
+            target_id: foeId };
       }
+
+      const liveFoe = c.room?.objects?.get?.(foeId);
+      if (!liveFoe)
+        return { sent: false, killed: false,
+          reason: `selected target ${foeId} disappeared before the pull`,
+          target_unavailable: true, target_id: foeId };
+      const deg = Math.atan2(liveFoe.row - c.self.row, liveFoe.col - c.self.col) * 180 / Math.PI;
+      await s.pacer.submit('move', () => c.face(deg), 200).catch(() => {});
+      await s.pacer.submit('attack', () => c.attack(foeId), 1050).catch(() => {});
+      console.error(`[scavenge] ${nm} swung at ${targetName} to engage`);
+
+      const back = await s.walkTo(spotCol, spotRow, { maxSteps: approach.steps + 4 })
+                          .catch(() => ({ arrived: false, reason: 'walk failed' }));
+      if (!back.arrived)
+        return { sent: true, killed: false,
+          reason: `could not get back to safe spot after tagging ${targetName}: ${back.reason ?? 'walk failed'}`,
+          target_id: foeId };
+
+      const liveAfter = c.room?.objects?.get?.(foeId) ?? liveFoe;
+      pending = {
+        target_id: foeId, target: targetName, room: progressRoom,
+        ...beginPullProgress(liveAfter, { room: progressRoom, col: spotCol, row: spotRow }),
+      };
+      _pullProgress.set(progressKey, pending);
+      console.error(`[scavenge] ${nm} back at safe spot (${spotCol},${spotRow}), watching ${targetName} follow`);
     }
 
     // PHASE 3: Fight from the safe spot (or in the open if no spot).
@@ -410,18 +464,37 @@ export async function scavenge(client, session, opts = {}) {
     // still there and still in band, so three swings is three passes rather than one
     // blind burst -- and any of the three can now be interrupted by a flee.
     const r = await doFight(session, {
-      target: targetName, preferId: foeId,
+      target: targetName, preferId: foeId, exactTargetId: foeId,
       rounds: 1, swingsPerRound: 1,
-      holdPosition: atWall, reach: 3,
+      holdPosition: atWall, reach: 2,
     });
 
-    if (r?.killed || r?.won)
+    if (r?.killed || r?.won) {
+      _pullProgress.delete(progressKey);
       return { sent: true, killed: true, reason: null };
+    }
+    if ((r?.landed_hits ?? 0) > 0 && Number(r?.target_id ?? r?.foe_id) === Number(foeId))
+      _pullProgress.delete(progressKey);
 
     // out_of_reach: the mob hasn't reached us yet.
     // If the mob IS aggroed (chasing), wait for it to close.
     // If the mob is NOT aggroed, it won't come — walk toward it.
     if (r?.out_of_reach) {
+      if (pending || _pullProgress.has(progressKey)) {
+        const tracked = _pullProgress.get(progressKey);
+        return {
+          sent: true, killed: false,
+          reason: `holding safe spot, watching ${targetName} close (dist=${tracked?.last_distance?.toFixed?.(1) ?? r.nearest?.distance ?? '?'})`,
+          holding: true, target_id: foeId,
+        };
+      }
+      // A target-specific wall was taken but no tag/follow experiment could be started.
+      // Do not walk away from it toward a non-follower; let the keeper rotate the target.
+      if (atWall) {
+        return { sent: false, killed: false,
+          reason: `could not establish a pull for selected target ${targetName}`,
+          target_id: foeId };
+      }
       // Check if the target is aggroed
       const liveFoe = client.room?.objects?.get?.(foeId);
       const isAggroed = !!(liveFoe?.flags & OF.ENEMY);

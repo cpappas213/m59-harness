@@ -58,6 +58,67 @@ Three things hold this up and each fails in the dangerous direction if inverted:
   step ends at neither end of the step it requested, and blaming the landing square blames
   an edge nobody tried. `object_blocked` is treated as the opposite fact: **a monster moves
   and a wall does not**, so only the first is worth waiting 700ms for.
+- **A body is not a wall, and fanning around one is not a walk.** `walkFine` fans nine
+  headings and slides, which finds the gap in a wall the straight line missed — and against
+  a BODY shuffles two squares for the whole step budget, because each slid step counts as a
+  few units of "progress". Castle Victoria, 2026-08-26: six fleet characters converged on
+  one corner (two on the same square), every direct heading refused by a fleetmate, all
+  "travelling — NOT MOVING" for a quarter of an hour with `require_safe_wall` on. Two
+  rules, both pinned by `m59-collision-test` and `m59-takesafespot-test`: `walkFine` hands
+  a body back as `object_blocked` after three fans without half a square of net progress
+  (real progress around it resets the count), and the safe-spot selector skips squares
+  another PLAYER stands on or next to for a non-combat shelter pass. Target-first pull
+  selection uses the literal occupied square (plus any body marked `MOVEON.NO`) so an
+  unoccupied closest wall is not discarded merely because somebody stands beside it.
+  An atomic cross-process claim closes the choose-before-arrival race.
+- **THE SAFE WALLS ARE THE RED SQUARES IN THE DEBUG CLIENT, AND THE KEEPER CHOOSES FROM
+  EXACTLY THAT SET.** Corrected 2026-08-27 by the operator, who checked the minimap room by
+  room. One function, `safeWalls()` in `m59-safespots.mjs`, is both the picture
+  (`m59-overlay.mjs`, layer `F`) and the keeper's candidate list (`safeSpots()` iterates it
+  and nothing narrows it). A red square is a coarse-walkable square from which **no square
+  within monster reach has coarse line of sight** (`exposureAt().attackers === 0` —
+  `Room.LineOfSight`, transcribed) **while at least one square within our own reach can be
+  hit without answering** (`free_shots > 0`). That is the two grids disagreeing about the
+  same square — the monster's grid says "cannot reach", ours says "can hit". Escape room,
+  exposure, ledges and the room's outer ring are all still measured and they RANK the
+  list; none of them removes a wall the picture shows. Two earlier definitions were wrong
+  in opposite directions and both are gone: open floor graded by enclosure (pre-08-23), and
+  only squares the coarse grid REFUSES (08-23 to 08-27) — the latter was disjoint from the
+  picture by construction, so the fleet stood beside hundreds of verified walls and was
+  told it had none. `m59-safespot-test` pins the identity; `node tools/m59-overlay.mjs
+  --all` regenerates the picture.
+- **A wall square is entered along the fine path, never along the line.** The straight
+  line into a wall square from open floor is often exactly the step the geometry declines,
+  and `walkFine`'s fan slides along the face for the whole budget: "could not walk back to
+  the square — ran out of steps", one square out.
+- **PULL COMBAT CHOOSES THE QUARRY FIRST, THEN ITS WALL.** Among canonical safe walls the
+  closest Euclidean square to that exact object id wins, after three hard eligibility
+  checks: the player can route to it, no other body/person occupies or has reserved it, and
+  a flood from the quarry on the stock server's **coarse monster grid** reaches some square
+  inside the player's radius-2 combat disc around it. A target/wall pair stays fixed across
+  bounded walk legs; a true no-progress destination failure is excluded briefly rather
+  than driven into again.
+- **A TAGGED QUARRY HAS TO KEEP CLOSING.** Its exact live id and distance to the chosen wall
+  are sampled every three seconds. A closer sample resets the counter; three consecutive
+  non-closing samples cool that target and select a different quarry and that quarry's own
+  closest valid wall. Lost aggro is target evidence, so this transition never writes the
+  wall to `barrenSpots` or condemns the room.
+- **A pull that cannot REACH the prey means the wall is too far, not that the wall is bad.**
+  `pullAttemptFailed` (a failed *reach* — "the coarse grid found no route beside the target")
+  used to add the square to `barrenSpots` and, three walls later via `noWallRooms`, abandon
+  wall-fighting for the whole room. It now never blacklists and never abandons: it returns
+  `relocate` and the keeper takes a wall biased hard toward the quarry (`nearQuarry` →
+  `fromFightWeight` 3, so distance-to-prey beats distance-to-us) and pulls from there.
+  Piggy and Lew, Valley of Ileria 2026-08-27: prey 26–44 cells off, every wall they took was
+  too far, and the old path walked them in circles retiring good walls. This is a different
+  failure from `pullDidNotConvert` (reached, hit, nothing followed — a cliff square), which
+  still retires. `m59-safespot-test` pins both. `approachFine` now asks the geometry's own `finePathProtocol` (step 8 — the
+  A* that `/findpath` and combat use) and follows its waypoints first, falling back to the
+  line only when there is no path. **Not `finePath`**, `walkTo`'s 256-unit lattice detour:
+  measured on the same three walls, the lattice answered "no fine route" for all three
+  while `finePathProtocol` found each in five to seven waypoints — a wall square is
+  standable only in a sliver, and a coarse lattice cannot land on a sliver. Do not read the broker `safe_spots` tool's default `limit: 8` as
+  the room's supply of walls — it is a display cap.
 - **The mask may only ever PREFER.** It is a model of somebody else's server and it is
   stricter than the world — on room 579's north boundary it offers no reachable staging
   square at all from 19 of 35 starting squares. So `exits()` floods twice and falls back to
@@ -454,6 +515,40 @@ all just constraints in the bot's head.
   The map graph records that A and B connect; it does not record that the two ends are
   in the same place, and they usually are not.
 
+
+- **A BODY IN THE WAY IS NOT A WALL, AND IT IS NOT A CLEARANCE EITHER — IT IS A SLIDE.**
+  `clientd3d/move.c:666-697` is the whole rule, and three separate models of it shipped here
+  before anyone read it. Walls are swept by `FindIntersection`; **objects are tested only at the
+  ENDPOINT of a move**. You may END inside the exclusion zone provided you are farther from the
+  obstacle than you were (`"Allowed to move away from object"`). And when a move really is
+  refused, the client does not refuse it — it **clamps one coordinate to the obstacle's centre
+  plus or minus `MIN_NOMOVEON`, re-checks the walls, and returns `MOVE_CHANGED`**. X in
+  preference to Y, which is not symmetric.
+
+  Three consequences, each of which cost a session:
+
+  - **`MIN_NOMOVEON` is 16 kod and it is ONE exclusion zone, not two player radii.**
+    `PLAYER_RADIUS` (15.5 kod) is the WALL rule and a different question. Adding them gave 32,
+    double the truth, and made a corridor the operator had walked by hand read as impassable.
+  - **"The line must stay 16 clear of every body" is an invention.** It is not in the client and
+    it refuses crossings the game allows. Two bodies 25.3 apart cannot both be cleared by 16, so
+    that rule calls the gap shut; the gap is crossed by twelve consecutive legal slides, and was
+    walked on the live server with the stock client while recording.
+  - **The approach heading decides it.** The slide clamps toward whichever side of the obstacle
+    the attempt landed on, so a body arriving four units too far west grinds up the near face for
+    ever while one four units east goes through. There is no clearance number that expresses
+    this; ask `bodyWalkArrives`, which walks the leg the way the client walks it.
+
+  `resolveBodyMove` and `bodyWalkArrives` in `m59-game.mjs` are the transcription, and
+  `m59-collision-test.mjs` pins each line of it against the case that caught it.
+
+- **"ONE SQUARE WIDE" IS A STATEMENT ABOUT THE COARSE GRID AND USUALLY NOT ABOUT THE FLOOR.**
+  The Western border of the Twisted Wood pinches to row 29 alone at columns 44-46 — on
+  `geo.walkable`. The .roo underneath is **82 to 110 fine units** across those columns against a
+  square's 64, and at column 46 that is nearly two squares of floor the byte grid does not
+  mention. A search confined to the coarse row therefore misses lanes that exist, which is
+  exactly the failure the capitalised rule at the top of this file warns about, made by a file
+  that quotes it. Use squares to index the bake; ask the BSP where the floor is.
 - **MELEE REACH IS A DISC OF RADIUS 2–3 SQUARES, AND FINE COORDINATES DO NOT EXIST TO IT.**
   Both sides run the same test: `SquaredDistanceTo <= GetAttackRange^2`, where the
   distance is `(piRow-row)^2 + (piCol-col)^2` on **square** coordinates
@@ -561,4 +656,3 @@ all just constraints in the bot's head.
   What actually happened is what the doctrine describes: an errand walked a character at 1
   of 49 health through rooms holding six to nine things, and it died going through. That is
   an accepted outcome of a planned trip, not a defect to engineer around.
-

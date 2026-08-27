@@ -3,6 +3,8 @@
 //   node tools/m59-takesafespot-test.mjs
 
 import { Autopilot } from './m59-autopilot.mjs';
+import { crowdedSquares } from './m59-autopilot.mjs';
+import { OF } from './m59-parse.mjs';
 
 let passed = 0, failed = 0;
 const tests = [];
@@ -145,6 +147,52 @@ t('_takeSafeSpotSearch: returns spot when searchSafeSpot finds one', () => {
   const r = k._takeSafeSpotSearch(geo, me, room, {});
   if (r.spot === null) throw new Error('expected a spot');
   if (r.spot.col !== 12 || r.spot.row !== 8) throw new Error('expected spot at (12, 8)');
+});
+
+// ---------------------------------------------------------------------------
+// A wall square is only worth walking to if the walk can end on it, and the fine walker
+// cannot route around a body. So squares other players stand on — or next to — are skipped
+// for this pass, exactly like squares we recently failed to reach. Players only: a monster
+// next to a wall is what the wall is for. Castle Victoria, 2026-08-26: six characters in
+// one 2x3 block, two on the same square, all "NOT MOVING".
+
+t('crowdedSquares: another player excludes their square and its eight neighbours', () => {
+  const objects = new Map([
+    [1, { id: 1, col: 12, row: 10, flags: OF.PLAYER }],
+    [2, { id: 2, col: 5, row: 5, flags: OF.ATTACKABLE }],   // a monster: not a crowd
+    [99, { id: 99, col: 20, row: 20, flags: OF.PLAYER }],   // ourselves
+  ]);
+  const out = crowdedSquares(objects, 99);
+  for (const k of ['12,10', '11,9', '13,11', '12,11'])
+    if (!out.has(k)) throw new Error('missing ' + k);
+  if (out.has('5,5')) throw new Error('a monster was treated as a crowd');
+  if (out.has('20,20')) throw new Error('we excluded our own square');
+  if (out.size !== 9) throw new Error('expected 9 squares, got ' + out.size);
+});
+
+t('crowdedSquares: no players, or no objects at all, is an empty set', () => {
+  if (crowdedSquares(new Map(), 1).size !== 0) throw new Error('empty map');
+  if (crowdedSquares(null, 1).size !== 0) throw new Error('null');
+  if (crowdedSquares([{ id: 2, col: 1, row: 1, flags: OF.ATTACKABLE }], 1).size !== 0)
+    throw new Error('monster only');
+});
+
+t('spotExclusions: recently unreachable squares and crowded squares are one set', () => {
+  const k = mockKeeper({
+    unreachableIn: () => new Set(['1,1']),
+    session: { client: { selfId: 99,
+      self: { col: 10, row: 10 },
+      room: { objects: new Map([[7, { id: 7, col: 12, row: 10, flags: OF.PLAYER }]]) } } },
+  });
+  const out = k.spotExclusions(100);
+  if (!out.has('1,1')) throw new Error('lost the remembered unreachable square');
+  if (!out.has('12,10') || !out.has('11,10')) throw new Error('missing the crowd');
+});
+
+t('spotExclusions: with nobody around, the remembered set is returned as-is (may be null)', () => {
+  const k = mockKeeper({ unreachableIn: () => null,
+    session: { client: { selfId: 99, self: { col: 10, row: 10 }, room: { objects: new Map() } } } });
+  if (k.spotExclusions(100) !== null) throw new Error('expected null through');
 });
 
 // ---------------------------------------------------------------------------

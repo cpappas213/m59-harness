@@ -42,7 +42,7 @@ const flag = (name, fallback = null) => {
 };
 const has = name => argv.includes('--' + name);
 
-const KNOWN = new Set(['fleet', 'to', 'port', 'timeout', 'seed', 'agents', 'inns',
+const KNOWN = new Set(['fleet', 'to', 'port', 'timeout', 'seed', 'agents', 'inns', 'no-retry',
                        'dry-run', 'help', 'h']);
 for (const a of argv) {
   if (!a.startsWith('--')) continue;
@@ -64,6 +64,10 @@ const FLEET = flag('fleet', process.env.M59_FLEET
 const PORT = Number(flag('port', 8971));
 const TO = Number(flag('to', 2));
 const TIMEOUT = Number(flag('timeout', 600)) * 1000;
+// SEND THEM BACK OUT AFTER A DEATH, AND COUNT THE DEATHS. Default on: without it this tool
+// measures the death rate rather than whether the road can be crossed — see the note in
+// watchAll. `--no-retry` restores the old behaviour for comparison with earlier runs.
+const RETRY = !has('no-retry');
 const DRY = has('dry-run');
 const ONLY = flag('agents') ? String(flag('agents')).split(',').map(s => s.trim()).filter(Boolean) : null;
 
@@ -217,13 +221,53 @@ async function watchAll(outs) {
       if (Number.isFinite(hp)) o.low = o.low === null ? hp : Math.min(o.low, hp);
       const max = Number(row.max_health ?? row.health_max ?? NaN);
       if (Number.isFinite(max)) o.max = max;
-      if (room === TO) { o.outcome = 'arrived'; o.ms = Date.now() - o.began; live.delete(row.agent); continue; }
+      if (room === TO) {
+        o.outcome = 'arrived'; o.ms = Date.now() - o.began; live.delete(row.agent); continue;
+      }
       // THE UNDERWORLD IS A DEATH, and it is the only honest way to see one from here: the
       // journey does not report it, the room read does.
-      if (room === UNDERWORLD) { o.outcome = 'died'; o.ms = Date.now() - o.began; live.delete(row.agent); }
+      //
+      // A DEATH IS NOT THE END OF THE MEASUREMENT ANY MORE, AND THAT WAS THIS TOOL'S BIGGEST
+      // DISTORTION. It used to record `died` and `live.delete` the character — walking away
+      // for the rest of the window. So the headline number was never "can the fleet cross the
+      // map"; it was "how often does somebody cross WITHOUT DYING EVEN ONCE", which is the
+      // death rate wearing a different hat. Measured 2026-08-27: raising the clock from 10 to
+      // 40 minutes moved arrivals 4 -> 8 and then flat for 28 minutes, because the twelve who
+      // had died were sitting in inns at full health with nothing left to do.
+      //
+      // The keeper's own `travel_deaths_allowed` is a DIFFERENT question — whether the keeper
+      // resumes on its own — and at its default of 0 it does not. Nothing marks the character
+      // defective either way: the counter is cleared with the objective, so a fresh `travel`
+      // is a completely clean attempt. So the harness re-issues one.
+      if (room === UNDERWORLD) {
+        if (o.state !== 'dead') {
+          o.state = 'dead';
+          o.deaths = (o.deaths ?? 0) + 1;
+          o.diedAt = (o.diedAt ?? []); o.diedAt.push(Math.round((Date.now() - o.began) / 1000));
+          if (!RETRY) { o.outcome = 'died'; o.ms = Date.now() - o.began; live.delete(row.agent); }
+        }
+        continue;
+      }
+      // OUT OF THE UNDERWORLD AND WHOLE AGAIN — send it off once more.
+      //
+      // Both conditions matter. The keeper walks itself out to the nearest city inn (the one
+      // thing above the inert gate) and then rests; re-issuing before that is asking a
+      // character to set off at 2 of 37, and `recoverUntilWhole` refuses `travel` outright
+      // while it is up, so an early retry measures the hold rather than the road.
+      if (o.state === 'dead' && room !== UNDERWORLD) {
+        const whole = Number.isFinite(hp) && Number.isFinite(max) ? hp / max >= 0.95 : false;
+        if (!whole) continue;
+        o.state = 'running';
+        o.retries = (o.retries ?? 0) + 1;
+        await call('travel', { agent: o.agent, to: TO, max_hops: 30, background: true,
+                               run_errands: false });
+      }
     }
   }
-  for (const o of live.values()) { o.outcome = 'timed out'; o.ms = Date.now() - o.began; }
+  for (const o of live.values()) {
+    o.outcome = o.deaths ? 'still trying' : 'timed out';
+    o.ms = Date.now() - o.began;
+  }
   return outs;
 }
 
@@ -237,10 +281,11 @@ const results = await watchAll(launched);
 
 // ------------------------------------------------------------------ the report
 const pad = (s, n) => String(s ?? '').padEnd(n);
-console.log('\n  character  from        outcome      s   ended            low');
+console.log('\n  character  from        outcome      s  died  ended            low');
 for (const o of results.sort((a, b) => a.city.localeCompare(b.city) || a.character.localeCompare(b.character)))
   console.log('  ' + pad(o.character, 10) + pad(o.city, 11) + pad(o.outcome, 11) +
-              String(Math.round(o.ms / 1000)).padStart(4) + '   ' +
+              String(Math.round(o.ms / 1000)).padStart(4) +
+              String(o.deaths ?? 0).padStart(6) + '  ' +
               pad(String(o.ended ?? '?') + (o.endedName ? ' ' + o.endedName : ''), 17) +
               (o.low === null ? '' : ' ' + o.low + (o.max ? '/' + o.max : '')) +
               (o.why ? '  — ' + o.why : ''));
@@ -256,10 +301,39 @@ console.log(`  arrived   ${arrived.length}  (${Math.round(100 * arrived.length /
 console.log(`  died      ${died.length}`);
 console.log(`  timed out ${out.length}`);
 if (refused.length) console.log(`  refused   ${refused.length}`);
+const stillTrying = results.filter(o => o.outcome === 'still trying');
+if (stillTrying.length) console.log(`  still trying when the window closed  ${stillTrying.length}`);
 if (arrived.length) {
   const t = arrived.map(o => o.ms).sort((a, b) => a - b);
   console.log(`  of those that arrived: fastest ${Math.round(t[0] / 1000)}s, ` +
               `median ${Math.round(t[t.length >> 1] / 1000)}s, slowest ${Math.round(t[t.length - 1] / 1000)}s`);
+}
+
+// WHAT THE ROAD COST, WHICH IS THE HALF AN ARRIVAL RATE CANNOT SHOW.
+//
+// With retries on, "arrived" stops being a proxy for "never died" and the two become separate
+// facts: a character that arrived after three deaths and one that walked it clean are both
+// arrivals, and the difference between them IS the road.
+//
+// Per character as well as in total, because one character dying nine times and nine
+// characters dying once give the same total and are completely different problems — the first
+// is one stuck character, the second is a dangerous corridor. Both happened here.
+const deathCounts = results.map(o => o.deaths ?? 0);
+const totalDeaths = deathCounts.reduce((a, b) => a + b, 0);
+console.log('\nWHAT IT COST');
+console.log(`  total deaths            ${totalDeaths}` +
+            (RETRY ? '' : '   (--no-retry: at most one each, then abandoned)'));
+if (totalDeaths) {
+  const bitten = deathCounts.filter(d => d > 0).sort((a, b) => a - b);
+  console.log(`  characters that died    ${bitten.length} of ${n}`);
+  console.log(`  deaths per character    min ${bitten[0]}, max ${bitten[bitten.length - 1]}, ` +
+              `avg ${(totalDeaths / n).toFixed(2)} over the fleet, ` +
+              `${(totalDeaths / bitten.length).toFixed(2)} among those that died`);
+  console.log(`  arrived without dying   ${arrived.filter(o => !o.deaths).length} of ${arrived.length} arrivals`);
+  const worst = results.filter(o => (o.deaths ?? 0) > 0)
+    .sort((a, b) => (b.deaths ?? 0) - (a.deaths ?? 0)).slice(0, 5);
+  console.log('  worst hit: ' + worst.map(o => `${o.character} x${o.deaths}` +
+    (o.diedAt?.length ? ` (at ${o.diedAt.join('s, ')}s)` : '')).join('; '));
 }
 
 console.log('\nBY THE ROAD THEY TOOK');
@@ -267,7 +341,9 @@ for (const c of CITIES) {
   const mine = results.filter(o => o.city === c);
   if (!mine.length) continue;
   const ok = mine.filter(o => o.outcome === 'arrived').length;
-  const d = mine.filter(o => o.outcome === 'died').length;
+  // WHO DIED ON THIS ROAD, not who ENDED as a death — with retries on those are different
+  // numbers and the first is the one about the road.
+  const d = mine.filter(o => (o.deaths ?? 0) > 0).length;
   console.log(`  ${pad(c, 10)} ${ok}/${mine.length} arrived` + (d ? `, ${d} died` : '') +
               '   ' + '#'.repeat(ok) + '.'.repeat(mine.length - ok));
 }

@@ -31,8 +31,11 @@ import { loadSpawns, huntingGrounds, huntMatcher, huntedCreatures,
          FORGIVING_RATING as GENTLE_RATING } from './m59-spawns.mjs';
 import { findPath, roomsWithin } from './m59-map.mjs';
 import { sameRoomIslandBridgePlan } from './m59-world.mjs';
+import { notePreySide, preySideFor } from './m59-preyside.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
-import { nearestSafeSpot, safeSpotBook, shelterAhead } from './m59-safespots.mjs';
+import { nearestSafeSpot, safeSpotBook, shelterAhead, coarseCombatReachFrom, PLAYER_REACH }
+  from './m59-safespots.mjs';
+import { beginPullProgress, samplePullProgress } from './m59-pull-progress.mjs';
 import { heardOrder, dropCrumb, nextStep, behindBy, exitTakenFrom } from './m59-follow.mjs';
 import { inboxIfAny, unwrapSpeech } from './m59-inbox.mjs';
 import { arenaCall } from './m59-chatter.mjs';
@@ -279,6 +282,25 @@ const CROWD_RADIUS = 4;
 // out of 200, so 0.4 is the ceiling of what sitting down can ever buy — asking for
 // more is asking to sit until the timeout expires. The rest comes from food.
 const REST_VIGOR_CAP = 0.4;
+// THE VIGOR A TRAVELLER MUST NOT DROP BELOW ON AN ORDINARY ROAD.
+//
+// Raw vigor, not a fraction, because that is the unit everything else here reports and the
+// unit the server's own rule is written in: `RUN_VIGOR_FLOOR` is 12, and under it the speed
+// is refused and the body drops from about five squares a second to two and a half.
+//
+// Forty rather than thirteen, and the gap is the whole point. The floor is not "keep running
+// for one more second", it is "never ARRIVE at a hard crossing unable to run at all" — and a
+// character cannot know which room is the hard one until it is in it. Mmmm reached Ukgoth at
+// vigor one on 2026-08-27, having crossed eleven rooms in four minutes, and then spent
+// forty-three minutes failing to leave: the climb out of that valley is 86 to 126 mover
+// steps, the same crossing runs in 24-27 seconds six times out of six, and at walking pace it
+// exhausts `leaveViaAny`'s candidate budget and reports the DOORWAY as refused. An energy
+// problem wearing a geometry verdict, which is what made it expensive to find.
+//
+// Operator's number, 2026-08-27. Above `REST_VIGOR_WORTH_WAITING`'s 50/200 on purpose is the
+// one thing it is NOT: that constant decides whether an existing rest bothers waiting for
+// vigor, and this one decides whether a rest happens at all.
+const TRAVEL_VIGOR_FLOOR = Number(process.env.M59_TRAVEL_VIGOR_FLOOR ?? 40);
 // A TRAVELLER IS NOT MADE TO SIT FOR VIGOR IT CANNOT AFFORD TO EARN.
 //
 // Resting recovers vigor towards REST_VIGOR_CAP (80 of 200) and everything above that has to
@@ -414,11 +436,60 @@ const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
 // That split is not a nicety. Two loops driving one character is the failure `goInert`
 // was introduced to prevent, and it is still prevented — the keeper never moves a
 // character a journey is moving; it ends the journey and then moves it.
+// ON THE ROAD, ONLY TWO THINGS MAY END A JOURNEY: A PLAYER, AND DYING.
+//
+// Operator's call, 2026-08-27, and the measurement behind it is 37 road deaths across two
+// five-inn runs. Every one of them was `mode: idle` — pure travel, no hunting — and they
+// were not sudden:
+//
+//     decline from peak health to death   median 119s   32 of 37 took over a minute
+//     time spent BELOW the flee line      median  68s   max 243s
+//     regenerated 5hp or more mid-decline 23 of 37, several by +20 to +25
+//     frames spent `stalled`              1,155 of 1,498
+//     frames holding a safe spot                29 of 1,498  — 1.9%
+//
+// A minute and a half of standing in it, under the line, with something eating you, and
+// the ladder handing the body back to the mover each pass. The thresholds were not the
+// problem: there was an enormous window and nothing used it.
+//
+// AND THE ANSWERS THE LADDER HAD ARE NOT ANSWERS. Walking away does not work on a monster
+// — vision is 4 + difficulty/2 squares and they follow — which is why the ordinary flee
+// rung was already removed. Changing objective for an inn is worse: it abandons the road
+// mid-crossing to cross more of it. Neither survives contact with a room holding fifteen
+// attackers, which 26 of these 37 deaths did.
+//
+// SO THERE IS ONE ANSWER AND IT IS THE SAME ANSWER EVERY TIME. Whatever happens on the
+// road — poison, the health line falling, a bad room, anything short of a player or death
+// — the move is: find the next safe spot within `travel_shelter_detour` squares of the
+// planned route, go and park on it, play dead ONCE to make what is chasing us forget,
+// rest to FULL, and carry on to where we were going. The objective is never abandoned.
+//
+// Everything that used to compete with that is kept and switched OFF, because a behaviour
+// deleted is a behaviour that cannot be measured again — and because two of these were
+// right once and may be right again with different numbers.
 export const TRAVEL_GUARD_DEFAULTS = Object.freeze({
   // ---- mid-hop: each one CANCELS the journey and hands back to the ordinary ladder
-  flee: true,        // below flee_below with something adjacent
-  fight_back: true,  // pinned and taking hits — standing still under attack is not a plan
-  arm: true,         // the weapon is gone, and unarmed is why the fight is going badly
+  //
+  // THE ONE THAT STAYS ON, AND IT IS THE PVP EXEMPTION RATHER THAN A FLEE. It is gated on
+  // `worthEnding`, which under the default `travel_flee_from: 'players'` is PEOPLE ONLY, so
+  // what this permits is "a person is emptying the bar, stop travelling and deal with it".
+  // Dying to a troll costs the walk back; dying to a person costs everything carried.
+  flee: true,        // below flee_below with a PLAYER adjacent — see travel_flee_from
+  // ALSO STAYS ON, AND IT IS ALSO THE PVP EXEMPTION WEARING A MISLEADING NAME. Read the
+  // rung: everything under this faculty is gated on `worthEnding` too, so what it actually
+  // permits is "a PERSON is emptying the bar faster than this journey can finish — abandon".
+  // A monster doing the same thing is the road doing what the road does, and the wall rung
+  // is the answer to that. I defaulted this one off on the first pass at this doctrine and
+  // it took the PVP rescue out with it; `m59-travelling-test` caught it.
+  fight_back: true,  // a PERSON is emptying the bar fast — see travel_flee_from
+  // OFF. THE ONLY ONE OF THE THREE THAT COULD EVER FIRE FOR A MONSTER, WHICH IS THE POINT.
+  //
+  // Being unarmed is a reason to be somewhere safe, not a reason to stop on a road and
+  // rummage. It cancels the crossing at FULL HEALTH on a fact about the pack, in rooms that
+  // kill a character in nine seconds — and the shelter rung is the better answer to every
+  // situation it fires in, because it takes the body off the road first. Re-arming is
+  // something to do parked; `loadout` already does it at the far end.
+  arm: false,        // the weapon is gone
   // `play_dead` WAS HERE AND IS GONE — removed 2026-08-21, deliberately and not by tidying.
   //
   // It cancelled a journey so the ordinary ladder could freeze. Freezing is now refused
@@ -686,6 +757,21 @@ const WATCHDOG_BLOCKED_MS = Number(process.env.M59_WATCHDOG_BLOCKED_MS || 3_000)
 // Deliberately the same: the thing that reports blindness and the thing that prevents it
 // should not disagree about what it is.
 const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
+// ONE HOME FOR THESE TWO NUMBERS, even though the tick itself is still duplicated between
+// this file and m59-watchdog.mjs. The two copies have already drifted once — this one
+// carries a room-number fix the module never got, and the module carried a wedge-breaker
+// this one never got, which is why a healthy character could sit in a doorway for four and
+// a half minutes with a guard running and nothing to show for it. Thresholds at least come
+// from one place now, so they cannot disagree on top of everything else.
+const WATCHDOG_PINNED_MS = watchdog.WATCHDOG_PINNED_MS;
+const WATCHDOG_PINNED_SQUARES = watchdog.WATCHDOG_PINNED_SQUARES;
+// HOW LONG BETWEEN TWO BLOWS STILL COUNTS AS ONE ATTACK. Damage lands about once a second
+// and misses are ordinary, so a single quiet second is not the end of a fight; six of them
+// is. Only the fight-back edict reads this — see `fightBackCheck`.
+const FIGHT_BACK_GAP_MS = Number(process.env.M59_FIGHT_BACK_GAP_MS || 6_000);
+// A fight-back the watchdog asked for and no pass has answered within this long is stale:
+// the situation it described is gone, and acting on it would be swinging at a memory.
+const FIGHT_BACK_STALE_MS = 30_000;
 
 // THE POSITION PULSE — "IS THE CHARACTER MOVING", ASKED OF THE CHARACTER.
 //
@@ -716,6 +802,11 @@ export const PASS_STAGES = [
   'passUnderworld',
   'passArm',
   'passPlaybook',
+  // THE FIGHT-BACK EDICT SITS ABOVE THE SURVIVAL LADDER AND DEFERS TO IT. It fires only on
+  // an operator's order (`fightBackAfterMs`), only after the watchdog has counted that many
+  // milliseconds of being hit while not swinging, and it steps aside below the flee line —
+  // so fleeing still outranks it; what it outranks is every wall, pull and walk below.
+  'passFightBack',
   'passFleeAndRest',
   // FOLLOWING A PERSON SITS HERE ON PURPOSE. Below survival, because being led somewhere is
   // never worth dying on the way to; above everything directional, because the entire point
@@ -1118,6 +1209,33 @@ export function reachableFightFloor(floor, maxVigor = 200, foodVigor = 0) {
   return Math.min(floor, restCeiling + Math.max(0, Number(foodVigor) || 0));
 }
 
+// THE SQUARES OTHER PLAYERS ARE STANDING ON, AND THE ONES NEXT TO THEM.
+//
+// A wall square is only worth walking to if the walk can end on it, and the one thing the
+// fine walker cannot route around is a body: it fans, slides, and shuffles (see walkFine).
+// So a spot occupied by another player — or adjacent to one, because the approach step
+// lands there first — is excluded from selection for THIS pass, exactly as a square we
+// recently failed to reach is. It is not remembered: people move, and the next pass asks
+// again. `playersOnline` preserves identity through Morph, which deliberately removes the
+// OF.PLAYER bit from the room object. Players only, never monsters — a monster next to a
+// wall is what the wall is for.
+//
+// Measured 2026-08-26, Castle Victoria: six fleet characters converged on one corner and
+// stood in each other's way, two of them on the same square, all "NOT MOVING".
+export function crowdedSquares(objects, selfId, { radius = 1, playersOnline = null } = {}) {
+  const out = new Set();
+  const list = objects instanceof Map ? [...objects.values()] : (objects || []);
+  for (const o of list) {
+    const truePlayer = !!(o?.flags & OF.PLAYER) || !!playersOnline?.has?.(o?.id);
+    if (!o || o.id === selfId || !truePlayer) continue;
+    if (!Number.isFinite(o.col) || !Number.isFinite(o.row)) continue;
+    for (let dc = -radius; dc <= radius; dc++)
+      for (let dr = -radius; dr <= radius; dr++)
+        out.add(`${o.col + dc},${o.row + dr}`);
+  }
+  return out;
+}
+
 export class Autopilot {
   constructor(session, { mode = 'survive', policy = {} } = {}) {
     this.s = session;
@@ -1321,6 +1439,14 @@ export class Autopilot {
       // the bar before paying that. In a safe spot none of that is true — stopping
       // costs a pause and nothing else — so there is no reason to ever swing at
       // anything below this. It is much higher than restBelow on purpose.
+      //
+      // THIS IS THE FIGHTING NUMBER, NOT THE ROAD ONE, and the distinction cost me a wrong
+      // edit on 2026-08-27. Asked to make a traveller always rest full, I raised this to 1
+      // — but a road already has its own floor (`travelHoldResumeAbove ?? 1`, see the
+      // `onARoad` branch in the leave-the-wall test), so the doctrine was already satisfied
+      // and what I had actually changed was when a HUNTING character gets up off a wall to
+      // swing again. That is a combat pacing decision with its own argument above, nothing
+      // to do with travelling, and it was not asked for. Put back.
       holdResumeAbove: 0.9,
       // How far to go to fetch a monster that will not come to us. UNSET: there is no
       // limit, because distance was never the thing that made a pull dangerous — see
@@ -1367,6 +1493,18 @@ export class Autopilot {
       // wall filled before another keeper shares one. Keeping this null by default is
       // what makes room/wall spreading opt-in rather than an always-on keeper tactic.
       maxBotsPerSafeSpot: null,
+      // ROOMS THIS CHARACTER MUST NOT SET OUT FOR, for any reason this file can generate:
+      // not to sell, not to bank, not to farm. A DESTINATION ban, not an avoidance — a
+      // journey that merely passes THROUGH one of these rooms is not rerouted. An array of room numbers, empty by default.
+      //
+      // The first entry it was written for is 110, "A shadowy corner" — Roq, the one NPC
+      // that buys a full pack. The road to him crosses a lupogg's ground with a jump in
+      // it, and characters kept colliding with the lupogg on the jump and being eaten for
+      // a sale that does not pay well anyway. Rather than special-case Roq, this says the
+      // general thing: an operator can strike a room off, and every destination chooser
+      // here honours the strike. A trip whose only destination is struck is not taken,
+      // and says so once. This is an ORDER, so it lives in the roster, not in git.
+      bannedDestinations: [],
       // HOW MANY TIMES A SESSION TO STOP AND ACTUALLY TEST A SPOT.
       //
       // Proof used to arrive only by accident: a character that swings every pass
@@ -1503,6 +1641,10 @@ export class Autopilot {
     this.roamedRooms = 0;
     this.unreachable = new Set();   // spawn rooms we could not route to
     this.foeId = null;             // the creature we are part-way through killing
+    // A pull that visibly stops closing is evidence about that quarry's current aggro,
+    // not about the wall. Briefly skip its room-local id so target selection cannot
+    // release it and immediately choose the same non-follower again.
+    this.pullTargetCooldowns = new Map();
     // WHERE THE TIME ACTUALLY GOES.
     //
     // "Stalled" was doing too much work as a word. The commonest reason a keeper
@@ -2689,11 +2831,20 @@ export class Autopilot {
       return { arrived: false, reason: `cannot reach a door from this part of ${plan.fromName}` };
 
     this.doing = 'travelling';
+    // REMEMBER WHICH SIDE, so that a bridge interrupted half-way — by a wedge, a fight, a
+    // watchdog cancel — does not come back through whichever door happens to be nearest.
+    // Read in the travel funnel; see the note there.
+    this.wantSide = { room: plan.fromRoom, target: { col: plan.target.col, row: plan.target.row },
+                      at: Date.now() };
     this.note('changing sides of a split room', {
       room: plan.fromName, quarry: { col: plan.target.col, row: plan.target.row },
       via: plan.viaName, why: plan.why,
     });
-    let crossed = await s.leaveViaAny(out).catch(e => ({ left: false, reason: e.message }));
+    // `exact`: the planner chose these doors, and a widened set is a different journey.
+    // See leaveViaAny — the baked anchor is a better guess than a scanned square right up
+    // until the doors are not alternatives, which is the whole premise of a split room.
+    let crossed = await s.leaveViaAny(out, { exact: true })
+      .catch(e => ({ left: false, reason: e.message }));
     this.movedAt = Date.now();
     if (!crossed.left) return { arrived: false, reason: crossed.reason || 'could not leave this side' };
     await settle().catch(() => {});
@@ -2704,7 +2855,11 @@ export class Autopilot {
       .filter(e => matches(e, plan.returnDoors, plan.fromRoom));
     if (!back.length)
       return { arrived: false, reason: `no door from ${plan.viaName} lands on the quarry's side` };
-    crossed = await s.leaveViaAny(back).catch(e => ({ left: false, reason: e.message }));
+    // THE LEG THAT WAS ACTUALLY BROKEN. `returnDoors` are filtered by the planner to those
+    // whose LANDING can reach the quarry; the anchor for 38 -> 39 lands on the other island
+    // and outranked them, so the round trip came back to the side it left from.
+    crossed = await s.leaveViaAny(back, { exact: true })
+      .catch(e => ({ left: false, reason: e.message }));
     this.movedAt = Date.now();
     if (!crossed.left) return { arrived: false, reason: crossed.reason || 'could not take the other door back' };
     await settle().catch(() => {});
@@ -2714,6 +2869,8 @@ export class Autopilot {
       geo.path(me.row, me.col, plan.target.row, plan.target.col, { fine: true }).found;
     if (!arrived)
       return { arrived: false, reason: 'returned to the room, but not to the quarry\'s connected side' };
+    // Arrived where we meant to, so the side is no longer a thing to steer by.
+    this.wantSide = null;
     this.note('reached the quarry\'s side of the room', {
       room: room.name, via: plan.viaName,
       at: { col: me.col, row: me.row }, quarry: { col: plan.target.col, row: plan.target.row },
@@ -2781,7 +2938,7 @@ export class Autopilot {
   // a journey. A failure still discredits the square permanently either way: a blow that
   // got through is a bad square however we came to be standing on it. The tag is so the
   // travel-only rejections can be told apart afterwards without reconstructing anything.
-  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0 } = {}) {
+  async takeSafeSpot(why, quarry = null, { source = 'fight', islandCrossings = 0, nearQuarry = false } = {}) {
     const s = this.s, c = s.client;
     const room = s.world?.room, geo = s.world?.geometry, me = c?.self;
     if (!geo || !me || !room) return { took: false, why: 'no geometry for this room' };
@@ -2808,33 +2965,68 @@ export class Autopilot {
       if (islandCrossings >= 1)
         return { took: false, why: 'changed rooms once but still did not land on the quarry\'s side' };
       const crossed = await this.crossSameRoomIsland(bridge);
-      if (!crossed.arrived)
+      if (!crossed.arrived) {
+        // SAY WHY, BECAUSE THIS FAILED EIGHTEEN TIMES IN SILENCE.
+        //
+        // The reason was returned as a value and swallowed by the caller, so the journal
+        // showed "changing sides of a split room" once per pass and never an arrival or a
+        // failure. Measured on prod 2026-08-27: Bunsen at (27,9) — itself a door square to
+        // Castle Victoria — planned the crossing on every pass for four minutes, took it
+        // never, and reported nothing either way. "No error" is not success anywhere in
+        // this game and least of all here.
+        //
+        // Rate-limited to one note per reason per room: the loop is per-pass, and a note
+        // per pass would bury the journal it is meant to explain.
+        const key = `${bridge.fromRoom}:${crossed.reason || 'unknown'}`;
+        if (this._lastBridgeFailure !== key) {
+          this._lastBridgeFailure = key;
+          this.note('could not change sides of the room', {
+            room: bridge.fromName, via: bridge.viaName,
+            quarry: { col: bridge.target.col, row: bridge.target.row },
+            standing_at: me ? { col: me.col, row: me.row } : null,
+            leave_doors: bridge.leaveDoors?.length ?? 0,
+            return_doors: bridge.returnDoors?.length ?? 0,
+            reason: crossed.reason || 'no reason given',
+            why: 'the quarry is on the other island and the two-door route out and back ' +
+                 'did not complete — without this line the retry looks like a decision',
+          });
+        }
         return { took: false, why: crossed.reason || 'could not change sides of this room' };
+      }
+      this._lastBridgeFailure = null;
       // Re-entering replaces the room object map. Use the live quarry instance rather
       // than carrying its pre-door coordinates and identity through the trip.
       const liveQuarry = quarry.id != null ? c.room?.objects?.get(quarry.id) : quarry;
       if (!liveQuarry)
         return { took: false, why: 'the quarry was gone when we reached its side' };
-      return this.takeSafeSpot(why, liveQuarry, { source, islandCrossings: islandCrossings + 1 });
+      return this.takeSafeSpot(why, liveQuarry, { source, islandCrossings: islandCrossings + 1, nearQuarry });
     }
     // Squares we have already discovered nothing can be pulled to. Without this the
     // keeper re-picks the same unusable corner every pass for ever, because the
     // geometry's opinion of it never changes and neither does ours.
     const barren = this.barrenSpots?.get(room.num);
-    // Can the thing we came to fight actually get to the square? We already have the
-    // quarry here and only ever used it to bias direction; this is the same fact asked
-    // from the other end, and it is the one that was missing.
+    // Can the thing we came to fight actually get to fighting distance of the square?
     const los = this.policy.los ?? 0;                       // LOS_OLD, the server default
-    const quarryReach = (quarry && quarry.col != null && geo.monsterCanReach)
-      ? (col, r2) => geo.monsterCanReach(quarry.row, quarry.col, r2, col, { los })
+    // PICK A WALL THE SELECTED QUARRY CAN ACTUALLY FIGHT AT.
+    //
+    // Straight-line distance was only a ranking hint. In a split room, across a cliff, or
+    // behind a one-way edge, a wall can be visually close while living in a different
+    // monster component. Flood the stock server's coarse monster grid from the quarry and
+    // require it to reach at least one square inside our two-square melee disc around the
+    // wall. The monster never has to occupy the safe square itself.
+    const quarryReach = quarry?.col != null && quarry?.row != null
+      ? coarseCombatReachFrom(geo, quarry)
       : null;
+    if (quarry && !quarryReach)
+      return { took: false, why: 'could not validate the quarry on the coarse movement grid' };
     // Self-room `go` exits are player-operated doors between monster partitions.
     // Castle Victoria's small chambers all remain room 38 for a player, but a monster
     // cannot cross those transitions. In that authored shape the monster grid is the
     // component boundary, so a wall the quarry cannot reach is in the wrong chamber,
     // not an uncertain ledge prediction worth live-testing.
-    const strictQuarryReach = !!quarryReach &&
-      (room.goExits || []).some(e => !e.locked && Number(e.to) === Number(room.num));
+    // This is now a hard combat invariant everywhere, not merely in authored split rooms:
+    // an unreachable pull position cannot become reachable by trying it live for a minute.
+    const strictQuarryReach = !!quarryReach;
     // SEARCH THE WHOLE ROOM. A RADIUS IS THE WRONG SHAPE OF ANSWER.
     //
     // `within` was a flat 12 squares from wherever the character happened to be
@@ -2844,11 +3036,11 @@ export class Autopilot {
     // between 60 and 129. Nothing was exhausted. The search simply was not looking:
     // "found no wall" meant "did not walk far enough to see one".
     //
-    // NEAR IS STILL PREFERRED, and it does not need a cutoff to be. The ranking already
-    // pays 0.5 per step from us and 1.2 per step from the fight, so a merely-adequate
-    // wall underfoot beats an excellent one thirty squares away on the arithmetic —
-    // which is the behaviour the radius was reaching for, expressed as a preference
-    // instead of a wall. Searching wide changes what is CONSIDERED, not what is chosen.
+    // For a pull, NEAR THE SELECTED QUARRY IS THE PRIMARY ORDER. The wall's proof,
+    // defensibility and player-walk distance only break ties between equally-near valid
+    // squares. For rest/travel calls with no quarry, the established quality ranking stays
+    // unchanged. Searching wide changes what is considered; the target-first comparator
+    // decides what combat chooses.
     //
     // Bounded by the room's own dimensions, so this is one pass over the floor.
     const within = Math.max(geo.rows ?? 0, geo.cols ?? 0) || 64;
@@ -2864,9 +3056,13 @@ export class Autopilot {
     // Cheap because the expensive part is per-candidate pathfinding inside
     // nearestSafeSpot, and a re-run only happens when the first pass rejected everything
     // — which in an uncrowded room never occurs.
-    const configuredShareCap = Number.isFinite(this.policy.maxBotsPerSafeSpot) &&
-      this.policy.maxBotsPerSafeSpot > 0
-      ? Math.max(1, Math.floor(this.policy.maxBotsPerSafeSpot)) : null;
+    // A quarry-bound pull wall is exclusive: the user asked for a spot with no other
+    // person in it, and concurrent selectors must not both reserve the same empty square.
+    // Non-combat shelter keeps the established configurable spreading/share policy.
+    const exclusiveClaim = !!quarry;
+    const configuredShareCap = exclusiveClaim ? 1
+      : Number.isFinite(this.policy.maxBotsPerSafeSpot) && this.policy.maxBotsPerSafeSpot > 0
+        ? Math.max(1, Math.floor(this.policy.maxBotsPerSafeSpot)) : null;
     // With spreading off there is one unbounded search. With it on, retain the existing
     // fair fill: try one per wall, then two, up to the configured maximum.
     rememberSpotClaimPartner(this.s.name, this.policy.partner ?? null);
@@ -2885,10 +3081,13 @@ export class Autopilot {
         for (const k of Object.keys(spotStats)) delete spotStats[k]; // stats describe LAST attempt
         spot = this.searchSafeSpot(geo, me, room, {
           within, quarryReach, strictQuarryReach, los, quarry, barren,
-          stats: spotStats, shareCap });
+          stats: spotStats, shareCap, nearQuarry, exclusiveClaim });
         if (!spot) break;
-        if (claimSpot(this.s.name, room.num, spot.col, spot.row,
-                      { cap: shareCap, partner: this.policy.partner ?? null }))
+        const claimed = exclusiveClaim
+          ? claimExclusiveSpot(this.s.name, room.num, spot.col, spot.row)
+          : claimSpot(this.s.name, room.num, spot.col, spot.row,
+                      { cap: shareCap, partner: this.policy.partner ?? null });
+        if (claimed)
           break spotSearch;
         claimCollisions++;
         spot = null;                  // another process won it; refresh and search again
@@ -2901,6 +3100,12 @@ export class Autopilot {
         why: `every wall in this room already had ${shareCap - 1} on it, and two to a wall ` +
              'beats one on a wall and one in the open' });
     if (!spot) {
+      if (quarry && (spotStats.partition_rejected ?? 0) > 0) {
+        return {
+          took: false, unreachable_terrain: true,
+          why: 'no unoccupied safe spot lets this quarry reach combat distance on the coarse grid',
+        };
+      }
       // ONLY EMPIRICAL FAILURES EARN THE CATEGORICAL TERRAIN VERDICT.
       //
       // This used to fire when `unreachable_by_quarry > 0`: one coarse-grid rejection
@@ -3026,6 +3231,9 @@ export class Autopilot {
     this.hold = {
       source,
       room: room.num, col: spot.col, row: spot.row,
+      // The wall was selected only after this quarry was selected and its coarse
+      // component was validated. A later target gets its own closest wall.
+      quarry_id: quarry?.id ?? null,
       x: now?.x ?? null, y: now?.y ?? null,
       takenAt: Date.now(), quietMs: 0, damageWhileIdle: 0, failures: 0, mostAttackers: 0,
       // Walls do not move, so a square that held on a previous visit is believed on
@@ -3040,8 +3248,9 @@ export class Autopilot {
     };
     // Tell the other keepers this one is taken, so the next of them to look at this
     // room ranks it out instead of walking into us.
-    claimSpot(this.s.name, room.num, spot.col, spot.row,
-              { cap: shareCap, partner: this.policy.partner ?? null });
+    if (exclusiveClaim) claimExclusiveSpot(this.s.name, room.num, spot.col, spot.row);
+    else claimSpot(this.s.name, room.num, spot.col, spot.row,
+                   { cap: shareCap, partner: this.policy.partner ?? null });
     this.note('took a safe spot', {
       where: { col: spot.col, row: spot.row }, why,
       can_reach_you: spot.can_reach_you, free_shots: spot.free_shots, back_cover: spot.back_cover,
@@ -4478,7 +4687,8 @@ export class Autopilot {
   // without duplicating the option block — a second copy of these arguments is exactly
   // how the two would come to disagree about `los` or the book.
   searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
-                                  los, quarry, barren, stats, shareCap = 1 }) {
+                                  los, quarry, barren, stats, shareCap = 1, nearQuarry = false,
+                                  exclusiveClaim = false }) {
     const s = this.s;
     // One room search can inspect hundreds of candidate squares. Reading the shared
     // claim directory for every candidate would turn that into hundreds of lock/file
@@ -4492,15 +4702,23 @@ export class Autopilot {
       // SPOT_RULES — the disc threshold turned out to sit in a trough in the book, and
       // most of the evidence that put it there was written by a bug in restBroken.
       //
-      // `los` has to be the same setting quarryReach uses, or the two disagree about
-      // the same monster.
+      // `los` still controls the wall's exposure model. Quarry connectivity is deliberately
+      // coarse: that is the movement grid used by the production monsters.
       within, rule: this.policy.spotRule ?? 'wall', minAvoided: 20,
+      // Retained in the legacy value for non-target/tie ranking. closestToToward below is
+      // the hard primary order whenever a quarry exists.
+      fromFightWeight: nearQuarry ? 3 : 0.3,
       book: this.book, room: room.num, quarryReach, strictQuarryReach, los,
+      // Combat chooses the quarry first. Once eligibility is established, its distance
+      // is the primary order; proof and defensibility only break equal-distance ties.
+      closestToToward: !!quarry,
       // Only offer walls the router agrees we can walk to — see reachTest.
       reach: this.reachTest(),
       // The same exclusion the other three selectors apply — a wall we have just failed
       // to walk to is not a candidate, whichever rung is asking for one.
-      unreachable: this.unreachableIn(room.num),
+      // Pull combat follows the user's literal occupancy rule: exclude another person's
+      // square, while non-combat shelter selection keeps the wider approach buffer.
+      unreachable: this.spotExclusions(room.num, { playerRadius: quarry ? 0 : 1 }),
       stats,
       toward: quarry ? { col: quarry.col, row: quarry.row } : null,
       // Skip squares already at the share cap, and squares nothing can be fetched to.
@@ -4509,7 +4727,10 @@ export class Autopilot {
       reach: (col, r2) => {
         if (barren?.has(`${col},${r2}`))
           return { reachable: false, reason: 'empirically barren after repeated pulls' };
-        if (spotTakenByAnother(this.s.name, room.num, col, r2, shareCap, spotClaims))
+        const claimed = exclusiveClaim
+          ? spotClaimedByAnotherExclusive(this.s.name, room.num, col, r2, spotClaims)
+          : spotTakenByAnother(this.s.name, room.num, col, r2, shareCap, spotClaims);
+        if (claimed)
           return { reachable: false, reason: 'occupied at this share cap' };
         return s.world.reach(col, r2);
       },
@@ -5080,9 +5301,22 @@ export class Autopilot {
     // objective is kept, and the crossing afterwards resumes the same line it was walking.
     const rest = await skills.restUntil(this.s, {
       health: this.policy.travelHoldTo ?? 1,
-      // Vigor comes along if it is close; it does not hold the journey up from the bottom.
-      vigor: (vigorPct(this.s.client?.vitals?.()) ?? 0) >= REST_VIGOR_WORTH_WAITING
-             ? REST_VIGOR_CAP : 0,
+      // VIGOR COMES ALONG IF IT IS CLOSE — AND IS THE WHOLE REASON TO STOP IF IT IS GONE.
+      //
+      // This read "it does not hold the journey up from the bottom", and the bottom is
+      // exactly where it has to. The argument was that climbing from near-zero is slow and
+      // only buys RUNNING; what it missed is that running is not a luxury on these roads, it
+      // is the speed every downstream budget assumes. A traveller that gets up at vigor one
+      // walks at half pace into the next room, and if that room is Ukgoth it does not come
+      // out: 43 minutes, four `every square for that exit refused`, on a crossing that runs
+      // in 24-27 seconds.
+      //
+      // So there are two regimes and the old rule only described one. ABOVE the travel floor,
+      // vigor is a nice-to-have and tags along if it is close. BELOW it, being tired IS the
+      // emergency that stopped us, and getting up before the cap means stopping for nothing.
+      vigor: this.tooTiredToTravel() ? REST_VIGOR_CAP
+             : (vigorPct(this.s.client?.vitals?.()) ?? 0) >= REST_VIGOR_WORTH_WAITING
+               ? REST_VIGOR_CAP : 0,
       maxSeconds: Math.round(Math.min(90_000, budget - this.travelHeldMs) / 1000),
     }).catch(e => ({ error: e.message }));
     const heldMs = Date.now() - t0;
@@ -5169,9 +5403,11 @@ export class Autopilot {
     const wantHealth = this.policy.travelStartHealth ?? 1;
     if (!(wantHealth > 0)) return;
     const vig = vigorPct(v);
-    // Same rule as the wall: a traveller too tired for the climb to be worth it rests for
-    // health and moves on, rather than sitting out a slow number it can only eat its way past.
-    const wantVigor = (vig ?? 0) >= REST_VIGOR_WORTH_WAITING
+    // Same rule as the wall, and the same correction: a traveller that is merely tired takes
+    // whatever vigor arrives with the health, but one BELOW THE TRAVEL FLOOR is stopping
+    // *because* it is empty and must leave full. A sanctuary is the cheapest possible place
+    // to do it — nothing can reach us and the only cost is seconds.
+    const wantVigor = this.tooTiredToTravel() || (vig ?? 0) >= REST_VIGOR_WORTH_WAITING
       ? Math.min(this.policy.travelStartVigor ?? REST_VIGOR_CAP, REST_VIGOR_CAP) : 0;
     if (frac >= wantHealth && (vig == null || vig >= wantVigor)) return;
     // An inn is player-safe, not fleetmate-free, and something swinging makes this a fight
@@ -5415,8 +5651,39 @@ export class Autopilot {
       this.travelArm = participatesInTravelHold
         ? { arm, since: Date.now(), to: room, planned_legs: plannedLegs }
         : null;
+      // WHICH SIDE, IF THIS ROOM HAS SIDES AND WE ALREADY LEARNED WHICH ONE WE WANT.
+      //
+      // `crossSameRoomIsland` knows the quarry's square, but it can only be planned from
+      // INSIDE the room. A character part-way through the bridge — standing in the via
+      // room, which is exactly where these wedge — falls back to plain travel, and plain
+      // travel picks the nearest door. In Castle Victoria that is a coin flip between two
+      // islands, and losing it means arriving to look at six battered skeletons it cannot
+      // path to. So the side survives the trip out and is handed back on the way in.
+      const liveSide = this.wantSide && Number(this.wantSide.room) === Number(room)
+        && (Date.now() - this.wantSide.at) < 300_000 ? this.wantSide.target : null;
+      // AND FAILING THAT, WHERE THE PREY WAS LAST SEEN STANDING IN THAT ROOM.
+      //
+      // `wantSide` only exists if this keeper planned a bridge in this process, so a
+      // RESTART loses it — and a character stranded in the via room after a restart is
+      // exactly the case that spent a night picking doors blind. The book is written from
+      // inside the room, whenever the quarry is in sight, and read here on the way back.
+      // A remembered square that today's geometry cannot use degrades to no opinion:
+      // `doorsLandingNear` returns null and the ordinary door ordering stands.
+      let remembered = null;
+      if (!liveSide && this.policy?.hunt) {
+        try { remembered = preySideFor(room, this.policy.hunt); }
+        catch { remembered = null; }
+      }
+      const wantSide = liveSide ?? (remembered ? { col: remembered.col, row: remembered.row } : null);
+      if (wantSide) this.note('heading for the side of the room the quarry is on', {
+        room, at: wantSide, hunting: this.policy?.hunt ?? null,
+        from: liveSide ? 'a bridge this keeper planned' : 'the prey-side book',
+        why: 'this room has disconnected halves served by different doors, so which door ' +
+             'we take decides whether the prey is reachable when we arrive',
+      });
       outcome = await this.s.travel(room, {
         ...sessionOpts,
+        ...(wantSide ? { arriveNear: wantSide } : {}),
         onHop: async (at) => {
           legs++;
           if (detailed) {
@@ -6131,7 +6398,7 @@ export class Autopilot {
     let ahead = null;
     try {
       ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
-                           { maxDetour: planned.maxDetour ?? 4,
+                           { maxDetour: planned.maxDetour ?? 5,
                              unreachable: this.unreachableIn(this.s.world?.room?.num ?? null),
                              exitable: this.exitTest(),
                              // The same line that grants unlimited shelter grants the BEST
@@ -6220,6 +6487,29 @@ export class Autopilot {
     forRoom.set(`${col},${row}`, Date.now());
   }
 
+  /**
+   * Everything the spot selector must skip this pass: squares we recently failed to reach
+   * (remembered, with a TTL) plus squares another player is standing on or next to
+   * (never remembered — asked fresh every time). One set, because nearestSafeSpot takes one.
+   */
+  spotExclusions(room, { playerRadius = 1 } = {}) {
+    const stale = this.unreachableIn(room);
+    const c = this.s?.client;
+    const crowd = crowdedSquares(c?.room?.objects, c?.selfId,
+      { radius: playerRadius, playersOnline: c?.playersOnline });
+    if (!crowd.size) return stale;
+    const out = new Set(stale ?? []);
+    for (const k of crowd) out.add(k);
+    return out;
+  }
+
+  /** Has the operator banned this room as a destination for this character? See policy.bannedDestinations. */
+  bansDestination(room) {
+    const list = this.policy?.bannedDestinations;
+    if (!Array.isArray(list) || !list.length || room == null) return false;
+    return list.some(r => Number(r) === Number(room));
+  }
+
   /** The squares in this room we have failed to reach recently, as the selectors want them. */
   unreachableIn(room) {
     const forRoom = this.unreachableSpots?.get(room);
@@ -6254,6 +6544,83 @@ export class Autopilot {
       o.id !== c.selfId && (o.flags & OF.PLAYER) && (o.flags & OF.ATTACKABLE) &&
       !party.isFleetmate(c.rsc?.get(o.nameRsc)) &&
       Math.hypot(o.col - me.col, o.row - me.row) <= reach);
+  }
+
+  // ---------------------------------------------------------- the fight-back edict
+  //
+  // "IF DITHERING AND BEING ATTACKED FOR MORE THAN TEN SECONDS, FIGHT BACK IF IT IS
+  // SMALLER THAN YOU." An operator's standing order, 2026-08-27, after watching six
+  // characters in the Valley of Ileria stand in one corner being chewed on: each keeper was
+  // inside a walk it could not finish — an approach the fine grid refused, a pull, a wall it
+  // had just been told to leave — and the "hitting back" branch in passFarm, which is the
+  // right answer, was never reached because the pass never ended. Measured on Lew: 482
+  // pulse wedges in 460 passes, five kills in two and a half hours, `landed_hits: 0`.
+  //
+  // Two halves, on the two clocks this repository already keeps apart:
+  //
+  //   `fightBackCheck` runs on the WATCHDOG (every 500ms) and DECIDES NOTHING. It keeps an
+  //   attack episode — health going down while something attackable is within reach — and
+  //   when the episode is older than the edict, once per pass, it pulls the same handbrake
+  //   the other two arms pull, so the blind await ends and a pass can answer.
+  //
+  //   `passFightBack` runs on the PASS and answers: the nearest thing in reach that the
+  //   fleet's own band would let this character fight is the target, now, before any wall
+  //   or pull or walk. Below the flee line it steps aside — the survival ladder is next.
+  //
+  // OFF UNLESS ASKED FOR. `fightBackAfterMs` is unset by default and silence means the
+  // behaviour that was already there. Pushed live with `fight_back_after_s` (the `autopilot`
+  // tool, or `substrate/tuning.json`), zero switches it off again.
+  //
+  // "SMALLER THAN YOU" IS THE ENGAGEMENT BAND, NOT THE LEVEL. A creature's level is not how
+  // dangerous it is — `viDifficulty` is, and a level-50 fungus beast is the safer fight for a
+  // level-45 character (docs/m59-combat.md). `refuseEngagement` already encodes that
+  // judgement with the operator's own ceiling, so the edict asks it rather than growing a
+  // second opinion. What it refuses, the ordinary ladder still walks away from.
+  fightBackAfterMs() {
+    const v = Number(this.policy?.fightBackAfterMs);
+    return Number.isFinite(v) && v > 0 ? v : 0;
+  }
+
+  fightBackCheck(w, hp, now, lost) {
+    if (!w) return null;
+    // THE EPISODE. A blow is health going down with something attackable in reach; falling
+    // off a ledge or a poison tick with nothing near is not an attack and starts nothing.
+    if (lost > 0 && (this.inReachOfUs?.() ?? []).length) {
+      if (!w.attack) w.attack = { since: now, hits: 0, lost: 0, lastHitAt: now };
+      w.attack.hits++; w.attack.lost += lost; w.attack.lastHitAt = now;
+    } else if (w.attack && now - w.attack.lastHitAt > FIGHT_BACK_GAP_MS) {
+      w.attack = null;
+    }
+    const edict = this.fightBackAfterMs();
+    if (!edict || !w.attack) return null;
+    if (now - w.attack.since < edict) return null;
+    // Already swinging is not dithering; an errand owns the body; once per pass.
+    if (this.doing === 'fighting' || this.inert) return null;
+    if (w.fightBackPass === this.passes) return null;
+    const frac = pct(hp);
+    // Below the flee line the other arms and the ladder own this — running, not swinging.
+    if (frac === null || frac < this.safety().fleeAt) return null;
+    w.fightBackPass = this.passes;
+    this.tally.fight_back_interrupts = (this.tally.fight_back_interrupts || 0) + 1;
+    this.fightBackDue = { since: w.attack.since, hits: w.attack.hits, lost: w.attack.lost, at: now };
+    // END THE BLIND AWAIT, if there is one. A pass inside a walk cannot answer; the cancel
+    // is the same single action the handbrake takes, and the answer belongs to the pass.
+    const blocked = this.passStartedAt ? now - this.passStartedAt : 0;
+    let broke = null;
+    if (blocked >= PULSE_MS) {
+      try { broke = this.s.cancelMovement(null, 'under attack and not swinging — the fight-back edict'); }
+      catch (e) { broke = { cancelled: false, why: e.message }; }
+    }
+    this.note('WATCHDOG — under attack for ' + Math.round((now - w.attack.since) / 1000) +
+              's and not swinging', {
+      hits_taken: w.attack.hits, lost: w.attack.lost,
+      health: hp ? `${hp.value}/${hp.max}` : null, doing: this.doing ?? null,
+      pass_blocked_for_s: Math.round(blocked / 1000), interrupted: broke?.interrupted ?? null,
+      why: 'the fight-back edict: being hit for longer than ' + Math.round(edict / 1000) +
+           's while not swinging. The walk is cancelled so the next pass can fight back — ' +
+           'this keeper decides nothing here',
+    });
+    return this.fightBackDue;
   }
 
   refuseEngagement(name) {
@@ -6459,11 +6826,97 @@ export class Autopilot {
     return Math.min(max, Math.max(min, Math.max(0, Number(steps) || 0) * per + 3_000));
   }
 
+  pullTargetCooling(room, id, now = Date.now()) {
+    if (room == null || id == null) return null;
+    const store = (this.pullTargetCooldowns ??= new Map());
+    const key = `${room}:${id}`;
+    const record = store.get(key);
+    if (!record) return null;
+    if (record.until <= now) { store.delete(key); return null; }
+    return record;
+  }
+
+  deferPullTarget(room, id, why, now = Date.now()) {
+    if (room == null || id == null) return null;
+    const ms = Math.max(3_000, Number(this.policy.pullTargetCooldownMs ?? 30_000));
+    const record = { room, id, at: now, until: now + ms, why };
+    (this.pullTargetCooldowns ??= new Map()).set(`${room}:${id}`, record);
+    return record;
+  }
+
+  // A deadline alone cannot distinguish a slow follower from a monster fighting somebody
+  // else. Sample the exact pulled id every few seconds and ask whether its distance to the
+  // chosen wall establishes a new low. Three non-closing samples is a disengagement; a
+  // delayed packet or one awkward path step is not.
   pendingPullWait(now = Date.now()) {
     const p = this.pendingPull;
     if (!p) return null;
-    const remaining = Math.max(0, p.waitUntil - now);
-    return { ...p, remaining_ms: remaining, ready: remaining === 0 };
+    const target = p.target_id != null
+      ? this.s.client?.room?.objects?.get?.(p.target_id) : null;
+    const sampled = samplePullProgress(p, target, {
+      now,
+      sampleEveryMs: this.policy.pullProgressSampleMs ?? 3_000,
+      stalledSamples: this.policy.pullProgressStalledSamples ?? 3,
+      minCloser: this.policy.pullProgressMinCloser ?? 0.25,
+    });
+    if (sampled.state) this.pendingPull = sampled.state;
+    const { state, ...observation } = sampled;
+    return {
+      ...(sampled.state ?? p), ...observation,
+      target_position: target ? { col: target.col, row: target.row } : null,
+      remaining_ms: Math.max(0, Number(p.waitUntil ?? now) - now),
+    };
+  }
+
+  // Lost aggro is TARGET evidence, never WALL evidence. Cool the exact quarry briefly,
+  // preserve the wall if there is nothing else to fight, or release it and immediately
+  // acquire the closest valid wall for an alternative. No barren/no-wall record is written.
+  async switchFromStalledPull(waiting, found = [], why = 'the quarry stopped closing',
+                              { cooldown = true } = {}) {
+    const room = this.s.world?.room;
+    const oldId = waiting?.target_id ?? null;
+    if (cooldown && oldId != null)
+      this.deferPullTarget(room?.num, oldId, why);
+    this.pendingPull = null;
+    this.pullsWithoutContact = 0;
+    if (this.foeId === oldId) this.foeId = null;
+    releaseQuarry(this.s.name);
+
+    const alternatives = found.filter(o => o?.id != null && o.id !== oldId
+      && !this.pullTargetCooling(room?.num, o.id));
+    this.note('disengaging from a quarry that stopped following', {
+      target: waiting?.target, target_id: oldId,
+      wall: waiting?.wall ?? (this.hold
+        ? { room: this.hold.room, col: this.hold.col, row: this.hold.row } : null),
+      last_position: waiting?.last_position ?? null,
+      last_distance: waiting?.last_distance ?? null,
+      best_distance: waiting?.best_distance ?? null,
+      non_closing_samples: waiting?.non_closing_samples ?? null,
+      why,
+      doing_instead: alternatives.length
+        ? 'choosing another monster, then recomputing its closest safe spot'
+        : 'holding this wall until a different target is available',
+    });
+
+    if (!alternatives.length) {
+      this.doing = 'waiting';
+      return { switched: false, waiting: true };
+    }
+
+    const agreed = party.agreedTarget(this.s.name);
+    const preferId = alternatives.some(o => o.id === agreed?.id) ? agreed.id : null;
+    const next = rankQuarries(this.s.name, room?.num, alternatives, { preferId })[0];
+    if (!next) return { switched: false, waiting: true };
+
+    if (this.hold)
+      this.releaseHold('the selected quarry stopped following — choosing another target and wall');
+    this.foeId = next.id;
+    claimQuarry(this.s.name, room?.num, next.id);
+    const spot = await this.takeSafeSpot('a new wall for the next quarry', next)
+                           .catch(e => ({ took: false, why: e.message }));
+    if (spot.took) this.progress('changed quarry and took its closest valid wall');
+    else this.noProgress('changed quarry but could not take its safe spot: ' + (spot.why || 'unknown'));
+    return { switched: true, target_id: next.id, spot };
   }
 
   // THE SPOT NOTHING CAN ACTUALLY REACH — the cliff.
@@ -6546,22 +6999,32 @@ export class Autopilot {
   // but did not convert; only then does the square enter the empirical barren set.
   pullAttemptFailed(spot, why) {
     if (spot?.room == null || spot?.col == null || spot?.row == null)
-      return { retired: false, attempt: 0, limit: this.policy.pullsBeforeBarren ?? 4 };
+      return { relocate: false, attempt: 0, limit: this.policy.pullsBeforeBarren ?? 4 };
     const id = `${spot.room}:${spot.col},${spot.row}`;
     (this.pullFailures ??= new Map());
     const attempt = (this.pullFailures.get(id) ?? 0) + 1;
     this.pullFailures.set(id, attempt);
     const limit = this.policy.pullsBeforeBarren ?? 4;
-    if (attempt < limit) return { retired: false, attempt, limit };
-
-    (this.barrenSpots ??= new Map());
-    const set = this.barrenSpots.get(spot.room) ?? new Set();
-    set.add(`${spot.col},${spot.row}`);
-    this.barrenSpots.set(spot.room, set);
-    this.note('SPOT UNUSABLE — could not complete a pull from it', {
+    if (attempt < limit) return { relocate: false, attempt, limit };
+    // A WALL THE QUARRY CANNOT BE PULLED TO IS NOT A BAD WALL — IT IS A DISTANT ONE.
+    //
+    // This used to add the square to `barrenSpots` and return `retired: true`, which
+    // released the hold and — three walls later, via pullDidNotConvert/noWallRooms —
+    // abandoned wall-fighting for the whole room. But a failed *reach* is about the
+    // geometry BETWEEN us and the monster, not about the square we stand on: the common
+    // cause is prey a couple of dozen cells away across ground the coarse pather cannot
+    // cross. The square may be a perfect wall for a monster standing beside it. So this
+    // never blacklists and never abandons the strategy — it tells the caller to RELOCATE
+    // to a wall closer to the quarry and pull from there. Piggy and Lew, Valley of Ileria
+    // 2026-08-27: prey 26-44 cells off, every wall they took was too far, and the old path
+    // walked them in circles retiring good walls. The counter and note stay, for the log
+    // and to pace the relocation; the failed wall's budget is reset so the next one gets
+    // its own.
+    this.pullFailures.set(id, 0);
+    this.note('this wall cannot reach the quarry — trying one closer to it', {
       at: { col: spot.col, row: spot.row }, room: spot.room, attempts: attempt, why,
-      note: 'excluded only after repeated failed approaches; one refused walk is transient' });
-    return { retired: true, attempt, limit };
+      note: 'not a bad square, just too far from the prey to pull it; relocating nearer, never blacklisting' });
+    return { relocate: true, attempt, limit };
   }
 
   // Contact with THE THING WE PULLED happened, so the pull converted. An unrelated
@@ -7255,6 +7718,12 @@ export class Autopilot {
         wedges: this.watch.wedges ?? 0,
         wedged: this.watch.wedged ? {
           ...this.watch.wedged, for_ms: Date.now() - this.watch.wedged.since } : null,
+        // THE FIGHT-BACK EDICT'S CLOCK: how long something in reach has been landing blows
+        // while this character was not swinging, and whether the order is even on.
+        fight_back_after_ms: this.fightBackAfterMs() || null,
+        under_attack: this.watch.attack ? {
+          for_s: Math.round((Date.now() - this.watch.attack.since) / 1000),
+          hits: this.watch.attack.hits, lost: this.watch.attack.lost } : null,
       } : null,
       passes: this.passes,
       running_for_seconds: this.startedAt ? Math.round((Date.now() - this.startedAt) / 1000) : 0,
@@ -7610,9 +8079,14 @@ export class Autopilot {
       this.s.shelterPolicy = {
         book: this.book,
         within: this.policy.travelHoldWithin ?? 10,
-        // Four squares off the road. A wall further than that is not shelter when a full bar
-        // is nine and a half seconds; it is a longer way to die.
-        maxDetour: this.policy.travelShelterDetour ?? 4,
+        // ROUTE-ADJACENT, AND THAT IS THE WHOLE DEFINITION OF WHICH SPOT TO USE.
+        //
+        // Five squares off the planned path — the operator's number, 2026-08-27, and the
+        // ceiling matters as much as the spot does: a wall further away than this is not
+        // shelter when a full bar is nine and a half seconds, it is a longer way to die.
+        // The spots themselves were worked out by `sheltersAlong` when the crossing was
+        // planned, so this is a filter on a list rather than a search.
+        maxDetour: this.policy.travelShelterDetour ?? 5,
         // A TRIP IS REFUGE TO REFUGE, AND A REST STOP IS SKIPPED WHEN IT IS NOT NEEDED.
         //
         // The operator's framing, and it is the right way round: the journey is not a
@@ -7714,8 +8188,13 @@ export class Autopilot {
       may_still: TRAVEL_GUARD_KEYS.filter(k => allow[k]),
       switched_off: TRAVEL_GUARD_KEYS.filter(k => !allow[k]),
       mid_hop_entries_cancel_the_journey:
-        'flee, fight_back, play_dead and arm take the character back rather than fighting ' +
-        'the mover for it — only one thing may ever drive a body',
+        // `play_dead` was removed from the key list on 2026-08-21 and this sentence went on
+        // naming it. A faculty named in prose and absent from the schema is the shape of the
+        // `purpose` bug this repository keeps citing, so it is named from the list instead.
+        TRAVEL_GUARD_KEYS.filter(k => TRAVEL_GUARD_CLOCK[k] === 'mid-hop').join(', ') +
+        ' take the character back rather than fighting the mover for it — only one thing may ' +
+        'ever drive a body. Under the road doctrine the two that stay on are gated on a ' +
+        'PERSON (travel_flee_from), so a monster cannot end a journey',
       until: 'revive(), start(), or ' + Math.round(maxMs / 60_000) + ' minutes, whichever is first',
     });
     return this.inertStatus();
@@ -7980,6 +8459,13 @@ export class Autopilot {
                state: 'travelling',
                guard: this.inert.guard,
                may_still: TRAVEL_GUARD_KEYS.filter(k => this.inert.guard?.[k]),
+               // BOTH HALVES, NOW THAT THE DEFAULTS ARE NOT UNIFORM. `may_still` alone was
+               // enough to read when every faculty was on and the only interesting fact was
+               // which one somebody had turned off. Under the road doctrine `arm` is off by
+               // DEFAULT, so "what is not permitted here" is a fact about the shipped
+               // behaviour rather than about this operator, and a post-mortem that cannot
+               // see it cannot explain why a journey carried on unarmed.
+               switched_off: TRAVEL_GUARD_KEYS.filter(k => !this.inert.guard?.[k]),
                note: 'the survival ladder is still armed — this is a journey steering, not ' +
                      'an errand holding. See TRAVEL_GUARD_DEFAULTS',
              } : { state: 'inert' }) };
@@ -8344,6 +8830,29 @@ export class Autopilot {
     };
     return true;
   }
+  /**
+   * IS THIS CHARACTER TOO TIRED TO BE ON A ROAD.
+   *
+   * One question, asked in three places — the shelter trigger that stops the journey, and the
+   * two rests that decide what to fill up before going on — because a floor that decides when
+   * to stop but not when to get up is a character that stops for nothing and walks away
+   * exactly as tired as it arrived. That is not hypothetical: `REST_VIGOR_WORTH_WAITING`
+   * already said "do not wait for vigor from the bottom", so before this existed the two
+   * halves actively disagreed.
+   *
+   * Raw vigor against `travel_vigor_floor` (40), not a fraction: it is the unit the server's
+   * own `RUN_VIGOR_FLOOR` of 12 is written in, and the unit every report here prints.
+   *
+   * Only ever true on a road. A character standing in a town at vigor 3 is not in trouble;
+   * it is between errands, and `restBelow` is the number that governs it.
+   */
+  tooTiredToTravel(vitals = this.s.client?.vitals?.()) {
+    if (!this.inert?.travelling && !this.suspendedJourney) return false;
+    const raw = vitals?.vigor?.value;
+    if (!Number.isFinite(raw)) return false;
+    return raw < (this.policy.travelVigorFloor ?? TRAVEL_VIGOR_FLOOR);
+  }
+
   wantForwardShelter(why) { this.wantsForwardShelter = why; }
 
   startWatchdog() {
@@ -8353,7 +8862,10 @@ export class Autopilot {
                    // The position pulse — see PULSE_MS. `pulses` is the ring, `wedged` is
                    // the open episode (null when moving), `wedges` counts episodes rather
                    // than ticks so a long one is one event and not six hundred.
-                   pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 };
+                   pulses: [], lastPulseAt: 0, wedged: null, wedges: 0,
+                   // Where the body was when it last stopped covering ground, and how many
+                   // times that has had to be broken. See THE SECOND ARM in watchdogTick.
+                   pinnedSince: null, pinnedAnchor: null, pinnedInterrupts: 0 };
     this.watchTimer = setInterval(() => {
       try { this.watchdogTick(); } catch (e) { this.watch.lastError = e.message; }
     }, WATCHDOG_MS);
@@ -8588,10 +9100,17 @@ export class Autopilot {
       this.recordFrame(changed ? 'watchdog: health moved' : 'watchdog');
       w.frames++;
     }
+    // How much went this tick, read BEFORE the memory is overwritten — the fight-back edict
+    // below asks it, and asking after the assignment always answers zero.
+    const lostThisTick = (hp?.value != null && w.lastHealth != null && hp.value < w.lastHealth)
+      ? w.lastHealth - hp.value : 0;
     w.lastHealth = hp?.value ?? null;
 
     // 1b. THE POSITION PULSE. See PULSE_MS.
     if (now - w.lastPulseAt >= PULSE_MS) { w.lastPulseAt = now; this.pulsePosition(now, hp); }
+
+    // 1b'. THE FIGHT-BACK EDICT — under attack, not swinging, and told to. See fightBackCheck.
+    this.fightBackCheck(w, hp, now, lostThisTick);
 
     // 1c. TAKE THE CHARACTER BACK FROM A DRIVER THAT HAS STOPPED DRIVING IT.
     //
@@ -8711,6 +9230,34 @@ export class Autopilot {
       }
     }
 
+    // 1d. HOW LONG THE BODY HAS COVERED NO GROUND WHILE SUPPOSEDLY GOING SOMEWHERE.
+    //
+    // DISPLACEMENT FROM AN ANCHOR, not stillness between samples. `pennedIn` asks whether
+    // the newest samples sit within a square of EACH OTHER, which a wander defeats: every
+    // few samples look like movement and the timer resets before it can mature. Anchoring
+    // asks the question that cannot be dodged — where were we when this started, and are we
+    // still there.
+    //
+    // Cleared here rather than in the pulse so that taking a wall, or being handed to an
+    // errand, ends the episode at that instant instead of a pulse later.
+    const spot = w.pulses[w.pulses.length - 1] ?? null;
+    const goingSomewhere = ['travelling', 'pulling', 'converging', 'zoning']
+      .includes(this.doing ?? null);
+    if (!(goingSomewhere && !this.inert && !this.hold && spot)) {
+      w.pinnedSince = null; w.pinnedAnchor = null;
+    } else {
+      const a = w.pinnedAnchor;
+      const near = a && a.room === spot.room
+        && Math.abs((spot.col ?? 0) - a.col) <= WATCHDOG_PINNED_SQUARES
+        && Math.abs((spot.row ?? 0) - a.row) <= WATCHDOG_PINNED_SQUARES;
+      // Re-anchor the moment it genuinely gets somewhere: a journey that is working resets
+      // this constantly and can never trip it, while one going in circles never leaves.
+      if (!near) {
+        w.pinnedAnchor = { room: spot.room, col: spot.col ?? 0, row: spot.row ?? 0 };
+        w.pinnedSince = now;
+      }
+    }
+
     // 2. THE HANDBRAKE.
     const blockedFor = this.passStartedAt ? now - this.passStartedAt : 0;
     if (blockedFor > w.longest_block_ms) w.longest_block_ms = blockedFor;
@@ -8728,8 +9275,82 @@ export class Autopilot {
     const frac = pct(hp);
     if (frac === null) return;
     const fleeAt = this.safety().fleeAt;
-    if (frac >= fleeAt) return;
 
+    // 2b. THE SECOND ARM — WEDGED WHILE PERFECTLY HEALTHY.
+    //
+    // Everything below is gated on `frac < fleeAt`, so a character wedged and NOT being
+    // hurt was invisible to this entire guard: the pulse saw it, said so, and cancelled
+    // nothing, and the handbrake returned one line later because health was fine. The only
+    // thing that ever broke a wedge was taking enough damage to be dying — which means the
+    // instrument fired reliably only once it was too late to be worth firing.
+    //
+    // Measured on prod 2026-08-27, Rowlf in Castle Victoria: `doing: zoning`, ONE pass for
+    // four and a half minutes (`blocked_now_ms: 283580`), 81 pulse wedges, and zero
+    // interrupts, while sitting on squares 24,3 · 24,4 · 24,5 · 25,3 at full health. Room 38
+    // has four separate doors into room 39 — one per side of a split room — so plain travel
+    // walks between candidate doors and never commits. Nothing was hurting him, so nothing
+    // stopped him, so the pass that would have re-decided never ended.
+    //
+    // IT STILL DECIDES NOTHING. Same single action as the arm below, once per pass:
+    // cancelMovement, so the wedged await returns and the NEXT pass chooses with fresh
+    // numbers. Holding a wall and being inert are already excluded above.
+    const pinnedFor = w.pinnedSince ? now - w.pinnedSince : 0;
+    if (frac >= fleeAt) {
+      if (pinnedFor < WATCHDOG_PINNED_MS) return;
+      w.interruptedPass = this.passes;
+      w.pinnedInterrupts = (w.pinnedInterrupts ?? 0) + 1;
+      w.pinnedSince = null; w.pinnedAnchor = null;
+      this.tally.watchdog_pinned_interrupts = (this.tally.watchdog_pinned_interrupts || 0) + 1;
+      const broke = (() => {
+        try { return this.s.cancelMovement(); }
+        catch (e) { return { cancelled: false, why: e.message }; }
+      })();
+      this.note('WATCHDOG — broke a wedge that was not hurting anybody', {
+        health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
+        doing: this.doing ?? null,
+        penned_for_s: Math.round(pinnedFor / 1000),
+        pass_blocked_for_s: Math.round(blockedFor / 1000),
+        square: spot ? `${spot.col},${spot.row}` : null, room: spot?.room ?? null,
+        interrupted: broke.interrupted ?? null,
+        why: 'covering no ground for ' + Math.round(pinnedFor / 1000) + 's while ' +
+             (this.doing ?? 'going somewhere') + ', and full health meant nothing else here ' +
+             'would ever interrupt it. The walk is cancelled so the next pass can decide ' +
+             'with real numbers — this keeper does not decide anything itself',
+      });
+      this.progress('watchdog broke a healthy wedge');
+      return;
+    }
+
+    // OFF, AND NOT COMING BACK. Operator's instruction, 2026-08-27, in his words: "My bots
+    // either complete their travel orders, get interrupted by PVP, or die."
+    //
+    // This rung cancels a walk whenever health is under the flee line and the pass has been
+    // inside one await for three seconds. On an ordinary road that is most of a crossing, and
+    // the corridor at row 29 of the Western border of the Twisted Wood is the proof: with
+    // eight bodies parked along it, four separate live crossings were cut off after TWO OR
+    // THREE STEPS, every one of them by this line. Held off, the same walk ran nineteen.
+    //
+    // It is the last hole in the road doctrine. `travel_guard` was narrowed to a person and
+    // dying; `retreat_to_inn` was switched off; the flee rung was removed years-of-commits
+    // ago — and then this cancelled the walk anyway, from a completely different code path,
+    // on a threshold none of those settings can see. A doctrine with an exception nobody
+    // configured is not a doctrine.
+    //
+    // WHAT REPLACES IT IS NOT NOTHING. Being hurt on a road already has an answer, and it is
+    // the one the operator specified: the next route-adjacent safe spot, play dead once, rest
+    // to full, carry on, objective kept. That runs on the keeper's own clock and does not
+    // need the walk torn down to happen.
+    //
+    // The pinned-wedge half above is untouched: it fires at FULL health on a character that
+    // has covered no ground for minutes, which is a stuck bot rather than a hurt one, and
+    // nothing else in the file interrupts it.
+    //
+    // Kept rather than deleted, because a behaviour that is gone cannot be measured again.
+    // `blind_walk_watchdog: true` restores it per character.
+    if (this.policy.blindWalkWatchdog !== true) {
+      this.progress('travelling — hurt, and the walk stands');
+      return;
+    }
     w.interruptedPass = this.passes;
     w.interrupts++;
     this.tally.watchdog_interrupts = (this.tally.watchdog_interrupts || 0) + 1;
@@ -10489,8 +11110,32 @@ export class Autopilot {
     const maxHops = Math.max(1, Number(this.policy.conflict_response_hops ?? 5) || 5);
     const map = this.s.world?.map;
 
+    // ONLY OUR OWN PEOPLE MAY CALL US OUT OF A ROOM.
+    //
+    // This filtered on `cf.reporter !== myName` — "not me" — and nothing else, so any name in
+    // the book could move this character. The book was one file for the whole machine and two
+    // fleets run here, which is how, on 2026-08-27, ten SHADOW characters that had just
+    // arrived at Outside Castle Victoria left it within two seconds of each other and walked
+    // into Ukgoth because a PROD character was fighting. The journal said it outright:
+    // "Scooter is fighting Morpheus — travelling to assist". Scooter is prod; Aaaa is shadow;
+    // different accounts, different servers.
+    //
+    // The file is per fleet now and the records carry a fleet, and this is still checked
+    // here, because those two are facts about STORAGE and this is the behaviour: answering a
+    // stranger's call is wrong even when the stranger's call is in the right file. It is the
+    // same rule `m59-follow.mjs` already applies to "follow me" — the speaker is checked
+    // against the ROSTER rather than against the text — and for the same reason: this moves
+    // bodies, on a shared server, and a stranger who knows one of our names must not be able
+    // to do it.
+    //
+    // `party.isFleetmate` is the one answer to "is this one of ours", backed by the live
+    // sessions unioned with the roster the broker actually loaded. Absent it, this refuses
+    // rather than assumes — a keeper that cannot tell its own people from strangers has no
+    // business crossing rooms on their behalf.
+    const knowsOurOwn = typeof party?.isFleetmate === 'function';
     const candidates = Object.values(conflicts)
-      .filter(cf => cf.reporter !== myName && cf.room !== myRoom)
+      .filter(cf => cf.reporter !== myName && cf.room !== myRoom
+                    && knowsOurOwn && party.isFleetmate(cf.reporter))
       .sort((a, b) => b.updated_at - a.updated_at);
 
     if (!candidates.length) return false;
@@ -10551,6 +11196,108 @@ export class Autopilot {
     //     to that room to assist. engagePlayerTarget fires on arrival.
     if (await this.respondToConflict()) return HANDLED;
     return CONTINUE;
+  }
+
+  // ── passFightBack: the fight-back edict, answered on the pass ─────────────
+  //
+  // The watchdog counted the seconds and pulled the handbrake; this is the answer. See the
+  // note above `fightBackAfterMs` for the order and the argument. Everything it swings at
+  // goes through the same `skills.fight` and the same bookkeeping as passFarm's kill path,
+  // so a kill earned here is a kill on the ledger and a max-health gain is attributable.
+  //
+  // Overridable seam for the offline test: the real thing is `skills.fight`.
+  fightNow(opts) { return skills.fight(this.s, opts); }
+
+  async passFightBack(ctx) {
+    const { s, c, room, v, hp } = ctx;
+    const edict = this.fightBackAfterMs();
+    if (!edict) return CONTINUE;
+    const w = this.watch, a = w?.attack ?? null;
+    const now = Date.now();
+    // Either the watchdog asked, or the episode is old enough that it would have on its next
+    // tick — a pass that arrives first should not wait half a second to be told.
+    const due = this.fightBackDue
+      ?? (a && now - a.since >= edict ? { since: a.since, hits: a.hits, lost: a.lost, at: now } : null);
+    if (!due) return CONTINUE;
+    this.fightBackDue = null;
+    if (now - due.at > FIGHT_BACK_STALE_MS) return CONTINUE;
+    // An errand owns the body; the inert rescue in the watchdog covers bleeding under one.
+    if (this.inert) return CONTINUE;
+    // FLEEING OUTRANKS THIS. The survival ladder is the next stage and it is the right one.
+    const fleeAt = this.safety().fleeAt;
+    if (hp != null && hp < fleeAt) return CONTINUE;
+    if (!skills.isArmed(c)) return CONTINUE;          // passArm's problem, and it ran already
+    const me = c?.self;
+    if (!me) return CONTINUE;
+    const onUs = this.inReachOfUs();
+    if (!onUs.length) { if (w) w.attack = null; return CONTINUE; }
+
+    // THE NEAREST THING IN REACH THAT WE WOULD FIGHT ANYWAY. "Smaller than you" is the
+    // fleet's engagement band — see the note above fightBackAfterMs for why not the level.
+    const rows = onUs.map(o => {
+      const name = c.rsc.get(o.nameRsc) || '';
+      return { o, name, d: Math.hypot((o.col ?? 0) - me.col, (o.row ?? 0) - me.row),
+               refused: name ? this.refuseEngagement(name) : { why: 'it has no name' } };
+    }).sort((x, y) => x.d - y.d);
+    const pick = rows.find(r => r.name && !r.refused);
+    const underFor = Math.round((now - due.since) / 1000);
+    if (!pick) {
+      this.note('under attack and not swinging, but nothing on us is inside the band', {
+        under_attack_s: underFor, in_reach: rows.map(r => r.name || '?').slice(0, 4),
+        why: rows[0]?.refused?.why ?? 'no target',
+        instead: 'the ordinary ladder — which walks away from what it will not fight',
+      });
+      return CONTINUE;
+    }
+    this.note('FIGHT BACK — under attack for ' + underFor + 's and getting nowhere', {
+      target: pick.name, distance: +pick.d.toFixed(1), hits_taken: due.hits, lost: due.lost,
+      was_doing: this.doing ?? null, from_safe_spot: !!this.hold,
+      why: 'the fight-back edict: something inside our band has been hitting us for longer ' +
+           'than ' + Math.round(edict / 1000) + 's while we were not swinging',
+    });
+    this.tally.fight_backs = (this.tally.fight_backs || 0) + 1;
+    this.ledgerEvent('fought_back', {
+      creature: pick.name, room: room?.name ?? null, room_num: room?.num ?? null,
+      under_attack_s: underFor, hits_taken: due.hits, lost: due.lost,
+      was_doing: this.doing ?? null, from_safe_spot: !!this.hold,
+    });
+    const holding = !!this.hold;
+    this.doing = 'fighting';
+    const f = await this.fightNow({
+      target: pick.name, preferId: pick.o.id, exactTargetId: pick.o.id,
+      rounds: this.policy.fightRounds ?? 10, disengageAt: fleeAt, loot: true,
+      holdPosition: holding, reach: REACH, weaponPriority: this.weaponPriorityNow(),
+    }).catch(e => ({ fought: false, killed: false, died: false, note: e.message }));
+    // The clock restarts either way: ten more seconds of being hit re-arms it.
+    if (w) w.attack = null;
+
+    const looted = (f.looted || []).map(x => x.name + (x.amount ? ` x${x.amount}` : ''));
+    if (f.killed) {
+      releaseQuarry(this.s.name);
+      this.tally.kills++;
+      this.killTimes.push(Date.now());
+      if (this.killTimes.length > 500) this.killTimes.shift();
+      tougher.recordKill(this.who(), {
+        creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
+        level: v?.health?.max ?? null, rounds: f.rounds, looted, from_safe_spot: holding,
+      });
+      this.ledgerEvent('killed', {
+        creature: f.target, room: room?.name ?? null, room_num: room?.num ?? null,
+        rounds: f.rounds, from_safe_spot: holding, fought_back: true,
+        looted: looted.length ? looted.join(', ') : undefined,
+      });
+      this.fledInARow = 0;
+      this.progress('fought back and killed it');
+    } else if (f.died) {
+      releaseQuarry(this.s.name);
+      this.noProgress('died fighting back');
+    } else if (partialFightMadeProgress(f)) {
+      this.progress('fought back and landed a hit');
+    } else {
+      this.noProgress('fought back without landing a hit');
+    }
+    this.countLoot(looted);
+    return HANDLED;
   }
 
   // ── passFleeAndRest: extracted from pass() ────────────────────────────────
@@ -10889,9 +11636,43 @@ export class Autopilot {
     const ailingNow = (this.s.client?.ailments?.() ?? []).length > 0;
     const poisonedAndFading = ailingNow && hp !== null
       && hp < (this.policy.ailingShelterBelow ?? AILING_SHELTER_BELOW);
-    if ((this.wantsForwardShelter || poisonedAndFading) && !sheltered && !this.hold) {
+    // AND A THIRD TRIGGER, BECAUSE AN EXHAUSTED TRAVELLER IS A STRANDED ONE.
+    //
+    // Vigor is not a comfort here, it is the difference between walking and running, and
+    // running is the only speed at which these roads are survivable: `RUN_VIGOR_FLOOR` is 12
+    // and below it the server refuses the speed, so the body drops from about five squares a
+    // second to two and a half. Everything downstream is budgeted for the fast one.
+    //
+    // Mmmm is the case, 2026-08-27, and it is the clearest single failure in the whole
+    // five-inn run. It crossed ELEVEN ROOMS IN FOUR MINUTES — every leg `ok`, 6 to 43
+    // seconds each — reached Ukgoth, and then spent FORTY-THREE MINUTES failing to leave it:
+    //
+    //     10:01  599 -> 2  FAIL   353s  every square for that exit refused (4 tried)
+    //     10:09  599 -> 2  FAIL   829s  every square for that exit refused (4 tried)
+    //     10:20  599 -> 2  FAIL  1512s  every square for that exit refused (4 tried)
+    //     10:36  599 -> 598 FAIL 1061s  every square for that exit refused (3 tried)
+    //
+    // It was at vigor ONE. The climb from the Ukgoth valley to the Castle Victoria doorway
+    // is 86 to 126 mover steps, and the same crossing from the same valley was measured at
+    // 24-27 seconds, six times out of six, by characters that could run. At walking pace it
+    // exhausts `leaveViaAny`'s candidate budget every time and reports the DOORWAY as
+    // refused — a geometry verdict on what is actually an energy problem, which is why this
+    // cost two sessions to find.
+    //
+    // A road-travel floor, well above the server's 12: the point is not to keep running for
+    // one more second, it is to never arrive at a hard crossing unable to run at all.
+    // Sitting down is the only way to get it back — vigor above REST_VIGOR_CAP has to be
+    // eaten — so this asks for exactly what the health trigger asks for and gets the same
+    // answer: a spot on the route ahead, the objective kept, and a resume when it is full.
+    const vigorFloor = this.policy.travelVigorFloor ?? TRAVEL_VIGOR_FLOOR;
+    const spentOnTheRoad = this.tooTiredToTravel(v);
+    if ((this.wantsForwardShelter || poisonedAndFading || spentOnTheRoad)
+        && !sheltered && !this.hold) {
       const why = this.wantsForwardShelter
-        || `ailing and down to ${Math.round(hp * 100)}% — mending before going on`;
+        || (spentOnTheRoad
+            ? `down to ${v?.vigor?.value} vigor — below ${vigorFloor}, which is walking pace on a `
+              + 'road budgeted for running. Filling up before going on'
+            : `ailing and down to ${Math.round(hp * 100)}% — mending before going on`);
       this.wantsForwardShelter = null;
       if (await this.shelterForwardAndMend(why).catch(() => false)) return HANDLED;
     }
@@ -12235,6 +13016,21 @@ export class Autopilot {
       let found = skills.findCreature(s, this.policy.hunt, { match: this.huntMatch() });
       this.clearing = null;
 
+      // WHICH SIDE OF THIS ROOM THE PREY IS ON — written down while we can see it, because
+      // the question gets asked from the NEXT room, where nothing can answer it.
+      //
+      // Upstairs Castle Victoria is two islands sharing a room number, and Castle Victoria's
+      // four doors into it land on only two squares, one per island. A character arriving by
+      // the nearest door has a coin-flip chance of landing where its quarry is not, and then
+      // watches six battered skeletons it cannot path to. The spawn index carries no
+      // coordinates, so a sighting is the only evidence there is. See m59-preyside.mjs.
+      if (found?.length && room?.num != null) {
+        const seen = found[0];
+        if (Number.isFinite(Number(seen?.col)) && Number.isFinite(Number(seen?.row)))
+          try { notePreySide(room.num, this.policy.hunt, { col: seen.col, row: seen.row }); }
+          catch { /* the book is an optimisation; never let it break a pass */ }
+      }
+
       // IS THIS ROOM STILL WORTH HUNTING IN, or is it silting up?
       //
       // Asked whether or not our prey is present — see capBlockers().should_clear. The
@@ -12366,14 +13162,49 @@ export class Autopilot {
       // prefer the least-claimed creature while retaining findCreature's distance order
       // as the tie-break. This is advisory: with ten monsters and twenty-one keepers the
       // second lap still happens, but only after all ten have somebody assigned.
+      let coolingTargets = [];
+      if (found.length) {
+        // A quarry whose live position stopped closing after a tagged pull gets a short
+        // room-local cooldown. Do not immediately select it again; only a creature already
+        // within guaranteed melee reach is exempt because immediate survival outranks rotation.
+        const meNow = c.self;
+        found = found.filter(o => {
+          const cooling = this.pullTargetCooling(room?.num, o.id);
+          if (!cooling) return true;
+          const urgent = meNow && Math.hypot(o.col - meNow.col, o.row - meNow.row) <= PLAYER_REACH;
+          if (urgent) return true;
+          coolingTargets.push({ o, cooling });
+          return false;
+        });
+      }
       if (found.length) {
         const agreed = party.agreedTarget(this.s.name);
-        const preferId = found.some(o => o.id === this.foeId) ? this.foeId
+        const preferId = found.some(o => o.id === this.pendingPull?.target_id)
+          ? this.pendingPull.target_id
+          : found.some(o => o.id === this.foeId) ? this.foeId
           : found.some(o => o.id === agreed?.id) ? agreed.id : null;
         found = rankQuarries(this.s.name, room?.num, found, { preferId });
         claimQuarry(this.s.name, room?.num, found[0]?.id);
       } else {
         releaseQuarry(this.s.name);
+      }
+
+      if (!found.length && coolingTargets.length) {
+        this.emptyPasses = 0;
+        this.doing = 'waiting';
+        const soonest = Math.min(...coolingTargets.map(x => x.cooling.until));
+        if (coolingTargets.some(x => !x.cooling.waitNoted)) {
+          for (const x of coolingTargets) x.cooling.waitNoted = true;
+          this.note('waiting for a different quarry after one stopped following', {
+            skipped: coolingTargets.map(x => ({ id: x.o.id, name: c.rsc.get(x.o.nameRsc) })),
+            retry_in_ms: Math.max(0, soonest - Date.now()),
+            holding_wall: this.hold
+              ? { room: this.hold.room, col: this.hold.col, row: this.hold.row } : null,
+            why: 'immediately selecting the same non-follower would repeat the pull; a new ' +
+                 'visible target will be chosen as soon as one is available',
+          });
+        }
+        return HANDLED;
       }
 
       if (!found.length) {
@@ -12524,6 +13355,15 @@ export class Autopilot {
           // refusing to fight or flee is the definition of stuck. Reporting progress
           // in that state is what let the dead zone hide for so long.
           this.doing = 'recovering';
+          // `near` IS NOT IN SCOPE HERE — it never was. Every other pass declares its own
+          // (passFleeAndRest, line ~10635); this one read a name that exists only in the
+          // comments around it, so the first hurt character to reach this branch threw
+          // `ReferenceError: near is not defined`, the pass died as "pass failed", and the
+          // character did nothing that pass — which for a hurt character stood next to a
+          // monster is the worst possible pass to lose. Piggy in the valley and Janice in
+          // Castle Victoria, 2026-08-26/27. What the note wants is "what is stood over us",
+          // which is inReachOfUs(): the same filter passFleeAndRest builds by hand.
+          const near = this.inReachOfUs();
           if (near.length) {
             this.note('cornered while too hurt to engage', {
               health: Math.round(hp * 100) + '%', crowd: near.length,
@@ -12612,10 +13452,20 @@ export class Autopilot {
       // walk to the corner costs more than the fight does.
       const foundNames = [...new Set(found.map(o => c.rsc.get(o.nameRsc)))];
       const worth = this.holdWorthwhile([...new Set([...foundNames, ...this.threat().names])]);
+      const selectedQuarry = found[0] ?? null;
+      // A safe spot is part of a quarry/spot pair, not a room-wide home forever. Once
+      // the selected quarry changes, recompute the closest valid wall for the new one.
+      // Do not step off a wall while something is already in melee range; finish that
+      // immediate contact first, then rebind on the next pass.
+      if (worth.hold && this.hold && selectedQuarry
+          && this.hold.quarry_id !== selectedQuarry.id
+          && !this.pendingPull && !(this.inReachOfUs()?.length)) {
+        this.releaseHold('the selected quarry changed — recomputing its closest safe spot');
+      }
       if (worth.hold && !this.hold && room) {
-        // Aim at the fight, not just at the nicest wall. `found` is sorted nearest
-        // first by findCreature, so its head is the thing we are about to go and get.
-        const t = await this.takeSafeSpot(worth.why, found[0] ?? null);
+        // The quarry was ranked and claimed above. Its identity stays attached to the
+        // hold and through the pull; distance to it is the selector's primary order.
+        const t = await this.takeSafeSpot(worth.why, selectedQuarry);
         if (t.took) {
           // Do not burn the pass on arriving. The whole point of the spot is that the
           // fight happens here, and the fight is directly below.
@@ -13009,7 +13859,10 @@ export class Autopilot {
       if (!bystander) {
         const agreed = party.agreedTarget(this.s.name);
         const seen = agreed ? c.room.objects.get(agreed.id) : null;
-        if (seen && (seen.flags & OF.ATTACKABLE) && !(seen.flags & OF.PLAYER)) {
+        // The partner preference was already part of quarry ranking before the wall was
+        // chosen. Do not replace that validated quarry here with a different distant id.
+        if (seen && seen.id === selectedQuarry?.id
+            && (seen.flags & OF.ATTACKABLE) && !(seen.flags & OF.PLAYER)) {
           partyFoe = seen;
           engageName = c.rsc.get(seen.nameRsc) || engageName;
           if (this.foeId !== seen.id)
@@ -13136,14 +13989,20 @@ export class Autopilot {
       // the swing means the first exchange of every fight is two characters choosing
       // independently, which is the one moment convergence is worth most — whoever
       // gets there first sets the target and the other joins on its next pass.
-      const swingAt = bystander ? bystander.id : (partyFoe ? partyFoe.id : this.foeId);
-      const claimedSwing = swingAt ?? found[0]?.id ?? null;
-      if (claimedSwing != null) claimQuarry(this.s.name, room?.num, claimedSwing);
-      if (this.policy.partner) party.declareTarget(this.s.name, claimedSwing, engageName);
+      const plannedQuarryId = this.pendingPull?.target_id ?? selectedQuarry?.id ?? null;
+      const swingAt = bystander ? bystander.id : (partyFoe ? partyFoe.id : plannedQuarryId);
+      const claimedSwing = swingAt ?? null;
+      // Defensive contact must not release the claim on a pulled quarry whose progress
+      // is still being watched. Once that experiment ends, normal claim convergence resumes.
+      if (!this.pendingPull && claimedSwing != null)
+        claimQuarry(this.s.name, room?.num, claimedSwing);
+      if (this.policy.partner && !this.pendingPull)
+        party.declareTarget(this.s.name, claimedSwing, engageName);
       const f = await skills.fight(s, { target: engageName,
                                         preferId: claimedSwing,
+                                        exactTargetId: claimedSwing,
                                         disengageAt: safe.fleeAt, loot: true,
-                                        holdPosition: holding, reach: REACH,
+                                        holdPosition: holding, reach: PLAYER_REACH,
                                         weaponPriority: this.weaponPriorityNow() });
 
       // NOTHING IN REACH, AND WE ARE NOT GOING TO CHASE IT. fight() refuses to walk
@@ -13160,43 +14019,51 @@ export class Autopilot {
         // window before this pull is allowed to count toward the empirical cliff verdict.
         let waiting = this.pendingPullWait();
         // A quarry that despawned, died to somebody else, or left the room did not fail
-        // to follow. Clear the experiment without charging the square and try whatever is
-        // actually here now.
-        if (waiting?.target_id != null && !c.room.objects.get(waiting.target_id)) {
-          this.note('the pulled quarry is gone — not blaming the wall', {
-            target: waiting.target, target_id: waiting.target_id,
-            why: 'a missing quarry cannot establish that the route to this square is blocked' });
-          this.pendingPull = null;
-          releaseQuarry(this.s.name);
-          waiting = null;
+        // to follow. Rotate immediately without charging the square.
+        if (waiting?.missing) {
+          await this.switchFromStalledPull(
+            waiting, found,
+            'the pulled quarry left the room or disappeared; that says nothing about the wall',
+            { cooldown: false });
+          return HANDLED;
         }
-        if (waiting && !waiting.ready) {
+        if (waiting?.stalled) {
+          await this.switchFromStalledPull(
+            waiting, found,
+            `its distance to the wall stopped improving for ${waiting.non_closing_samples} sampled checks`);
+          return HANDLED;
+        }
+        if (waiting) {
           if (!this.pendingPull.waitNoted) {
             this.pendingPull.waitNoted = true;
             this.note('giving the pulled quarry time to reach the wall', {
               target: waiting.target, pull_steps: waiting.steps,
-              waiting_ms: waiting.remaining_ms,
-              why: 'one movement square takes about one decision interval; the next pass ' +
-                   'is not evidence that a distant quarry cannot follow' });
+              sample_every_ms: this.policy.pullProgressSampleMs ?? 3_000,
+              last_distance: waiting.last_distance,
+              best_distance: waiting.best_distance,
+              why: 'its live position is sampled every few seconds. As long as it keeps ' +
+                   'getting closer we wait; repeated non-closing samples rotate the target' });
           }
           this.doing = 'waiting';
           return HANDLED;
         }
-        if (waiting?.ready) {
-          this.pendingPull = null;
-          if (this.pullDidNotConvert(f.reason || 'still nothing in reach after the follow window'))
-            return HANDLED;
-        }
         const pullSpot = this.hold
           ? { room: this.hold.room, col: this.hold.col, row: this.hold.row }
           : null;
-        const quarry = found.find(o => o.id === f.nearest?.id) || found[0];
+        // `claimedSwing` may be an urgent bystander rather than the hunt-list head.
+        // Pull the exact object fight() just range-checked; substituting found[0] here
+        // validates one target/wall pair and then fetches a different monster to it.
+        const quarryId = f.nearest?.id ?? claimedSwing;
+        const quarry = quarryId != null ? c.room.objects.get(quarryId) ?? null : null;
         const p = quarry ? await this.pull(quarry) : { pulled: false, why: 'nothing to pull' };
         if (p.pulled && p.back) {
           const waitMs = this.pullFollowWaitMs(p.steps);
+          const startedAt = Date.now();
+          const liveQuarry = quarry?.id != null ? c.room.objects.get(quarry.id) ?? quarry : quarry;
           this.pendingPull = {
-            at: Date.now(), waitUntil: Date.now() + waitMs,
+            at: startedAt, waitUntil: startedAt + waitMs,
             target: p.target, target_id: quarry?.id ?? null, steps: p.steps, wait_ms: waitMs,
+            ...beginPullProgress(liveQuarry, pullSpot, { now: startedAt }),
           };
           // DELIBERATELY NOT progress(). A pull is not an achievement, it is an attempt,
           // and calling it progress is what kept the stall detector quiet through hours
@@ -13212,20 +14079,32 @@ export class Autopilot {
           const failed = this.pullAttemptFailed(pullSpot, p.why || 'the pull did not complete');
           this.note('could not bring it to the wall', {
             why: p.why, target: p.target, attempt: failed.attempt, of: failed.limit,
-            note: failed.retired
-              ? 'repeated failures excluded this square in this room'
+            note: failed.relocate
+              ? 'this wall is too far from the quarry — moving to one closer to it'
               : 'keeping the wall and trying again; a single failed approach proves nothing' });
-          if (failed.retired && this.hold)
-            this.releaseHold('repeated pull attempts could not swing from here');
-          this.noProgress(failed.retired
-            ? 'holding a spot repeated pull attempts could not use'
-            : 'a pull attempt failed transiently; retrying from the same wall');
+          if (failed.relocate && this.hold && quarry) {
+            // Not a bad wall — a distant one. Give up THIS hold (only) and take a wall
+            // biased hard toward the quarry, so the next pull is a short one. Never
+            // blacklist, never abandon the strategy: if no closer wall turns up this pass
+            // we simply keep trying. Relocating IS progress, so it is reported as such.
+            this.releaseHold('this wall cannot pull the quarry — moving to one closer to it');
+            const closer = await this.takeSafeSpot('a wall the quarry can be pulled to', quarry,
+                                    { nearQuarry: true }).catch(() => ({ took: false }));
+            if (closer.took) this.progress('relocated to a wall closer to the quarry');
+            else this.noProgress('no closer wall to the quarry this pass — will keep trying');
+          } else {
+            this.noProgress('a pull attempt failed transiently; retrying from the same wall');
+          }
         }
         return HANDLED;
       }
       // We got a fight. Whatever we are standing on can be fought from, so the cliff
       // counter resets — this is the only evidence that actually settles the question.
-      if (f.rounds > 0) this.pullConverted(claimedSwing, f.target ?? engageName);
+      // A submitted round is not contact: range-refused attacks can consume a round and
+      // land nothing. Close the exact quarry's progress watch only on an observed hit or
+      // its death, and use the id fight() actually selected rather than our old claim.
+      if ((f.landed_hits ?? 0) > 0 || f.killed)
+        this.pullConverted(f.target_id ?? f.foe_id, f.target ?? engageName);
       this.swungAt = Date.now();
       this.foeId = f.foe_id ?? null;
       // fight() can now tell death apart from a stale object id. If it is the
@@ -14498,7 +15377,20 @@ export class Autopilot {
     // shop — and a broke character with goods goes to the market too, for the same reason
     // the full pack does: Roq is the one who pays, and a banker takes and gives nothing.
     const destinations = townDestinations({ needsCashFirst, supplyTrip, starving, packFull,
-                                            brokeWithGoods, richEnoughToBank: carried > above });
+                                            brokeWithGoods, richEnoughToBank: carried > above })
+      .filter(b => !this.bansDestination(b.room));
+    if (!destinations.length) {
+      if (!this.warnedBannedTrip) {
+        this.warnedBannedTrip = true;
+        this.note('not making this trip — every destination for it is banned for this character', {
+          banned: this.policy.bannedDestinations, carrying: carried, stacks,
+          why: 'banned_destinations struck every counter this errand could use; the errand is dropped ' +
+               'rather than routed to a room the operator said not to enter',
+        });
+      }
+      return false;
+    }
+    this.warnedBannedTrip = false;
     const options = destinations
       .map(b => { const r = s.world?.route?.(b.room);
                   return { ...b, hops: r?.found ? r.hops.length : Infinity }; })
@@ -15519,6 +16411,13 @@ export class Autopilot {
   // Rate-limited hard, because a broadcast costs a share of max mana and a keeper
   // loops every eight seconds; unthrottled this would be indistinguishable from
   // spam, and would empty the mana bar of the very character that needs it.
+  //
+  // AND OFF UNLESS ASKED FOR, since 2026-08-27. Twenty-one characters on a shared server,
+  // each entitled to one "if anyone can spare a flask or cast a heal on me I would be in
+  // your debt" every five minutes, is a fleet begging in public — the operator saw it from
+  // the other side and ordered it stopped. Everything this does BEFORE the plea (re-equip,
+  // conjure a blade) still runs: those fix the post-death case by themselves and cost
+  // nobody anything. Only the asking is gated, on `askForHelp: true`.
   async askForHelp(reason = null) {
     const s = this.s, c = s.need();
     const PLEA_GAP_MS = 5 * 60 * 1000;
@@ -15569,6 +16468,22 @@ export class Autopilot {
 
     // Rearming solves the post-death case by itself; being hurt never does.
     if (armed && !hurt) { this.progress('rearmed after dying'); return; }
+
+    // THE PLEA ITSELF IS OPT-IN. Same five-minute cadence as a plea would have had, so the
+    // rearm attempts above stay as far apart as they always were; and said once in the
+    // journal rather than never, because "why did nobody ask" is a question somebody will
+    // put to this instrument.
+    if (this.policy.askForHelp !== true) {
+      this.lastPleaAt = Date.now();
+      this.note('not asking for help — broadcasts are off', {
+        reason, armed, room: where,
+        why: 'askForHelp is not set on this character, and the default since 2026-08-27 is ' +
+             'silence: a fleet on a shared server does not beg in public',
+      });
+      this.noProgress(hurt ? 'hurt with no way to heal — regenerating on the vigor timer, not broadcasting'
+                           : 'dead broke and unarmed — not broadcasting for charity; passArm buys or conjures');
+      return;
+    }
 
     const v = c.vitals()?.health;
     const name = c.me?.name || 'a traveller';
@@ -16159,7 +17074,8 @@ export class Autopilot {
       // And not one we have already refused for having no usable wall or an irrecoverably
       // blocked spawn cap. Without this the keeper walks out and ranks the room it just
       // abandoned as the best destination again.
-      .filter(r => !deniedFarmRooms.has(r.room));
+      .filter(r => !deniedFarmRooms.has(r.room))
+      .filter(r => !this.bansDestination(r.room));
     // AN ASSIGNMENT OUTRANKS THE SPAWN TABLE. Every caller takes [0], so putting the
     // assigned room at the front is the whole of "go back where you were put" — and
     // it stays subject to the same filters above, so an assignment to somewhere that
@@ -16483,6 +17399,39 @@ export class Autopilot {
       this.note('already in a sanctuary', { room: here, ...why });
       return { arrived: true, already: true };
     }
+
+    // CHANGING OBJECTIVE FOR AN INN IS OFF, AND EVERYTHING ABOVE THIS LINE STILL RUNS.
+    //
+    // Operator's call, 2026-08-27. The three answers above — hold the wall we are on, count
+    // a monster-free retreat as arrived, count a sanctuary as arrived — are all statements
+    // about where we ALREADY are, and they are kept. What is switched off is the one below:
+    // picking an inn somewhere else and walking to it.
+    //
+    // Why it does not work. The rooms that produce these emergencies are the roads
+    // themselves — 36 of 37 measured road deaths were in the five corridor rooms, none in a
+    // town — so a walk to an inn is a walk through more of exactly what is killing us, begun
+    // at the health that made it an emergency. It is the flee tactic with a longer distance
+    // attached, and the ordinary flee rung was already removed for the same reason: monsters
+    // see 4 + difficulty/2 squares and follow.
+    //
+    // The replacement is not "nothing". It is the route-adjacent safe spot: park within
+    // `travel_shelter_detour` of the road we are already on, play dead once to shed what is
+    // chasing, rest to full, carry on. That is a few squares rather than a few rooms, and it
+    // is the only move that ends the damage instead of extending it.
+    //
+    // KEPT AND SWITCHED OFF rather than deleted, because a behaviour that is gone cannot be
+    // measured again, and because this one is right for a case nobody has isolated yet — a
+    // character stranded somewhere with no spot in reach at all. `retreat_to_inn: true`
+    // brings it back per character.
+    if (this.policy.retreatToInn !== true) {
+      this.note('not changing objective for an inn', {
+        room: here, ...why,
+        why: 'walking to a sanctuary means crossing more of the road that is already ' +
+             'killing us, at the health that made this an emergency. The move is a ' +
+             'route-adjacent safe spot instead.',
+        enable_with: 'retreat_to_inn: true' });
+      return { arrived: false, refused: 'retreat_to_inn is off', room: here };
+    }
     // NEAREST FIRST, AND NOT MANY. Iterating the six in declaration order would send a
     // character bleeding in the Badlands to whichever inn happened to be listed first —
     // possibly across the world, through everything in between, at the health that made
@@ -16644,7 +17593,7 @@ export class Autopilot {
       let ahead = null;
       try {
         ahead = shelterAhead(planned.spots, planned.atStep ?? 0,
-                             { maxDetour: planned.maxDetour ?? 4,
+                             { maxDetour: planned.maxDetour ?? 5,
                                unreachable: this.unreachableIn(this.s.world?.room?.num ?? null) });
       } catch { ahead = null; }
       if (ahead) {
@@ -16756,6 +17705,26 @@ export function claimSpot(agent, room, col, row, { cap = Infinity, partner = und
   held.add(agent);
   return true;
 }
+
+// Quarry-bound walls follow a stricter contract than general shelter: nobody else,
+// including a deliberate party partner, may reserve the square. This is atomic in the
+// production file store and uses the same one-claim-per-agent move semantics in tests.
+export function claimExclusiveSpot(agent, room, col, row) {
+  if (fileSpotClaimsEnabled()) {
+    try {
+      return !!claimFileSpot(agent, room, col, row,
+        { cap: 1, partner: null, mayShare: () => false });
+    } catch { return false; }
+  }
+  const k = spotKey(room, col, row);
+  const current = claimedSpots.get(k);
+  if (current && [...current].some(who => who !== agent)) return false;
+  releaseSpot(agent);
+  const held = claimedSpots.get(k) ?? new Set();
+  held.add(agent);
+  claimedSpots.set(k, held);
+  return true;
+}
 export function releaseSpot(agent) {
   if (fileSpotClaimsEnabled()) {
     try { return releaseFileSpot(agent); }
@@ -16812,6 +17781,20 @@ export function spotTakenByAnother(agent, room, col, row, cap = 1, snapshot = nu
     return who;
   }
   return null;
+}
+
+export function spotClaimedByAnotherExclusive(agent, room, col, row, snapshot = null) {
+  snapshot ??= snapshotSpotClaims();
+  if (snapshot.kind === 'unavailable') return 'wall claim store unavailable';
+  if (snapshot.kind === 'file') {
+    const found = (snapshot.value?.claims ?? []).find(r =>
+      r.agent !== agent && Number(r.room) === Number(room)
+      && Number(r.col) === Number(col) && Number(r.row) === Number(row));
+    return found?.agent ?? null;
+  }
+  const held = snapshot.value.get(spotKey(room, col, row));
+  if (!held) return null;
+  return [...held].find(who => who !== agent) ?? null;
 }
 // How deep the stacking is allowed to get before a wall stops being worth sharing. Four
 // on one square is the pile-up this register exists to prevent; three is the point where

@@ -124,6 +124,36 @@ export function buildItemTable(koddbFile = KODDB) {
   //
   // The weights are still read off the chain, never typed here: Scroll declares 3/5
   // itself (scroll.kod:48-49) and Wand inherits SpellItem's 3/5 (spelitem.kod:61-62).
+  // IDENTIFIED SPELL ITEMS CARRY THEIR NAME IN vrLabelName, NOT vrName.
+  //
+  // Once read, a scroll is "scroll of discord" and a wand "wand of fire": SpellItem swaps
+  // vrName for vrLabelName on identification (spelitem.kod:109-116), and the subclasses
+  // declare only the label. displayName() reads vrName/vrRealName, so every identified
+  // scroll and wand was missing from the table — Janice's two scrolls of discord kept her
+  // pack "unweighable" and her confined keeper re-deciding a refused market trip every
+  // second, at vigor 10, an hour after the generic names were added. Same weights, same
+  // chain, read off the kod like everything else here.
+  for (const cls of Object.values(classes)) {
+    const chain = (cls.chain || []).map(x => String(x).toLowerCase());
+    if (!chain.includes('scroll') && !chain.includes('wand')) continue;
+    const rsc = cls?.classvars?.vrLabelName?.rsc;
+    const name = rsc?.kind === 'string' && typeof rsc.value === 'string' ? rsc.value.trim() : null;
+    if (!name || byName.has(name.toLowerCase())) continue;
+    const w = inherited(classes, cls.chain || [], 'viWeight');
+    const b = inherited(classes, cls.chain || [], 'viBulk');
+    if (!w || !b) defaulted++;
+    considered++;
+    byName.set(name.toLowerCase(), {
+      name,
+      weight: w?.value ?? DEFAULT_WEIGHT,
+      bulk: b?.value ?? DEFAULT_BULK,
+      cls: cls.name,
+      declared_by: { weight: w?.from ?? 'Item (default)', bulk: b?.from ?? 'Item (default)' },
+      also: [],
+      identified_label: true,
+    });
+  }
+
   const GENERIC_UNIDENTIFIED = { scroll: 'scroll', wand: 'wand' };
   for (const [clsKey, name] of Object.entries(GENERIC_UNIDENTIFIED)) {
     const cls = classes[clsKey];

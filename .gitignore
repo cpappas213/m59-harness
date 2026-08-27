@@ -445,3 +445,23 @@ _verify2.mjs
 # stable thereafter, and meaningless in a checkout with different fleets. See
 # keeperPortBaseFor in m59-broker.mjs.
 /substrate/keeper-bands.json
+
+# WHICH SIDE OF A SPLIT ROOM THE PREY WAS LAST SEEN ON. This machine's observations of
+# this machine's fleet, rebuilt for free the first time a character sees its quarry, and
+# meaningless to a clone with different rooms baked. See tools/m59-preyside.mjs.
+/substrate/prey-sides.json
+
+# WHICH FLEET IS CURRENTLY WORKING WHERE, so two of them do not book the same room. Per
+# fleet, rebuilt every time somebody declares a conflict, and a stale copy from another
+# machine's afternoon is an instruction rather than a description. See tools/m59-intel.mjs.
+/substrate/active-conflicts-*.json
+
+# LEDGERS OF WHAT THIS MACHINE'S CHARACTERS DID. Named runs, named characters, and evidence
+# about one fleet on one server — the same argument as history/ and recordings/. The tools
+# recreate them; git carrying them would mean a clone inherits somebody else's measurements.
+/substrate/jumptest-*.json
+/substrate/mule-*.json
+
+# A COPY OF A DERIVED BOOK, TAKEN BEFORE A RE-TEST. Backups of generated state are this
+# machine's safety net for one afternoon, not a fact about the map.
+/substrate/*.before-*.json

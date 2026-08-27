@@ -95,10 +95,21 @@ export const WATCHDOG_PINNED_MS = Number(process.env.M59_WATCHDOG_PINNED_MS || 2
 // CLAUDE.md has been asking since the shuttle runs: not "is it still" but "has it
 // covered any ground".
 //
-// Three squares is generous against a false positive. A character actually travelling
-// runs at roughly five squares a second, so twenty seconds of real movement is a hundred
-// squares; anything that has not cleared three in that time is not on its way anywhere.
-export const WATCHDOG_PINNED_SQUARES = Number(process.env.M59_WATCHDOG_PINNED_SQUARES || 3);
+// EIGHT, AND THREE WAS TOO TIGHT — the radius has to cover the POCKET, not the step.
+//
+// Three was calibrated on one wedge (Robin's, four columns wide) and promptly missed the
+// next one. Measured on prod 2026-08-27, Rowlf in Castle Victoria: `doing: zoning`, one
+// pass for the whole window, wandering squares 24,3 · 25,3 · 28,3 · 29,3 · 29,4 — a pocket
+// six columns across. Every time he crossed three squares the anchor moved and the timer
+// went back to zero, so a character who covered no ground for minutes was never once
+// flagged. A radius that a wedge can out-wander is not a radius.
+//
+// The headroom against a false positive is enormous either way, so spend it here. A
+// character actually travelling runs at roughly five squares a second: twenty seconds of
+// real movement is on the order of a hundred squares, and it leaves an eight-square box in
+// under two. Anything still inside that box after twenty seconds is not on its way
+// anywhere, and the cost of being wrong is one cancelled walk that the next pass re-decides.
+export const WATCHDOG_PINNED_SQUARES = Number(process.env.M59_WATCHDOG_PINNED_SQUARES || 8);
 
 const pct = v => (v && v.max ? v.value / v.max : null);
 
@@ -185,7 +196,22 @@ export function pulse(host, now, hp) {
   const w = host.watch, c = host.s?.client, me = c?.self;
   if (!w) return null;
   const doing = host.doing ?? null;
-  const at = me ? { at: now, room: c.room?.id ?? null, col: me.col ?? null,
+  // THE ROOM NUMBER, NEVER THE ROOM OBJECT'S ID. Ported back from the copy of this that
+  // still lives in m59-autopilot.mjs, which had the fix while this module did not.
+  //
+  // `c.room.id` is a live object id. The server renumbers those on every system save, so it
+  // is not a name for a room — it is a name for a HANDLE to a room, and it is a different
+  // number after the next save. Two things went wrong with it: the ring is persisted into
+  // every post-mortem, so a death record keyed on `1589` becomes unreadable the moment the
+  // server saves; and it is COMPARED — `prev.room === last.room` is half the "has this
+  // character moved" test, so a renumbering mid-session makes one room look like two, which
+  // reads as movement and silently resets the wedge detector.
+  //
+  // Falls back to the live handle rather than to null: a null would make
+  // `prev.room === last.room` true for every pair, so every character would read as never
+  // having changed room. A stale-able id beats a field that makes the detector say yes always.
+  const at = me ? { at: now, room: host.s?.world?.room?.num ?? c.room?.id ?? null,
+                    col: me.col ?? null,
                     row: me.row ?? null, x: me.x ?? null, y: me.y ?? null,
                     health: hp?.value ?? null, doing } : null;
   if (at) {

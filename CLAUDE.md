@@ -25,6 +25,7 @@ covers what you are about to touch, before you touch it. Comments across `tools/
 | run, back up, restore, lend out or shut down the fleet | [`docs/m59-operations.md`](docs/m59-operations.md) |
 | change a threshold, a posture, an area or a tactic | [`docs/m59-policy.md`](docs/m59-policy.md) |
 | hand a bot a character, or take one back | [`docs/m59-boundary.md`](docs/m59-boundary.md) |
+| read a ledger, or land a commit that changes how the fleet moves | [`docs/m59-evidence.md`](docs/m59-evidence.md) |
 | run or extend the offline tests | [`docs/m59-tests.md`](docs/m59-tests.md) |
 
 ## The one-liner
@@ -190,8 +191,15 @@ and a stop that finds it by `/health` rather than by process name.
 It does **not** survive a reboot. `start` is one command; a Windows service would have
 meant a third-party binary in a repository where every other tool is dependency-free.
 
-**Every keeper runs inside the broker.** Stopping it logs out every character; there is
-no separate keeper process to survive it.
+**Every keeper is a child process of the broker** — `m59-keeper-process.mjs`, one per
+character, each holding its own socket, on this fleet's port band (`substrate/keeper-bands.json`).
+**Corrected 2026-08-27:** this line used to say every keeper ran *inside* the broker, and code
+was written against that claim — the fleet-mate check's roster fallback was installed only in
+the broker process, so inside every keeper it called the whole fleet strangers
+(see [`docs/m59-keeper.md`](docs/m59-keeper.md#a-keeper-process-called-its-own-fleet-strangers)).
+Two consequences: stopping the broker does **not** stop them, and a restarted broker
+**adopts** survivors — so a keeper picks up new code only when it is itself restarted
+(`POST /stop` on its port; the 45s sweep respawns it from the roster on disk).
 
 Everything else about running it — the loopback-only buttons on the fleet page, the
 piloted-client check it does before logging anybody in, why the roster never shrinks by
@@ -378,6 +386,7 @@ Wire, kod and the shape of a reply — [`docs/m59-protocol-traps.md`](docs/m59-p
 - `PF_*` is an ENUM, not a bitmask: `flags & PF.KILLER` is true for every Dungeon Master.
 - The server's own safety flag already refuses ordinary players and allows murderers — leave it on.
 - Self-defence needs a grudge AND a live flag AND the safety; the grudge book is fleet-wide and gitignored.
+- A keeper PROCESS has to hold its own roster source, or it calls the whole fleet strangers — and a fleet-mate you turn red by hand is then shot by everyone with a false grudge. Statler, 2026-08-27.
 - One or two of the five Underworld portals are unlit at any moment, not all of them, and an unlit one is silent.
 
 Money, merchants and supply — [`docs/m59-economy.md`](docs/m59-economy.md):
@@ -388,6 +397,7 @@ Money, merchants and supply — [`docs/m59-economy.md`](docs/m59-economy.md):
 - A bank balance is prose, sent once; a withdrawal states the amount handed over, not the new balance. There is no bank in Barloque.
 - A character that cannot RECEIVE is nearly always full — read `pack.percent` and `pack.binding`, not `carrying`.
 - `trade` lies in both directions. Use `supply`, which verifies the receiver actually holds the goods.
+- A hand-over that completes the handshake and moves nothing is usually a malformed id list, not a full pack — the test is the TAG, not whether there is more than one.
 - A cursed weapon can never be put down: wielding one is the only irreversible mistake here.
 - A loadout is an OVERLAY — silence means the behaviour that was already there, and a named want is not satisfied by the family.
 - A guild want is an END STATE, not an errand, which is what makes it safe to give to twenty-one characters.
@@ -403,6 +413,7 @@ Keepers, deaths and the numbers on the board — [`docs/m59-keeper.md`](docs/m59
 - "You suddenly feel a little tougher." is the only announcement of the only thing this fleet is for.
 - A keeper earning nothing looks exactly like a healthy one; that is what `yieldCheck` is for, and it was off for a year because `purpose` was missing from a schema.
 - A character can be spoken for, and the board has to say so — ask `isTakeable(committed)`, never `!committed`.
+- A broker that lost a keeper port guesses one and commands whoever is there; two fleets on a machine is the working limit.
 
 What to fight — [`docs/m59-combat.md`](docs/m59-combat.md):
 
@@ -416,6 +427,8 @@ What to fight — [`docs/m59-combat.md`](docs/m59-combat.md):
 Movement — [`docs/m59-routing.md`](docs/m59-routing.md):
 
 - **THE FINE GRID IS THE REALITY. A SQUARE IS A SUMMARY, AND ON INTERESTING GROUND IT IS A FALSE ONE.** Ask the coarse grid where the floor is and it answers per square; ask it about a ledge and it lies. 40,52 in the Ancient Place is `walkable: true` with NO FLOOR AT ITS CENTRE — 21 of 49 sampled points inside it are standable and the middle is not one. 38,30 is `walkable: false` and you jump onto it anyway, because the footing is a sliver. 40,33 spans 3520 to 10880: the valley floor and the high ledge, one square, one number. Every movement decision that matters — where to stand, whether a step lands, whether a jump clears — has to be asked of the BSP at fine resolution. Three separate failures in one day came from forgetting it: a walker aimed at square centres stepped off the ledge after thirteen waypoints, a jump finder could not see 40,33 → 40,32 because both halves are one square, and a height profile read off single fine points swung ±7000 because one unit either side of a ledge edge is a different sector. Use squares to talk to humans and to index the bake; use fine coordinates when the rubber hits the road.
+- A body in the way is not a wall and not a clearance — the client tests the move's ENDPOINT, lets you end inside the zone while moving away, and SLIDES. Two spiders 25 apart are passable; a clearance model says they are not.
+- "One square wide" is a fact about the coarse grid. The .roo under Twisted Wood's one-wide corridor is 82–110 fine units, not 64.
 - Melee reach is a disc of radius 2–3 SQUARES, and fine coordinates do not exist to it.
 - A safe wall is the two grids disagreeing — measurable, dose-responsive, and the same fact that fragments the routing view.
 - A planned trip accepts the risk of a FIGHT — but no longer of a death. **Corrected 2026-08-21:** this line used to read "the way out of an attack during travel is always THROUGH", and a journey held the keeper inert to enforce it. That is how Cccc was walked out of a sanctuary at 27% health and eaten in twenty-two seconds. Walking through is still the answer to being *hit*; it is not the answer to being below the flee line, or to losing health faster than the road ends. See `travel_guard`.
@@ -552,6 +565,20 @@ is the only arrangement in which two people can both use this repository.
   subject walks away mid-experiment), is in
   [`docs/m59-economy.md`](docs/m59-economy.md#the-reproduction-that-settled-it).
 
+- **A COMMIT THAT CHANGES HOW THE FLEET MOVES CARRIES `#movement` IN ITS MESSAGE.** The
+  ledgers are keyed on that tag, so evidence recorded before it resets rather than being
+  averaged in for ever. What it cost to not have this: Ukgoth's north door read
+  `refused 182, crossings 0` — a boundary never once crossed — on a day it was crossing in
+  three seconds six times out of six, and the tactics ledger answered "27% of crossings ride
+  a rail" over five days against 48.5% over the last ninety minutes, because a third of the
+  file was a bug fixed days earlier. **A counter that cannot come down is not a measurement,
+  it is a monument.** No clock fixes that — a fortnight of quiet evidence is still good and
+  four-hour-old evidence is worthless if the mover was rewritten in between; the clock does
+  not know what changed and the commit does. Uncommitted movement code is its own epoch, so
+  the half nobody has to remember works on its own. `node tools/m59-epoch.mjs` says which
+  epoch is in play and which commit declared it; the standard, and how to add a domain, is
+  in [`docs/m59-evidence.md`](docs/m59-evidence.md).
+
 - **The private server is on `127.0.0.1:15959`, not 5959.** It is a native Windows
   `blakserv.exe`, its admin port moves with it (19998), and `docker ps` reports nothing
   because there is no container. A bare port check against 5959 returns `ECONNREFUSED`
@@ -566,7 +593,8 @@ is the only arrangement in which two people can both use this repository.
 - **The offline tests are safe to run any time** — they open no socket and touch no
   roster. `node tools/m59-safespot-test.mjs`, `m59-which-test` (the gate that decides
   which fleet everything else acts on), `m59-chat-test`, `m59-collision-test`,
-  `m59-routing-test`, `m59-impossible-test`, `m59-guild-test`, `m59-loadout-test` and two
+  `m59-routing-test`, `m59-impossible-test`, `m59-guild-test`, `m59-loadout-test`,
+  `m59-supply-test` (the two-sided hand-over, against fakes of both kinds of session) and two
   dozen more; [`docs/m59-tests.md`](docs/m59-tests.md) lists every one with its assertion
   count and **what it pins**, which is the part worth reading before you change the code it
   guards. The rest need a live server — `m59-autopilot-test`, `m59-skills-test` and

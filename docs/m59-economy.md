@@ -18,7 +18,15 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). Who buys what, what a loadout is, what
   - **Roq** — the only NPC known to buy an unlimited quantity of anything. It is the
     Barloque assassin (`assassin.kod`, `Assassin is BarloqueTown`) and it is **not in
     the merchant index at all**, which is why nothing has ever sold to it. **Izzio** and
-    the island vendor are close to it with rules of their own.
+    the island vendor are close to it with rules of their own. **And this fleet no longer
+    goes there**: the road into "A shadowy corner" (room 110) crosses a lupogg's ground
+    with a jump in it, characters kept colliding with the lupogg on the jump and being
+    eaten for a sale that pays poorly, so 2026-08-27 every prod character carries
+    `banned_destinations: [110]`. That key is the general form — rooms a character must not set out
+    for, for any reason the keeper can generate (sell, bank, farm). A destination ban,
+    not an avoidance: a route that merely passes through one is not rerouted; a trip whose every
+    destination is struck is dropped and noted once, never re-routed. It is an ORDER, so it
+    lives in the roster, not here.
   - **The two vaults**, one mainland (Barloque) and one on the island. They "buy"
     anything and sell it back for about a shilling. They are **storage, not a market** —
     and storage that SURVIVES DEATH, which is the only thing in the game that does. That
@@ -185,6 +193,37 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). Who buys what, what a loadout is, what
   accept was the only one and it ENDED the trade rather than completing it. **Use `supply`**
   — it drives both ends and verifies the receiver actually holds the goods afterwards, which
   is the whole reason it exists.
+
+- **A HAND-OVER THAT COMPLETES THE HANDSHAKE AND MOVES NOTHING IS USUALLY A MALFORMED ID
+  LIST, NOT A FULL PACK.** `may_accept` true, the counteroffer seen, the accept sent, and
+  zero counts move: the entry above says read `pack.percent`, and that is right most of the
+  time and was wrong here. Measured on shadow 2026-08-26: Hhhh, carrying one elderberry and
+  one herb, could hand Jjjj neither — **in either direction**, which is the one signature the
+  full-pack diagnosis cannot produce, and two other characters traded fine between the same
+  two attempts.
+
+  The cause is written down in `dropSpec`'s own note in `m59-parse.mjs` and `supply` was on
+  the wrong side of it: **the test is the TAG, not whether there is more than one.**
+  `extractObject` files an amount only for an object the server tagged as a NumberItem, so a
+  stack with ONE left carries `amount: 1` — and `supply` encoded with `amount > 1 ? {id,
+  amount} : id`, which sent that stack as a bare id. A bare id contributes nothing to the
+  PARALLEL number list `UserDropItems` walks, and that list is paired POSITIONALLY against
+  the ids the server thinks are NumberItems. So one untagged stack slides every count after
+  it onto the wrong item and the **whole offer** fails, not just that entry. `Split` then
+  refuses each one and, as far as the wire is concerned, the request succeeded.
+
+  Two things follow, and the second is the one that will catch somebody again:
+
+  - `dropSpec(o, want)` is the one place that question is answered. Anything encoding an id
+    list for the wire should go through it rather than testing a quantity.
+  - **A keeper-backed session has to publish the amount the WIRE reported, which for
+    anything that is not a stack is ZERO and not one.** `m59-keeper-process.mjs` was
+    coercing every item to `amount: 1`, which makes a sword indistinguishable from a herb
+    and defeats the tag test at the source. It now sends the real amount and the server's
+    own `tag` beside it, and `KeeperProxy` hands both through unchanged.
+
+  `node tools/m59-supply-test.mjs` pins the encoding from both ends: a stack of one still
+  goes out with its count, and an ordinary item beside it still goes out bare.
 
 - **"BOUGHT X BUT WON'T WIELD IT" IS ALMOST ALWAYS "CAN'T PUT DOWN Y", AND THERE ARE
   EXACTLY TWO THINGS THAT DO IT.** A character that buys a mace and keeps swinging a long

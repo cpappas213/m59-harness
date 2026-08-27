@@ -43,7 +43,7 @@ console.log('\nthe order the keeper decides in');
 {
   // Urgency descending. Each line is a claim about what outranks what, and the comment is
   // the reason — change the array and you are changing one of these claims.
-  ok('there are eight stages', PASS_STAGES.length === 8);
+  ok('there are nine stages', PASS_STAGES.length === 9);
   ok('being dead is decided first — the Underworld has no graph exits, so a character ' +
      'left there stays there',
      PASS_STAGES[0] === 'passUnderworld');
@@ -52,20 +52,26 @@ console.log('\nthe order the keeper decides in');
   ok('then the playbook, because a player attacking us is the one case the keeper is ' +
      'structurally blind to and the fleet director may have an opinion about',
      PASS_STAGES[2] === 'passPlaybook');
+  // THE FIGHT-BACK EDICT IS ABOVE THE LADDER AND DEFERS TO IT. Above, because what it
+  // exists to outrank is every wall, pull and walk that kept a character from answering the
+  // thing chewing on it for ten seconds; and it steps aside below the flee line itself, so
+  // the survival ladder still wins the case that matters. Off unless an operator set it.
+  ok('then the fight-back edict, an operator\'s order that is off by default',
+     PASS_STAGES[3] === 'passFightBack');
   ok('then danger and being hurt — the survival ladder',
-     PASS_STAGES[3] === 'passFleeAndRest');
+     PASS_STAGES[4] === 'passFleeAndRest');
   // FOLLOWING A PERSON IS BELOW SURVIVAL AND ABOVE EVERYTHING DIRECTIONAL, and both halves
   // of that are claims. Below survival, because being led somewhere is never worth dying on
   // the way to — a leader cannot see a follower's health bar. Above everything directional,
   // because the entire reason to lead a group by hand is that the person in front knows a
   // door the router keeps getting wrong, and an errand or a farm assignment must not be able
   // to peel a follower off mid-room.
-  ok('then following a person who is leading us', PASS_STAGES[4] === 'passFollow');
+  ok('then following a person who is leading us', PASS_STAGES[5] === 'passFollow');
   ok('then whoever else is driving, which owns everything directional from there down',
-     PASS_STAGES[5] === 'passOutside');
+     PASS_STAGES[6] === 'passOutside');
   ok('then an errand, which outranks farming and is outranked by everything above it',
-     PASS_STAGES[6] === 'passErrand');
-  ok('and the actual job is last', PASS_STAGES[7] === 'passFarm');
+     PASS_STAGES[7] === 'passErrand');
+  ok('and the actual job is last', PASS_STAGES[8] === 'passFarm');
 
   ok('every stage names a real method on the keeper',
      PASS_STAGES.every(n => typeof Autopilot.prototype[n] === 'function'));
@@ -103,7 +109,7 @@ console.log('\nCONTINUE falls through, HANDLED stops the tick');
 {
   const { ap, calls, notes } = harness({});
   await runLadder(ap);
-  ok('with every stage returning CONTINUE, all seven run in order',
+  ok('with every stage returning CONTINUE, all nine run in order',
      JSON.stringify(calls) === JSON.stringify(PASS_STAGES));
   ok('and nothing is reported as missing a verdict', notes.length === 0);
 }
@@ -113,7 +119,7 @@ console.log('\nCONTINUE falls through, HANDLED stops the tick');
   ok('a stage that returns HANDLED ends the tick', stopped === 'passFleeAndRest');
   ok('nothing after it runs',
      JSON.stringify(calls) ===
-     JSON.stringify(['passUnderworld', 'passArm', 'passPlaybook', 'passFleeAndRest']));
+     JSON.stringify(['passUnderworld', 'passArm', 'passPlaybook', 'passFightBack', 'passFleeAndRest']));
   ok('and it is not reported as a fault', notes.length === 0);
 }
 

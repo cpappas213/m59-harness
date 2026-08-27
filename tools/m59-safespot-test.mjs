@@ -147,6 +147,39 @@ const holdAt = (p, col, row, { settledMsAgo = 1000, takenMsAgo = settledMsAgo, .
   return p.hold;
 };
 
+console.log('\n--- a pull that cannot REACH the quarry relocates, it does not blacklist ---');
+{
+  // The operator's rule, 2026-08-27: a pull that cannot reach the prey means the WALL IS
+  // TOO FAR, not that the wall is bad. So pullAttemptFailed must never blacklist the square
+  // and never abandon the wall strategy — it signals the caller to relocate to a closer
+  // wall. This is a different failure from pullDidNotConvert (reached, hit, nothing followed),
+  // which still retires cliff squares above.
+  const w = world();
+  const p = keeper(w);
+  p.policy.pullsBeforeBarren = 2;
+  const spot = { room: 999, col: 5, row: 5 };
+
+  const first = p.pullAttemptFailed(spot, 'no route beside the target');
+  ok('a single failed reach is not yet a relocation', first.relocate === false && first.attempt === 1);
+
+  const second = p.pullAttemptFailed(spot, 'no route beside the target');
+  ok('repeated failed reaches ask the caller to relocate, not to retire',
+     second.relocate === true, JSON.stringify(second));
+  ok('and the square is NEVER added to the barren blacklist',
+     !p.barrenSpots?.get(999)?.has('5,5'), JSON.stringify([...(p.barrenSpots?.get(999) ?? [])]));
+  ok('nor is the room condemned — the wall strategy is not abandoned',
+     !p.noWallRooms?.get(999));
+  ok('the note calls it a distant wall, not an unusable one',
+     p.journal.some(e => /trying one closer to it/.test(e.what || '') &&
+                         /never blacklisting/.test(e.note || '')));
+
+  // The failed wall's own budget resets, so trying it again later is a fresh two attempts
+  // rather than an instant relocate — walls do not carry a life sentence.
+  const again = p.pullAttemptFailed(spot, 'no route beside the target');
+  ok('the relocated-from wall gets a fresh budget, not a permanent strike',
+     again.relocate === false && again.attempt === 1);
+}
+
 console.log('\n--- a room does not become an unbounded wall experiment ---');
 {
   const w = world();
@@ -697,10 +730,22 @@ console.log('\n--- nobody calls for rescue from a pub ---');
   ok('and records why rather than failing silently',
      p.journal.some(e => /not asking for help/.test(e.what)));
 
+  // AND NOBODY BEGS IN PUBLIC UNLESS TOLD TO. Since 2026-08-27 the plea is opt-in: the
+  // operator watched twenty-one characters take turns broadcasting for a flask on a shared
+  // server and ordered it stopped. The re-equip work before the plea still runs.
   p.sanctuary = () => false;                      // out in the world
   p.lastPleaAt = 0;
   await p.askForHelp('badly hurt and out of flasks').catch(() => {});
-  ok('but the same character in the field still asks', broadcasts > 0);
+  ok('the same character in the field says nothing by default — the plea is opt-in', broadcasts === 0);
+  ok('and the journal says the broadcasts are off, rather than nothing at all',
+     p.journal.some(e => /broadcasts are off/.test(e.what)));
+  ok('and it keeps the same five-minute cadence a plea would have, so re-equipping is not spammed',
+     p.lastPleaAt > 0);
+
+  p.policy.askForHelp = true;                     // told to
+  p.lastPleaAt = 0;
+  await p.askForHelp('badly hurt and out of flasks').catch(() => {});
+  ok('but the same character, told to, still asks', broadcasts > 0);
 }
 
 console.log('\n--- no dead zone between "too hurt to fight" and "hurt enough to rest" ---');
@@ -1146,35 +1191,29 @@ console.log('A WALL WE COULD NOT WALK TO IS NOT SHELTER');
 //
 // It should fail the day open floor can be offered as shelter again.
 console.log('');
-console.log('ONLY GRID-DISAGREEMENT SQUARES ARE CANDIDATES');
+console.log('THE SAFE WALLS ARE THE RED SQUARES IN THE CLIENT, AND NOTHING ELSE IS A CANDIDATE');
 {
+  // Corrected 2026-08-27 by the operator against the debug client's minimap: the red squares
+  // are right, so the keeper chooses from exactly that set and nothing narrows it. One
+  // function, safeWalls(), is both the picture and the choice.
   const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
+  const ovl = readFileSync(new URL('./m59-overlay.mjs', import.meta.url), 'utf8');
   const fn = src.slice(src.indexOf('export function safeSpots'),
-                       src.indexOf('export function safeSpots') + 16000);
-  ok('the candidate loop no longer opens on the coarse grid',
-     !/for \(let c = 1; c <= geo\.cols; c\+\+\) \{\s*\n\s*if \(!geo\.walkable\(r, c\)\) continue;/.test(fn));
-  ok('a body still has to fit, which is the BSP question',
-     /!geo\.standable\(r, c\)\) continue/.test(fn));
-  // THE DISAGREEMENT IS ABOUT THE SQUARE, NOT ITS APPROACHES.
-  //
-  // This used to accept the OR form — coarse refuses the square, or merely one APPROACH to
-  // it is refused — and pinned it by requiring `disagree?.refused` to appear beside
-  // `coarseRefusesIt`. The second half admits squares the coarse grid calls perfectly
-  // walkable, which is open floor with an awkward doorway: something can path onto it and
-  // stand next to you, so it is not a wall and does not hold. Measured over twelve rooms it
-  // was 834 of 2228 candidates. A safe wall IS the two grids disagreeing about the square
-  // you stand on; that is the entire mechanism and it is now the only gate.
-  ok('and a square is only a candidate if the coarse grid refuses THE SQUARE ITSELF',
-     /const coarseRefusesIt = geo\.walkable\(r, c\) !== true;[\s\S]{0,120}if \(!coarseRefusesIt\) continue;/.test(fn));
-  ok('a square the coarse grid refuses counts as the strongest disagreement there is',
-     /geo\.walkable\(r, c\) !== true/.test(fn));
-  // AND WHERE IT CANNOT BE MEASURED, NOTHING IS OFFERED. `moverStepLands` answers true for
-  // everything when collision is not ready, so accepting candidates in that state would
-  // silently restore the old behaviour and look like it was working.
-  ok('and with no collision to measure against, nothing is offered rather than everything',
-     /!geo\.collisionReady[\s\S]{0,80}return \[\]/.test(fn));
+                       src.indexOf('export function safeSpots') + 8000);
+  ok('safeSpots iterates safeWalls and nothing else',
+     /for \(const w of safeWalls\(geo, \{ los \}\)\)/.test(fn));
+  ok('no membership gate survives in safeSpots — not the coarse-refusal one, not standability, not exposure',
+     !/coarseRefusesIt/.test(fn) && !/standable\(r, c\)\) continue/.test(fn) &&
+       !/our_ground === 0\) continue/.test(fn) && !/attackers >= MAX_ATTACKERS\) continue/.test(fn));
+  ok('safeWalls is the overlay rule: coarse-walkable, no attacker in monster reach, a free shot for us',
+     /if \(!geo\.walkable\(r, c\)\) continue;[\s\S]{0,200}ex\.attackers !== 0 \|\| \(ex\.free_shots \?\? 0\) <= 0\) continue/.test(src));
+  ok('and the overlay paints exactly that function as the red layer',
+     /for \(const w of safeWalls\(geometry\)\) put\(w\.row, w\.col, 'fortress'\)/.test(ovl));
+  ok('the overlay has no separate "nominated" set that could drift from it',
+     !/'nominated'/.test(ovl) && !/nominated\.has\(/.test(ovl));
+  ok('the selector does not re-prune the definition on back cover or attackers avoided',
+     !/if \(!gate && !\(seen/.test(src));
 }
-
 // ---------------------------------------------------------------------------
 // LEAVING A REAL WALL MEANS WALKING BACK OUT OF THE POCKET IT PUT YOU IN.
 //
@@ -1228,8 +1267,12 @@ console.log('A SHELTER YOU CANNOT LEAVE IS A TRAP, NOT A SHELTER');
 {
   const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
   ok('there is an escape test at all', /export function escapeRoom/.test(src));
-  ok('and every candidate has to pass it',
-     /if \(!escapeRoom\(geo, r, c, minEscape\)\) continue/.test(src));
+  // Corrected 2026-08-27: escape is MEASURED on every wall, reported as `escapes`, and it
+  // sinks the score; it no longer removes a square. A trap is a fact about a wall, not
+  // evidence that it is not one — the picture is the definition.
+  ok('and every candidate is measured by it, reported and ranked — never removed',
+     /const escapes = escapeRoom\(geo, r, c, minEscape\)/.test(src) && /escapes,/.test(src) &&
+       !/if \(!escapeRoom\(geo, r, c, minEscape\)\) continue/.test(src));
   ok('it is bounded, so it stays affordable run over every square in a room',
      /ESCAPE_CAP/.test(src));
   ok('and it stops counting the moment the answer is yes', /out is out; stop counting/.test(src));

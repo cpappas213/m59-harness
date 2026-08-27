@@ -22,8 +22,8 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
          from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry,
-         MAX_STEP_HEIGHT } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry, sharedRoomGeometry,
+         MAX_STEP_HEIGHT, MIN_NOMOVEON } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 // THE GATE THAT WAS NEVER WIRED IN. `traversable()` is the only thing that honours a
 // declaration's `requires: {running: true}`, and until now this module was imported by
@@ -537,6 +537,64 @@ const arrivalReport = (s) => {
   };
 };
 
+// WHICH DOOR LANDS WHERE — THE FIELD THE MAP HAS ALWAYS CARRIED AND NOTHING EVER READ.
+//
+// "A room's several ways to the same place are alternatives, not different journeys" is
+// true right up until the destination is SPLIT, and then they are different journeys with
+// the same name. Measured on prod 2026-08-27, room 38 into room 39:
+//
+//   door (19,2) and (19,1)  ->  arrives (28,8)
+//   door (17,2) and (17,1)  ->  arrives (23,8)
+//
+// Four doors, two landing squares, one per disconnected island of Upstairs Castle Victoria.
+// `orderExits` ranks by reachable-then-nearest, so a character wanting the far side takes
+// the near door, arrives on the wrong island, and then stands looking at six battered
+// skeletons it cannot path to — "the coarse grid found no route beside the target, and the
+// fine grid could not reach one either". Six characters produced zero kills for an entire
+// night that way, in a room with prey standing in it.
+//
+// `sameRoomIslandBridgePlan` already asks this question the right way round, filtering
+// return doors by whether their LANDING can reach the goal. It could only ask it from
+// inside the room, so a character part-way through the bridge — standing in the via room,
+// which is exactly where they wedge — fell back to plain travel and picked by distance.
+//
+// Returns the set of door squares ("col,row", which is a `go` exit's own `stand_on`) whose
+// arrival can walk to `target`, or null when the question cannot be answered — no target,
+// no geometry, no arrival coordinates. Null means "no opinion", and the caller must then
+// leave the ordering exactly as it was: a door set that silently narrowed to nothing would
+// strand a character at a boundary it could otherwise have crossed.
+function doorsLandingNear(map, fromRoomNum, toRoomNum, target) {
+  if (!target || !Number.isFinite(Number(target.col)) || !Number.isFinite(Number(target.row)))
+    return null;
+  const from = map?.rooms?.[fromRoomNum], to = map?.rooms?.[toRoomNum];
+  if (!from || !to?.roo) return null;
+  let geo = null;
+  try { geo = sharedRoomGeometry(to); } catch { geo = null; }
+  if (!geo) return null;
+  const onFloor = (p) => {
+    if (geo.walkable(p.row, p.col)) return { row: p.row, col: p.col };
+    const near = geo.nearestWalkable?.(p.row, p.col);
+    return near ? { row: near.row, col: near.col } : null;
+  };
+  const goal = onFloor({ row: Number(target.row), col: Number(target.col) });
+  if (!goal) return null;
+  const ok = new Set();
+  let asked = 0;
+  for (const g of (from.goExits || [])) {
+    if (g.locked || Number(g.to) !== Number(toRoomNum)) continue;
+    if (g.arriveRow == null || g.arriveCol == null) continue;
+    asked++;
+    const landing = onFloor({ row: g.arriveRow, col: g.arriveCol });
+    if (!landing) continue;
+    if (geo.path(landing.row, landing.col, goal.row, goal.col, { fine: true }).found)
+      ok.add(`${g.col},${g.row}`);
+  }
+  // No arrival coordinates anywhere, or every door reaches the goal: either way there is
+  // nothing to choose between, and saying so is different from saying "none of them work".
+  if (!asked || ok.size === asked) return null;
+  return ok.size ? ok : null;
+}
+
 const orderExits = (candidates) => candidates.slice().sort((a, b) =>
   (a.reachable === false) - (b.reachable === false) ||
   // THE BAKED ANCHOR GOES FIRST, AND DISTANCE MUST NOT OUTRANK IT.
@@ -807,6 +865,194 @@ const OFF_PLAN_STEP_BUDGET = Number(process.env.M59_STEP_BUDGET_FACTOR || 3);
 // the heels of a short one; without that the distance check is the only thing standing
 // between a proved leg and a cheat log.
 const PROVED_HOP_MAX_SQUARES = Number(process.env.M59_PROVED_HOP_MAX || 13);
+// HOW CLOSE A BODY MAY COME TO ANOTHER BODY, IN KOD FINE UNITS — AND IT IS THE SERVER'S OWN
+// NUMBER, NOT A DERIVATION FROM THE PLAYER'S WIDTH.
+//
+// `MIN_NOMOVEON` is `CLIENT_FINENESS / 4` = 256 client units (move.c:62), which is 16 kod.
+// `_resolveObjectMicrostep` is the rule it feeds: an obstacle is ONE exclusion zone of that
+// radius around its centre, and a move is refused only when it ends inside it AND closer than
+// it started.
+//
+// I first set this to 32, reasoning "PLAYER_RADIUS is 15.5 kod, so two bodies need 31 apart".
+// That is the wrong model and it was double the truth — the server does not add two radii, it
+// tests one. The cost was not theoretical: the live walker sat at "clear by 16", which is
+// EXACTLY the real limit, while this constant told it that was a collision. It spent ninety
+// seconds refusing positions the server would have accepted, and the operator — who had
+// walked the same corridor by hand — said so.
+//
+// WALL clearance really is `PLAYER_RADIUS`, and that is a different question asked by
+// `_resolveClientMicrostep`. Two numbers, two rules; conflating them is what made a passable
+// corridor read as impassable.
+//
+// No safety margin on purpose. With a body dead centre in a one-square corridor the passable
+// band is y 1871.5..1872 — half a unit wide — and any margin at all closes it. Aiming exactly
+// at the limit and letting the mover's own collision resolve the rest is what a person does.
+const BODY_CLEARANCE_KOD =
+  Number(process.env.M59_BODY_CLEARANCE ?? (MIN_NOMOVEON * KOD_FINENESS / CLIENT_FINENESS));
+// HOW FINELY A LEG IS RESOLVED AGAINST BODIES, and how near counts as arriving. Both are
+// modelling choices about the client's frame rate rather than facts on the wire, which is why
+// they are named and overridable.
+// FOUR, NOT EIGHT, AND THE NEGATIVE CASE IS WHAT SETTLED IT. The slide clamps a coordinate to
+// the obstacle's centre plus or minus MIN_NOMOVEON, and WHICH SIDE depends on where the attempt
+// landed: an attempt that overshoots past the body is clamped to the far side, which is a jump
+// THROUGH it. A real client cannot do that because it resolves a few units at a time — about
+// 5 kod a frame at a run — but a coarse simulation can, and at a stride of 8 three bodies
+// abreast in one square became passable. They are not. Four is under the frame step and a
+// divisor of the lattice.
+const BODY_WALK_STRIDE = Number(process.env.M59_BODY_WALK_STRIDE || 4);
+const BODY_WALK_ARRIVE = Number(process.env.M59_BODY_WALK_ARRIVE || 8);
+
+/**
+ * HOW CLOSE A STRAIGHT LINE COMES TO A POINT. Ordinary segment/point distance, clamped to
+ * the segment so a body BEYOND the far end is not treated as being on the way to it.
+ */
+export function distanceToSegment(px, py, ax, ay, bx, by) {
+  const dx = bx - ax, dy = by - ay;
+  const len2 = dx * dx + dy * dy;
+  if (!len2) return Math.hypot(px - ax, py - ay);
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / len2));
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+}
+
+/**
+ * DOES THIS LINE GET PAST EVERYTHING STANDING NEAR IT.
+ *
+ * The half that was missing, and the reason the first threading attempt failed live. A
+ * body-clear DESTINATION is not a body-clear MOVE: `traceFineMoveClient` validates against
+ * walls, and the mover's own note says so outright — "a body in the way is the one collision
+ * that is not in the .roo". So the aim was chosen on the far side of a spider and the line to
+ * it still went straight through the spider, the step was refused, the square was marked
+ * occupied, and the walker went round. Watched live on 2026-08-27: it touched the contested
+ * square twice at clearances of 21 and 18 against a required 32, then wandered for two
+ * minutes.
+ *
+ * Same clearance as the destination test, because it is the same question asked along the
+ * whole segment rather than only at its end.
+ */
+export function lineClearsBodies(ax, ay, bx, by, bodies, clearance = BODY_CLEARANCE_KOD) {
+  if (!bodies?.length) return true;
+  for (const b of bodies) {
+    // NEVER ASK FOR MORE ROOM THAN WE ALREADY HAVE.
+    //
+    // A segment's distance to a point is bounded by the distance at its START, so a flat
+    // `>= clearance` test refuses EVERY move once the body is already inside the clearance —
+    // including the move that walks away from it. The test poisons itself, and the walker
+    // stops dead.
+    //
+    // Watched live on 2026-08-27: the walker settled 16 units from a body in the row-29
+    // corridor and never moved again, while the offline fixture — which fed each step an
+    // idealised start — happily produced aims 50 clear. That gap between the suite and the
+    // server was this line.
+    //
+    // So the bar is "do not get CLOSER than you already are", capped at the clearance we
+    // actually want. Far away it is the full body width; already squeezed, it is whatever
+    // room we have, which is what lets a body finish a squeeze it is halfway through and what
+    // lets one that has been shoved against a spider get out again.
+    const already = Math.hypot(b.x - ax, b.y - ay);
+    if (distanceToSegment(b.x, b.y, ax, ay, bx, by) < Math.min(clearance, already)) return false;
+  }
+  return true;
+}
+
+/**
+ * ONE ATTEMPTED MOVE AGAINST THE BODIES, TRANSCRIBED FROM THE CLIENT RATHER THAN MODELLED.
+ *
+ * `clientd3d/move.c:666-697`, the `OF_MOVEON_NO` arm of the object loop, in kod units. Every
+ * line of it matters and three of them are things this repository previously got wrong:
+ *
+ *   1. THE TEST IS ON THE MOVE'S ENDPOINT, NOT ON THE PATH IT TAKES. `dx = abs(r->motion.x -
+ *      *new_x)` — the destination. Walls are swept (`FindIntersection`); bodies are not. So a
+ *      line that passes near somebody and lands clear is not a collision, and every "the LINE
+ *      has to clear too" rule written here was an invention.
+ *
+ *   2. "Allowed to move away from object" — `if (new_distance > old_distance) break;`. You may
+ *      END INSIDE the zone as long as you are farther out than you were. This is what lets a
+ *      body that has been shoved against somebody get out again.
+ *
+ *   3. WHEN IT DOES BLOCK, IT SLIDES. It does not refuse: it clamps one coordinate to the
+ *      obstacle's centre plus or minus MIN_NOMOVEON, re-checks the walls, and returns
+ *      MOVE_CHANGED. You move — just not where you asked. X is clamped in preference to Y,
+ *      which is not symmetric and is exactly what the code says.
+ *
+ * The consequence is the whole reason this exists. Two bodies 25.3 apart cannot both be cleared
+ * by 16, so a clearance model says the gap is shut — and the operator walked between them with
+ * the stock client and recorded it. Under these rules that run is twelve consecutive slides,
+ * each one legal, grinding between the pair. A rule that cannot express "grind through" cannot
+ * predict what the game does.
+ *
+ * Returns the position the client would end at, and how it got there. The caller owns the wall
+ * test, because it owns the geometry.
+ */
+export function resolveBodyMove(px, py, tx, ty, bodies, clearance = BODY_CLEARANCE_KOD) {
+  let nx = tx, ny = ty;
+  if (!bodies?.length) return { x: nx, y: ny, slid: false };
+  for (const b of bodies) {
+    let dx = Math.abs(b.x - nx), dy = Math.abs(b.y - ny);
+    // Not in the zone at all. The square pre-check and the circle are both in the original;
+    // the circle is inside the square, so the effective shape is a disc of radius MIN_NOMOVEON.
+    if (dx > clearance || dy > clearance || dx * dx + dy * dy > clearance * clearance) continue;
+    const newD = dx * dx + dy * dy;
+    const odx = Math.abs(b.x - px), ody = Math.abs(b.y - py);
+    if (newD > odx * odx + ody * ody) break;             // "Allowed to move away from object"
+    // The slide. X first, exactly as written — `if (dx < MIN_NOMOVEON) ... else if (dy < ...)`.
+    if (dx < clearance) nx = b.x > nx ? b.x - clearance : b.x + clearance;
+    else if (dy < clearance) ny = b.y > ny ? b.y - clearance : b.y + clearance;
+    return { x: nx, y: ny, slid: true, on: b };          // move.c returns on the first blocker
+  }
+  return { x: nx, y: ny, slid: false };
+}
+
+/**
+ * CAN A BODY ACTUALLY WALK THIS LEG, THE WAY THE CLIENT WOULD WALK IT?
+ *
+ * The client resolves a move per frame, so a leg is a sequence of short attempts, each one
+ * subject to `resolveBodyMove` and each one wall-checked. Sliding is not failing — it is how
+ * the game gets people past each other — so this asks the only question that matters at the
+ * end: did we arrive.
+ *
+ * `stride` is the granularity, and it is a modelling choice rather than a fact: too coarse and
+ * a body steps over an obstacle it would have ground against, too fine and every leg costs
+ * dozens of wall traces. Eight kod is about what a running character covers in a frame.
+ *
+ * NOT A REPLACEMENT FOR THE WALL TRACE. `wallOk` is passed in and asked on every sub-move,
+ * because a slide moves the endpoint sideways and the .roo has to be re-asked about the line
+ * that actually results.
+ */
+export function bodyWalkArrives(ax, ay, bx, by, bodies, {
+  clearance = BODY_CLEARANCE_KOD,
+  stride = BODY_WALK_STRIDE,
+  wallOk = null,
+  arriveWithin = BODY_WALK_ARRIVE,
+} = {}) {
+  const total = Math.hypot(bx - ax, by - ay);
+  if (!(total > 0)) return true;
+  if (!bodies?.length) return wallOk ? wallOk(ax, ay, bx, by) : true;
+  // EACH ATTEMPT IS AIMED FROM WHERE WE ACTUALLY ARE, NOT SAMPLED OFF THE ORIGINAL LINE, and
+  // that distinction is not cosmetic. The client computes `new_x` as the player's position plus
+  // this frame's velocity; a simulation that walks a fixed parameterisation keeps offering
+  // targets further along even after a slide has pushed it back, and the slide's choice of side
+  // depends on which side of the obstacle the TARGET fell. Sampled off the line, a body pinned
+  // at x 2896 was eventually offered x 2913 — past the obstacle's centre at 2912 — and the clamp
+  // duly put it on the far side at 2928. It teleported through three bodies abreast, which is
+  // the one configuration this must never allow.
+  let px = ax, py = ay, stalled = 0;
+  const budget = Math.ceil(total / stride) * 3 + 8;
+  for (let i = 0; i < budget; i++) {
+    const rem = Math.hypot(bx - px, by - py);
+    if (rem <= arriveWithin) return true;
+    const t = Math.min(1, stride / rem);
+    const r = resolveBodyMove(px, py, px + (bx - px) * t, py + (by - py) * t, bodies, clearance);
+    const moved = Math.hypot(r.x - px, r.y - py);
+    // A slide that leaves us where we were is the bodies actually holding. Three attempts with
+    // nothing to show is a grind that is not grinding, and continuing costs traces for nothing.
+    if ((wallOk && !wallOk(px, py, r.x, r.y)) || moved < 0.5) {
+      if (++stalled > 2) return false;
+      continue;
+    }
+    stalled = 0; px = r.x; py = r.y;
+  }
+  return Math.hypot(px - bx, py - by) <= arriveWithin;
+}
 
 // Fine-positioning at a boundary opening before the outward step that actually crosses.
 // Both are deliberately small: this is a nudge onto the opening, and the crossing does
@@ -1849,6 +2095,12 @@ class Session {
       const diff = meta?.difficulty;
       out.push({
         row: o.row, col: o.col, name: o.name,
+        // WHERE IN THE SQUARE. Carried through because a square is a summary: two bodies fit
+        // side by side inside one, so "there is a monster on that square" and "there is no
+        // way past" are different claims and only the fine position can tell them apart.
+        // Undefined on a session whose projection predates this, and every consumer must
+        // treat that as "square resolution only" rather than as the origin.
+        x: o.x, y: o.y,
         vision: diff != null ? 4 + Math.floor(diff / 2) : 6,
         reach:  diff != null ? Math.min(3, Math.max(2, 2 + Math.floor(diff / 6))) : 3,
       });
@@ -2591,6 +2843,38 @@ class Session {
   // 1406 of 1705 squares unchanged in the Western border of the Twisted Wood. The cost when
   // it does run is at most nine BSP traces — the same call `validateFineTarget` makes once
   // per step — against a replan, a re-plan and another packet, which is what it replaces.
+  /**
+   * WHAT IS STANDING IN THIS SQUARE, IN FINE UNITS.
+   *
+   * Read from `c.room.objects` rather than `world.objects()` for the reason `measureLineGap`
+   * already documents: the projection does not carry `flags`, so `blocksMovement(o.flags ?? 0)`
+   * asks MOVEON of zero — which is "walk through" — and quietly empties the list. The raw
+   * store is also where `x`/`y` live, which is the whole point here.
+   *
+   * BLOCKERS ONLY, by the server's own MOVEON bits: a corpse the server marks walk-through
+   * is not something to squeeze past, and the operator is explicit that dead bodies do not
+   * block. Same predicate `queueValidatedMove` enforces, so the aim and the mover agree.
+   *
+   * Returns [] when nothing is there, when the session has no room, or when the objects
+   * carry no fine position — and an empty list means "aim exactly as you always did".
+   */
+  bodiesInSquare(row, col, spread = 0) {
+    const c = this.client;
+    if (!c?.room?.objects) return [];
+    const out = [];
+    for (const o of c.room.objects.values()) {
+      if (o.id === c.selfId) continue;
+      if (!Number.isFinite(o.x) || !Number.isFinite(o.y)) continue;
+      if (!blocksMovement(o.flags ?? 0)) continue;
+      // `spread` widens this to the neighbouring squares, which is what the LINE test needs:
+      // a step spans two squares, and a body sitting just inside the one we are leaving is on
+      // the way even though it is not on the square we are entering.
+      if (Math.abs(o.col - col) > spread || Math.abs(o.row - row) > spread) continue;
+      out.push({ x: o.x, y: o.y, id: o.id, col: o.col, row: o.row });
+    }
+    return out;
+  }
+
   aimInto(from, row, col) {
     const geo = this.world?.geometry;
     const half = KOD_FINENESS >> 1;
@@ -2599,10 +2883,54 @@ class Session {
     if (!from || !geo?.traceFineMoveClient || !Number.isFinite(from.x)) return home;
 
     const fx = protocolToClient(from.x), fy = protocolToClient(from.y);
+    const wallOk = (ax, ay, bx, by) => {
+      try {
+        return geo.traceFineMoveClient(protocolToClient(ax), protocolToClient(ay),
+                                       protocolToClient(bx), protocolToClient(by),
+                                       { slide: false }).arrived === true;
+      } catch { return false; }
+    };
     // `arrived` with sliding OFF is the strict question: did the whole line stay clear.
-    const reaches = (wx, wy) => geo.traceFineMoveClient(
-      fx, fy, protocolToClient(wx), protocolToClient(wy), { slide: false }).arrived === true;
-    if (reaches(home.x, home.y)) return home;
+    // WALLS AND BODIES ARE TWO DIFFERENT COLLISIONS AND BOTH HAVE TO BE ASKED.
+    //
+    // `traceFineMoveClient` is the .roo — walls, ledges, slopes — and the mover's own note
+    // says what it leaves out: "a body in the way is the one collision that is not in the
+    // .roo". Validating only the walls is what made the first version of this threading fail
+    // in front of the operator: it picked an aim on the clear side of a spider and then drove
+    // a line straight through the spider to get there.
+    //
+    // `spread: 1` because a step spans two squares — something sitting just inside the square
+    // being LEFT is on the way out of it, and asking only about the destination square misses
+    // exactly the body a walker is trying to edge around.
+    const lineBodies = typeof this.bodiesInSquare === 'function'
+      ? this.bodiesInSquare(row, col, 1) : [];
+    //
+    // AND THE BODY HALF IS THE CLIENT'S OWN RESOLUTION, NOT A CLEARANCE ALONG THE LINE. It used
+    // to be `lineClearsBodies` — refuse if the segment ever passes within a body width — and
+    // that rule is an invention: `move.c` tests the ENDPOINT of each move, lets you end inside
+    // the zone if you are moving away, and SLIDES rather than refusing. Two bodies 25.3 apart
+    // are impassable under the invented rule and the operator walked between them, on camera,
+    // in twelve slides.
+    const reaches = (wx, wy) =>
+      geo.traceFineMoveClient(fx, fy, protocolToClient(wx), protocolToClient(wy),
+                              { slide: false }).arrived === true
+      && bodyWalkArrives(from.x, from.y, wx, wy, lineBodies, { wallOk });
+
+    // ASKED BEFORE THE STAND POINT IS ACCEPTED, NOT AFTER.
+    //
+    // The stand point is almost always reachable — that is what makes it the stand point —
+    // so a body check placed after `if (reaches(home)) return home` is a body check that
+    // never runs. The first version of this sat below it and threaded exactly nothing: every
+    // aim came back as the square's centre with a spider twenty units away, which is inside
+    // a body width. The geometry question and the occupancy question are independent, and
+    // the occupancy one has to be asked first because it is the one that can reject the
+    // default answer.
+    //
+    // Guarded for the same reason `leaveVia` guards `world.wrongExitSquares`: this method is
+    // lifted out of this file by text and evaluated against fixtures that have only what they
+    // inject, and a bare call is a TypeError rather than a falsy answer.
+    const bodies = typeof this.bodiesInSquare === 'function' ? this.bodiesInSquare(row, col) : [];
+    if (!bodies.length && reaches(home.x, home.y)) return home;
 
     // A quarter square in each direction, ordered by how far they move the aim — the
     // nearest usable point to the one the router priced is the one that keeps the plan
@@ -2612,6 +2940,174 @@ class Session {
     const centre = { x: col * KOD_FINENESS + half, y: row * KOD_FINENESS + half };
     const offsets = [[0, 0], [-q, 0], [q, 0], [0, -q], [0, q],
                      [-q, -q], [-q, q], [q, -q], [q, q]];
+
+    // SQUEEZE PAST, RATHER THAN DECIDE THE SQUARE IS BLOCKED.
+    //
+    // A square is 64 kod units across; a body is PLAYER_RADIUS = 248 client units, which is
+    // 15.5 kod, so about 31 across. TWO BODIES FIT SIDE BY SIDE INSIDE ONE SQUARE with half
+    // a body's width to spare. That is not a curiosity — it is how the one-square corridor
+    // at cols 44-46 of the Western border of the Twisted Wood is walked. A spider on the
+    // north side of 29,44 leaves the south side of 29,44 free, and a person goes past it.
+    //
+    // Everything upstream of here reasons in squares — the room projection used to stop at
+    // col/row, the threat field penalises whole squares — so "there is a monster in that
+    // square" became "there is no way through", and the fleet died in that corridor seven
+    // times in one run. The information to do better was on the wire the whole time.
+    //
+    // So when something is standing in the square we are entering, the aim is no longer the
+    // FIRST reachable point in the lattice — it is the reachable point FURTHEST FROM IT.
+    // Same lattice, same "never aim outside this square" rule, same straight-line proof;
+    // only the ordering changes, and only when there is a body to order against.
+    if (bodies.length) {
+      // Finer than quarters, because the whole margin here is half a body wide: eighths give
+      // the aim somewhere to go along a wall instead of only to the middle of a quadrant.
+      //
+      // AND IT HAS TO REACH THE EDGES OF THE SQUARE, which the first version did not. Three
+      // eighths either side of the centre is ±24 on a square that is ±32, so the outermost
+      // seven units of each side were not candidates at all — and those are exactly the units
+      // a squeeze needs. Measured on the random sweep: a walker at y 1904 with a body at 1900
+      // in the square ahead had one legal lane, y ≥ 1916, and the lattice stopped at 1912. It
+      // fell through to the unchecked stand point and drove a leg 8.4 units past the body.
+      // The step is finer than the eighth for the same reason the eighth beat the quarter.
+      const e = KOD_FINENESS >> 4;                      // 4 units
+      const reach = (KOD_FINENESS >> 1) - e;            // 28 — the last point still inside
+      const fine = [];
+      for (let dx = -reach; dx <= reach; dx += e)
+        for (let dy = -reach; dy <= reach; dy += e) fine.push([dx, dy]);
+      const clearOf = (wx, wy) => Math.min(...bodies.map(b => Math.hypot(wx - b.x, wy - b.y)));
+      // HOLD A LINE RATHER THAN RE-MAXIMISING EVERY SQUARE.
+      //
+      // Taking the furthest point from the body in each square independently produces a
+      // zig-zag — north, north, centre, north — and the DIAGONALS BETWEEN those choices are
+      // what foul the next body, so a run that clears seven squares individually still fails
+      // on the eighth. Measured on the dead-centre corridor: 7 of 8 squeezed, and the one that
+      // failed had no candidate whose approach line was clear from the previous zig.
+      //
+      // The operator walks it differently, and it is obviously right once said: pick a side
+      // and go straight. "42508,296668 to 52116,296668 is a straight 90-degree west-to-east
+      // walk that bypasses the testing units" — one constant lateral offset, held for the
+      // whole run. Checked against this room's BSP, y 1904..1916 is exactly that: a 13-unit
+      // band where a straight line clears every dead-centre body AND stays on floor.
+      //
+      // So among the points that CLEAR, prefer the one that deviates least from the line we
+      // are already walking — same lateral offset, carried forward — instead of the one that
+      // maximises a number this square alone can see. Clearance is a threshold to meet, not a
+      // quantity to maximise; once it is met, straightness is worth more than another unit of
+      // room, because straightness is what makes the NEXT square's approach clear too.
+      // AND THE OFFSET HAS TO BE PERPENDICULAR TO THE TRAVEL, WHICH IS THE WHOLE OF "A LANE".
+      //
+      // Euclidean clearance alone is not enough, and the way it fails is subtle: walking east
+      // past a body, a point offset in X clears it by distance while sitting in the SAME lane.
+      // It passes this square and is then refused on the next, because going straight on runs
+      // through the body it just went "around". Measured: aims pinned to y=1888 — the bodies'
+      // own line — clearing four squares by x-distance and failing the other four.
+      //
+      // Passing something while travelling east means being to the NORTH or SOUTH of it. So
+      // the qualifying test is separation on the perpendicular axis, and once that is met the
+      // tie-break is straightness: least drift from the lane we are already in. Together those
+      // two produce the operator's line — pick a side, hold it, walk straight through.
+      const goingEast = Math.abs(centre.x - from.x) >= Math.abs(centre.y - from.y);
+      const lateral = (a, b) => goingEast ? Math.abs(a.y - b.y) : Math.abs(a.x - b.x);
+      const inLaneOf = (wx, wy) =>
+        bodies.some(b => lateral({ x: wx, y: wy }, b) < BODY_CLEARANCE_KOD);
+      const drift = (wx, wy) => goingEast ? Math.abs(wy - from.y) : Math.abs(wx - from.x);
+      // AND DOES THE LANE KEEP WORKING ONE SQUARE ON.
+      //
+      // Choosing a lane greedily picks whichever side is clear HERE, and a lane that dies two
+      // squares later cannot be escaped in one move: switching sides means a diagonal, and the
+      // diagonal runs through the body you were going around. Measured on the dead-centre
+      // corridor — the north lane is clear at 43 and 44, blocked at 45, and the move that would
+      // have crossed to the south lane passes 0.8 units from the body in 44.
+      //
+      // So a lane is only taken if it survives the NEXT square too. One square is enough: it is
+      // the difference between committing to a side and discovering it, and it costs one trace
+      // on a path that already pays for several.
+      //
+      // IT ASKS ABOUT BODIES AS WELL AS WALLS, and it did not at first. A wall-only lookahead
+      // is the reason `inLaneOf` had to be a hard filter — with nothing else able to see a body
+      // one square on, refusing to share a lane with one was the only proxy available. It is a
+      // crude proxy, and on the random sweep it refused a legal squeeze: bodies at 2840,1884
+      // and 2884,1908 are 50 apart, which is 32 of clearance plus 18 to spare, and the way past
+      // is straight between them through 2862,1896 — a point in neither lane and clear of both
+      // by 25. Asked the real question, the lookahead licenses it.
+      const holdsAhead = (wx, wy) => {
+        const ahead = goingEast
+          ? { x: wx + (centre.x >= from.x ? KOD_FINENESS : -KOD_FINENESS), y: wy }
+          : { x: wx, y: wy + (centre.y >= from.y ? KOD_FINENESS : -KOD_FINENESS) };
+        let holds = true;
+        try {
+          holds = geo.traceFineMoveClient(
+            protocolToClient(wx), protocolToClient(wy),
+            protocolToClient(ahead.x), protocolToClient(ahead.y), { slide: false }).arrived === true;
+        } catch { holds = true; }                       // cannot say is not a refusal
+        return holds && bodyWalkArrives(wx, wy, ahead.x, ahead.y, lineBodies, { wallOk });
+      };
+
+      // TWO PASSES, AND THE STRICTER ONE FIRST. Holding a lane is still what is wanted whenever
+      // it is available — it is what makes the next square's approach clear, and it is what the
+      // operator walks. Sharing a lane is the answer only when there is no lane to be had, so
+      // it is asked for second and never preferred.
+      const search = (requireLane) => {
+        let best = null, bestDrift = Infinity, bestClear = -1;
+        for (const [dx, dy] of fine) {
+          const wx = centre.x + dx, wy = centre.y + dy;
+          if (Math.floor(wx / KOD_FINENESS) !== col || Math.floor(wy / KOD_FINENESS) !== row) continue;
+          if (requireLane && inLaneOf(wx, wy)) continue;  // same lane as something: not past it
+          const gap = clearOf(wx, wy);
+          if (gap < BODY_CLEARANCE_KOD) continue;        // must clear; below the bar is a collision
+          const d = drift(wx, wy);
+          if (d > bestDrift || (d === bestDrift && gap <= bestClear)) continue;
+          if (!reaches(wx, wy)) continue;                // the line has to actually arrive
+          if (!holdsAhead(wx, wy)) continue;
+          best = { x: wx, y: wy, aimed_into: true, squeezed_past: bodies.length,
+                   clearance: Math.round(gap), shared_lane: !requireLane || undefined };
+          bestDrift = d; bestClear = gap;
+        }
+        return { best, bestClear };
+      };
+      let { best, bestClear } = search(true);
+      if (!best) ({ best, bestClear } = search(false));
+      // NOTHING CLEARED THE BAR? Then take the roomiest reachable point anyway — a squeeze
+      // that is tighter than ideal is still better than aiming at the body's own square
+      // centre, which is what the fallback below would do.
+      //
+      // IT STILL HAS TO LOOK ONE SQUARE AHEAD. Dropping the lookahead here along with the bar
+      // was the single largest remaining source of failed crossings on the random sweep, and
+      // the margin it threw away was eight units: with bodies at 2840,1884 and 2884,1908 the
+      // fallback picked 2820,1868, from which square 45 has ZERO legal entries, while 2820,1860
+      // — the next lattice point north, equally roomy — has 4,679. Relaxing the clearance bar is
+      // a decision about this square; walking into a pocket is a decision about the next one,
+      // and they are not the same concession.
+      if (!best) {
+        for (const wantAhead of [true, false]) {
+          for (const [dx, dy] of fine) {
+            const wx = centre.x + dx, wy = centre.y + dy;
+            if (Math.floor(wx / KOD_FINENESS) !== col || Math.floor(wy / KOD_FINENESS) !== row) continue;
+            const gap = clearOf(wx, wy);
+            if (gap <= bestClear || !reaches(wx, wy)) continue;
+            if (wantAhead && !holdsAhead(wx, wy)) continue;
+            best = { x: wx, y: wy, aimed_into: true, squeezed_past: bodies.length,
+                     clearance: Math.round(gap), tight: true };
+            bestClear = gap;
+          }
+          if (best) break;
+        }
+      }
+      // TWO BODY RADII IS THE BAR — OR NOT GETTING WORSE, WHICHEVER IS EASIER TO MEET.
+      //
+      // A flat `>= BODY_CLEARANCE_KOD` has the same self-poisoning shape as the line test did:
+      // a body that has drifted to 16 from a spider can never reach 32 in one step, so the
+      // bar is unmeetable, the threading falls through, and the aim goes back to the square's
+      // centre — straight at the thing it is trying to get past. That is precisely what the
+      // live walker did: it sat at 16 and re-aimed at the centre for ninety seconds.
+      //
+      // So: full clearance if we can get it, otherwise any aim that does not make things
+      // worse. Edging out of a squeeze is a sequence of small improvements, and a rule that
+      // only accepts the finished state forbids every step toward it.
+      const nowClear = Math.min(...bodies.map(b => Math.hypot(from.x - b.x, from.y - b.y)));
+      if (best && (bestClear >= BODY_CLEARANCE_KOD || bestClear >= nowClear)) return best;
+    }
+
     for (const base of home.x === centre.x && home.y === centre.y ? [centre] : [home, centre])
       for (const [dx, dy] of offsets) {
         const wx = base.x + dx, wy = base.y + dy;
@@ -2623,7 +3119,302 @@ class Session {
     // Nothing in the square is reachable in a straight line. Hand back the stand point and
     // let the ordinary machinery slide, refuse and learn — this must never be the reason a
     // step stops being attempted.
-    return home;
+    //
+    // AND SAY SO. This is the one exit that returns a point nothing has proved: every other
+    // one has been through `reaches`. Unlabelled, it is indistinguishable from a good aim, and
+    // `threadInto` passed it straight through — 105 of 200 random corridors had a leg four
+    // units from a body while their endpoints all sat above 21, because the endpoint of a
+    // square's stand point is fine and the line to it was never asked about.
+    return bodies.length ? { ...home, unproved: true } : home;
+  }
+
+
+  // ======================= THREADING A NEEDLE, PROPERLY =======================
+  //
+  // `aimInto` answers a question about ONE square: given where I am, what is the best point
+  // inside that square. It is cheap, it is what almost every step needs, and it is greedy — and
+  // a greedy chooser walks into pockets. Measured on a 200-corridor random sweep of row 29 of
+  // the Western border of the Twisted Wood, one body per square, every body standing somewhere
+  // the .roo actually allows: fifteen crossings failed, and not one of them failed because the
+  // corridor was shut.
+  //
+  // The one that was checked by hand is worth stating in full, because it is the whole argument
+  // for this method existing. Bodies at 2840,1884 and 2884,1908; the walker takes the north lane
+  // at square 44 and lands on 2820,1868. From there square 45 has ZERO legal entries. Eight
+  // units north, at 2820,1860 — same square, equally roomy, one lattice point away — there are
+  // 4,679. The same configuration was then laid out on the live server and walked by a person,
+  // who found two routes through it and looped the corridor twice.
+  //
+  // So the corridor was never the problem. What is needed is the thing a person does without
+  // thinking: when the next square will not open, MOVE WITHIN THE ONE YOU ARE IN and try again.
+  // That is a search, not a heuristic, and the honest way to write it is as a search.
+  //
+  //   * the unit is the FINE POINT, never the square — CLAUDE.md's standing rule, and the whole
+  //     reason a spider does not close a corridor
+  //   * a leg is legal when the .roo trace ARRIVES with sliding off and the line clears every
+  //     body by MIN_NOMOVEON; both, always, because walls and bodies are different collisions
+  //   * a destination is only worth reaching if the square AFTER it can be entered from it —
+  //     the pocket test, and the one thing greedy cannot do
+  //   * at most one intermediate waypoint, so the worst case costs one extra packet
+  //
+  // NOT ON THE COMMON PATH. Everything here runs only when `aimInto`'s answer is fouled or
+  // unproved, which on the sweep is under a fifth of contested squares and zero uncontested
+  // ones. An empty corridor still costs exactly what it always did.
+  //
+  // The three numbers are named rather than inline because movement is where the operator wants
+  // to experiment, and a number worth tuning is one worth being able to find.
+  //
+  //   M59_NEEDLE_GOAL_STEP  lattice spacing for destinations   default 4  (finest useful)
+  //   M59_NEEDLE_VIA_STEP   lattice spacing for the backtrack  default 8  (coarser; it is only
+  //                                                                        a staging point)
+  //   M59_NEEDLE_WORK       ceiling on legs tested             default 8000 (a hang guard, not
+  //                                                                         a ration — see below)
+  //   M59_NEEDLE_LEGS       most moves one squeeze may cost    default 3
+
+  // SYMMETRIC, so it reaches both edges of the square and not just one.
+  //
+  // Starting at `step` and running while `< KOD_FINENESS` leaves the last `step` units of each
+  // axis unsampled — at 8 that is y 1913..1919 of a row, and a squeeze lives in exactly those
+  // units. This is the THIRD time that shape has cost a wrong answer here: `aimInto`'s candidate
+  // set stopped at three eighths of a square either side of centre, the offline oracle stopped
+  // at 56, and this one did too, which is what made a corridor the operator watched a character
+  // walk through come back "no search has solved it". Its only entry ran along y 1916.
+  //
+  // Half a step in from each edge is the fix and it costs nothing: same count, centred.
+  // THE WALL HALF OF A LEG, as one predicate, because four places now need it and a fifth
+  // copy is a fifth chance to ask it with sliding on by mistake.
+  _wallOk() {
+    const geo = this.world?.geometry;
+    if (typeof geo?.traceFineMoveClient !== 'function') return null;
+    return (ax, ay, bx, by) => {
+      try {
+        return geo.traceFineMoveClient(protocolToClient(ax), protocolToClient(ay),
+                                       protocolToClient(bx), protocolToClient(by),
+                                       { slide: false }).arrived === true;
+      } catch { return false; }
+    };
+  }
+
+  _fineLattice(row, col, step) {
+    const out = [];
+    const x0 = col * KOD_FINENESS, y0 = row * KOD_FINENESS, half = Math.max(1, step >> 1);
+    for (let dy = half; dy < KOD_FINENESS; dy += step)
+      for (let dx = half; dx < KOD_FINENESS; dx += step) out.push({ x: x0 + dx, y: y0 + dy });
+    return out;
+  }
+
+  // ONE LEG, ASKED OF BOTH COLLISIONS. A walk that clears the walls and goes through a spider is
+  // not a walk, and a walk that misses every spider through a wall is not one either.
+  _legIsLegal(a, b, bodies) {
+    const geo = this.world?.geometry;
+    if (typeof geo?.traceFineMoveClient !== 'function') return false;
+    let arrived = false;
+    try {
+      arrived = geo.traceFineMoveClient(protocolToClient(a.x), protocolToClient(a.y),
+                                        protocolToClient(b.x), protocolToClient(b.y),
+                                        { slide: false }).arrived === true;
+    } catch { arrived = false; }
+    return arrived && bodyWalkArrives(a.x, a.y, b.x, b.y, bodies, { wallOk: this._wallOk() });
+  }
+
+  // IS THERE ANYWHERE IN THAT SQUARE TO STAND, FROM HERE? Early-exits on the first one found:
+  // this is a yes/no about a pocket, not a request for the best point, and asking it as a
+  // request is how a lookahead becomes too expensive to keep.
+  _canEnter(from, row, col, step) {
+    const geo = this.world?.geometry;
+    if (!geo) return true;                              // no geometry is not a refusal
+    if (typeof geo.inBounds === 'function' && !geo.inBounds(row, col)) return true;
+    try { if (typeof geo.walkable === 'function' && !geo.walkable(row, col)) return true; }
+    catch { /* a square we cannot ask about is not a pocket */ }
+    const bodies = this.bodiesInSquare(row, col, 1);
+    for (const p of this._fineLattice(row, col, step)) {
+      if (bodies.length
+          && Math.min(...bodies.map(b => Math.hypot(p.x - b.x, p.y - b.y))) < BODY_CLEARANCE_KOD)
+        continue;
+      if (this._legIsLegal(from, p, bodies)) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Returns `{ aim }` for the ordinary case, `{ via, aim }` when getting past somebody needs a
+   * reposition inside the current square first, and `{ aim, blocked: true }` when nothing legal
+   * was found — in which case `aim` is still the ordinary one, labelled `unproved`, because
+   * refusing to aim is how a step stops being attempted and this must never be that.
+   */
+  threadInto(from, row, col) {
+    const aim = this.aimInto(from, row, col);
+    if (!from || !Number.isFinite(from.x) || !Number.isFinite(from.row)) return { aim };
+    // GUARDED, for the same reason `aimInto` guards it: this method is lifted out of this file
+    // by text and evaluated against fixtures that have only what they inject, and a bare call is
+    // a TypeError rather than a falsy answer. A session with no room projection has no opinion
+    // about bodies, and no opinion means aim exactly as we always did.
+    if (typeof this.bodiesInSquare !== 'function') return { aim };
+    // `spread` 1, for the same reason the line test uses it: a step spans two squares, and the
+    // body to get past may be sitting in the one being left.
+    const bodies = this.bodiesInSquare(row, col, 1);
+    if (!bodies.length) return { aim };
+
+    // THE TRIGGER IS THE LINE, NOT THE ENDPOINT — the same distinction that had to be made
+    // inside `aimInto`, and it had to be made again here for the same reason. `aimInto` ends
+    // with an unchecked `return home`: when nothing in the square is reachable it hands back the
+    // stand point deliberately, so the ordinary machinery slides, refuses and learns rather than
+    // the step never being attempted. That is right, and it means the point it returns is
+    // sometimes NOT proved clear of anything. Asked only whether the endpoint had room, this
+    // passed it straight through: 105 of 200 random corridors had a leg passing four units from
+    // a body while every endpoint sat above 21.
+    const clearOf = (p) => Math.min(...bodies.map(b => Math.hypot(p.x - b.x, p.y - b.y)));
+
+    const geo = this.world?.geometry;
+    if (typeof geo?.traceFineMoveClient !== 'function') return { aim };
+
+    const GOAL_STEP = Number(process.env.M59_NEEDLE_GOAL_STEP || 4);
+    const VIA_STEP = Number(process.env.M59_NEEDLE_VIA_STEP || 8);
+    const WORK = Number(process.env.M59_NEEDLE_WORK || 8000);
+    // HOW MANY PACKETS A SQUEEZE MAY COST. Three is the cap because at four the search is no
+    // longer describing "get past this spider" — it is finding a route, which is somebody else's
+    // job and a different budget.
+    const MAX_LEGS = Number(process.env.M59_NEEDLE_LEGS || 3);
+
+    // THE SQUARE AFTER THIS ONE, carried on in the same direction. Nothing here knows the route
+    // — `step` is called one square at a time — so the continuation is inferred, which is enough
+    // for the only question being asked of it: is the place we are about to stand a dead end.
+    const ar = Math.sign(row - from.row), ac = Math.sign(col - from.col);
+    const beyond = (ar || ac) ? { row: row + ar, col: col + ac } : null;
+    const opensOn = (p) => !beyond || this._canEnter(p, beyond.row, beyond.col, VIA_STEP);
+
+    // AND THE POCKET TEST APPLIES TO THE CHOICE, NOT ONLY TO THE RESCUE.
+    //
+    // Asked only when the ordinary aim was already fouled, the search never sees the step that
+    // causes the trouble. Traced on the dead-centre corridor: square 44 hands back 2820,1868 —
+    // clear by 34, line proved, nothing wrong with it — and square 45 then has no legal entry at
+    // all, so the solver is called for the first time from inside the pocket, where by
+    // definition it cannot help. Backtracking one square is not something `step` can do; not
+    // walking in is.
+    //
+    // So a good aim has to be good in three ways, and the third is about the next square. It
+    // costs one `_canEnter` per contested step, which early-exits on the first point it finds.
+    if (clearOf(aim) >= BODY_CLEARANCE_KOD
+        && !aim.unproved
+        && bodyWalkArrives(from.x, from.y, aim.x, aim.y, bodies, { wallOk: this._wallOk() })
+        && opensOn(aim))
+      return { aim };
+
+    // Destinations first, ordered the way a person would take them: hold the lane you are
+    // already in (least drift off the perpendicular), and among equals take the roomiest. That
+    // ordering is what makes the search terminate early on almost every real corridor.
+    const goingEast = Math.abs(col - from.col) >= Math.abs(row - from.row);
+    const drift = (p) => goingEast ? Math.abs(p.y - from.y) : Math.abs(p.x - from.x);
+    //
+    // ORDERED, NOT TRIMMED. Keeping only the lowest-drift few is the obvious economy and it is
+    // exactly wrong: low drift means "in the lane I am already in", so trimming to it discards
+    // every lane change before the search has looked at one. Tried at 24 of 225, it turned two
+    // passing hand-built cases into failures and took the random sweep from 15 bad crossings to
+    // 31. The budget belongs on the WORK, further down, where it costs coverage of the rare
+    // two-leg case rather than of the answer.
+    const goals = this._fineLattice(row, col, GOAL_STEP)
+      .map(p => ({ ...p, gap: clearOf(p), d: drift(p) }))
+      .filter(p => p.gap >= BODY_CLEARANCE_KOD)
+      .sort((a, b) => a.d - b.d || b.gap - a.gap);
+
+    // The pocket test is the expensive half, so it is asked once per destination and only when
+    // a leg has actually reached it.
+    const opens = new Map();
+    const isOpen = (g) => {
+      const k = `${g.x},${g.y}`;
+      if (!opens.has(k)) opens.set(k, opensOn(g));
+      return opens.get(k);
+    };
+
+    // ONE LEG. The overwhelmingly common repair, and it costs nothing extra to send.
+    for (const g of goals)
+      if (this._legIsLegal(from, g, bodies) && isOpen(g))
+        return { aim: { x: g.x, y: g.y, aimed_into: true, squeezed_past: bodies.length,
+                        clearance: Math.round(g.gap) } };
+
+    // MORE THAN ONE LEG, BECAUSE ONE IS NOT ALWAYS ENOUGH.
+    //
+    // This started as a single sideways waypoint — the move a person makes without noticing, and
+    // the one a greedy chooser cannot make. It fixed the hand-built cases and most of the random
+    // ones, and then the operator laid a configuration the suite had called SHUT out on the live
+    // server and watched a character walk through it. A full breadth-first search agrees: that
+    // configuration is crossable inside row 29 alone. One waypoint was simply not deep enough.
+    //
+    // So the repair is a bounded search rather than a fixed shape. Nodes are fine points in the
+    // square being left; the goal is a fine point in the square being entered that is clear of
+    // bodies and from which the square after THAT can be entered; edges are legs that arrive on
+    // the .roo and clear every body. Breadth-first, so the answer found is the one with the
+    // fewest packets, and depth-capped so a pathological room cannot hang a keeper mid-walk.
+    //
+    // It is still not a general path-finder and should not become one. It searches two squares
+    // and hands back a handful of moves; the route is the router's job, and a walker that starts
+    // solving mazes inside `step` has stopped being a walker.
+    //
+    // AND THE GROUND BEHIND COUNTS AS STAGING. Confined to the square it is standing in, the
+    // search still missed two configurations a full search solves — and watching what the full
+    // search did with one of them says why: it stepped BACK, west, to get the angle for a long
+    // diagonal past two bodies straddling the boundary ahead. Backing up is not losing progress
+    // when the alternative is not crossing; a person does it without thinking, and the aim still
+    // has to land in the square the router asked for, so nothing downstream can tell the
+    // difference. The square behind is the one opposite the way we are going.
+    const behind = { row: from.row - ar, col: from.col - ac };
+    const here = this.bodiesInSquare(from.row, from.col, 1);
+    const clearHere = (p) => !here.length
+      || Math.min(...here.map(b => Math.hypot(p.x - b.x, p.y - b.y))) >= BODY_CLEARANCE_KOD;
+    const staging = this._fineLattice(from.row, from.col, VIA_STEP)
+      .concat((behind.row !== from.row || behind.col !== from.col)
+                ? this._fineLattice(behind.row, behind.col, VIA_STEP) : [])
+      .filter(clearHere);
+
+    // The budget bounds LEGS TESTED, which is the only cost here that is a product. Running out
+    // means the repair went unexplored — a missed opportunity, and the step still happens.
+    // Trimming the destinations instead, which was tried, means the answer was never a
+    // candidate: it turned two passing hand-built cases into failures and took the random sweep
+    // from fifteen bad crossings to thirty-one. It also has to be big enough to reach past the
+    // preference order — the goals are sorted by least drift, so the cheap end of the list is
+    // precisely the lane that has just failed, and a budget of 576 examined 23 goals of 180 and
+    // called a corridor blocked that had 536 solutions.
+    let work = WORK;
+    const key = (p) => `${p.x},${p.y}`;
+    const cameFrom = new Map();
+    const seen = new Set([key(from)]);
+    let frontier = [from];
+    for (let depth = 1; depth <= MAX_LEGS && frontier.length && work > 0; depth++) {
+      const next = [];
+      for (const p of frontier) {
+        if (work <= 0) break;
+        // Can this node finish it? Goals are ordered the way a person would take them, so the
+        // first that answers is the one that holds the lane.
+        for (const g of goals) {
+          if (--work <= 0) break;
+          if (!this._legIsLegal(p, g, bodies)) continue;
+          if (!isOpen(g)) continue;
+          const vias = [];
+          for (let at = p; at !== from; at = cameFrom.get(key(at)))
+            vias.unshift({ x: at.x, y: at.y,
+                           row: Math.floor(at.y / KOD_FINENESS), col: Math.floor(at.x / KOD_FINENESS),
+                           lane_change: true });
+          return { vias,
+                   via: vias[0],                        // the one-waypoint case, unchanged
+                   aim: { x: g.x, y: g.y, aimed_into: true, squeezed_past: bodies.length,
+                          clearance: Math.round(g.gap) },
+                   lane_changed: vias.length > 0 };
+        }
+        if (depth === MAX_LEGS) continue;               // no point expanding what cannot be used
+        for (const v of staging) {
+          const k = key(v);
+          if (seen.has(k) || (--work <= 0)) continue;
+          if (!this._legIsLegal(p, v, here)) continue;
+          seen.add(k); cameFrom.set(k, p); next.push(v);
+        }
+      }
+      frontier = next;
+    }
+
+    // NOTHING OPENS IT. Say so rather than passing off a line that goes through somebody: the
+    // aim is still returned, so the step is still attempted, but it is labelled — and a caller
+    // that wants to replan rather than bounce now has something to test.
+    return { aim: { ...aim, unproved: true }, blocked: true };
   }
 
   // WALK THE ROUTE THAT WAS PROVED, NOT THE LATTICE IT WAS DERIVED FROM.
@@ -2697,7 +3488,7 @@ class Session {
     // one layer up. `atStep` is kept current per leg so `shelterAhead` can refuse anything
     // already passed; behind is where the character has already been bitten.
     this.activeShelter = shelter?.spots?.length
-      ? { spots: shelter.spots, maxDetour: shelter.maxDetour ?? 4, atStep: 0 }
+      ? { spots: shelter.spots, maxDetour: shelter.maxDetour ?? 5, atStep: 0 }
       : null;
 
     while (remaining.length && legs + singles < budget) {
@@ -2715,7 +3506,7 @@ class Session {
           // anything behind that, because a character got hurt somewhere and walking back
           // through it to a wall it has already passed is a longer way to die.
           const at = planSteps.length - remaining.length;
-          const stop = shelterAhead(shelter.spots, at, { maxDetour: shelter.maxDetour ?? 4 });
+          const stop = shelterAhead(shelter.spots, at, { maxDetour: shelter.maxDetour ?? 5 });
           if (stop) {
             divertedTo = stop; diverted++;
             // ONE MORE WAYPOINT, NOT A NEW PLAN. The rest of the route is untouched and is
@@ -2788,6 +3579,39 @@ class Session {
       // A PROVED LEG: one move, aimed at the pivot, paced by its own length.
       const aim = pull.points[1];
       const target = { x: clientToProtocol(aim.x), y: clientToProtocol(aim.y) };
+      // BUT A PROOF ABOUT WALLS IS NOT A PROOF ABOUT BODIES.
+      //
+      // The pull proved this line against the .roo, offline, in an empty room — and a body is
+      // the one collision that is not in the .roo. So a leg that is geometrically perfect can
+      // still run straight into something standing on it, and this is the path that does it:
+      // `step()` threads past bodies through `aimInto`, and a proved leg never calls `step()`.
+      //
+      // Watched live on 2026-08-27 in the corridor at row 29 of the Western border of the
+      // Twisted Wood, with eight bodies parked one per square: the walker covered 29,40 to
+      // 29,43 in ONE move and stopped at x=2768 against a body at x=2784 — sixteen units
+      // short, which is one body radius. It had aimed through it, been clipped, and then
+      // bounced. Threading the aim was useless here because the aim was never asked for.
+      //
+      // So a leg with something on it is given back to the square walker, which knows how to
+      // go past one body at a time. The proof is not discarded — the same squares are walked,
+      // one at a time, through the mover that can thread them. Only the coalescing is given
+      // up, and only for the legs that need it.
+      const legBodies = typeof this.bodiesInSquare === 'function'
+        ? this.bodiesInSquare(Math.floor(target.y / KOD_FINENESS),
+                              Math.floor(target.x / KOD_FINENESS), 2) : [];
+      if (legBodies.length
+          && !bodyWalkArrives(me.x, me.y, target.x, target.y, legBodies,
+                               { wallOk: this._wallOk() })) {
+        const nextSq = remaining[0];
+        if (nextSq) {
+          const r = await this.step(nextSq.col, nextSq.row, { fall: !!nextSq.fall });
+          if (r?.left_room || c.room.id !== roomId)
+            return { done: false, legs, singles, left_room: true };
+          singles++;
+          if (c.self && c.self.col === nextSq.col && c.self.row === nextSq.row) remaining.shift();
+          continue;
+        }
+      }
       const dist = Math.max(Math.abs(target.x - me.x), Math.abs(target.y - me.y)) / KOD_FINENESS;
       // A twenty-three square move landing a fifth of a second after a one-square one is
       // the shape user.kod:3049 logs as a speedhacker; covering the ground at a run takes
@@ -3166,10 +3990,33 @@ class Session {
     // asking a question nobody answered — and every one of those nine traces is in walk
     // mode, which is the predicate that refuses a fall in the first place.
     const half = KOD_FINENESS >> 1;
-    const aim = fall
+    let aim = fall
       ? (this.world?.geometry?.standPointWire?.(row, col)
          ?? { x: col * KOD_FINENESS + half, y: row * KOD_FINENESS + half })
-      : this.aimInto(before, row, col);
+      : null;
+
+    // A LANE CHANGE IS A STEP OF ITS OWN. `threadInto` decides whether this one needs one and
+    // returns both halves; the argument, the measurements and why a diagonal cannot do it are
+    // on the method. A fall never asks — it is already leaving the floor.
+    if (!fall) {
+      const threaded = this.threadInto(before, row, col);
+      aim = threaded.aim;
+      // A squeeze can cost more than one packet. Each waypoint is a proved leg from the last, so
+      // they go in order; the first that does not send stops the sequence rather than skipping
+      // ahead, because a leg whose start never happened proves nothing about the leg after it.
+      let last = null;
+      for (const via of threaded.vias ?? []) {
+        const stepped = await this.queueValidatedMove(via.x, via.y,
+          { speed, slide: true, minGap: MOVE_INTERVAL_MS, expectedRoomId: c.room.id })
+          .catch(() => null);
+        if (!stepped?.sent) break;
+        last = via;
+      }
+      // Re-aim from where the body ACTUALLY ended up, not from where it was sent: a leg that
+      // clipped short leaves the next one starting somewhere else, and aiming from the intended
+      // point is how a walk drifts off a proof it still believes in.
+      if (last) aim = this.aimInto(c.self ?? last, row, col);
+    }
     // SLIDING STAYS ON FOR A FALL TOO. The flag that matters is `fall`, which is what lets
     // a body leave a ledge at all; `slide` only decides whether an endpoint the trace
     // cannot reach exactly is clipped back or refused outright. Turning it off made a fall
@@ -3322,6 +4169,7 @@ class Session {
         left_room: c.room.id !== startRoom,
         geometry_blocked: validation.blocked !== false,
         reason: validation.reason,
+        ...(validation.objectId != null ? { objectId: validation.objectId } : {}),
         note: validation.note ?? 'local client collision rejected this move before any packet was sent',
       };
     }
@@ -3445,6 +4293,43 @@ class Session {
          ?? { x: col * KOD_FINENESS + (KOD_FINENESS >> 1),
               y: row * KOD_FINENESS + (KOD_FINENESS >> 1) });
 
+    // A WALL SQUARE IS ONE THE MOVER REFUSES TO ENTER FROM ITS COARSE NEIGHBOURS. That is
+    // not an obstacle to the safe-spot search, it is the DEFINITION of what it looks for
+    // (safeSpots: coarseRefusesIt; gridDisagreementAt: refused approaches). So the straight
+    // line into such a square, from a square the coarse grid offers, is precisely the step
+    // the geometry declines — and walkFine's fan slides along the face instead of finding
+    // the way round. Measured 2026-08-27 in the Valley of Ileria: 506 grid-disagreement
+    // walls in the room, one of them a single square from Zoot, and every approach ended
+    // "could not walk back to the square — ran out of steps" while the keeper's own
+    // /findpath found the way in with a waypoint.
+    //
+    // TWO FINE A*s LIVE HERE AND ONLY ONE OF THEM CAN SEE A WALL SQUARE. walkTo's lattice
+    // detour (`finePath`, 256-unit steps) answered "no fine route" for every wall next to
+    // Zoot; the geometry's own `finePathProtocol` — step 8, the one /findpath and combat
+    // use — found each of them in five to seven waypoints. A wall square is standable only
+    // in a sliver, and the coarser lattice cannot land on a sliver. So this asks the fine
+    // one, in protocol units end to end, and follows its waypoints with stepFine. A body on
+    // a waypoint is not this walk's problem — it drops through to the line-walk, whose
+    // body rule reports it.
+    if (typeof geo.finePathProtocol === 'function') {
+      const path = geo.finePathProtocol(me.x, me.y, goal.x, goal.y,
+        { step: 8, margin: 4 * KOD_FINENESS, maxNodes: 4000 });
+      if (path?.found && Array.isArray(path.waypoints) && path.waypoints.length) {
+        let taken = 0;
+        for (const wp of path.waypoints) {
+          if (this.movementWasCancelled(movementGeneration, controlToken))
+            return this.cancelledMovement({ steps: taken, log: [] });
+          const step = await this.stepFine(wp.x, wp.y).catch(() => null);
+          taken++;
+          if (step?.left_room) return { arrived: false, left_room: true, steps: taken };
+          if (step?.reason === 'object_blocked') break;
+          const at = c.self;
+          if (at && at.col === col && at.row === row)
+            return { arrived: true, steps: taken, via: 'fine path',
+                     position: { col: at.col, row: at.row } };
+        }
+      }
+    }
     const r = await this.walkFine(goal.x, goal.y,
       { maxSteps, stride, arriveWithin: KOD_FINENESS >> 1, movementGeneration, controlToken })
       .catch(e => ({ arrived: false, reason: e.message }));
@@ -3490,6 +4375,23 @@ class Session {
     // Headings to try, in order: straight at it, then fanned out to either side.
     // The wide angles are what carry you along a wall rather than into it.
     const FAN = [0, 0.35, -0.35, 0.75, -0.75, 1.2, -1.2, 1.7, -1.7];
+    // A BODY ON THE DIRECT LINE IS NOT A WALL, AND FANNING AROUND IT IS NOT A WALK.
+    //
+    // The fan exists for geometry: nine headings and a slide find the gap in a wall the
+    // straight line missed. Against a BODY it does something else — the slid step counts
+    // as "progress" (a few units closer), the next iteration re-aims through the same
+    // body, slides the other way, and the character shuffles two squares for the whole
+    // step budget. Measured 2026-08-26 in Castle Victoria: six fleet characters stacked
+    // in a 2x3 block at 45-46,3-5, every one "travelling — NOT MOVING" for a quarter of
+    // an hour, each one's direct heading refused by a fleetmate.
+    //
+    // walkTo already treats a body as the caller's problem ("a person is not a hole in
+    // the map"): it refunds the step and never persists the refusal. This does the same,
+    // faster: once the direct heading has been object_blocked for BODY_BLOCK_STREAK
+    // iterations without half a square of net progress, hand it back as object_blocked
+    // so the caller can pick another square or wait, instead of spending the budget here.
+    const BODY_BLOCK_STREAK = 3;
+    let bodyStreak = 0, bodyStart = null, baseReason = null, baseBlockedId = null;
 
     for (let i = 0; i < maxSteps; i++) {
       if (this.movementWasCancelled(movementGeneration, controlToken))
@@ -3545,6 +4447,10 @@ class Session {
           if (avoidSquares.has(`${row},${col}`)) continue;
         }
         const r = await this.stepFine(aimX, aimY);
+        if (off === 0) {
+          baseReason = r.reason ?? null;
+          baseBlockedId = r.reason === 'object_blocked' ? (r.objectId ?? null) : null;
+        }
         // THE FINE WALK IS WHERE THE TRACE USED TO GO DARK.
         //
         // `traceMove` sat on the two square-step call sites only, so every fine move was
@@ -3632,6 +4538,22 @@ class Session {
                      ? 'local BSP collision rejected the requested headings; no endpoint was sent through the obstacle'
                      : undefined };
       } else stalls = 0;
+
+      if (baseReason === 'object_blocked') {
+        const now = c.self ?? me;
+        const nowRemaining = now ? Math.hypot(destX - now.x, destY - now.y) : remaining;
+        if (!bodyStart || bodyStart.remaining - nowRemaining > (KOD_FINENESS >> 1)) {
+          bodyStart = { remaining: nowRemaining };
+          bodyStreak = 1;
+        } else bodyStreak++;
+        if (bodyStreak >= BODY_BLOCK_STREAK)
+          return { arrived: false, reason: 'object_blocked', objectId: baseBlockedId,
+                   position: now ? { col: now.col, row: now.row, x: now.x, y: now.y } : null,
+                   steps: i + 1, log, geometry_rejections: [...geometryRejections],
+                   note: 'something is standing on the direct line and ' + bodyStreak +
+                         ' fans of headings around it gained under half a square. A body ' +
+                         "is the caller's to wait for or route around, not a wall to feel along" };
+      } else { bodyStreak = 0; bodyStart = null; }
     }
     me = c.self;
     return { arrived: false, reason: 'ran out of steps',
@@ -4189,7 +5111,7 @@ class Session {
           ? { spots: sheltersAlong(geo, plan.steps,
                                    { book: sp.book ?? null, room: c.room?.num ?? null,
                                      within: sp.within ?? 6 }),
-              need: sp.need, maxDetour: sp.maxDetour ?? 4, onDivert: sp.onDivert ?? null,
+              need: sp.need, maxDetour: sp.maxDetour ?? 5, onDivert: sp.onDivert ?? null,
               onArrive: sp.onArrive ?? null }
           : null;
         const ran = await this.walkPivots(plan.steps, geo,
@@ -5349,6 +6271,20 @@ class Session {
       if (standingAt > furthest) { furthest = standingAt; sinceProgress = 0; }
       if (furthest >= i) { i = furthest; continue; }
       const target = squares[i];
+      // THE RAIL IS WALKED AS BAKED, AND GOING PAST WHAT IS ON IT IS `aimInto`'S JOB.
+      //
+      // A first attempt at this re-planned any contested waypoint through the threat-aware
+      // router and spliced a square-level detour into the line. That was the wrong
+      // resolution and it is worth saying why, because it is the mistake CLAUDE.md warns
+      // about in capitals: THE FINE GRID IS THE REALITY, A SQUARE IS A SUMMARY. Reasoning in
+      // squares says a one-square corridor with a spider in it is closed. It is not — a
+      // square is 64 kod units and a body is about 31 across, so two of them pass inside one
+      // square with room to spare, which is exactly how a person walks the pinch at cols
+      // 44-46 of the Western border of the Twisted Wood.
+      //
+      // So there is no detour here at all. The line stays the line, and the threading happens
+      // one level down, where the aim point inside each square is chosen — see `aimInto` and
+      // `bodiesInSquare`.
       let slips = 0, gaveUpOnThisSquare = false, recentred = false;
       for (;;) {
         if (this.movementWasCancelled(movementGeneration, controlToken))
@@ -5806,8 +6742,51 @@ class Session {
       // So when the door is already close, there is nothing for a rail to add: the ordinary
       // crossing walk below is a short approach over ground the coarse grid expresses, which
       // is exactly the case it has always been good at. The rail is for crossing a ROOM.
+      // HOW FAR IT REALLY IS, WHICH IN THESE ROOMS IS NOT HOW FAR IT LOOKS.
+      //
+      // Every decision below used `Math.hypot` — the crow line — to judge a walk, in the
+      // three rooms whose entire character is that the crow line is a cliff. Measured with
+      // the fleet's own step masks:
+      //
+      //     Ukgoth   13,35 -> the Castle Victoria door   crow 14.4   mover 126
+      //     Ukgoth   22,29 -> the same door              crow 21.1   mover 113
+      //     535      49,30 -> its east door              crow 28.3   mover  78
+      //
+      // Up to 8.75x out. So "the door is eight squares away, a rail would be a detour" was
+      // being said about a hundred-step climb around a one-way cycle, and the boarding walk
+      // was then budgeted for the crow line too and ran out — `could not get on at 49,30
+      // (nearest of 13, 6.7 away): stopped after 60 steps`, which is `max(60, 6.7*2+20)`
+      // exactly. The rail is the mechanism that crosses this ground and it was being thrown
+      // away precisely where it is the only thing that works.
+      //
+      // `path` is an array index once a step mask is attached, so asking is cheap. Three
+      // answers, and they are not the same: a number is the route, `Infinity` is the mover
+      // saying there is NO route (never skip the rail for that), and null is a room with no
+      // collision model, which must behave exactly as it always did.
+      //
+      // SWITCHABLE, BECAUSE THE FIRST FLEET-SCALE MEASUREMENT OF IT WENT THE WRONG WAY.
+      // `M59_RAIL_MEASURE=crow` restores the old straight-line judgement exactly. The
+      // five-inn pilgrimage went 12/21 arrived and 6 dead before this change and 2/21 and
+      // 12 dead after it — one run each, and confounded (the second fleet set off battered
+      // from the first), which is precisely why the comparison has to be runnable rather
+      // than argued. The mechanism to suspect is that both sites here REMOVE A BRAKE: a
+      // boarding walk budgeted by a 126-step route will spend 272 packets where it used to
+      // give up at 60, and every one of those is a second standing in the room.
+      const measure = process.env.M59_RAIL_MEASURE || 'route';
+      const routeSteps = (fromRow, fromCol, toRow, toCol) => {
+        if (measure === 'crow') return null;            // null == no opinion == the crow line
+        const g = this.world?.geometry;
+        if (!g || typeof g.path !== 'function') return null;
+        try {
+          const p = g.path(fromRow, fromCol, toRow, toCol, { collision: true });
+          if (!p) return null;
+          return p.found ? (p.steps?.length ?? p.path?.length ?? null) : Infinity;
+        } catch { return null; }
+      };
       if (rail && me0 && target) {
-        const away = Math.hypot(target.col - me0.col, target.row - me0.row);
+        const crow = Math.hypot(target.col - me0.col, target.row - me0.row);
+        const route = routeSteps(me0.row, me0.col, target.row, target.col);
+        const away = route ?? crow;
         if (away <= RAIL_SKIP_WITHIN_SQUARES) {
           // A DECISION, NOT A FAILED ATTEMPT — and the ledger has to be able to tell them
           // apart. `worked:false` here counted as "the rail was tried and it did not work",
@@ -5817,9 +6796,13 @@ class Session {
           recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                          tactic: 'baked_rail', trigger: 'exit_crossing',
                          worked: false, attempted: false, ms: 0, hp_lost: 0,
+                         // BOTH NUMBERS, ALWAYS. The whole defect was a skip decided on the
+                         // crow line, and a ledger that prints one distance cannot show that
+                         // it happened. `route` is what decided; `crow` is what used to.
                          note: `no rail needed — the door at ${target.row},${target.col} is ` +
-                               `${Math.round(away)} square(s) away and the line starts at ` +
-                               `${rail.from.row},${rail.from.col}` });
+                               `${Math.round(away)} step(s) away ` +
+                               `(route ${route ?? 'unknown'}, crow ${crow.toFixed(1)}) ` +
+                               `and the line starts at ${rail.from.row},${rail.from.col}` });
           rail = null;
           railSkipped = true;
         }
@@ -5954,10 +6937,27 @@ class Session {
             this._railBoardFailed = { room: boardKey, squares: new Set() };
           const tried = this._railBoardFailed.squares;
           const geoNow = this.world?.geometry;
-          const canWalkTo = (sq) => {
-            if (!geoNow || typeof geoNow.path !== 'function') return true;  // no opinion: carry on
-            try { return !!geoNow.path(me0.row, me0.col, sq.row, sq.col)?.found; }
-            catch { return true; }
+          // AND KEEP WHAT THE PROBE ALREADY WORKED OUT. This asks the mover for a PATH and
+          // then threw everything but its boolean away, so the budget below was taken from
+          // the crow line — which is how boarding a square "6.7 away" died `stopped after 60
+          // steps` against a 78-step route. The length is free here and it is exactly the
+          // number the walk is about to be judged by.
+          //
+          // Three answers again, and the middle one is the one that matters: a number is the
+          // route, `false` is the mover saying there is no way there at all, and null is a
+          // room with no collision model — which keeps the old "no opinion: carry on".
+          let boardRoute = null;
+          const walkCost = (sq) => {
+            if (!geoNow || typeof geoNow.path !== 'function') return null;  // no opinion: carry on
+            try {
+              const p = geoNow.path(me0.row, me0.col, sq.row, sq.col);
+              if (!p?.found) return false;
+              // Under `M59_RAIL_MEASURE=crow` the reachability answer is still used — it is
+              // what stops a body being sent at a square across a one-way drop — but the
+              // LENGTH is withheld, so the budget below falls back to the crow line exactly
+              // as it did before. That is what makes the A/B a clean one-variable change.
+              return measure === 'crow' ? null : (p.steps?.length ?? p.path?.length ?? null);
+            } catch { return null; }
           };
           const ranked = rail.squares
             .map((sq, n) => ({ sq, n, d: Math.hypot(sq.row - me0.row, sq.col - me0.col) }))
@@ -5966,8 +6966,9 @@ class Session {
           for (const cand of ranked) {
             if (tried.has(`${cand.sq.row},${cand.sq.col}`)) continue;
             if (probed++ >= 10) break;
-            if (!canWalkTo(cand.sq)) continue;
-            boardAt = cand.n; boardDistance = cand.d; break;
+            const cost = walkCost(cand.sq);
+            if (cost === false) continue;               // the mover says there is no way there
+            boardAt = cand.n; boardDistance = cand.d; boardRoute = cost; break;
           }
           // Everything near is unreachable or already failed. Fall back to the old answer
           // rather than refusing the crossing — the ordinary exit walk below is still there,
@@ -5979,8 +6980,11 @@ class Session {
           const board = rail.squares[boardAt] ?? rail.from;
           const onIt = me0.col === board.col && me0.row === board.row;
           // 1. GET ON â€” skipped when we are already standing on the boarding square.
+          // BUDGETED BY THE ROUTE THE MOVER WILL WALK, not by the line the crow would fly.
+          const boardCrow = Math.hypot(board.col - me0.col, board.row - me0.row);
+          const boardAway = Number.isFinite(boardRoute) ? boardRoute : boardCrow;
           const got = onIt ? { arrived: true } : await this.walkTo(board.col, board.row,
-            { maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
+            { maxSteps: budget({ steps_away: boardAway }) })
             .catch(e => ({ arrived: false, reason: e.message }));
           if (!got?.arrived) {
             recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
@@ -5993,7 +6997,8 @@ class Session {
                            // whether it left the room â€” because a third of the evidence
                            // arriving as one character is how this stayed unexplained.
                            note: `could not get on at ${board.row},${board.col}` +
-                                 ` (nearest of ${rail.squares.length}, ${boardDistance.toFixed(1)} away): ` +
+                                 ` (nearest of ${rail.squares.length}, ${boardDistance.toFixed(1)} away,` +
+                                 ` route ${boardRoute ?? 'unknown'}, budget ${budget({ steps_away: boardAway })}): ` +
                                  (got?.reason
                                   ?? (got?.left_room ? 'left the room while walking to the rail'
                                       : got?.note ? String(got.note).slice(0, 60)
@@ -6286,6 +7291,59 @@ class Session {
                  fine_path: here.fine_path,
                  crossed_from_alternate: true };
       }
+      // THE OPENING THE BODY IS STANDING IN, NOT THE ONE THE PLAN NAMED.
+      //
+      // `atEdgeOpening` permits one square of drift ALONG the boundary, measured from the
+      // single opening `exits()` ranked first — and a boundary publishes many. Ukgoth's
+      // north edge offers x=1736 and x=1773 inside column 27 alone, and which one is
+      // chosen is decided by a one-step difference in the approach walk. Measured from the
+      // valley, the ranking picks 1736, which sits EIGHT fine units from the solid rock of
+      // square 26 and therefore admits a body only from square 27 exactly:
+      //
+      //     standing on 1,27  x=1760   |1760-1736| =  24   within one square
+      //     standing on 1,28  x=1824   |1824-1736| =  88   REFUSED
+      //
+      // So a character that climbs the whole cliff and arrives on 1,28 — on the boundary
+      // row, in the doorway, one column east of the anchor — is told `not_at_edge_opening`
+      // and the outward packet is never sent at all. `leaveViaAny` then walks it across the
+      // room to the next candidate and the lap repeats: the exit-gap ledger reads 182
+      // refusals and ZERO crossings on this boundary, while a body teleported onto 1,27
+      // crosses in three seconds.
+      //
+      // The plan-time choice is a guess about where the body will end up, and the body has
+      // now stopped somewhere. So re-ask: of the crossings this boundary publishes for THIS
+      // exit, which is nearest along the edge to where we are actually standing. The
+      // `edge_target` moves with it, because the outward packet has to leave from the
+      // opening we are in rather than aim diagonally across a wall at another one.
+      //
+      // This can only ever reduce the distance the gate measures — a strictly-nearer test,
+      // and no change at all when the ranked opening already is the nearest. `wrongDoor` is
+      // the same set the approach walk avoids, so a split boundary cannot be re-anchored
+      // onto a crossing that fires the other room.
+      const reanchorToNearestOpening = () => {
+        const me = c.self;
+        if (!me || !Number.isFinite(me.x) || !Number.isFinite(me.y)) return;
+        let published = null;
+        try { published = this.world?.geometry?.edgeApproachCandidates?.(exit.direction) ?? null; }
+        catch { published = null; }
+        if (!Array.isArray(published) || !published.length) return;
+        const horizontal = exit.direction === 'north' || exit.direction === 'south';
+        const along = pt => (horizontal ? pt.x : pt.y);
+        let best = null, bestGap = Math.abs(along(exit.fine_stand_on) - along(me));
+        for (const cand of published) {
+          if (!cand?.fine_stand_on || !cand?.edge_target) continue;
+          const row = Math.floor(cand.fine_stand_on.y / KOD_FINENESS);
+          const col = Math.floor(cand.fine_stand_on.x / KOD_FINENESS);
+          if (wrongDoor?.has?.(`${row},${col}`)) continue;      // fires the other exit
+          const gap = Math.abs(along(cand.fine_stand_on) - along(me));
+          if (gap < bestGap) { bestGap = gap; best = cand; }
+        }
+        if (!best) return;
+        exit = { ...exit, fine_stand_on: best.fine_stand_on, edge_target: best.edge_target,
+                 fine_path: [best.fine_stand_on], reanchored_to_nearest_opening: true };
+      };
+      reanchorToNearestOpening();
+
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
       // ALREADY IN THE DOORWAY SQUARE? THEN DO NOT WIGGLE AT ALL — STEP OUT.
       //
@@ -6317,25 +7375,43 @@ class Session {
       // left to do; if it does not, the fine path is still there and behaves exactly as it
       // did. What is removed is the case that killed characters — being one square off a
       // two-wide spur and searching for the doorway by feel.
+      // AND THE DOORWAY IS THE CROSSING SQUARE, NEVER THE STAGING SQUARE.
+      //
+      // `stand_on` is where the room can be WALKED TO; `fine_stand_on` is where the boundary
+      // can be CROSSED, and on a boundary approached from inland they are different squares.
+      // Ukgoth's north exit stages on row 2 and crosses on row 1 — so arriving at `stand_on`
+      // set `atDoor`, which skips the fine nudge below, which was the only thing left that
+      // would have moved the body onto the crossing row. The gate then measured the body
+      // against an opening one row in front of it and refused, having spent the entire
+      // approach getting there. Every mechanism agreed the walk had succeeded and no packet
+      // was ever sent.
+      //
+      // So both the test and the step aim at the square the crossing is actually in. That
+      // also makes the step-in do what its own note says it should — "keep going forward
+      // into the narrowing spur" is a step toward the EDGE, and the staging square is the
+      // one place on the approach that is not toward the edge.
+      const doorSquare = {
+        col: Math.floor(exit.fine_stand_on.x / KOD_FINENESS),
+        row: Math.floor(exit.fine_stand_on.y / KOD_FINENESS),
+      };
       let atDoor = (() => {
         const me = c.self;
-        return !!(me && exit.stand_on
-                  && me.col === exit.stand_on.col && me.row === exit.stand_on.row);
+        return !!(me && me.col === doorSquare.col && me.row === doorSquare.row);
       })();
-      if (!atDoor && exit.stand_on) {
+      if (!atDoor) {
         const me = c.self;
-        const away = me ? Math.max(Math.abs(me.row - exit.stand_on.row),
-                                   Math.abs(me.col - exit.stand_on.col)) : Infinity;
+        const away = me ? Math.max(Math.abs(me.row - doorSquare.row),
+                                   Math.abs(me.col - doorSquare.col)) : Infinity;
         if (away <= EDGE_STEP_IN_WITHIN) {
           for (let n = 0; n < EDGE_STEP_IN_WITHIN && !atDoor; n++) {
-            const r = await this.step(exit.stand_on.col, exit.stand_on.row,
+            const r = await this.step(doorSquare.col, doorSquare.row,
                                       { movementGeneration, controlToken })
               .catch(() => null);
             if (r?.left_room || c.room.id !== edgeStartRoom)
               return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
                        note: 'stepped straight out of the room while closing on the opening' };
             const now = c.self;
-            atDoor = !!(now && now.col === exit.stand_on.col && now.row === exit.stand_on.row);
+            atDoor = !!(now && now.col === doorSquare.col && now.row === doorSquare.row);
             if (!r?.moved) break;                 // refused: let the fine path try instead
           }
         }
@@ -6406,6 +7482,14 @@ class Session {
         return { left: false, stage: 'walk', reason: 'position_confirmation_timeout',
                  note: 'the edge position could not be confirmed, so no outward packet was sent' };
       }
+      // AND ASK ONE LAST TIME WHICH OPENING WE ARE IN, now that the position is the
+      // server's rather than dead reckoning. The step-in and the nudge both move the body,
+      // and `confirmPosition` is the first moment this function knows where it really is —
+      // which is exactly the moment to decide which opening it is standing in. Re-anchoring
+      // is strictly-nearer, so this can only shrink the distance the gate is about to
+      // measure; where the ranked opening was already the nearest it changes nothing.
+      reanchorToNearestOpening();
+
       // THE OUTWARD PACKET IS AUTHORIZED ONLY FROM THE PROVED OPENING.
       //
       // `offMap` selects the separately-authorized boundary branch; it does not bypass
@@ -6943,7 +8027,12 @@ class Session {
              ...(shelter.size ? { shelter_stations: shelter.size } : {}) };
   }
 
-  async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken } = {}) {
+  // `exact` — THE CALLER'S DOOR SET IS THE WHOLE PERMITTED SET, not a starting suggestion.
+  // Off by default, so every ordinary crossing keeps the anchor-first, spread-wide
+  // behaviour that makes a wide wall reliable. See the block below for what it turns off
+  // and the measurement that made it necessary.
+  async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken,
+                                  exact = false } = {}) {
     const tried = [];
     // Captured before the first attempt, because a successful crossing changes the room out
     // from under us and the book has to be told which room the door was IN.
@@ -7012,8 +8101,39 @@ class Session {
     // SAY WHY, WHEN IT DOES NOT HAPPEN. Two attempts at this fix looked applied and were not —
     // the injection ran and the transit log still showed the same four eastern squares — so
     // the reasons are named out loud rather than inferred from a count that did not move.
+    // WHEN THE CALLER PICKED THE DOORS ON PURPOSE, DO NOT PICK DIFFERENT ONES.
+    //
+    // Everything below this line exists to WIDEN a boundary: spreadEdges offers every
+    // square that crosses it, and the anchor is unshifted to the front because the bake
+    // planned a walkable line to it and a scanned square only has floor on it. Both are
+    // right when the question is "get me through that wall" and the crossings are
+    // alternatives.
+    //
+    // They are not alternatives when the destination is SPLIT, and then this widening is
+    // the bug. Measured on prod 2026-08-27: `crossSameRoomIsland` filtered room 38's four
+    // doors down to the TWO that land on the quarry's island (23,8) — and the baked anchor
+    // for 38 -> 39 is door (19,2), which lands on the OTHER one (28,8). `orderExits` ranks
+    // `from_anchor` above everything, so the anchor won, the character crossed by the wrong
+    // door, and the keeper reported "returned to the room, but not to the quarry's connected
+    // side" — a perfect round trip back to where it started. Three of six characters did
+    // that in one window; the whole group killed nothing all night.
+    //
+    // So `exact` narrows the spread back to the squares the caller actually named and skips
+    // the anchor injection entirely. IT NARROWS ONLY WHEN SOMETHING SURVIVES: an empty
+    // result means the published exits and the caller's list disagree, and crossing by the
+    // wrong door beats standing at a boundary refusing to cross at all — the same argument
+    // the door-choice in `travel` makes.
+    const exactSquares = exact
+      ? new Set((candidates || []).filter(e => e?.stand_on)
+          .map(e => `${e.stand_on.col},${e.stand_on.row}`))
+      : null;
+    if (exactSquares?.size) {
+      const kept = spread.filter(e => e.stand_on &&
+        exactSquares.has(`${e.stand_on.col},${e.stand_on.row}`));
+      if (kept.length) { spread.length = 0; spread.push(...kept); }
+    }
     const anchorTrace = [];
-    for (const e of candidates || []) {
+    for (const e of (exact ? [] : (candidates || []))) {
       if (e?.to == null) { anchorTrace.push('candidate with no `to`'); continue; }
       let anchor = null, why = null;
       try {
@@ -7552,6 +8672,10 @@ class Session {
     movementGeneration = this.movementGeneration,
     controlToken,
     onHop = null,
+    // WHICH SIDE OF THE DESTINATION, when the destination has sides. A square in the
+    // destination room that the arrival must be able to walk to. Omit it and travel
+    // behaves exactly as it always did. See doorsLandingNear.
+    arriveNear = null,
   } = {}) {
     const log = [];
     // TIME EXPOSED, PER MAP. See m59-transits.mjs for why this is the number worth having
@@ -7784,7 +8908,33 @@ class Session {
       // A room's several ways to the same place are alternatives, not different
       // journeys. Take them all and let orderExits choose — it already prefers
       // reachable ones and then the nearest.
-      const candidates = this.world.exits().filter(e => e.to === nextHop.to);
+      let candidates = this.world.exits().filter(e => e.to === nextHop.to);
+      // ...UNLESS THE DESTINATION HAS SIDES. See doorsLandingNear: when several doors lead
+      // to the same room and that room is split, they are not alternatives, and picking by
+      // distance arrives on the wrong island with the prey visible and unreachable. Only
+      // consulted for the hop that actually ENTERS the destination, and only when the
+      // caller said which side it wants.
+      if (arriveNear && Number(nextHop.to) === Number(toRoomNum)) {
+        const wanted = doorsLandingNear(this.world?.map, this.world?.room?.num,
+                                        nextHop.to, arriveNear);
+        const right = wanted
+          ? candidates.filter(e => e.stand_on &&
+              wanted.has(`${e.stand_on.col},${e.stand_on.row}`))
+          : [];
+        // Narrow only when something survives. An empty result means the map disagrees with
+        // the published exits, and crossing by the wrong door beats not crossing at all.
+        if (right.length) {
+          log.push({ door_choice: 'landing side', to: nextHop.to, to_name: nextHop.to_name,
+                     kept: right.length, of: candidates.length,
+                     wants_to_reach: { col: arriveNear.col, row: arriveNear.row } });
+          candidates = right;
+        } else if (wanted) {
+          log.push({ door_choice: 'no door lands on the wanted side', to: nextHop.to,
+                     of: candidates.length,
+                     note: 'crossing anyway by the ordinary ordering — a wrong side is ' +
+                           'recoverable, a refused boundary is not' });
+        }
+      }
       const exit = orderExits(candidates)[0];
       if (!exit)
       {

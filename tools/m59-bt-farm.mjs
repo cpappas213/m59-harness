@@ -34,6 +34,8 @@ import {
 import { updateBlackboard } from './m59-bt-nodes.mjs';
 import { gearUpgradeNode } from './m59-bt-gear.mjs';
 import * as skills from './m59-skills.mjs';
+import { beginPullProgress } from './m59-pull-progress.mjs';
+import * as party from './m59-party.mjs';
 
 // The combat/rest skill set, shaped the way the nodes below consume it. This is
 // the module that used to be m59-combat.mjs -- it was renamed to m59-skills.mjs
@@ -585,16 +587,21 @@ export function fightNode(keeper) {
   return asyncAction(async (bb) => {
     const c = bb.client;
     const room = bb.room;
-    const found = keeper._btFarmFoundTargets();
+    let found = keeper._btFarmFoundTargets();
+    if (typeof keeper.pullTargetCooling === 'function')
+      found = found.filter(o => !keeper.pullTargetCooling(room?.num, o.id));
     if (!found.length) return FAILURE;
 
     // Rank quarries
-    const { rankQuarries, claimQuarry, releaseQuarry, party } = await import('./m59-fleet.mjs').catch(() => ({}));
+    const { rankQuarries, claimQuarry, releaseQuarry } = await import('./m59-autopilot.mjs').catch(() => ({}));
     if (rankQuarries && claimQuarry) {
       const agreed = party?.agreedTarget?.(keeper.s.name);
-      const preferId = found.some(o => o.id === keeper.foeId) ? keeper.foeId
+      const preferId = found.some(o => o.id === keeper.pendingPull?.target_id)
+        ? keeper.pendingPull.target_id
+        : found.some(o => o.id === keeper.foeId) ? keeper.foeId
         : found.some(o => o.id === agreed?.id) ? agreed.id : null;
       const ranked = rankQuarries(keeper.s.name, room?.num, found, { preferId });
+      found = ranked;
       claimQuarry(keeper.s.name, room?.num, ranked[0]?.id);
     } else {
       releaseQuarry?.(keeper.s.name);
@@ -627,11 +634,18 @@ export function fightNode(keeper) {
     // spots are enabled. The spot may not be proven yet -- proving it takes
     // a few seconds of standing still with enemies adjacent. But even an
     // unproven wall is better than no wall: it blocks at least one direction.
+    // Bystander selection happened above; the wall and fight must use the same exact
+    // quarry rather than validating the hunt-list head and then switching targets.
+    const wallQuarry = bystander ?? found[0] ?? null;
+    if (keeper.policy?.useSafeSpots && keeper.hold && wallQuarry
+        && keeper.hold.quarry_id !== wallQuarry.id && !adjacent.length
+        && !keeper.pendingPull && typeof keeper.releaseHold === 'function') {
+      keeper.releaseHold('the selected quarry changed -- recomputing its closest safe spot');
+    }
     if (keeper.policy?.useSafeSpots && !keeper.hold) {
-      const nearest = found[0] ?? null;
       await keeper.takeSafeSpot(
         'taking a wall before fighting in a spawn room',
-        nearest
+        wallQuarry
       ).catch(() => {});
       if (keeper.hold) {
         keeper.note?.('took a wall before the fight', {
@@ -644,7 +658,8 @@ export function fightNode(keeper) {
 
     // Fight
     const safe = keeper.safety();
-    const f = await keeper._btFarmFight(engageName, found, room, safe);
+    const f = await keeper._btFarmFight(
+      engageName, found, room, safe, wallQuarry?.id ?? null);
 
     // The legacy fight path (m59-autopilot.mjs:9776) does four things after fight() that
     // this node used to skip. Skipping them is why a BT character fights worse than a
@@ -663,6 +678,8 @@ export function fightNode(keeper) {
     }
     keeper._prevFoeId = f.foe_id;
     keeper.foeId = f.foe_id ?? null;
+    if ((f.landed_hits ?? 0) > 0 || f.killed)
+      keeper.pullConverted?.(f.target_id ?? f.foe_id, f.target ?? engageName);
 
     if (f.killed) {
       releaseQuarry?.(keeper.s.name);
@@ -691,15 +708,40 @@ export function fightNode(keeper) {
       // safe-spot geometry and the return-to-spot step. When there is no safe spot to
       // pull back to, just let the next pass approach it the ordinary way.
       if (keeper.hold && typeof keeper.pull === 'function') {
-        const quarry = f.nearest ?? (found.length ? found.find(o => o.id === f.nearest?.id) || found[0] : null);
+        const waiting = keeper.pendingPullWait?.() ?? null;
+        if (waiting?.missing || waiting?.stalled) {
+          await keeper.switchFromStalledPull?.(
+            waiting, found,
+            waiting.missing
+              ? 'the pulled quarry disappeared'
+              : `it stopped closing for ${waiting.non_closing_samples} sampled checks`,
+            { cooldown: !waiting.missing });
+          return SUCCESS;
+        }
+        if (waiting) {
+          keeper.doing = 'waiting';
+          return SUCCESS;
+        }
+        const quarryId = f.nearest?.id ?? wallQuarry?.id ?? null;
+        const quarry = quarryId != null
+          ? c.room?.objects?.get?.(quarryId) ?? found.find(o => o.id === quarryId) ?? null
+          : null;
         if (quarry) {
           const p = await keeper.pull(quarry).catch(() => ({ pulled: false, why: 'pull failed' }));
           if (p.pulled && p.back) {
+            const now = Date.now();
+            const wall = { room: keeper.hold.room, col: keeper.hold.col, row: keeper.hold.row };
+            const live = keeper.s.client?.room?.objects?.get?.(quarry.id) ?? quarry;
+            const waitMs = keeper.pullFollowWaitMs?.(p.steps) ?? 60_000;
+            keeper.pendingPull = {
+              at: now, waitUntil: now + waitMs, wait_ms: waitMs,
+              target: p.target, target_id: quarry.id, steps: p.steps,
+              ...beginPullProgress(live, wall, { now }),
+            };
             keeper.note('waiting for it at the wall', {
               target: p.target, pull_steps: p.steps,
-              why: 'hit once and walked back; the next pass fights it at the wall',
+              why: 'hit once and walked back; its position will be sampled every few seconds',
             });
-            keeper.progress('pulled the quarry to the wall');
           } else {
             keeper.note('could not bring it to the wall', { why: p.why, target: p.target });
             keeper.noProgress('the pull did not complete: ' + (p.why || 'unknown'));

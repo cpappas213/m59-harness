@@ -171,3 +171,202 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). Postmortems, the watchdog, the yield c
   by `DropEquipment` on a roll the extractor never saw. Asked "does a soldier drop leather"
   from `loot` alone, the answer was a confident no.
 
+
+## A keeper process called its own fleet strangers
+
+On 2026-08-27, 04:25–04:30Z, four prod keepers returned fire on Statler in the Valley of
+Ileria until he was dead. He was red — a hand mis-click while piloting him had attacked an
+innocent with safety off, which is the one path in `CheckStatusAndSafety`
+(`player.kod:3815-3847`) that sets `PF_OUTLAW` — and the server's safety flag *permits*
+hitting an outlaw. That satisfied the live-flag rule. The memory rule was satisfied by a
+grudge book that named him as an attacker thirteen times.
+
+**None of those thirteen were real.** `substrate/grudges-prod.json` held entries for twenty
+of the twenty-one characters in the roster (Zoot: fifty-nine "hits" on twelve of ours,
+accumulating for two days). `checkAttackedByPlayer` records a grudge when health has gone
+down since the last look and an attackable non-fleet-mate player is within reach — and the
+fleet farms shoulder to shoulder, so every fungus-beast bite was written down as the
+nearest fleet-mate's attack. Nothing fired for two days because nobody was red.
+
+The fleet-mate test, `party.isFleetmate`, consults a runtime map and then a roster source.
+The map is keyed by **agent id** (`party.report(this.s.name)` — `t3`, not `Statler`), so it
+never matches a name off the wire. The roster source — the fix for the *first* time the
+book named our own people, a minute after a broker restart — was installed by
+`parties.setRosterSource(fleetCharacters)` **in the broker process only**. The keepers had
+since moved to one process per character, and none of them had a source. Inside every
+keeper, `isFleetmate` answered "stranger" for the entire fleet, and the comment in
+`mayReturnFire` that "the flag test is what actually protects us" described exactly the
+protection a manual accident removes.
+
+What changed: `m59-keeper-process.mjs` installs `party.rosterFileSource(fleetPath)` at
+startup — seeded from the roster it has already parsed, re-read on mtime, never downgraded
+on a failed read; `isFleetmate` folds case and whitespace the way the grudge book folds its
+keys; `node tools/m59-grudge.mjs --forgive-ours` removes every roster name from a fleet's
+book and leaves the strangers; and `m59-party-test.mjs` reads the keeper process's source to
+assert the line is still there. **A keeper picks the fix up only when its process is
+restarted** — a broker restart adopts survivors.
+
+Two things this did not fix. The 04:30 death was never logged as a `died` event (Statler
+was mid-`travel_journey`; only `level_lost` was written and the keeper's `deaths` stayed at
+0). And the rule for people: **do not turn a fleet character red by hand while the others
+are near it** — death clears the flag, but at the cost of a level.
+
+## The fight-back edict: "if dithering and being attacked for more than ten seconds, fight back if it is smaller than you"
+
+An operator's standing order, 2026-08-27, given after watching six characters stand in one
+corner of the Valley of Ileria being chewed on. Each keeper was inside a walk it could not
+finish — an approach the fine grid refused, a pull, a wall it had just been told to leave —
+and passFarm's "hitting back" branch, which is the right answer, was never reached because
+the pass never ended. Lew: 482 pulse wedges in 460 passes, five kills in two and a half
+hours, `landed_hits: 0`.
+
+It is two halves on the two clocks this repository already keeps apart, and **it is off
+unless asked for** — `fightBackAfterMs` unset means the behaviour that was already there:
+
+- **`fightBackCheck`, on the watchdog (500ms), decides nothing.** It keeps an attack
+  episode — health going down while something attackable is within reach; a ledge or a
+  poison tick with nothing near starts nothing, and six quiet seconds end one — and once
+  the episode is older than the edict it pulls the same handbrake the other two arms pull,
+  once per pass, so the blind await ends and a pass can answer. Silent below the flee line,
+  silent while already fighting, silent under an errand.
+- **`passFightBack`, on the pass, answers.** It sits directly above `passFleeAndRest` and
+  steps aside below the flee line, so fleeing still outranks it; what it outranks is every
+  wall, pull and walk below. The target is the nearest thing in reach that
+  `refuseEngagement` would let this character fight anyway. **"Smaller than you" is the
+  engagement band, not the level** — a level-50 fungus beast is the safer fight for a
+  level-45 character ([`m59-combat.md`](m59-combat.md)), and the band already encodes that
+  with the operator's own ceiling. What the band refuses, the ladder still walks away from.
+  A kill earned here is bookkept exactly as passFarm's, and the ledger carries a
+  `fought_back` event with how long the beating had gone on.
+
+Set it with `fight_back_after_s` — the `autopilot` tool, or `substrate/tuning.json`; zero
+switches it off. `autopilot action=status` reports `watchdog.under_attack` (how long, how
+many blows, how much lost) and `watchdog.fight_back_after_ms`, so whether the order is on
+and whether it is about to fire are both readable before the post-mortem.
+`node tools/m59-fightback-test.mjs` pins both halves.
+
+**What it does not fix.** A character that fights back with a weapon it has no proficiency
+for still lands nothing — Lew was swinging a conjured scimitar with short-sword and mace
+skills, and the edict makes that visible (`fought back without landing a hit`) rather than
+better. That is a `weapon_priority` problem.
+
+## Nobody begs in public: the plea for help is opt-in
+
+`askForHelp` used to broadcast — *"If anyone can spare a flask or cast a heal on me I would
+be in your debt"*, or after a death *"I was killed and lost everything… if anyone can spare
+a blade or a few shillings"* — once per five minutes per character, whenever one was badly
+hurt with no shelter or came back from the dead unarmed. Twenty-one characters entitled to
+that on a shared server is a fleet begging in public, and on 2026-08-27 the operator saw it
+from the other side and ordered it stopped.
+
+Since then the plea is gated on `askForHelp: true` (`ask_for_help` on the `autopilot` tool
+and in `substrate/tuning.json`), default **off**. Everything the function does *before* the
+plea — re-equip from the pack, conjure a blade — still runs on the same five-minute cadence,
+because those fix the post-death case by themselves and cost nobody anything. The journal
+records `not asking for help — broadcasts are off` once per cadence rather than nothing, so
+"why did nobody ask" has an answer. `m59-safespot-test.mjs` pins both the default and the
+opt-in.
+
+## A keeper's HTTP API had two `/action` handlers, and the second one had never run
+
+`m59-keeper-process.mjs` is one `createServer` callback with a long chain of
+`if (req.method === … && path === …)` blocks, and **two of them tested `path === '/action'`**.
+The first answered every name it knew and closed with
+
+```js
+default:
+  json({ error: `unknown action "${name}"` }, 400);
+  return;
+```
+
+so control never reached the second one. Everything only that second switch answered was
+dead: **`shop`, `buyitem`, `use`, `equip`, `cast`, `look`, `go`, `attack`, `rawmove` and
+`movetest`** — on the architecture production runs, which is every broker now. `shop` and
+`buyitem` are how a character supplies itself and `equip` is how it arms itself.
+
+It is the failure this repository keeps writing down — code that looks written and does
+nothing — moved up a level, from a method to the ROUTING, where none of the existing guards
+look. A stubbed method at least appears in a grep for its own name; a shadowed route does
+not appear anywhere at all, and the 400 it produces reads exactly like a verb nobody
+implemented.
+
+The fix is deliberately not a merge of the two switches: the first one is the newer and
+better half (its `rest` forwards to `session.rest`, the second's answers
+`{note: 'use goap instead'}`), and rewriting the half that works to rescue the half that
+never ran is the wrong risk. Instead the first switch's `default` hands the name down:
+
+```js
+default:
+  actionFallthrough = { name, args };
+  break;
+```
+
+and the second block's guard became `if (actionFallthrough)`. A name neither switch knows
+still ends as `unknown action`, so nothing that was answered before is answered differently.
+
+**The body has to travel with it.** The request stream is consumed by the first handler, so
+the second one re-reading it would get `''`, parse to `{}`, and turn every delegated call
+into `unknown action: undefined` — the same bug wearing the fix's clothes. It reads
+`actionFallthrough` instead.
+
+`node tools/m59-supply-test.mjs` pins that there is only one `/action` guard left, that the
+first no longer refuses a name the second knows, and that the parsed body is what crosses.
+
+## A broker that lost a keeper port GUESSES one, and then commands whoever is there
+
+`KEEPER_PORT_BASE` is a hardcoded `8911` with no override, so every broker on a machine
+allocates keeper ports from the same number, and `keeperPort()` falls back to
+`KEEPER_PORT_BASE + index` whenever this broker has no record of its own keeper on that
+slot. Two brokers survive that, because the second one's collision check finds the first.
+**Three do not**, and this is what the third one does.
+
+Measured 2026-08-26 with `prod`, `shadow` and a six-slot `arena` fleet up at once. Arena's
+keepers were displaced from their ports by a shadow broker restart, and arena then:
+
+- **polled** its guessed ports, correctly saw a stranger, and logged *"dropping that
+  allocation so the next spawn re-picks"* — for ever, at poll rate. There is no next spawn:
+  the polling path calls `keeperPort()`, never `allocateKeeperPort()`. The fleet sat at
+  "6 registered" with every row null and **reported itself UP the whole time**;
+- **wrote** to them. Its 45s rejoin sweep posted `/rejoin` to a shadow fleet's keepers, and
+  the server logged `ACCOUNT 64 (shadow05) in use; new connection overrides old one` every
+  90 seconds for that broker's entire life, destroying a set of timed tours belonging to
+  nobody involved.
+
+**Be exact about the second one, because the alarming reading is the wrong one.** The
+keeper's `/rejoin` handler IGNORES the posted body — `join()` takes no arguments and uses
+that process's own account and password. No credential crosses and nobody is logged in as
+somebody else's character. What happens is a forced logout and re-login of a stranger's
+character, on repeat. That is bad enough and it is what those log lines are; it is not a
+hijack, and reporting it as one would send the next reader hunting for a credential leak
+that is not there.
+
+### The asymmetry: the read path checked identity and the write paths did not
+
+`keeperState()` has always read `j.agent` off the reply, refused a port answering for
+somebody else, and dropped the allocation. Nothing else did. `keeperAction` — which now
+carries `hold`, `release`, `room_contents` and `trade` — posted to whatever was listening,
+as did the rejoin sweep, `/room-view`, `/path3d` and everything through `keeperGet`.
+
+The check belongs on the RECEIVING end, because a caller that has guessed a port has by
+definition already lost track of who is on it. So every request is stamped with the agent it
+is addressed to (`keeperEnvelope`, or `?agent=` on a GET) and the keeper answers **409**
+naming itself when that is not who it is. The broker turns a 409 into "drop the allocation
+and respawn" rather than retrying into the same stranger.
+
+Three rules in that, each of which had to be argued:
+
+- **It fails open on an unaddressed request.** An older broker sends no `agent` field, and
+  refusing those would strand every character the moment the two halves disagreed about
+  versions. Naming the wrong agent is a mistake; naming nobody is merely old.
+- **`/health` and `/state` stay answerable by anyone.** They name their own agent in the
+  reply, and they are how a caller discovers whose port this is. Refusing them would remove
+  the one tool that resolves the confusion.
+- **`waitForKeeper` had to stop adopting strangers**, and this is the root of the whole
+  family. It accepted any healthy reply as the keeper it had just spawned and recorded that
+  port — and `keeperPort()` prefers a recorded port over everything, so a lost bind race
+  became total confidence. `stopKeeper` posts `/stop` to that recorded port without further
+  question, which makes a mis-recorded port a licence to kill another fleet's keeper.
+
+`node tools/m59-supply-test.mjs` pins all of it. **The underlying limit is not fixed**: a
+displaced fleet still spins rather than re-allocating, and it still reports itself UP. What
+is fixed is that it no longer drives somebody else while it does.

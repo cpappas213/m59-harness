@@ -192,10 +192,91 @@ autopilot action=set agent=<a> travel_guard=off      # every faculty off — the
 autopilot action=status agent=<a>                    # the EFFECTIVE guard, travelling or not
 ```
 
-- **Silence means the behaviour that was already there, never an empty policy.** All six
-  faculties default **on**. A character whose roster says nothing about travelling still
-  flees, still rests, still re-arms — because the population that has no opinion configured
-  is exactly the population nobody is watching.
+### THE ROAD DOCTRINE — only a person and dying may end a journey
+
+**Corrected 2026-08-27.** The bullet below used to read "all six faculties default **on** …
+still flees, still rests, still re-arms". That is no longer true and the change is the
+operator's, measured off 37 shadow road deaths across two five-inn pilgrimages — every one
+`mode: idle`, pure travel, and 36 of 37 in five corridor rooms with none in a town:
+
+| | |
+|---|---|
+| decline from peak health to death | median **119s**, 32 of 37 over a minute |
+| time spent below the flee line | median **68s**, max 243s |
+| regenerated 5hp+ *during* the decline | 23 of 37, several by +20 to +25 |
+| frames spent `stalled` | **1,155 of 1,498** |
+| frames holding a safe spot | **29 of 1,498 — 1.9%** |
+| fifteen attackers at once | 26 of 37 |
+
+An enormous window, and nothing used it. The thresholds were never the problem.
+
+**And the answers the ladder had are not answers.** Walking away does not work on a monster —
+vision is 4 + difficulty/2 squares and they follow — which is why the ordinary flee rung was
+removed long ago. Changing objective for an inn is the same move with more road attached,
+begun at the health that made it an emergency, through the rooms that caused it.
+
+So there is **one** answer to everything on a road that is not a player or death: find the
+next safe spot within `travel_shelter_detour` (5) squares of the **planned route**, park on
+it, play dead **once** to make what is chasing forget, rest to **full**, and carry on. The
+objective is never abandoned.
+
+| faculty | | why |
+|---|---|---|
+| `flee` | **on** | gated on `worthEnding` — **people only** under `travel_flee_from` |
+| `fight_back` | **on** | same gate; it is the "a *person* is emptying the bar" abandon, not trading blows |
+| `rest` | **on** | a hop-boundary pause, never an abandon |
+| `safe_spot` | **on** | the whole replacement behaviour, on both clocks |
+| `arm` | **off** | the only one a **monster** can trigger, and it cancels at full health |
+
+The rule a new faculty has to answer: **can this fire because of a monster? Then it does not
+default on.**
+
+### THE HOLE THAT WAS NOT IN ANY OF THESE SETTINGS
+
+`travel_guard` was narrowed to a person and dying, `retreat_to_inn` was switched off, and the
+flee rung had been gone for months — and a walk through a dangerous room was **still** cancelled
+after two or three steps, from a completely different code path, on a threshold none of those
+settings can see:
+
+```
+cancelled_by: "the watchdog pulling us out of a blind walk below the flee line"
+```
+
+The keeper's own watchdog cancels a walk whenever health is under the flee line and the pass has
+been inside one await for three seconds. On an ordinary road that is most of a crossing. Measured
+in the row-29 corridor of the Western border of the Twisted Wood with eight bodies parked along
+it: **four separate live crossings cut off after two or three steps, every one by that line.**
+Held off, the same walk ran nineteen. It also made every live movement measurement in a dangerous
+room meaningless — the thing being measured was the watchdog.
+
+**A doctrine with an exception nobody configured is not a doctrine.** So it is off, by default and
+permanently, per the operator's rule: *"My bots either complete their travel orders, get
+interrupted by PVP, or die."* Being hurt on a road is answered by the route-adjacent safe spot
+instead, which runs on the keeper's own clock and does not need the walk torn down to happen.
+
+**Only that half.** The watchdog's *pinned-wedge* rung is untouched and still fires — it is gated
+on health being at or ABOVE the flee line, so it catches a healthy character that has covered no
+ground for minutes (a stuck bot) and can never fire on a hurt traveller.
+
+Three behaviours are **kept and switched off** rather than deleted, because a behaviour that is
+gone cannot be measured again:
+
+```bash
+autopilot action=set agent=<a> travel_guard='{"arm": true}'    # stop on the road to re-arm
+autopilot action=set agent=<a> retreat_to_inn=true             # change objective for a sanctuary
+autopilot action=set agent=<a> blind_walk_watchdog=true        # cancel a walk when hurt
+```
+
+`retreat_to_inn` refuses **out loud**, naming itself, because a behaviour that is off and
+silent is indistinguishable from one that is broken. What it does *not* gate: a character
+already standing on a wall that has held stays there, and a character already in a sanctuary
+or a monster-free retreat still counts as arrived. Those are statements about where the body
+already is, and they sit above the switch on purpose.
+
+- **Silence means the behaviour that was already there, never an empty policy.** A character
+  whose roster says nothing about travelling still gets the doctrine above — it still shelters,
+  still rests full, still ends a journey for a person — because the population that has no
+  opinion configured is exactly the population nobody is watching.
 - **An unusable value keeps the committed one.** `travel_guard` merges over whatever is
   already set, so `{"flee": false}` turns off one faculty rather than turning off the other
   five by omission. Pass the string `off` to mean all of them; `null` clears the override.

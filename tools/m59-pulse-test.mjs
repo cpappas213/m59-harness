@@ -214,9 +214,14 @@ console.log('\na wedge at full health is still a wedge');
               // first version of this guard used `pennedIn` — all samples within ONE square
               // of each other — and this pattern cleared it every few samples, so the timer
               // reset for ever and the breaker never fired once on the live fleet.
-              const step4 = Math.floor(t / 1000) % 4;
-              self.col = [72, 73, 74, 71][step4];
-              self.row = step4 % 2 ? 64 : 65;
+              // ROWLF'S POCKET, not Robin's. The first radius (3) was calibrated on a
+              // four-column shuffle and missed the very next wedge: Rowlf zoning in Castle
+              // Victoria wandered 24,3 · 25,3 · 28,3 · 29,3 · 29,4 — six columns across —
+              // and re-anchored every time he crossed three squares, so the timer never
+              // matured. The fixture uses the wider pocket for that reason.
+              const step = Math.floor(t / 1000) % 5;
+              self.col = [24, 25, 28, 29, 29][step];
+              self.row = [3, 3, 3, 3, 4][step];
             }
             tick(this);
             step++;
@@ -258,6 +263,17 @@ console.log('\na wedge at full health is still a wedge');
      wedgeHost({ doing: 'fighting' }).run(WATCHDOG_PINNED_MS + 4_000).cancels.length === 0);
   ok('nor is a body that is actually covering ground',
      wedgeHost({ moving: true }).run(WATCHDOG_PINNED_MS + 4_000).cancels.length === 0);
+
+  // THE RADIUS MUST COVER THE POCKET, NOT THE STEP. A wedge that out-wanders the anchor
+  // radius re-anchors for ever and is never flagged, which is exactly how radius 3 missed
+  // Rowlf after being calibrated on Robin. Pinned explicitly so nobody tightens it back.
+  ok('the anchor radius is wide enough for a real pocket, not just a two-square shuffle',
+     WATCHDOG_PINNED_SQUARES >= 6, `radius ${WATCHDOG_PINNED_SQUARES}`);
+  // And still far below what a real journey covers: ~5 squares/second means a genuine
+  // walk leaves any of these boxes within a couple of seconds.
+  ok('but still far tighter than genuine travel over the same window',
+     WATCHDOG_PINNED_SQUARES < (WATCHDOG_PINNED_MS / 1000) * 5,
+     `${WATCHDOG_PINNED_SQUARES} squares vs ~${(WATCHDOG_PINNED_MS / 1000) * 5} travelled`);
 
   // AND THE EMERGENCY ARM IS UNCHANGED. A hurt character is still interrupted at 3s by the
   // original path, not made to wait twenty for the new one.

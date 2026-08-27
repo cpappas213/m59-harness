@@ -500,6 +500,13 @@ function state() {
             // me.row) <= 2` — "what is close enough to be swinging at us" — so an object
             // list without positions answers "nothing is near" for a character being eaten.
             col: o.col ?? null, row: o.row ?? null,
+            // AND WHERE IN THE SQUARE, for the same reason the row above exists: a square is
+            // a summary. Two bodies fit inside one, so "is something on that square" and "can
+            // I get past it" are different questions and only these answer the second. The
+            // mover threads on them (`bodiesInSquare` / `aimInto`), and a state view that
+            // cannot show them cannot be used to tell a squeeze from a collision — which is
+            // exactly the diagnosis this projection was needed for on 2026-08-27.
+            x: o.x ?? null, y: o.y ?? null,
           }));
       } catch { return []; }
     })(),

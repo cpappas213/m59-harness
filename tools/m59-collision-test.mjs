@@ -18,7 +18,7 @@ import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   CLIENT_FINENESS, COLLISION_VERSION, DEFAULT_ROO_DIRS, KOD_FINENESS,
-  MAX_STEP_HEIGHT, MIN_SIDE_MOVE, PLAYER_HEIGHT, PLAYER_RADIUS,
+  MAX_STEP_HEIGHT, MIN_NOMOVEON, MIN_SIDE_MOVE, PLAYER_HEIGHT, PLAYER_RADIUS,
   RoomGeometry, WF, canCrossWallAt, parseRoo, protocolToClient, clientToProtocol, setWallHeights,
   sharedRoomGeometry,
 } from './m59-roo.mjs';
@@ -1005,18 +1005,28 @@ const brokerSource = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'u
 // route into the legs the pull has proved, and stubbing it would leave `walkTo` tested on
 // only the path it takes when there is no proof — which is the path this change exists to
 // stop taking. Extracted by brace matching, exactly like the methods above.
+// SKIPS THE PARAMETER LIST BEFORE LOOKING FOR THE BODY. A destructured default — `..., {` at
+// the end of a signature — puts a brace inside the parameters, and matching from the first one
+// found ends at the close of the options object rather than the close of the function.
 function liftFunction(source, signature, deps = {}) {
   const start = source.indexOf(signature);
   if (start < 0) return null;
   let depth = 0, end = -1;
-  for (let i = source.indexOf('{', start); i < source.length; i++) {
+  let paren = 0, bodyAt = -1;
+  for (let i = source.indexOf('(', start); i < source.length; i++) {
+    if (source[i] === '(') paren++;
+    else if (source[i] === ')') { paren--; if (paren === 0) { bodyAt = source.indexOf('{', i); break; } }
+  }
+  if (bodyAt < 0) return null;
+  for (let i = bodyAt; i < source.length; i++) {
     if (source[i] === '{') depth++;
     else if (source[i] === '}') { depth--; if (depth === 0) { end = i + 1; break; } }
   }
   if (end < 0) return null;
   try {
     return new Function(...Object.keys(deps),
-      source.slice(start, end) + `; return ${signature.replace(/^function\s+/, '').split('(')[0]};`
+      source.slice(start, end).replace(/^export\s+/, '')
+        + `; return ${signature.replace(/^(export\s+)?function\s+/, '').split('(')[0]};`
     )(...Object.values(deps));
   } catch { return null; }
 }
@@ -1025,6 +1035,149 @@ const provedSquares = liftFunction(brokerSource, 'function provedSquares(geo, fr
 ok('the extracted provedSquares compiled', typeof provedSquares === 'function');
 ok('and with no collision model it declines to prove anything',
    provedSquares?.({ collisionReady: false }, { row: 1, col: 1 }, [{ row: 1, col: 2 }]) === null);
+// THE BODY-COLLISION PAIR, LIFTED RATHER THAN STUBBED. `traceFineMoveClient` is the .roo and
+// a body is the one collision that is NOT in it, so these two are what decide whether a
+// threaded aim can actually be reached. A stub would test an aim nobody walks — which is
+// precisely the failure they were written to fix: the first version validated only the
+// destination, drove the line straight through a spider, and was refused.
+// THE SERVER'S OWN BLOCKING DISTANCE, not two player radii added together. `MIN_NOMOVEON` is
+// what `_resolveObjectMicrostep` tests, and the difference is not academic: the fixture used to
+// inject 32 — double — which made these assertions agree with a mover that refused positions
+// the server accepts. Derived rather than typed, so it cannot drift from the rule again.
+const BODY_CLEARANCE = MIN_NOMOVEON * KOD_FINENESS / CLIENT_FINENESS;
+const distanceToSegment = liftFunction(brokerSource,
+  'function distanceToSegment(px, py, ax, ay, bx, by)', {});
+const lineClearsBodies = liftFunction(brokerSource,
+  'function lineClearsBodies(ax, ay, bx, by, bodies, clearance = BODY_CLEARANCE_KOD)',
+  { BODY_CLEARANCE_KOD: BODY_CLEARANCE, distanceToSegment });
+ok('the extracted body-line predicate compiled', typeof lineClearsBodies === 'function');
+ok('and an empty room never blocks a line', lineClearsBodies(0, 0, 100, 0, []) === true);
+ok('a body ON the line blocks it',
+   lineClearsBodies(0, 0, 100, 0, [{ x: 50, y: 4 }]) === false);
+ok('and one a body-width off it does not',
+   lineClearsBodies(0, 0, 100, 0, [{ x: 50, y: 40 }]) === true);
+// CLAMPED TO THE SEGMENT: something BEYOND the far end is not on the way to it, or every
+// aim would be refused by whatever happens to lie further along the same bearing.
+ok('a body past the end of the segment is not on the way to it',
+   lineClearsBodies(0, 0, 50, 0, [{ x: 90, y: 0 }]) === true);
+// NEVER ASK FOR MORE ROOM THAN WE ALREADY HAVE — the correction that made this work live.
+//
+// A segment's distance to a point is bounded by the distance at its START, so a flat
+// `>= clearance` test refuses EVERY move once a body is already inside the clearance,
+// including the move that walks away. The test poisons itself and the walker stops dead:
+// watched on 2026-08-27, it settled 16 units from a body in the row-29 corridor and re-aimed
+// at the square centre for ninety seconds, while the offline fixture — which fed each step an
+// idealised start — produced aims 50 clear. That gap between suite and server was this line.
+ok('a squeezed body may still walk AWAY from what it is squeezed against',
+   lineClearsBodies(16, 0, 60, 0, [{ x: 0, y: 0 }]) === true);
+ok('and may slide sideways without losing ground',
+   lineClearsBodies(16, 0, 16, 40, [{ x: 0, y: 0 }]) === true);
+// AND A PATH THAT DIPS CLOSER ON ITS WAY OUT IS STILL REFUSED, which is not a technicality:
+// (16,0) -> (0,40) ends far away but passes within 14.9 of the origin, and the near miss is
+// where the collision would actually happen. The rule is about the whole segment, not its
+// endpoints — the same reason the endpoint-only version failed live in the first place.
+ok('but a path that dips closer on its way out is still refused',
+   lineClearsBodies(16, 0, 0, 40, [{ x: 0, y: 0 }]) === false);
+ok('but it may not get closer than it already is',
+   lineClearsBodies(16, 0, 8, 0, [{ x: 0, y: 0 }]) === false);
+// AND FROM OPEN GROUND THE FULL CLEARANCE IS STILL REQUIRED. The number is MIN_NOMOVEON, 16
+// kod — the server's one exclusion zone around an obstacle — and NOT two player radii added
+// together, which is what this assertion was written against when it said 20 was too close.
+// PLAYER_RADIUS is the wall rule; conflating the two made a corridor the operator had walked by
+// hand read as impassable, and a stale assertion here is how that mistake would come back.
+ok('and from open ground the full body width is still required',
+   lineClearsBodies(100, 0, 10, 0, [{ x: 0, y: 0 }]) === false);
+ok('and a body width away from open ground is enough',
+   lineClearsBodies(100, 0, 20, 0, [{ x: 0, y: 0 }]) === true);
+
+// ===================== THE CLIENT'S OWN OBJECT RULE =====================
+//
+// `clientd3d/move.c:666-697`. This is the most load-bearing transcription in the movement code
+// and it replaced three separate inventions, each of which had shipped and each of which had
+// made a passable corridor read as impassable. Every assertion below names the line it pins.
+//
+// How it was caught: the suite reported eight of two hundred random corridors "genuinely shut",
+// the operator laid one out on the live server, and walked between two bodies 25.3 apart while
+// recording it. Under the invented rule — every point of the line at least MIN_NOMOVEON from
+// every body — that gap needs 32 and is a wall. Under the real one it is twelve consecutive
+// legal slides.
+const resolveBodyMove = liftFunction(brokerSource,
+  'export function resolveBodyMove(px, py, tx, ty, bodies, clearance = BODY_CLEARANCE_KOD)',
+  { BODY_CLEARANCE_KOD: BODY_CLEARANCE });
+const bodyWalkArrives = liftFunction(brokerSource,
+  'export function bodyWalkArrives(ax, ay, bx, by, bodies, {',
+  { BODY_CLEARANCE_KOD: BODY_CLEARANCE, BODY_WALK_STRIDE: 4, BODY_WALK_ARRIVE: 8,
+    resolveBodyMove });
+ok('the client object rule and the walk over it both compiled',
+   typeof resolveBodyMove === 'function' && typeof bodyWalkArrives === 'function');
+
+{
+  const body = [{ x: 100, y: 100 }];
+  // move.c:668 — `dx > MIN_NOMOVEON || dy > MIN_NOMOVEON || dx*dx+dy*dy > MIN*MIN` then
+  // `continue`. The square pre-check and the circle together make the zone a DISC.
+  const far = resolveBodyMove(0, 100, 60, 100, body);
+  ok('a destination outside the zone is untouched', far.x === 60 && !far.slid);
+
+  // THE TEST IS ON THE DESTINATION, NOT ON THE PATH. Walls are swept by FindIntersection;
+  // objects are not swept at all. A line that goes straight over somebody and lands clear is
+  // not a collision — which is the single fact every earlier version of this got wrong.
+  const over = resolveBodyMove(0, 100, 200, 100, body);
+  ok('a move that passes right over a body but LANDS clear is not a collision',
+     over.x === 200 && !over.slid);
+  ok('and the swept predicate it replaced says the opposite, which is why it was wrong',
+     lineClearsBodies(0, 100, 200, 100, body) === false);
+
+  // move.c:673-677 — "Allowed to move away from object".
+  const away = resolveBodyMove(108, 100, 112, 100, body);
+  ok('ending INSIDE the zone is allowed when it is farther out than we were',
+     away.x === 112 && !away.slid);
+  const closer = resolveBodyMove(120, 100, 112, 100, body);
+  ok('and refused when it is nearer', closer.slid === true);
+
+  // move.c:684-694 — the slide. X is clamped in preference to Y, and the SIDE depends on where
+  // the attempt landed relative to the obstacle's centre.
+  ok('a blocked move slides to the near edge rather than being refused',
+     closer.x === 100 + BODY_CLEARANCE, JSON.stringify(closer));
+  ok('and it clamps x in preference to y, which is not symmetric and is what the code says',
+     closer.y === 100);
+}
+
+{
+  // THE OPERATOR'S RUN, as geometry. Two bodies 25.3 apart across the 44/45 boundary of row 29
+  // in 587 — Bbbb at 2860,1896 and Cccc at 2884,1904 — walked through with the stock client.
+  const pair = [{ x: 2860, y: 1896 }, { x: 2884, y: 1904 }];
+  ok('the pair really is closer together than twice the blocking radius',
+     Math.hypot(24, 8) < 2 * BODY_CLEARANCE, Math.hypot(24, 8).toFixed(1));
+  // THE OPERATOR'S OWN WORDS FOR THE HEADING — "from the southern side, heading NorthEast" —
+  // and the heading is not decoration. The slide clamps X toward whichever side of the obstacle
+  // the attempt landed on, so an approach that arrives too far west is pushed west again and
+  // grinds up the near face for ever. From 2840,1916 aimed at 2910,1884 this body pins at
+  // x 2844 — sixteen west of Bbbb — and slides north until it gives up. Four units further east
+  // it goes through. That sensitivity is real, it is why the solver tests candidate legs with
+  // this predicate rather than reasoning about clearances, and it is worth an assertion of its
+  // own so nobody "simplifies" the search into picking one heading.
+  ok('so the rule this replaced calls the gap shut',
+     lineClearsBodies(2856, 1916, 2900, 1884, pair, BODY_CLEARANCE) === false);
+  ok('and the client walks between them, from the south heading north-east',
+     bodyWalkArrives(2856, 1916, 2900, 1884, pair) === true);
+  ok('while the same gap entered from further west pins against the near body instead',
+     bodyWalkArrives(2840, 1916, 2910, 1884, pair) === false);
+
+  // AND IT STILL SAYS NO TO A WALL. Three bodies abreast at one x cover the whole height of the
+  // row; the grind has nowhere to grind to. If this ever passes, the transcription has been
+  // relaxed into uselessness and every crossing above is worthless.
+  const wall = [{ x: 2912, y: 1864 }, { x: 2912, y: 1888 }, { x: 2912, y: 1912 }];
+  ok('three bodies abreast are still a wall', bodyWalkArrives(2848, 1888, 2976, 1888, wall) === false);
+
+  // THE ARTEFACT THAT MADE THAT WALL PASSABLE FOR ONE RUN OF THE SUITE, kept because it is
+  // subtle and cost an hour. Attempts have to be aimed from where the body ACTUALLY IS after a
+  // slide, not sampled off the original line: sampling kept offering targets further along, one
+  // of them landed past the obstacle's centre, and the clamp put the body on the far side. It
+  // walked through three abreast in a single step. The fix is one line and no test would have
+  // caught it without a negative case.
+  ok('and a longer stride cannot teleport a body through that wall either',
+     bodyWalkArrives(2848, 1888, 2976, 1888, wall, { stride: 16 }) === false);
+}
 const atEdgeOpening = liftFunction(brokerSource,
   'function atEdgeOpening(position, opening, direction)', { KOD_FINENESS });
 ok('the extracted edge-opening predicate compiled', typeof atEdgeOpening === 'function');
@@ -1086,7 +1239,37 @@ const ordinaryStep = compileSessionMethod(brokerSource,
 // next square to walk, so a fixture without it is a fixture testing a different method —
 // and this one is load-bearing: it is what stops the two-square bounce.
 const aimInto = compileSessionMethod(brokerSource,
-  'aimInto(from, row, col) {', 'aimInto', { KOD_FINENESS, protocolToClient });
+  // THE REAL CLEARANCE, because the branch it guards is a behaviour rather than a tuning
+  // detail: 32 kod units is two body radii, and it is what decides whether a body squeezes
+  // past something standing in the square or falls back to the ordinary lattice. A stubbed
+  // value would test a threading rule nobody runs. `bodiesInSquare` is supplied by each
+  // fixture — absent it, `this.bodiesInSquare` is undefined and the branch is skipped, which
+  // is the pre-existing behaviour these fixtures were written against.
+  // `lineClearsBodies` is the REAL export rather than a stub: it is the half that decides
+  // whether the line to a threaded aim actually gets past the body, and a stub would test
+  // an aim nobody walks. With no bodies supplied it answers true and every existing fixture
+  // behaves exactly as it did.
+  'aimInto(from, row, col) {', 'aimInto',
+  { KOD_FINENESS, protocolToClient, BODY_CLEARANCE_KOD: BODY_CLEARANCE, lineClearsBodies,
+    bodyWalkArrives });
+// AND THE SOLVER ON TOP OF IT. `step` no longer calls `aimInto` directly — it calls
+// `threadInto`, which asks `aimInto` first and only searches when that answer is fouled, is
+// unproved, or lands in a pocket. Lifting the aim and not the solver leaves `step` calling a
+// method the fixture does not have, which is a TypeError rather than a wrong answer; that is
+// how this omission announced itself, and it is the dependency guard working.
+const _fineLattice = compileSessionMethod(brokerSource,
+  '_fineLattice(row, col, step) {', '_fineLattice', { KOD_FINENESS });
+const _legIsLegal = compileSessionMethod(brokerSource,
+  '_legIsLegal(a, b, bodies) {', '_legIsLegal',
+  { protocolToClient, lineClearsBodies, bodyWalkArrives, BODY_CLEARANCE_KOD: BODY_CLEARANCE });
+const _canEnter = compileSessionMethod(brokerSource,
+  '_canEnter(from, row, col, step) {', '_canEnter', { BODY_CLEARANCE_KOD: BODY_CLEARANCE });
+const threadInto = compileSessionMethod(brokerSource,
+  'threadInto(from, row, col) {', 'threadInto',
+  { KOD_FINENESS, protocolToClient, lineClearsBodies, bodyWalkArrives,
+    BODY_CLEARANCE_KOD: BODY_CLEARANCE });
+ok('the needle solver and its three helpers compiled',
+   [_fineLattice, _legIsLegal, _canEnter, threadInto].every(f => typeof f === 'function'));
 // `traceMove` again, for the same reason `leaveVia` needs it: the fine walk records now, and
 // a module-scope name a lifted method reaches has to be declared or the branch throws here
 // while working perfectly in the broker. The tracer is off by default, so this is a no-op —
@@ -1101,6 +1284,12 @@ const walkFine = compileSessionMethod(brokerSource,
     // reach of a walker nobody runs.
     traceMove: () => {}, isTerminalMovementReason, KOD_FINENESS,
     FINE_STRIDE: 48, FINE_STRIDE_MAX: 80 });
+// approachFine is compiled with FAKE fine-path helpers so the test can say what the A*
+// found without a real BSP: the contract under test is that a found path is FOLLOWED
+// before any straight-line fanning, and that no path means the old line-walk.
+let fakeFinePath = () => ({ found: false });
+const approachFine = compileSessionMethod(brokerSource,
+  'async approachFine(col, row, {', 'approachFine', { KOD_FINENESS });
 const walkTo = compileSessionMethod(brokerSource,
   'async walkTo(col, row, {', 'walkTo', {
     provedSquares,
@@ -1294,6 +1483,7 @@ function fakeBrokerSession(geometry, {
     queueValidatedMove,
     confirmPosition,
     aimInto,
+    threadInto, _fineLattice, _legIsLegal, _canEnter,
   };
   return { session, client, packets, turns };
 }
@@ -1531,6 +1721,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
       async walkTo() { return { arrived: false, reason: 'room_security_unknown' }; },
       async walkFine() { throw new Error('terminal movement must not fall through'); },
+      // THE STEP INTO THE DOORWAY, REFUSED BY DEFAULT. `leaveVia` closes the last square
+      // onto the CROSSING square rather than onto the staging square, so every fixture whose
+      // body stands one square inland now reaches this. Refusing is the conservative stub:
+      // it leaves the fine path and the gate to decide exactly as they did, so a fixture
+      // that asserts "no packet" still asserts it for its own reason. The case where the
+      // step succeeds is pinned separately below.
+      async step() { return { moved: false }; },
       async confirmPosition() {
         return this.client?.self
           ? { col: this.client.self.col, row: this.client.self.row }
@@ -1632,6 +1829,116 @@ console.log('\nterminal movement propagation and edge packet authority');
        offsetEdge.left === true && offsetEdgePackets === 1,
        JSON.stringify({ offsetEdge, offsetEdgePackets }));
 
+    // UKGOTH'S NORTH DOOR, WHICH CROSSED ZERO TIMES IN 182 ATTEMPTS.
+    //
+    // The boundary publishes two openings inside column 27 — x=1736, eight fine units from
+    // the solid rock of square 26, and x=1773 — plus x=1824 in column 28. Which one
+    // `exits()` ranks first is decided by ONE step of approach distance, and from the valley
+    // it picks 1736. `atEdgeOpening` allows one square of drift along the edge, so a body
+    // that climbs the cliff and stops on 1,28 is 88 units away, is refused, and no outward
+    // packet is ever sent — while a body teleported onto 1,27 crosses in three seconds.
+    // Measured live on the shadow fleet 2026-08-27.
+    //
+    // The plan named an opening before the walk; the body has now stopped somewhere. These
+    // pin that the opening is re-asked against where it actually is, and that the packet
+    // leaves through THAT opening rather than aiming diagonally at the ranked one.
+    const ukgothOpenings = [
+      { fine_stand_on: { x: 1736, y: 96 }, edge_target: { x: 1736, y: 63 } },
+      { fine_stand_on: { x: 1773, y: 96 }, edge_target: { x: 1773, y: 63 } },
+      { fine_stand_on: { x: 1824, y: 96 }, edge_target: { x: 1824, y: 63 } },
+      { fine_stand_on: { x: 1888, y: 96 }, edge_target: { x: 1888, y: 63 } },
+    ];
+    let ukgothTarget = null, ukgothOptions = null;
+    const ukgothSession = {
+      ...terminalSession,
+      client: {
+        ...client,
+        room: { id: 599 },
+        // On the boundary row, in the doorway, one column east of the ranked opening.
+        self: { col: 28, row: 1, x: 1824, y: 96 },
+      },
+      world: { room: { num: 599 }, exits: () => [],
+               geometry: { edgeApproachCandidates: () => ukgothOpenings } },
+      async walkTo() { return { arrived: true }; },
+      async walkFine() { return { arrived: true }; },
+      async queueValidatedMove(x, y, options) {
+        ukgothTarget = { x, y }; ukgothOptions = options;
+        return { sent: true, eventSeq: 30 };
+      },
+    };
+    const ukgothExit = {
+      kind: 'edge', direction: 'north', to: 2,
+      stand_on: { col: 27, row: 1 }, fine_stand_on: { x: 1736, y: 96 },
+      edge_target: { x: 1736, y: 63 }, fine_path: [{ x: 1736, y: 96 }],
+    };
+    const ukgoth = await leaveVia.call(ukgothSession, ukgothExit, {});
+    ok('a body one square along the boundary crosses through the opening it is standing in',
+       ukgoth.left === true, JSON.stringify({ ukgoth }));
+    ok('and the outward packet leaves through THAT opening, not the one the plan named',
+       ukgothTarget?.x === 1824 && ukgothTarget?.y === 63 &&
+       ukgothOptions?.offMap?.opening?.x === 1824,
+       JSON.stringify({ ukgothTarget, opening: ukgothOptions?.offMap?.opening }));
+
+    // A SPLIT BOUNDARY IS NEVER RE-ANCHORED ONTO THE OTHER ROOM'S CROSSING. Western border
+    // of the Twisted Wood declares east->586 for row<19 and east->597 for row>20 on one
+    // wall, and `wrongExitSquares` is the set the approach walk already avoids. Re-anchoring
+    // has to honour it, or "nearest opening" quietly becomes "wrong room" — which nothing
+    // downstream reports as an error.
+    let splitTarget = null;
+    const splitSession = {
+      ...ukgothSession,
+      client: { ...client, room: { id: 587 }, self: { col: 28, row: 1, x: 1824, y: 96 } },
+      world: { room: { num: 587 }, exits: () => [],
+               geometry: { edgeApproachCandidates: () => ukgothOpenings },
+               // x=1824 and x=1888 are square 28 and 29 on row 1 — the other room's half.
+               wrongExitSquares: () => new Set(['1,28', '1,29']) },
+      async queueValidatedMove(x, y) { splitTarget = { x, y }; return { sent: true, eventSeq: 31 }; },
+    };
+    const split = await leaveVia.call(splitSession, { ...ukgothExit, to: 597 }, {});
+    // The one-square along-edge tolerance has always let a body cross through a NEIGHBOURING
+    // opening, so the property to pin is not that this refuses — it is that re-anchoring
+    // never MOVES the crossing onto the other room's half. x=1824 and x=1888 fire 586 here;
+    // the packet has to keep leaving through column 27, which is 597's.
+    ok('re-anchoring never moves the crossing onto the other exit of a split boundary',
+       splitTarget !== null && splitTarget.x !== 1824 && splitTarget.x !== 1888 &&
+       Math.floor(splitTarget.x / 64) === 27,
+       JSON.stringify({ split, splitTarget }));
+
+    // AND THE DOORWAY IS THE CROSSING SQUARE, NOT THE STAGING SQUARE.
+    //
+    // `stand_on` is where the room can be walked to and `fine_stand_on` is where it can be
+    // crossed; approached from inland they are different squares, and Ukgoth stages on row 2
+    // to cross on row 1. Computing "am I already at the door" from `stand_on` made arriving
+    // at the staging square skip the nudge — the only remaining thing that would have put
+    // the body on the crossing row — so the gate then refused a walk that had succeeded.
+    let steppedTo = null, stagingPackets = 0;
+    const stagingClient = { ...client, room: { id: 599 }, self: { col: 28, row: 2, x: 1824, y: 160 } };
+    const stagingSession = {
+      ...terminalSession,
+      client: stagingClient,
+      world: { room: { num: 599 }, exits: () => [],
+               geometry: { edgeApproachCandidates: () => [ukgothOpenings[2]] } },
+      async walkTo() { return { arrived: true }; },
+      async walkFine() { throw new Error('the step into the doorway should have sufficed'); },
+      async step(col, row) {
+        steppedTo = `${row},${col}`;
+        stagingClient.self = { col, row, x: col * 64 + 32, y: row * 64 + 32 };
+        return { moved: true };
+      },
+      async confirmPosition() { return { ...stagingClient.self }; },
+      async queueValidatedMove() { stagingPackets++; return { sent: true, eventSeq: 32 }; },
+    };
+    const staging = await leaveVia.call(stagingSession, {
+      kind: 'edge', direction: 'north', to: 2,
+      stand_on: { col: 28, row: 2 }, fine_stand_on: { x: 1824, y: 96 },
+      edge_target: { x: 1824, y: 63 }, fine_path: [{ x: 1824, y: 96 }],
+    }, {});
+    ok('standing on the staging square is not standing in the doorway',
+       steppedTo === '1,28', JSON.stringify({ steppedTo }));
+    ok('so the last square is stepped and the crossing is attempted rather than refused',
+       staging.left === true && stagingPackets === 1,
+       JSON.stringify({ staging, stagingPackets }));
+
     // Room 578's west-entry -> north-exit rail starts (36,2),(35,2),(34,3). The body
     // arrives beside it at (36,3): scanning backwards selected diagonal (35,2), then
     // skipped that point too, so the first requested square was the two-row jump (34,3).
@@ -1687,6 +1994,69 @@ console.log('\nterminal movement propagation and edge packet authority');
     ok('a failed rail rejoin is not rewound and replayed from stale state',
        railCalls.length === 1 && !railWalks.includes('36,2') && railWalks.includes('1,13'),
        JSON.stringify({ cragged, railCalls, railWalks }));
+
+    // A DOOR THAT IS CLOSE AS THE CROW FLIES AND A HUNDRED STEPS BY FOOT.
+    //
+    // The rail is dropped when the door is already near, which is right — a rail crosses a
+    // ROOM. It was decided on `Math.hypot`, and in the rooms that need a rail the crow line
+    // is a cliff. Measured with the fleet's own step masks: Ukgoth 13,35 to the Castle
+    // Victoria door is 14.4 by crow and 126 by mover; 535 at 49,30 is 28.3 and 78. So the
+    // one mechanism that crosses that ground was being thrown away for being unnecessary,
+    // and the walk that replaced it then ran out of a crow-sized budget.
+    //
+    // Two fixtures, same geometry stub, different answer from `path` — because the whole
+    // point is that the crow line cannot tell them apart.
+    const railSkipRun = async (routeLen, measureMode = 'route') => {
+      const calls = { rail: [], walks: [] };
+      const session = {
+        ...terminalSession,
+        client: { room: { id: 599 }, self: { col: 30, row: 6, x: 1952, y: 416 },
+                  roomNameRsc: 1, rsc: { get: () => 'Ukgoth' } },
+        world: { room: { num: 599 }, exits: () => [],
+                 geometry: { path: () => ({ found: true, steps: new Array(routeLen).fill(0) }) } },
+        railAcross() { return { from: { row: 40, col: 20 },
+                                squares: [{ row: 40, col: 20 }, { row: 20, col: 24 }, { row: 1, col: 27 }] }; },
+        async followRail(squares) { calls.rail.push(squares.length); return { railed: true, walked: squares.length }; },
+        // ARRIVING, because the question here is whether the rail is REACHED for, not
+        // whether the walk to it succeeds. A stub that always fails cannot tell the two
+        // fixtures apart: boarding fails either way and `followRail` is never called.
+        async walkTo(col, row) { calls.walks.push(`${row},${col}`); return { arrived: true }; },
+        async walkFine() { return { arrived: false, reason: 'stalled' }; },
+      };
+      const priorRail = process.env.M59_RAIL;
+      const priorMeasure = process.env.M59_RAIL_MEASURE;
+      leaveViaRoutesFixture = { rooms: { 599: { anchors: [{ to: 2, row: 1, col: 27, from_body: true }] } } };
+      process.env.M59_RAIL = '1';
+      // PINNED, NOT INHERITED. These assert what each MEASURE does, so reading the ambient
+      // setting would make the suite pass or fail depending on the shell it was run from.
+      process.env.M59_RAIL_MEASURE = measureMode;
+      try {
+        await leaveVia.call(session, {
+          kind: 'edge', direction: 'north', to: 2, steps_away: 5,
+          stand_on: { row: 1, col: 27 }, fine_stand_on: { x: 1760, y: 96 },
+          edge_target: { x: 1760, y: 63 }, fine_path: [{ x: 1760, y: 96 }],
+        }, {});
+      } finally {
+        leaveViaRoutesFixture = null;
+        if (priorRail == null) delete process.env.M59_RAIL; else process.env.M59_RAIL = priorRail;
+        if (priorMeasure == null) delete process.env.M59_RAIL_MEASURE;
+        else process.env.M59_RAIL_MEASURE = priorMeasure;
+      }
+      return calls;
+    };
+    // Crow distance from 6,30 to the door at 1,27 is 5.8 — inside the skip radius either way.
+    const shortRoute = await railSkipRun(4);
+    const longRoute = await railSkipRun(126);
+    ok('a door that is genuinely a few steps away still needs no rail',
+       shortRoute.rail.length === 0, JSON.stringify(shortRoute));
+    ok('but a door 5.8 squares away and 126 steps by foot is a rail, not a walk',
+       longRoute.rail.length === 1, JSON.stringify(longRoute));
+    // AND THE WAY BACK, because the fleet-scale result of this change was worse rather than
+    // better on its first run and the comparison has to stay runnable. `crow` is the old
+    // judgement exactly: the same 126-step door is skipped again.
+    const longRouteCrow = await railSkipRun(126, 'crow');
+    ok('M59_RAIL_MEASURE=crow restores the old straight-line judgement exactly',
+       longRouteCrow.rail.length === 0, JSON.stringify(longRouteCrow));
 
     let fineCorrections = 0, goPackets = 0;
     const unknownDoorSession = {
@@ -2169,6 +2539,106 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
      lateralWalk.reason === 'blocked — every heading refused, at every reach tried' &&
        lateralCalls > 0 && lateralCalls <= 36,
      JSON.stringify({ lateralWalk, lateralCalls }));
+
+  // A FLEETMATE ON THE DIRECT LINE. The direct heading is object_blocked every time; the
+  // fanned headings "succeed" by sliding sideways and creeping two units closer, which is
+  // exactly the shuffle six Castle Victoria characters did for a quarter of an hour on
+  // 2026-08-26. The walk must hand the body back as object_blocked within a few fans,
+  // not spend the whole step budget feeling along a person.
+  let bodyCalls = 0;
+  const bodyClient = { room: { id: 1 }, self: { x: 128, y: 128, col: 2, row: 2 } };
+  const bodySession = {
+    client: bodyClient,
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    async stepFine(x, y) {
+      bodyCalls++;
+      const direct = Math.abs(y - bodyClient.self.y) < 1;
+      if (direct) return { moved: false, left_room: false, reason: 'object_blocked', objectId: 42,
+                           position: { ...bodyClient.self } };
+      bodyClient.self = { ...bodyClient.self, x: bodyClient.self.x + 2,
+                          y: bodyCalls % 2 ? 140 : 128 };
+      return { moved: true, left_room: false, position: { ...bodyClient.self } };
+    },
+  };
+  const bodyWalk = await walkFine.call(bodySession, 640, 128,
+    { maxSteps: 60, stride: 48, arriveWithin: 1 });
+  ok('a body on the direct line comes back as object_blocked after a few fans, not the whole budget',
+     bodyWalk.reason === 'object_blocked' && bodyWalk.objectId === 42 &&
+       bodyWalk.steps === 3 && bodyCalls <= 8,
+     JSON.stringify({ bodyWalk, bodyCalls }));
+
+  // The same shape, but the slides actually get somewhere (a body being skirted, not a
+  // body being shuffled against): net progress resets the streak and the walk goes on.
+  let skirtCalls = 0;
+  const skirtClient = { room: { id: 1 }, self: { x: 128, y: 128, col: 2, row: 2 } };
+  const skirtSession = {
+    client: skirtClient,
+    movementGeneration: 0,
+    need() { return this.client; },
+    movementWasCancelled() { return false; },
+    async stepFine(x, y) {
+      skirtCalls++;
+      const direct = Math.abs(y - skirtClient.self.y) < 1;
+      if (direct && skirtClient.self.x < 400)
+        return { moved: false, left_room: false, reason: 'object_blocked', objectId: 43,
+                 position: { ...skirtClient.self } };
+      skirtClient.self = { ...skirtClient.self, x: Math.min(640, skirtClient.self.x + 40) };
+      return { moved: true, left_room: false, position: { ...skirtClient.self } };
+    },
+  };
+  const skirtWalk = await walkFine.call(skirtSession, 640, 128,
+    { maxSteps: 60, stride: 48, arriveWithin: 1 });
+  ok('a body that is being skirted with real progress is not mistaken for a shuffle',
+     skirtWalk.arrived === true, JSON.stringify({ skirtWalk, skirtCalls }));
+
+  // A WALL SQUARE IS ENTERED ALONG THE FINE PATH, NOT ALONG THE LINE. The target is a
+  // square the straight line cannot land on (the line-walk stub refuses); the fine A*
+  // reports a way in via one waypoint. approachFine must follow the legs and arrive
+  // without ever fanning the line.
+  const wallGeo = { collisionReady: true, standPointWire: (row, col) => ({ x: col * 64 + 32, y: row * 64 + 32 }),
+                    finePathProtocol: (...a) => fakeFinePath(...a) };
+  const mkWallSession = () => {
+    const client = { room: { id: 1 }, self: { x: 160, y: 160, col: 2, row: 2 } };
+    const calls = { stepFine: [], walkFine: 0 };
+    const session = {
+      client, world: { geometry: wallGeo }, movementGeneration: 0,
+      need() { return this.client; },
+      movementWasCancelled() { return false; },
+      cancelledMovement(x) { return { arrived: false, cancelled: true, ...x }; },
+      async selfOrResync() { return this.client.self; },
+      async stepFine(x, y) {
+        calls.stepFine.push({ x, y });
+        // the wire lands us where we asked; the square follows from the coordinates
+        client.self = { x, y, col: Math.floor(x / 64), row: Math.floor(y / 64) };
+        return { moved: true, left_room: false, position: { ...client.self } };
+      },
+      async walkFine() { calls.walkFine++; return { arrived: false, reason: 'ran out of steps' }; },
+    };
+    return { session, client, calls };
+  };
+  {
+    const { session, calls } = mkWallSession();
+    // a way in that goes round: up a row, then across — waypoints in PROTOCOL units,
+    // which is what finePathProtocol returns and what stepFine sends
+    fakeFinePath = () => ({ found: true, waypoints: [
+      { x: 160, y: 96 }, { x: 288, y: 96 }, { x: 288, y: 160 },
+    ] });
+    const r = await approachFine.call(session, 4, 2, {});
+    ok('a wall square is entered along the fine path, before any straight-line fanning',
+       r.arrived === true && r.via === 'fine path' && calls.walkFine === 0 && calls.stepFine.length === 3,
+       JSON.stringify({ r, calls }));
+  }
+  {
+    const { session, calls } = mkWallSession();
+    fakeFinePath = () => ({ found: false, reason: 'no fine path', waypoints: [] });
+    const r = await approachFine.call(session, 4, 2, {});
+    ok('with no fine path the approach falls back to the straight line-walk',
+       r.arrived === false && calls.walkFine === 1 && calls.stepFine.length === 0,
+       JSON.stringify({ r, calls }));
+  }
+  fakeFinePath = () => ({ found: false });
 
   const blocker = {
     id: 7, x: clientToWire(2048), y: clientToWire(2048), flags: MOVEON.NO,
