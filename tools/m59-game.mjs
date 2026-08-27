@@ -2837,6 +2837,31 @@ class Session {
     const c = this.need();
     const roomId = c.room.id;
     const before = c.self ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row } : null;
+    // A DECLARED JUMP THE BODY CANNOT RUN IS REFUSED HERE, BECAUSE HERE IS THE ONLY PLACE
+    // EVERY FALL PASSES THROUGH.
+    //
+    // The first attempt at this gate went into `followRail`, and it never fired once: the
+    // fleet reached Ukgoth 9 times out of 9 and then failed 599 -> 2 sixteen times with
+    // `every square for that exit refused`, which comes from `leaveViaAny`. The jump is
+    // taken by the ORDINARY WALKER following a planned fall edge, not by the rail. Putting
+    // the check on the primitive covers the walker, the rail, the planner's waypoints and
+    // anything added later, which is the whole argument for choosing a choke point over a
+    // call site.
+    //
+    // REFUSE, DO NOT REST. Resting is a minute of blocking work and this is a primitive
+    // that callers expect to return in milliseconds; `followRail` still owns sitting down
+    // on the ledge. What this must guarantee is only that a body which cannot run never
+    // LEAVES the ledge, because the gulley it lands in has no exit.
+    if (fall && before) {
+      const vig = (() => { try { return c.vitals?.()?.vigor?.value ?? null; } catch { return null; } })();
+      if (Number.isFinite(vig) && vig < RUN_VIGOR_FLOOR
+          && declaredJumpNeedsRun(this.world?.room?.num, before, { row, col })) {
+        return { moved: false, left_room: false, position: before,
+                 reason: 'jump_needs_run',
+                 note: `this declared jump needs a run and vigor is ${vig} against a floor of ` +
+                       `${RUN_VIGOR_FLOOR}; refusing rather than falling short of the landing` };
+      }
+    }
     // Turn to face the destination first. It costs nothing, it is what a player
     // does, and several things in this game care about facing.
     //

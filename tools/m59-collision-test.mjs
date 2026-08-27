@@ -1059,6 +1059,13 @@ const ordinaryStep = compileSessionMethod(brokerSource,
   'async step(col, row, {', 'step', {
     MOVE_INTERVAL_MS: 0, ROOM_RESYNC_MS: Number.POSITIVE_INFINITY,
     KOD_FINENESS, squaresPerSecond: () => 2.5,
+    // THE JUMP VIGOR GATE, on the primitive every fall passes through. The real floor,
+    // because the branch is a behaviour: below it a declared jump is refused rather than
+    // attempted, so a body that cannot run never leaves a ledge for a gulley with no exit.
+    // `declaredJumpNeedsRun` answers false here so these fixtures walk ordinary ground;
+    // the gate's own logic is pinned in m59-impossible-test against the real table.
+    RUN_VIGOR_FLOOR: 12,
+    declaredJumpNeedsRun: () => false,
     // THE REAL VALUES FROM m59-game.mjs (:67, :72), not stand-ins. `step` grew these
     // when combat facing landed, and a compiled method whose constants are invented is
     // testing a different function from the one that ships. The dependency check below
