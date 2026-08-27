@@ -2953,7 +2953,7 @@ class Session {
       const vig = (() => { try { return c.vitals?.()?.vigor?.value ?? null; } catch { return null; } })();
       const isDeclared = declaredJumpNeedsRun(this.world?.room?.num, before, { row, col });
       if (Number.isFinite(vig) && vig < RUN_VIGOR_FLOOR && isDeclared) {
-        recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+        recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                        tactic: 'declared_jump', trigger: 'refused_no_run', worked: false,
                        ms: 0, hp_lost: 0, attempted: true,
                        note: `from ${before.row},${before.col} to ${row},${col} at vigor ${vig}` });
@@ -3044,7 +3044,7 @@ class Session {
           gapNow = measureLineGap();
         }
         if (waited) {
-          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+          recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                          tactic: 'declared_jump', trigger: 'waited_for_line',
                          worked: !(Number.isFinite(gapNow.gap) && gapNow.gap < 1.5),
                          ms: waited * JUMP_WAIT_MS, hp_lost: 0, attempted: true,
@@ -3063,7 +3063,7 @@ class Session {
         if (Number.isFinite(gapNow.gap) && gapNow.gap < 1.5) {
           const threaded = this.clearestLanding(before, { row, col }, this.world?.geometry);
           if (threaded && (threaded.row !== row || threaded.col !== col)) {
-            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'declared_jump', trigger: 'threaded', worked: false, ms: 0,
                            hp_lost: 0, attempted: true,
                            note: `line to ${row},${col} stayed at ${Number(gapNow.gap).toFixed(2)}; ` +
@@ -3073,7 +3073,7 @@ class Session {
           }
         }
       }
-      recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+      recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                      tactic: 'declared_jump', trigger: isDeclared ? 'declared' : 'undeclared_fall',
                      worked: false, ms: 0, hp_lost: 0, attempted: true,
                      note: `${before.row},${before.col} -> ${row},${col} vigor ${vig ?? '?'} ` +
@@ -3808,6 +3808,27 @@ class Session {
   async walkTo(col, row, {
     maxSteps = 120,
     hardCap = 400,
+    // A WALK THAT IS PART OF A DELIBERATE PLAN DOES NOT HAVE TO JUSTIFY ITSELF TO THE
+    // GROUND-GAINED CHECK.
+    //
+    // `no_ground_gained` was written to catch WANDERING — a body shuffling between two
+    // squares while it is supposed to be leaving. That is a real fault and the guard stays
+    // for it. But it measures the gap to this call's target and calls any revisiting a
+    // dither, and a planned route is not obliged to approach its target monotonically:
+    // Ukgoth's crossing goes UP a ramp and around, so walking the plan legitimately
+    // revisits ground and legitimately loses distance.
+    //
+    // Measured cost of not making the distinction: Llll entered Ukgoth, tried to board the
+    // baked rail at 38,15 -- floor 6080, on the high ground one square from the ledge --
+    // got `no_ground_gained` four seconds later, and was dead thirty-three seconds after
+    // that without ever reaching the take-off. It never attempted the jump at all. The
+    // ledger has 352 of these in that room.
+    //
+    // So a caller that is executing a PLAN passes `deliberate` and the guard stops being a
+    // failure. It is not switched off: it still counts, and it still says so in the ledger,
+    // and `maxSteps` still bounds the walk exactly as before. What changes is that a plan
+    // no longer gets handed back as an unreachable door because it took the long way round.
+    deliberate = false,
     movementGeneration = this.movementGeneration,
     controlToken,
     beforeMutation = null,
@@ -3970,6 +3991,7 @@ class Session {
     let bestGap = Infinity, sinceCloser = 0;
     // Where the body has already been. A dither revisits; a detour walks new ground.
     const seenSquares = new Set();
+    let noteDither = false;
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     // AN EDGE THE MOVER CANNOT WALK IS A FACT ABOUT THE MAP, NOT ABOUT THIS WALK.
     //
@@ -4598,14 +4620,28 @@ class Session {
       seenSquares.add(hereKey);
       if (gapNow < bestGap) { bestGap = gapNow; sinceCloser = 0; }
       else if (r.reason === 'object_blocked') { /* the body path owns this one */ }
-      else if (revisited && ++sinceCloser > WALK_STALL_STEPS)
-        return { arrived: false, steps: taken, replans,
-                 blocked_at: { col: now.col, row: now.row },
-                 reason: 'no_ground_gained',
-                 note: `${sinceCloser} revisited squares without getting closer than ` +
-                       `${bestGap} — this is a dither, not a walk. The plan is what is wrong, ` +
-                       'so the caller gets it back rather than another lap of the same two ' +
-                       'squares.' };
+      else if (revisited && ++sinceCloser > WALK_STALL_STEPS) {
+        if (!deliberate)
+          return { arrived: false, steps: taken, replans,
+                   blocked_at: { col: now.col, row: now.row },
+                   reason: 'no_ground_gained',
+                   note: `${sinceCloser} revisited squares without getting closer than ` +
+                         `${bestGap} — this is a dither, not a walk. The plan is what is wrong, ` +
+                         'so the caller gets it back rather than another lap of the same two ' +
+                         'squares.' };
+        // DELIBERATE: counted and reported, never fatal. Once per walk, so a long planned
+        // crossing does not fill the ledger with the same row, and `maxSteps` remains the
+        // bound it always was.
+        if (!noteDither) {
+          noteDither = true;
+          recordTactic({ character: this.client?.me?.name ?? this.name ?? null,
+                         room: Number(this.world?.room?.num ?? 0),
+                         tactic: 'walk_dither', trigger: 'deliberate_plan', worked: true,
+                         ms: 0, hp_lost: 0, attempted: true,
+                         note: `${sinceCloser} revisited squares en route to ${row},${col}, ` +
+                               `best gap ${bestGap} — carrying on because this walk is part of a plan` });
+        }
+      }
       if (now.col === next.col && now.row === next.row) {
         // It landed where it was aimed, so the reach it used is one the ground supports.
         if (was && (was.col !== now.col || was.row !== now.row)) prevSquare = was;
@@ -4813,7 +4849,7 @@ class Session {
               // square-to-square step walkable — that is the distinction the persistent set
               // exists to keep.
               if (learned && blamed && !impossibleHere?.has(blamed)) blockedEdges.delete(blamed);
-              recordTactic({ character: this.character ?? null, room: geo?.num ?? null,
+              recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: geo?.num ?? null,
                              tactic: 'fine_walk', trigger: 'off_plan', worked: true,
                              note: `threaded ${legs.length} fine leg(s) past a lattice refusal` });
               continue;
@@ -5471,7 +5507,7 @@ class Session {
             const startedAt = Date.now();
             const waitMs = Number(process.env.M59_JUMP_REST_MS || 120000);
             const hp0 = vitalsNow()?.health?.value ?? null;
-            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'jump_rest', trigger: 'vigor_below_run', worked: false, ms: 0,
                            hp_lost: 0, attempted: true,
                            note: `vigor ${vigorNow()} is under the run floor ${RUN_VIGOR_FLOOR}; ` +
@@ -5488,7 +5524,7 @@ class Session {
               if (Number.isFinite(hp) && Number.isFinite(hp0) && hp < hp0) break;
             }
             await this.pacer.submit('move', () => c2.stand()).catch(() => null);
-            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'jump_rest', trigger: 'vigor_below_run', worked: rested,
                            ms: Date.now() - startedAt, hp_lost: 0, attempted: true,
                            note: rested ? `vigor reached ${vigorNow()}, taking the jump`
@@ -5775,7 +5811,7 @@ class Session {
           // and Ukgoth therefore read as an 84% rail failure with seventy-one of the rows
           // saying the door was already 0 squares away. That is the walk going RIGHT, and
           // an operator reading the ledger to pick what to fix was being sent at it.
-          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+          recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                          tactic: 'baked_rail', trigger: 'exit_crossing',
                          worked: false, attempted: false, ms: 0, hp_lost: 0,
                          note: `no rail needed — the door at ${target.row},${target.col} is ` +
@@ -5795,7 +5831,7 @@ class Session {
       // line to the anchor 1,66' have nearly the same count: they are largely the same
       // events, counted again.
       if (!rail && !railSkipped) {
-        recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+        recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                        tactic: 'baked_rail', trigger: 'exit_crossing',
                        worked: false, attempted: false, ms: 0, hp_lost: 0,
                        note: target ? `no baked line to the anchor ${target.row},${target.col}`
@@ -5846,7 +5882,7 @@ class Session {
             const ran = await this.followRail(ahead, { movementGeneration, controlToken,
                                      avoidSquares: wrongDoor?.size ? wrongDoor : null })
               .catch(e => ({ railed: false, reason: e.message }));
-            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'baked_rail', trigger: 'exit_crossing',
                            worked: !!ran?.railed, ms: 0, hp_lost: 0,
                            note: `rejoined at ${joinAt} of ${rail.squares.length} — ` +
@@ -5940,11 +5976,16 @@ class Session {
           const board = rail.squares[boardAt] ?? rail.from;
           const onIt = me0.col === board.col && me0.row === board.row;
           // 1. GET ON â€” skipped when we are already standing on the boarding square.
+          // DELIBERATE: this is the walk onto a baked line somebody has already crossed the
+          // room on, so it is a plan being executed rather than a body casting about. See
+          // `deliberate` in walkTo — the dither guard was ending this walk and reporting the
+          // rail as unboardable, 352 times in this room alone.
           const got = onIt ? { arrived: true } : await this.walkTo(board.col, board.row,
-            { maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
+            { deliberate: true,
+              maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
             .catch(e => ({ arrived: false, reason: e.message }));
           if (!got?.arrived) {
-            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'baked_rail', trigger: 'exit_crossing', worked: false, ms: 0, hp_lost: 0,
                            // A NET, SO NO BOARDING FAILURE CAN BE SILENT AGAIN. `walkTo`
                            // returns down several paths and not all of them carry a
@@ -5974,7 +6015,7 @@ class Session {
             // 3. COME OFF â€” at the far anchor, so the ordinary crossing below is a step, not
             //    a room-crossing. A rail that slipped leaves the body somewhere real and the
             //    walk below simply carries on from there.
-            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                            tactic: 'baked_rail', trigger: 'exit_crossing',
                            worked: !!ran?.railed, ms: 0, hp_lost: 0,
                            note: ran?.railed ? `boarded at ${boardAt} of ${rail.squares.length}, followed ${ran.walked} of ${ahead.length}, skipped ${ran.skipped ?? 0}`
@@ -5991,8 +6032,13 @@ class Session {
       // CLEARANCE ON, because this is the long routing: crossing a whole room to a
       // boundary square is exactly where hugging the wall makes a step slide, the mover
       // land off plan, and the walker start the bounce. See walkTo's `clearance`.
+      // DELIBERATE: `exit.stand_on` is a baked anchor -- a crossing square the route bake
+      // proved, or one an operator walked. Approaching it is a plan being executed, and the
+      // dither guard firing here does not read as "the walk wandered", it reads as
+      // `every square for that exit refused` and deletes a working door.
       let walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                   { maxSteps: budget(exit), movementGeneration, controlToken,
+                                   { deliberate: true,
+                                     maxSteps: budget(exit), movementGeneration, controlToken,
                                      clearance: LEAVE_VIA_CLEARANCE });
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stage: 'walk', ...walk };
@@ -6207,7 +6253,8 @@ class Session {
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
       // floor square actually on that boundary and walk to it with fine BSP collision.
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { maxSteps: budget(exit), movementGeneration, controlToken,
+                                     { deliberate: true,
+                                       maxSteps: budget(exit), movementGeneration, controlToken,
                                        clearance: LEAVE_VIA_CLEARANCE,
                                        avoidSquares: wrongDoor?.size ? wrongDoor : null });
       if (walk.left_room || c.room.id !== edgeStartRoom)
@@ -6513,7 +6560,8 @@ class Session {
       const before = c.evSeq;
       const portalStartRoom = c.room.id;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { maxSteps: budget(exit), movementGeneration, controlToken,
+                                     { deliberate: true,
+                                       maxSteps: budget(exit), movementGeneration, controlToken,
                                        clearance: LEAVE_VIA_CLEARANCE });
       if (isTerminalMovementReason(walk.reason) && c.room.id === portalStartRoom)
         return { left: false, stage: 'walk', ...walk };
@@ -6993,7 +7041,7 @@ class Session {
       const crossed = Number.isFinite(roomBefore) && Number.isFinite(roomNow)
                    && roomNow !== roomBefore;
       if (crossed && !r.left) {
-        recordTactic({ character: this.character ?? null, room: roomBefore,
+        recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore,
                        tactic: 'needle_backoff', trigger: 'door_refused', worked: true,
                        ms: Date.now() - askedAt,
                        note: 'the room changed while the crossing reported failure — ' +
@@ -7025,7 +7073,7 @@ class Session {
         // land in, which is the same discipline `m59-crossings.json` already applies to the
         // operator's logs. Until then the fleet re-derives, which is slow and correct.
         if (tried.length)
-          recordTactic({ character: this.character ?? null, room: roomBefore ?? null,
+          recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore ?? null,
                          tactic: 'needle_backoff', trigger: 'door_refused', worked: true,
                          ms: Date.now() - askedAt,
                          note: `crossed on attempt ${tried.length + 1}` });
@@ -7059,7 +7107,7 @@ class Session {
                      ...(r.animation ? { animation: r.animation } : {}),
                      note: `a live animation holds this doorway — waiting at it rather than ` +
                            `walking the room again (${animationWaits}/${ANIMATION_MAX_WAITS})` });
-        recordTactic({ character: this.character ?? null, room: roomBefore,
+        recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore,
                        tactic: 'animation_wait', trigger: 'door_refused', worked: false,
                        ms: gap, note: r.animation?.sector != null
                          ? `sector ${r.animation.sector}` : 'whole room refused' });
@@ -7113,7 +7161,7 @@ class Session {
           const backed = await this.retreatAlongBreadcrumbs(
             { maxCrumbs: narrowBackoffCrumbs, movementGeneration, controlToken }).catch(() => null);
           tried[tried.length - 1].backed_off = backed?.steps ?? 0;
-          recordTactic({ character: this.character ?? null, room: roomBefore,
+          recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore,
                          tactic: 'needle_backoff', trigger: 'body_blocked',
                          // Not known to have worked yet — the NEXT attempt says that, and a
                          // tactic that reports its own success is the failure this ledger
