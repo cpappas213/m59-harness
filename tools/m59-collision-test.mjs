@@ -1135,6 +1135,14 @@ const followRail = compileSessionMethod(brokerSource,
   'async followRail(squares, {', 'followRail', {
     isTerminalMovementReason,
     RAIL_STALL_WAYPOINTS: 3, RAIL_STALL_JUMP: 3,
+    // THE JUMP VIGOR GATE. RUN_VIGOR_FLOOR is the real 12 rather than a stub, because the
+    // branch it guards is a behaviour: below it the character rests on the take-off ledge
+    // instead of committing to a jump it cannot clear. `declaredJumpNeedsRun` answers false
+    // here so these fixtures exercise the ordinary rail; the gate itself is a pure function
+    // and is pinned in m59-falljump's own assertions.
+    RUN_VIGOR_FLOOR: 12,
+    declaredJumpNeedsRun: () => false,
+    recordTactic: () => {},
   });
 const recentreInSquare = compileSessionMethod(brokerSource,
   'async recentreInSquare() {', 'recentreInSquare', {});

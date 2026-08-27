@@ -1966,9 +1966,12 @@ export class RoomGeometry {
    * cross it by accident. An entry that fails either check is dropped rather than trusted,
    * and an entry with no landing square yet (`to: null`) is inert by construction.
    */
-  declaredFallJumps(row, col) {
+  declaredFallJumps(row, col, options = null) {
     if (!this._declaredJumps) {
       this._declaredJumps = new Map();
+      // Built in the same pass, because the two are the same table and letting them be
+      // populated separately is how one of them ends up stale.
+      this._declaredReverse = new Map();
       let table = null;
       try { table = declaredFallJumpTable(); } catch { table = null; }
       const mine = (table?.jumps ?? []).filter(j => Number(j.room) === Number(this.roomNum ?? this.num ?? -1));
@@ -2003,9 +2006,20 @@ export class RoomGeometry {
         list.push({ row: j.to.row, col: j.to.col, dir: 'fall',
                     distance: Math.max(2, Math.round(Math.hypot(j.to.row - j.from.row, j.to.col - j.from.col))) });
         this._declaredJumps.set(k, list);
+        // THE SAME DECLARATION, READ BACKWARDS. Indexed from the LANDING, naming the
+        // take-off, so `neighbors` can ask "is this edge the reverse of a fall" without
+        // re-scanning the table. It is not a second claim: a drop nobody can express as a
+        // step is a climb nobody can make, and this is that fact filed under the square a
+        // character in the hole is actually standing on.
+        const rk = `${j.to.row},${j.to.col}`;
+        const rlist = this._declaredReverse.get(rk) ?? [];
+        rlist.push({ row: j.from.row, col: j.from.col });
+        this._declaredReverse.set(rk, rlist);
       }
     }
-    return this._declaredJumps.get(`${row},${col}`) ?? [];
+    return options?.reverse
+      ? (this._declaredReverse.get(`${row},${col}`) ?? [])
+      : (this._declaredJumps.get(`${row},${col}`) ?? []);
   }
 
   fallTargets(row, col, { maxDistance = FALL_MAX_SQUARES } = {}) {
@@ -2339,6 +2353,28 @@ export class RoomGeometry {
         if (out.some(o => o.row === j.row && o.col === j.col)) continue;
         out.push({ row: j.row, col: j.col, dir: j.dir ?? 'fall', diagonal: false,
                    fall: true, declared: true, distance: j.distance });
+      }
+      // A FALL IS ONE-WAY, AND ITS REVERSE MUST NOT BE AN EDGE.
+      //
+      // A declared jump exists precisely because the drop cannot be expressed as a step —
+      // Ukgoth's is 5872 down to 3840, and the ground between it steps 1296 and 864 against
+      // a MAX_STEP_HEIGHT of 384. The climb back is those same numbers upward. So the
+      // reverse of a declared fall is, by construction, a traversal nobody can make.
+      //
+      // Nothing said so, and `moverStepLands` is permissive enough to offer some of those
+      // reverse edges anyway: measured in 599, the single step 48,9 -> 47,10 climbs 416
+      // units by the squares' own floors, `stepAllowedByCollision` refuses it and
+      // `moverStepLands` — which is what the router plans on, deliberately — allows it.
+      // One such edge is enough. A character in the gulley at 38,13 plans a SEVENTY-STEP
+      // route back up to the take-off, walks at it, is refused, and re-plans the same route
+      // for as long as anybody watches. From inside the game that is a bot swaying between
+      // 44,19, 50,21 and 49,26 for ever, which is exactly what the operator reported.
+      //
+      // Barring the reverse is not a new claim about the map. It is the SAME claim the
+      // declaration already makes, applied in the direction it was always true in.
+      for (const j of this.declaredFallJumps(row, col, { reverse: true })) {
+        const at = out.findIndex(o => o.row === j.row && o.col === j.col);
+        if (at >= 0) out.splice(at, 1);
       }
     }
     return out;

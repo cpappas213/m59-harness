@@ -22,6 +22,17 @@ export const TERMINAL_MOVEMENT_REASONS = Object.freeze([
   // refusal site in m59-broker.mjs.
   'position_outside_room_geometry',
   'invalid_move_target',
+  // A DECLARED JUMP THE CHARACTER CANNOT RUN. Terminal for the same reason as the rest:
+  // no other heading fixes it. The jump is the only legal edge down that face -- every
+  // walking step off the Ukgoth ledge is 864 to 1296 units against a MAX_STEP_HEIGHT of
+  // 384 -- so a retry from a different angle is not a different attempt, it is the same
+  // attempt at a body that still cannot run.
+  //
+  // It is only ever raised AFTER resting on the take-off ledge has already failed to
+  // recover vigor, so by the time a caller sees it the cheap remedy has been tried. What
+  // it must NOT do is feed the replan loop: the character is standing somewhere it can
+  // stand, and the honest answer is that this road is shut right now.
+  'jump_needs_run',
 ]);
 
 const TERMINAL = new Set(TERMINAL_MOVEMENT_REASONS);

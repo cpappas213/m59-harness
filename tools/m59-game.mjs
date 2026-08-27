@@ -24,6 +24,12 @@ import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPat
          from './m59-map.mjs';
 import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
+// THE GATE THAT WAS NEVER WIRED IN. `traversable()` is the only thing that honours a
+// declaration's `requires: {running: true}`, and until now this module was imported by
+// nobody at all -- so every declared jump was attempted whatever the character's vigor,
+// and a character that could not run fell into the gulley instead of clearing it. See the
+// jump_rest block in rideTrack.
+import { fallJumpsIn, traversable as fallJumpTraversable } from './m59-falljump.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as abilities from './m59-abilities.mjs';
@@ -182,6 +188,28 @@ const RUN_SPEED  = Number(process.env.M59_RUN_SPEED || 36);
 // exact ground that kills this fleet. Two points of headroom against a race between
 // our reading of vigor and the server's.
 const RUN_VIGOR_FLOOR = 12;
+
+/**
+ * DOES THIS DECLARED JUMP NEED A RUN — asked of the table, not of the geometry.
+ *
+ * Returns true when the declaration says so, false when it does not, and false when there
+ * is no declaration for this pair at all, because a pair the table does not describe is
+ * not a declared jump and this gate has nothing to say about it.
+ *
+ * Split out so the one caller reads as a decision rather than as a lookup, and so the
+ * import above has a named reason to exist that a future reader can follow.
+ */
+function declaredJumpNeedsRun(roomNum, from, to) {
+  try {
+    const jump = fallJumpsIn(roomNum).find(j =>
+      Number(j?.from?.row) === Number(from.row) && Number(j?.from?.col) === Number(from.col) &&
+      Number(j?.to?.row) === Number(to.row) && Number(j?.to?.col) === Number(to.col));
+    if (!jump) return false;
+    // `running: false` asks the question of the declaration rather than of the character:
+    // "would a walker be refused this?" The caller supplies the character's actual vigor.
+    return fallJumpTraversable(jump, { running: false }).ok === false;
+  } catch { return false; }
+}
 
 // WHAT RUNNING COSTS, ARITHMETIC RATHER THAN NERVES — because the caution here was
 // expensive and was never priced.
@@ -5154,7 +5182,69 @@ class Session {
         // whoever is there — a queue by distance, formed without anybody coordinating — and
         // tries again on the next pass. Waiting costs seconds; the pit costs a lap of Ukgoth,
         // which is the arithmetic that makes this worth doing at all.
+        // A JUMP AT A WALK IS A FALL INTO THE GULLEY, AND NOTHING WAS CHECKING.
+        //
+        // `m59-falljumps.json` declares `requires: {running: true}` for this jump, and
+        // `traversable()` in m59-falljump.mjs is the function that honours it -- its own
+        // docstring says why: "at a walk you do not clear the gap... falling into a gulley
+        // is not a cheap mistake". That module was imported by NOBODY. The gate has never
+        // run, so a character below the run threshold committed to the jump exactly as one
+        // that could run, fell short, and landed in the pit at 3200 where the only ways out
+        // are 640 units of rise against a MAX_STEP_HEIGHT of 384.
+        //
+        // AND THE ANSWER IS TO SIT DOWN, NOT TO GIVE UP. The take-off ledge is above the
+        // jump by construction -- reaching it is what makes `jumpHere` true -- so the place
+        // to wait is where the character already stands. Resting here costs a minute and
+        // saves the character; refusing outright would send the journey round a route that
+        // does not exist, and jumping anyway is what has been happening.
+        //
+        // Bounded, and it gives up rather than sitting on a ledge for ever. Health falling
+        // means this is not a safe place to sit after all, and the survival ladder owns that
+        // decision -- so this stops and lets the caller replan rather than resting into a
+        // death.
         if (jumpHere) {
+          const vitalsNow = () => { try { return this.client?.vitals?.() ?? null; } catch { return null; } };
+          const vigorNow = () => vitalsNow()?.vigor?.value ?? null;
+          const declared = (() => {
+            try { return geo.declaredFallJumps(here.row, here.col)
+              .find(j => j.row === target.row && j.col === target.col) ?? null; } catch { return null; }
+          })();
+          const needsRun = declared ? (declaredJumpNeedsRun(this.world?.room?.num, here, target) !== false) : false;
+          if (needsRun && Number.isFinite(vigorNow()) && vigorNow() < RUN_VIGOR_FLOOR) {
+            const c2 = this.client;
+            const startedAt = Date.now();
+            const waitMs = Number(process.env.M59_JUMP_REST_MS || 120000);
+            const hp0 = vitalsNow()?.health?.value ?? null;
+            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                           tactic: 'jump_rest', trigger: 'vigor_below_run', worked: false, ms: 0,
+                           hp_lost: 0, attempted: true,
+                           note: `vigor ${vigorNow()} is under the run floor ${RUN_VIGOR_FLOOR}; ` +
+                                 `resting on the take-off ledge at ${here.row},${here.col}` });
+            await this.pacer.submit('rest', () => c2.rest()).catch(() => null);
+            let rested = false;
+            while (Date.now() - startedAt < waitMs) {
+              if (this.movementWasCancelled(movementGeneration, controlToken)) break;
+              await new Promise(r => setTimeout(r, 3000));
+              const v = vigorNow();
+              if (Number.isFinite(v) && v >= RUN_VIGOR_FLOOR) { rested = true; break; }
+              const hp = vitalsNow()?.health?.value ?? null;
+              // Being hit while sitting on a ledge is not resting, it is dying slowly.
+              if (Number.isFinite(hp) && Number.isFinite(hp0) && hp < hp0) break;
+            }
+            await this.pacer.submit('move', () => c2.stand()).catch(() => null);
+            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                           tactic: 'jump_rest', trigger: 'vigor_below_run', worked: rested,
+                           ms: Date.now() - startedAt, hp_lost: 0, attempted: true,
+                           note: rested ? `vigor reached ${vigorNow()}, taking the jump`
+                                        : `still ${vigorNow()} after ${Math.round((Date.now() - startedAt) / 1000)}s` });
+            if (!rested) {
+              // REFUSED, NOT ATTEMPTED. This is the whole point of the gate: the character
+              // stays on the ledge it can stand on rather than in the hole it cannot leave.
+              return { railed: false, reason: 'jump_needs_run', at: i, walked,
+                       note: `this jump needs a run and vigor is ${vigorNow() ?? '?'} ` +
+                             `against a floor of ${RUN_VIGOR_FLOOR}; rested on the ledge and it did not recover` };
+            }
+          }
           const others = (() => { try { return this.world?.objects?.() ?? []; } catch { return []; } })()
             .filter(o => o.is_player && o.id !== this.client?.selfId);
           const atLedge = others.filter(o =>

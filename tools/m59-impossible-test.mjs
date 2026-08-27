@@ -35,7 +35,21 @@
 // the wall index the trace reported: if the geometry is rebaked and a wall genuinely moves,
 // this file is supposed to go red and be re-read by a person.
 import { readFileSync } from 'node:fs';
-import { RoomGeometry, CLIENT_FINENESS } from './m59-roo.mjs';
+import { RoomGeometry, CLIENT_FINENESS, sharedRoomGeometry } from './m59-roo.mjs';
+import { traversable } from './m59-falljump.mjs';
+import { loadMap } from './m59-map.mjs';
+import { movementMapFile } from './m59-map-path.mjs';
+
+// Room 599's REAL geometry, because the fall table is keyed by room number and a fixture
+// room would exercise nothing. Null when the movement map is not built here, in which case
+// the reverse-edge assertions are skipped rather than silently passing.
+function ukgoth() {
+  try {
+    const map = loadMap(movementMapFile());
+    const room = map?.rooms?.['599'] ?? map?.rooms?.[599];
+    return room ? sharedRoomGeometry(room) : null;
+  } catch { return null; }
+}
 
 let pass = 0, fail = 0;
 const ok = (what, cond, detail) => {
@@ -272,6 +286,66 @@ console.log('\na sealed floor stays sealed');
     const reached = bodyFrom(geometry, sorted[0]);
     const far = sorted[sorted.length - 1];
     ok(`room ${room} is NOT sealed end to end`, reached.has(`${far.row},${far.col}`));
+  }
+}
+
+// ------------------------------------------------- a fall is one-way, in both senses
+//
+// TWO BUGS THAT COST A FLEET ITS ONLY ROUTE TO CASTLE VICTORIA, pinned here because both
+// are one-line reverts and neither shows up as an exception.
+//
+// 1. `requires: {running: true}` was declared and never enforced. `traversable()` is the
+//    only function that honours it and m59-falljump.mjs was imported by NOBODY, so a
+//    character below the run floor committed to Ukgoth's jump exactly as one that could
+//    run, fell short, and landed in a gulley whose every exit is 640 units of rise against
+//    a MAX_STEP_HEIGHT of 384.
+//
+// 2. Nothing STATED that the reverse of a declared fall is impassable. The height check
+//    happens to refuse Ukgoth's reverse today, so these assertions pass with the bar
+//    removed as well as with it — they are a REGRESSION GUARD on an invariant, not
+//    evidence that the bar fixed anything, and saying otherwise would be inventing a
+//    result. The invariant is worth holding because it does not depend on the height
+//    check being right: a drop that cannot be expressed as a step is a climb nobody can
+//    make, whatever a predicate says about the squares.
+//
+//    IT IS NOT THE CAUSE OF THE SWAYING, and the measurement says where that is: a
+//    character in the gulley plans a seventy-step route out whose one illegal move is
+//    48,9 -> 47,10, a 416-unit climb against MAX_STEP_HEIGHT 384. `stepAllowedByCollision`
+//    refuses it; `moverStepLands` — which the router plans on, deliberately — allows it.
+//    That edge has nothing to do with any declared jump, and it is still there.
+console.log('\na declared jump that needs a run is refused to a walker');
+{
+  const jump = { room: 599, from: { row: 36, col: 16 }, to: { row: 38, col: 10 },
+                 requires: { running: true } };
+  ok('a walker is refused', traversable(jump, { running: false }).ok === false);
+  ok('a runner is allowed', traversable(jump, { running: true }).ok === true);
+  ok('vigor under the run floor is refused', traversable(jump, { vigor: 8 }).ok === false);
+  ok('vigor over it is allowed', traversable(jump, { vigor: 40 }).ok === true);
+  // UNKNOWN IS NOT NO. A character whose vigor has not been read yet must not be treated
+  // as tired, or a missing stat silently closes the only road to Castle Victoria.
+  ok('an unknown vigor answers null rather than false',
+     traversable(jump, {}).ok === null);
+  // A jump with no `requires` is not gated at all.
+  ok('an ungated jump is always traversable',
+     traversable({ room: 1, from: {}, to: {} }, { vigor: 0 }).ok === true);
+}
+
+console.log('\nand the reverse of a declared fall is never an edge');
+{
+  const geo = ukgoth();
+  if (!geo) {
+    console.log('  --   room 599 geometry unavailable, skipping');
+  } else {
+    const fwd = geo.declaredFallJumps(36, 16);
+    ok('the jump is offered from the take-off',
+       fwd.some(j => j.row === 38 && j.col === 10), JSON.stringify(fwd));
+    ok('the take-off offers it as a neighbour',
+       geo.neighbors(36, 16, { collision: true }).some(n => n.row === 38 && n.col === 10 && n.fall));
+    ok('the landing knows what it fell from',
+       geo.declaredFallJumps(38, 10, { reverse: true }).some(j => j.row === 36 && j.col === 16));
+    // THE ASSERTION THAT MATTERS. Reverting the reverse-bar makes this one fail.
+    ok('and the landing does NOT offer the take-off back',
+       !geo.neighbors(38, 10, { collision: true }).some(n => n.row === 36 && n.col === 16));
   }
 }
 
