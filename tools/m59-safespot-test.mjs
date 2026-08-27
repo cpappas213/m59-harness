@@ -2447,6 +2447,182 @@ console.log('\n--- damage we asked for proves nothing ---');
      'a window we swung in is not a test of anything');
 }
 
+console.log('\n--- the exact quarry may retaliate without condemning a proven wall ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(41, 1, 0, MONSTER);
+  holdAt(p, 5, 5, { proven: true });
+  p.foeId = 41;
+  look(p);                                             // window opens with our quarry beside us
+  w.hurt(4);
+  w.remove(41);                                       // its already-resolved blow arrives late
+  p.foeId = null;                                     // fight has already cleared the live target
+  look(p, 1000);
+  ok('delayed retaliation from the exact previously-owned quarry keeps the proven hold',
+     p.hold?.proven === true && p.book.get(999, 5, 5) === null,
+     JSON.stringify({ hold: p.hold, book: p.book.get(999, 5, 5) }));
+  ok('the delayed hit still feeds survival while being excluded from wall evidence',
+     p.idleDamage === 4 && p.hold?.retaliationDamage === 4 &&
+       /exact owned quarry/.test(p.trials.at(-1)?.verdict || '') &&
+       p.trials.at(-1)?.counted === false,
+     JSON.stringify(p.trials.at(-1)));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(42, 1, 0, MONSTER);
+  holdAt(p, 5, 5, { proven: true });
+  p.pendingPull = { target_id: 42, target: 'giant rat', waitUntil: Date.now() + 5000 };
+  look(p);
+  w.hurt(3);
+  look(p, 1000);
+  ok('the exact pending-pull target has the same narrow retaliation allowance',
+     p.hold?.proven === true && p.book.get(999, 5, 5) === null,
+     JSON.stringify({ hold: p.hold, trial: p.trials.at(-1) }));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  w.s.rejoin = async () => true;
+  p.pendingPull = { target_id: 420, target: 'giant rat', waitUntil: Date.now() + 5000 };
+  p.foeId = 420;
+  await p.reconnect('test object-id turnover');
+  ok('a reconnect clears both live quarry identities before object ids can be reused',
+     p.foeId === null && p.pendingPull === null && p.pullsWithoutContact === 0,
+     JSON.stringify({ foeId: p.foeId, pendingPull: p.pendingPull,
+                      pullsWithoutContact: p.pullsWithoutContact }));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  holdAt(p, 5, 5, { proven: true });
+  p.foeId = 421;
+  p.pendingPull = { target_id: 422 };
+  ok('disagreeing engaged and pulled identities grant no retaliation exemption',
+     p.ownedQuarryId() === null && !p.ownedQuarryRetaliation([421]),
+     JSON.stringify({ foeId: p.foeId, pending: p.pendingPull }));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(43, 1, 0, MONSTER);
+  w.addMonster(44, 0, 1, MONSTER);
+  holdAt(p, 5, 5, { proven: true });
+  p.foeId = 43;
+  look(p);
+  w.hurt(4);
+  look(p, 1000);
+  ok('one newly-unowned adjacent monster removes the exemption for the whole damage window',
+     p.hold === null && (p.book.get(999, 5, 5)?.failed ?? 0) === 1,
+     JSON.stringify(p.book.get(999, 5, 5)));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(45, 1, 0, MONSTER);
+  holdAt(p, 5, 5, { proven: true });
+  p.foeId = '45';                                    // deliberately the wrong identity type
+  look(p);
+  w.hurt(4);
+  look(p, 1000);
+  ok('quarry identity remains exact rather than widening through numeric coercion',
+     p.hold === null && (p.book.get(999, 5, 5)?.failed ?? 0) === 1,
+     JSON.stringify(p.book.get(999, 5, 5)));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(46, 1, 0, MONSTER);
+  holdAt(p, 5, 5);                                   // only a geometric guess
+  p.foeId = 46;
+  look(p);
+  w.hurt(4);
+  look(p, 1000);
+  ok('an unproven spot gets no immunity even from the deliberately engaged quarry',
+     p.hold === null && (p.book.get(999, 5, 5)?.failed ?? 0) === 1,
+     JSON.stringify(p.book.get(999, 5, 5)));
+}
+
+console.log('\n--- rest interruption keeps only the proven wall and exact owned quarry ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(51, 1, 0, MONSTER);
+  holdAt(p, 5, 5, { proven: true });
+  p.foeId = 51;
+  let reconnects = 0, replacementWalls = 0;
+  p.reconnect = async () => { reconnects++; p.foeId = null; return { ok: true }; };
+  p.takeSafeSpot = async () => { replacementWalls++; return { took: true }; };
+  await p.restBroken(w.s.world.room, [w.c.room.objects.get(51)]);
+  ok('an owned-quarry rest interruption sheds aggro without demoting or releasing the wall',
+     reconnects === 1 && replacementWalls === 0 && p.hold?.proven === true &&
+       p.book.get(999, 5, 5) === null,
+     JSON.stringify({ reconnects, replacementWalls, hold: p.hold }));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  w.addMonster(52, 1, 0, MONSTER);
+  w.addMonster(53, 0, 1, MONSTER);
+  holdAt(p, 5, 5, { proven: true });
+  p.foeId = 52;
+  p.reconnect = async () => ({ ok: true });
+  p.takeSafeSpot = async () => ({ took: false });
+  await p.restBroken(w.s.world.room,
+                     [w.c.room.objects.get(52), w.c.room.objects.get(53)]);
+  ok('a mixed crowd interrupt still fails and releases the wall',
+     p.hold === null && (p.book.get(999, 5, 5)?.failed ?? 0) === 1,
+     JSON.stringify(p.book.get(999, 5, 5)));
+}
+
+console.log('\n--- death evidence distinguishes a lost quarry fight from a leaking wall ---');
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  p.foeId = 61;
+  const held = { ...holdAt(p, 5, 5, { proven: true }),
+                 adjacentIds: [61], ownedQuarryId: 61 };
+  const result = p.recordDeathAtHold(held);
+  ok('a death to the exact owned quarry is tallied but does not fail the proven square',
+     result.owned_retaliation === true && p.tally.deaths_in_safe_spot === 1 &&
+       p.tally.deaths_in_proven_safe_spot === 1 && p.book.get(999, 5, 5) === null,
+     JSON.stringify({ result, tally: p.tally, book: p.book.get(999, 5, 5) }));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  p.foeId = 62;
+  const held = { ...holdAt(p, 5, 5, { proven: true }),
+                 adjacentIds: [62, 63], ownedQuarryId: 62 };
+  const result = p.recordDeathAtHold(held);
+  ok('a death with any additional unowned monster still condemns the square',
+     result.owned_retaliation === false &&
+       (p.book.get(999, 5, 5)?.damage_taken ?? 0) === 99,
+     JSON.stringify({ result, book: p.book.get(999, 5, 5) }));
+}
+{
+  const w = world();
+  const p = keeper(w);
+  p.book = new SafeSpotBook(null);
+  p.foeId = 64;
+  const held = { ...holdAt(p, 5, 5), adjacentIds: [64], ownedQuarryId: 64 };
+  const result = p.recordDeathAtHold(held);
+  ok('death on an unproven square remains failure evidence despite exact quarry identity',
+     result.owned_retaliation === false &&
+       (p.book.get(999, 5, 5)?.damage_taken ?? 0) === 1,
+     JSON.stringify({ result, book: p.book.get(999, 5, 5) }));
+}
+
 console.log('\n--- quiet because of the walls, or quiet because of the grace period? ---');
 {
   // The dangerous false positive. On entry — and a reconnect is an entry — the server

@@ -2397,6 +2397,37 @@ export class Autopilot {
   // unproven spot is treated exactly like open floor, which is what it might be.
   holdWorks() { return !!(this.atHold() && this.hold?.proven); }
 
+  // THE ONE CREATURE WE INVITED TO THIS WALL.
+  //
+  // A safe spot prevents an uninvolved monster from opening a new fight. It does not
+  // cancel the retaliation rights of the exact creature we just swung at, including a
+  // quarry hit once in the open and pulled back here. Damage from that one creature is
+  // evidence about the fight, not evidence that the wall leaked.
+  //
+  // `foeId` and `pendingPull.target_id` are live object identities, not names. Keep the
+  // comparison exact: two giant rats are two different fights, and widening identity by
+  // name would make every same-named bystander in the room inherit the quarry's licence.
+  // If the two state machines ever disagree, the cautious answer is that nobody owns the
+  // damage; ambiguity must not give a crowd immunity.
+  ownedQuarryId() {
+    const engaged = this.foeId ?? null;
+    const pulled = this.pendingPull?.target_id ?? null;
+    if (engaged != null && pulled != null && engaged !== pulled) return null;
+    return engaged ?? pulled;
+  }
+
+  // True only for a PROVEN hold with exactly one adjacent monster and an exact identity
+  // match to the quarry above. An unproven square, a different object id, or one extra
+  // adjacent monster all remain ordinary wall-failure evidence.
+  ownedQuarryRetaliation(adjacentIds, {
+    proven = this.hold?.proven,
+    ownedId = this.ownedQuarryId(),
+  } = {}) {
+    if (!proven || ownedId == null || !Array.isArray(adjacentIds)) return false;
+    const ids = [...new Set(adjacentIds.filter(id => id != null))];
+    return ids.length === 1 && ids[0] === ownedId;
+  }
+
   // Policy-off means open-field combat even if a remembered hold has not yet been
   // released by the next observation. A remembered square is likewise not a wall after
   // the body moved away from it. This is the tactical gate shared by fight positioning,
@@ -2581,6 +2612,21 @@ export class Autopilot {
     const settledMs = prev ? prev.at - settledAt : 0;
     const settled = settledMs >= SETTLE_GRACE_MS;
 
+    // Retaliation can arrive one observation after the quarry moved or died. Judge the
+    // whole health window, not just its closing frame: the exact owned identity at the
+    // start may survive a delayed packet even when `foeId` has just been cleared. A newly
+    // adjacent unowned monster is folded into the same set and therefore removes the
+    // exemption; aggregate health loss cannot safely be attributed in a mixed crowd.
+    const ownedNow = this.ownedQuarryId();
+    const ownedAtStart = prev?.ownedQuarryId ?? null;
+    const windowOwned = ownedAtStart != null && ownedNow != null && ownedAtStart !== ownedNow
+      ? null : (ownedAtStart ?? ownedNow);
+    const windowAdjacentIds = [...new Set([...(prev?.adjacentIds ?? []), ...adjacentIds])];
+    const ownedRetaliation = this.ownedQuarryRetaliation(windowAdjacentIds, {
+      proven: this.hold?.proven,
+      ownedId: windowOwned,
+    });
+
     // The reading, whatever became of it. `verdict` is the thing to argue with; the
     // fields above it are what the argument is about. A discard is recorded exactly as
     // carefully as a conclusion, because a wrong discard is invisible otherwise.
@@ -2593,6 +2639,9 @@ export class Autopilot {
       adjacent_at_start: company, adjacent_now: adjacentIds.length,
       swung_in_window: prev ? this.swungAt >= prev.at : null,
       moved_in_window: prev ? this.movedAt >= prev.at : null,
+      owned_quarry_at_start: ownedAtStart,
+      owned_quarry_now: ownedNow,
+      owned_quarry_only: ownedRetaliation,
       // How settled we were when this window opened. On a counted failure this is the
       // number that says whether SETTLE_GRACE_MS is wide enough; without it the question
       // can only be argued from intuition, which is how the square gets retired twice.
@@ -2667,38 +2716,52 @@ export class Autopilot {
             });
             return;
           }
-          // It does not work. Say so loudly, forget the proof, and write it down so
-          // that the geometry cannot talk us back onto this square in ten minutes.
-          this.idleDamage = lost;
-          this.hold.failures++;
-          this.hold.damageWhileIdle += lost;
-          this.hold.quietMs = 0;
-          const wasProven = this.hold.proven;
-          this.hold.proven = false;
-          this.book.failed(this.hold.room, {
-            col: this.hold.col, row: this.hold.row, damage: lost, attackers: company,
-            settledMs, source: this.hold.source ?? 'fight' });
-          this.book.save();
-          this.note('THIS IS NOT A SAFE SPOT', {
-            where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
-            lost_health: lost, attackers: company, was_proven: wasProven,
-            settled_ms: Math.max(0, settledMs),
-            why: 'we were hit while standing still and not swinging, which is the one thing ' +
-                 'that cannot happen in a working spot',
-            caveat: 'poison is checked for above and is not this — an ailing character with ' +
-                    'nothing adjacent returns before here. This is permanent and deliberately ' +
-                    'so: see discredited() in m59-safespots.mjs, where the two-failure rule ' +
-                    'this used to describe is what left a square recommended after it killed ' +
-                    'somebody' });
-          // Settle the reading BEFORE letting the hold go, or the record loses the
-          // very state it is a record of.
-          settle(`HIT for ${lost} while standing still with ${company} adjacent — this square does not work`, true);
-          // And stop standing in it. Keeping the hold would mean fighting from a
-          // square we have just watched fail — refusing to approach, refusing to
-          // withdraw, and taking hits the whole time. Letting it go puts the next
-          // pass back on the ordinary path, which will either find a better square or
-          // fight in the open with the flee threshold live.
-          this.releaseHold('it does not work — we were hit standing still in it');
+          this.idleDamage = lost;       // still survival evidence, even when not wall evidence
+          if (ownedRetaliation) {
+            this.hold.quietMs = 0;
+            this.hold.retaliationDamage = (this.hold.retaliationDamage || 0) + lost;
+            this.note('the owned quarry is still retaliating at the safe spot', {
+              where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+              quarry_id: windowOwned, lost_health: lost,
+              still_adjacent: adjacentIds.includes(windowOwned),
+              why: 'this exact creature was deliberately engaged or pulled here. A working ' +
+                   'wall prevents a new monster from joining; it does not erase the one fight ' +
+                   'we opened, so this damage is not evidence against the square',
+              safety: 'the damage still feeds the ordinary health and flee decisions; only ' +
+                      'safe-spot demotion is suppressed',
+            });
+            settle(`HIT for ${lost} by the exact owned quarry — fight evidence, not wall evidence`);
+          } else {
+            // It does not work. Say so loudly, forget the proof, and write it down so
+            // that the geometry cannot talk us back onto this square in ten minutes.
+            this.hold.failures++;
+            this.hold.damageWhileIdle += lost;
+            this.hold.quietMs = 0;
+            const wasProven = this.hold.proven;
+            this.hold.proven = false;
+            this.book.failed(this.hold.room, {
+              col: this.hold.col, row: this.hold.row, damage: lost, attackers: company,
+              settledMs, source: this.hold.source ?? 'fight' });
+            this.book.save();
+            this.note('THIS IS NOT A SAFE SPOT', {
+              where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+              lost_health: lost, attackers: company, was_proven: wasProven,
+              settled_ms: Math.max(0, settledMs),
+              why: 'we were hit while standing still and not swinging, and the adjacent ' +
+                   'identity was not exclusively the one quarry we deliberately engaged',
+              caveat: 'poison is checked for above and is not this. Exact object identity is ' +
+                      'required; a second monster or an unproven square gets no immunity. ' +
+                      'This failure is permanent so a leaking wall cannot be recommended again' });
+            // Settle the reading BEFORE letting the hold go, or the record loses the
+            // very state it is a record of.
+            settle(`HIT for ${lost} while standing still with ${company} adjacent — this square does not work`, true);
+            // And stop standing in it. Keeping the hold would mean fighting from a
+            // square we have just watched fail — refusing to approach, refusing to
+            // withdraw, and taking hits the whole time. Letting it go puts the next
+            // pass back on the ordinary path, which will either find a better square or
+            // fight in the open with the flee threshold live.
+            this.releaseHold('it does not work — we were hit standing still in it');
+          }
         } else {
           this.hold.quietMs += now - prev.at;
           const alreadyProven = this.hold.proven;
@@ -2739,10 +2802,52 @@ export class Autopilot {
     // and "were we in a spot when we were killed?" is the question the whole thesis
     // turns on. Thirty seconds is long enough to survive that ordering and short
     // enough that it cannot be mistaken for where we are now.
-    if (this.hold) this.lastHold = { ...this.hold, at: now };
+    if (this.hold) this.lastHold = {
+      ...this.hold, at: now,
+      adjacentIds: [...adjacentIds],
+      ownedQuarryId: ownedNow,
+    };
 
     this.lastObs = { at: now, health, adjacentIds,
+                     ownedQuarryId: ownedNow,
                      col: me?.col ?? null, row: me?.row ?? null, room: room?.num ?? null };
+  }
+
+  // File the safety evidence from a death without turning "the quarry won" into "the
+  // wall leaked". This is separate from the post-mortem tally: the death is always
+  // counted, but only a leaking/unproven/crowded square is failed in the shared book.
+  recordDeathAtHold(diedHolding) {
+    if (!diedHolding) return { owned_retaliation: false };
+    this.tally.deaths_in_safe_spot = (this.tally.deaths_in_safe_spot || 0) + 1;
+    if (diedHolding.proven)
+      this.tally.deaths_in_proven_safe_spot = (this.tally.deaths_in_proven_safe_spot || 0) + 1;
+
+    const ownedId = diedHolding.ownedQuarryId ?? this.ownedQuarryId();
+    const adjacentIds = Array.isArray(diedHolding.adjacentIds)
+      ? diedHolding.adjacentIds : [];
+    const ownedRetaliation = this.ownedQuarryRetaliation(adjacentIds, {
+      proven: diedHolding.proven,
+      ownedId,
+    });
+    if (ownedRetaliation) {
+      this.note('death at a safe spot came from the owned quarry, not a leaking wall', {
+        where: { col: diedHolding.col, row: diedHolding.row }, room: diedHolding.room,
+        quarry_id: ownedId,
+        why: 'the last held frame contained exactly the deliberately engaged quarry. The ' +
+             'death still counts, but it must not erase verified wall evidence',
+      });
+      return { owned_retaliation: true, owned_quarry_id: ownedId };
+    }
+
+    // A square that got somebody killed without the narrow owned-quarry exception has
+    // failed the only test that counts, whatever it had done before.
+    this.book.failed(diedHolding.room, {
+      col: diedHolding.col, row: diedHolding.row,
+      damage: diedHolding.proven ? 99 : 1,
+      attackers: diedHolding.mostAttackers,
+      source: diedHolding.source ?? 'fight' });
+    this.book.save();
+    return { owned_retaliation: false };
   }
 
   releaseHold(why) {
@@ -4362,6 +4467,12 @@ export class Autopilot {
     // do not know whether the monsters are awake.
     this.rejoinedAt = Date.now();
     this.foeId = null;
+    // A pending pull carries the same live object identity as foeId. Keeping it across
+    // a rejoin could license retaliation from an unrelated creature that happens to be
+    // assigned the stale number in the new room snapshot.
+    this.pendingPull = null;
+    this.pullsWithoutContact = 0;
+    this.pulledLastPass = false;
     this.lastObs = null;
     this.campedIds = new Set();
     if (!r.ok) this.note('reconnect failed', { why: r.why, trying_to: why });
@@ -9994,6 +10105,8 @@ export class Autopilot {
         // Were we behind a wall when it happened? See lastHold in observe().
         const diedHolding = this.lastHold && Date.now() - this.lastHold.at < 30_000
           ? this.lastHold : null;
+        const heldDeathEvidence = diedHolding
+          ? this.recordDeathAtHold(diedHolding) : null;
         const before = (this.recent5 || []).filter(f => !/underworld/i.test(f.room || ''));
         const at = before[before.length - 1] || null;
         const trail = before.slice(-4).map(f => `${f.health}/${f.max}`).join(' -> ');
@@ -10117,20 +10230,12 @@ export class Autopilot {
             at: { col: diedHolding.col, row: diedHolding.row },
             proven: diedHolding.proven,
             held_s: Math.round((Date.now() - diedHolding.takenAt) / 1000),
+            ...(heldDeathEvidence?.owned_retaliation ? {
+              owned_quarry_retaliation: true,
+              owned_quarry_id: heldDeathEvidence.owned_quarry_id,
+            } : {}),
           } : false,
         };
-        if (diedHolding) {
-          this.tally.deaths_in_safe_spot = (this.tally.deaths_in_safe_spot || 0) + 1;
-          if (diedHolding.proven)
-            this.tally.deaths_in_proven_safe_spot = (this.tally.deaths_in_proven_safe_spot || 0) + 1;
-          // A square that got somebody killed has failed the only test that counts,
-          // whatever it had done before.
-          this.book.failed(diedHolding.room, {
-            col: diedHolding.col, row: diedHolding.row,
-            damage: diedHolding.proven ? 99 : 1, attackers: diedHolding.mostAttackers,
-            source: diedHolding.source ?? 'fight' });
-          this.book.save();
-        }
         // THE FULL RECORD, WRITTEN BEFORE ANYTHING ELSE HAPPENS. Everything below this
         // point — escaping the Underworld, walking back, rejoining — overwrites the
         // evidence: the client's event buffer fills with the Underworld, the frames roll
@@ -14498,22 +14603,27 @@ export class Autopilot {
   // HIT WHILE RESTING. The one response that must never happen is the one that used
   // to: note it and rest again next pass on the same square.
   //
-  // Being hit while resting is proof that this is not a place to rest — resting is
-  // standing still and not swinging, which is the one thing a working safe spot makes
-  // free. So do the two things that change the situation, in the order that makes both
-  // of them work:
+  // Being hit while resting is normally proof that this is not a place to rest — resting
+  // is standing still and not swinging, which is the one thing a working safe spot makes
+  // free. The narrow exception is the exact quarry we deliberately engaged or pulled:
+  // the wall prevents a NEW fight, but does not revoke that creature's retaliation. So
+  // shed its aggro without demoting the wall; every unowned or ambiguous hit still does
+  // the two things below in the order that makes both of them work:
   //
   //   RECONNECT first. It drops the aggro of whatever is on us and hands back the entry
   //   grace period, so the walk out is made past monsters that have to notice us one at
   //   a time. It costs nothing we were not already losing: health regeneration is gated
   //   on PFLAG_MOVED_SINCE_ENTRY, so we cannot heal until we have moved anyway.
   //
-  //   THEN take a real wall, rather than sitting back down where we are. Since we have
-  //   to move before we can heal regardless, we may as well move somewhere that holds.
+  //   THEN take a real wall, rather than sitting back down where we are — unless the
+  //   interrupted rest was already on a proven wall and the owned quarry was the sole
+  //   adjacent identity, in which case keep it.
   //
   // Only after both is resting allowed again, and by then it is a different square.
   async restBroken(room, near) {
     this.tally.rests_broken = (this.tally.rests_broken || 0) + 1;
+    const adjacentIds = Array.isArray(near) ? near.map(o => o?.id).filter(id => id != null) : [];
+    const ownedRetaliation = this.hold && this.ownedQuarryRetaliation(adjacentIds);
     // A BROKEN REST WITH NOTHING NEXT TO US IS NOT EVIDENCE ABOUT THE SQUARE.
     //
     // observe() has always refused this reading — `nothing was in swing range, a quiet
@@ -14544,7 +14654,18 @@ export class Autopilot {
              'refused the same window' });
     }
     // Evidence first, while we still know which square failed.
-    if (this.hold && near.length) {
+    if (this.hold && near.length && ownedRetaliation) {
+      this.hold.quietMs = 0;
+      this.note('rest interrupted by the owned quarry — keeping the safe spot', {
+        where: { col: this.hold.col, row: this.hold.row }, room: room?.num,
+        quarry_id: this.ownedQuarryId(), attackers: near.length,
+        why: 'this exact creature was deliberately engaged or pulled to the wall. Its ' +
+             'retaliation interrupts recovery, but it does not establish that a new monster ' +
+             'can open a fight through this proven spot',
+        next: 'shed this quarry\'s aggro, keep the verified wall, and re-observe health',
+      });
+    }
+    if (this.hold && near.length && !ownedRetaliation) {
       this.book.failed(this.hold.room, {
         col: this.hold.col, row: this.hold.row, damage: 1, attackers: near.length,
         source: this.hold.source ?? 'fight' });
@@ -14578,13 +14699,15 @@ export class Autopilot {
           : rc?.why });
     }
     // Then go and get a wall. Not resting again until we have one.
-    if (this.policy.useSafeSpots) {
+    if (this.policy.useSafeSpots && !ownedRetaliation) {
       const got = await this.takeSafeSpot('hit while resting — need a square that holds',
                                           near[0] ?? null).catch(() => false);
       this.note('moving rather than resting again', { got_a_wall: !!got, shed_aggro: dropped,
         why: 'resting again where we were just hit is the loop that kills characters "while resting"' });
     }
-    this.progress('left a square that could not be rested in');
+    this.progress(ownedRetaliation
+      ? 'shed the owned quarry while keeping the verified wall'
+      : 'left a square that could not be rested in');
   }
 
   // MAKE THE TRIP, once there is enough in the purse to be worth it.
