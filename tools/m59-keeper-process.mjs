@@ -32,6 +32,7 @@ import { resolveFleet } from './m59-fleetpath.mjs';
 import { rtsJobReport } from './m59-rts-safety.mjs';
 import { OF } from './m59-parse.mjs';
 import * as skills from './m59-skills.mjs';
+import * as party from './m59-party.mjs';
 import {
   configureSpotClaimStore, rememberFileSpotPartner, spotClaimNamespace,
 } from './m59-spotclaims.mjs';
@@ -84,6 +85,22 @@ if (!entry?.credentials) {
   console.error(`[keeper] ${agent} not found in ${fleetPath} or has no credentials`);
   process.exit(1);
 }
+
+// WHO IS US, IN A PROCESS THAT HAS NO BROKER IN IT.
+//
+// `party.isFleetmate` is the one test that keeps this keeper from writing a fleetmate into
+// the grudge book and then returning fire on it, and the roster fallback it consults was
+// installed only by the broker (`parties.setRosterSource(fleetCharacters)`). In here that
+// meant it answered "stranger" for every character in the fleet — for two days, on prod,
+// until a mis-click turned one of them red and four keepers killed him. The argument, and
+// the assertion that keeps this line here, are above `rosterFileSource` in m59-party.mjs.
+//
+// Seeded with the roster just parsed so the first answer is right before the first stat;
+// re-read on mtime so a character added by hand reaches this process without a restart.
+party.setRosterSource(party.rosterFileSource(fleetPath, {
+  seed: fleet, extra: [entry.credentials.character],
+}));
+console.error(`[keeper] ${agent} knows ${party.rosterCharacterNames(fleet).size} fleetmate(s) from ${fleetPath}`);
 
 const { account, password, character } = entry.credentials;
 const credHost = entry.credentials.host || host;

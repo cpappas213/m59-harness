@@ -3809,27 +3809,6 @@ class Session {
   async walkTo(col, row, {
     maxSteps = 120,
     hardCap = 400,
-    // A WALK THAT IS PART OF A DELIBERATE PLAN DOES NOT HAVE TO JUSTIFY ITSELF TO THE
-    // GROUND-GAINED CHECK.
-    //
-    // `no_ground_gained` was written to catch WANDERING — a body shuffling between two
-    // squares while it is supposed to be leaving. That is a real fault and the guard stays
-    // for it. But it measures the gap to this call's target and calls any revisiting a
-    // dither, and a planned route is not obliged to approach its target monotonically:
-    // Ukgoth's crossing goes UP a ramp and around, so walking the plan legitimately
-    // revisits ground and legitimately loses distance.
-    //
-    // Measured cost of not making the distinction: Llll entered Ukgoth, tried to board the
-    // baked rail at 38,15 -- floor 6080, on the high ground one square from the ledge --
-    // got `no_ground_gained` four seconds later, and was dead thirty-three seconds after
-    // that without ever reaching the take-off. It never attempted the jump at all. The
-    // ledger has 352 of these in that room.
-    //
-    // So a caller that is executing a PLAN passes `deliberate` and the guard stops being a
-    // failure. It is not switched off: it still counts, and it still says so in the ledger,
-    // and `maxSteps` still bounds the walk exactly as before. What changes is that a plan
-    // no longer gets handed back as an unreachable door because it took the long way round.
-    deliberate = false,
     movementGeneration = this.movementGeneration,
     controlToken,
     beforeMutation = null,
@@ -3992,7 +3971,6 @@ class Session {
     let bestGap = Infinity, sinceCloser = 0;
     // Where the body has already been. A dither revisits; a detour walks new ground.
     const seenSquares = new Set();
-    let noteDither = false;
     const edgeKey = (fr, fc, tr, tc) => `${fr},${fc}>${tr},${tc}`;
     // AN EDGE THE MOVER CANNOT WALK IS A FACT ABOUT THE MAP, NOT ABOUT THIS WALK.
     //
@@ -4621,28 +4599,14 @@ class Session {
       seenSquares.add(hereKey);
       if (gapNow < bestGap) { bestGap = gapNow; sinceCloser = 0; }
       else if (r.reason === 'object_blocked') { /* the body path owns this one */ }
-      else if (revisited && ++sinceCloser > WALK_STALL_STEPS) {
-        if (!deliberate)
-          return { arrived: false, steps: taken, replans,
-                   blocked_at: { col: now.col, row: now.row },
-                   reason: 'no_ground_gained',
-                   note: `${sinceCloser} revisited squares without getting closer than ` +
-                         `${bestGap} — this is a dither, not a walk. The plan is what is wrong, ` +
-                         'so the caller gets it back rather than another lap of the same two ' +
-                         'squares.' };
-        // DELIBERATE: counted and reported, never fatal. Once per walk, so a long planned
-        // crossing does not fill the ledger with the same row, and `maxSteps` remains the
-        // bound it always was.
-        if (!noteDither) {
-          noteDither = true;
-          recordTactic({ character: this.client?.me?.name ?? this.name ?? null,
-                         room: Number(this.world?.room?.num ?? 0),
-                         tactic: 'walk_dither', trigger: 'deliberate_plan', worked: true,
-                         ms: 0, hp_lost: 0, attempted: true,
-                         note: `${sinceCloser} revisited squares en route to ${row},${col}, ` +
-                               `best gap ${bestGap} — carrying on because this walk is part of a plan` });
-        }
-      }
+      else if (revisited && ++sinceCloser > WALK_STALL_STEPS)
+        return { arrived: false, steps: taken, replans,
+                 blocked_at: { col: now.col, row: now.row },
+                 reason: 'no_ground_gained',
+                 note: `${sinceCloser} revisited squares without getting closer than ` +
+                       `${bestGap} — this is a dither, not a walk. The plan is what is wrong, ` +
+                       'so the caller gets it back rather than another lap of the same two ' +
+                       'squares.' };
       if (now.col === next.col && now.row === next.row) {
         // It landed where it was aimed, so the reach it used is one the ground supports.
         if (was && (was.col !== now.col || was.row !== now.row)) prevSquare = was;
@@ -6010,13 +5974,8 @@ class Session {
           const board = rail.squares[boardAt] ?? rail.from;
           const onIt = me0.col === board.col && me0.row === board.row;
           // 1. GET ON â€” skipped when we are already standing on the boarding square.
-          // DELIBERATE: this is the walk onto a baked line somebody has already crossed the
-          // room on, so it is a plan being executed rather than a body casting about. See
-          // `deliberate` in walkTo — the dither guard was ending this walk and reporting the
-          // rail as unboardable, 352 times in this room alone.
           const got = onIt ? { arrived: true } : await this.walkTo(board.col, board.row,
-            { deliberate: true,
-              maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
+            { maxSteps: budget({ steps_away: Math.hypot(board.col - me0.col, board.row - me0.row) }) })
             .catch(e => ({ arrived: false, reason: e.message }));
           if (!got?.arrived) {
             recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
@@ -6066,13 +6025,8 @@ class Session {
       // CLEARANCE ON, because this is the long routing: crossing a whole room to a
       // boundary square is exactly where hugging the wall makes a step slide, the mover
       // land off plan, and the walker start the bounce. See walkTo's `clearance`.
-      // DELIBERATE: `exit.stand_on` is a baked anchor -- a crossing square the route bake
-      // proved, or one an operator walked. Approaching it is a plan being executed, and the
-      // dither guard firing here does not read as "the walk wandered", it reads as
-      // `every square for that exit refused` and deletes a working door.
       let walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                   { deliberate: true,
-                                     maxSteps: budget(exit), movementGeneration, controlToken,
+                                   { maxSteps: budget(exit), movementGeneration, controlToken,
                                      clearance: LEAVE_VIA_CLEARANCE });
       if (isTerminalMovementReason(walk.reason))
         return { left: false, stage: 'walk', ...walk };
@@ -6287,8 +6241,7 @@ class Session {
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
       // floor square actually on that boundary and walk to it with fine BSP collision.
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { deliberate: true,
-                                       maxSteps: budget(exit), movementGeneration, controlToken,
+                                     { maxSteps: budget(exit), movementGeneration, controlToken,
                                        clearance: LEAVE_VIA_CLEARANCE,
                                        avoidSquares: wrongDoor?.size ? wrongDoor : null });
       if (walk.left_room || c.room.id !== edgeStartRoom)
@@ -6617,8 +6570,7 @@ class Session {
       const before = c.evSeq;
       const portalStartRoom = c.room.id;
       const walk = await this.walkTo(exit.stand_on.col, exit.stand_on.row,
-                                     { deliberate: true,
-                                       maxSteps: budget(exit), movementGeneration, controlToken,
+                                     { maxSteps: budget(exit), movementGeneration, controlToken,
                                        clearance: LEAVE_VIA_CLEARANCE });
       if (isTerminalMovementReason(walk.reason) && c.room.id === portalStartRoom)
         return { left: false, stage: 'walk', ...walk };

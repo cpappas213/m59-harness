@@ -59,7 +59,8 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, statSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fleetName } from './m59-fleetpath.mjs';
+import { fleetName, resolveFleet } from './m59-fleetpath.mjs';
+import { rosterCharacterNames } from './m59-party.mjs';
 
 const HERE = resolve(fileURLToPath(import.meta.url), '..', '..');
 
@@ -230,12 +231,43 @@ export function forgive(name) {
   return true;
 }
 
+/**
+ * Forget every name in `names`, in one read-modify-write. Returns the names removed, as
+ * the book had them. This exists because THE BOOK MUST NEVER NAME OUR OWN PEOPLE and
+ * for two days it did — see `rosterFileSource` in m59-party.mjs — so the repair is a
+ * verb rather than twenty-one `--forgive`s, each of which races the keepers still writing.
+ */
+export function forgiveAll(names) {
+  const all = readAll();
+  const removed = [];
+  for (const n of names ?? []) {
+    const key = normName(n);
+    if (key && key in all) { removed.push(all[key]?.name ?? String(n)); delete all[key]; }
+  }
+  if (removed.length) { writeAll(all); cache = { mtime: -1, value: all }; }
+  return removed;
+}
+
 export function clearAll() { writeAll({}); cache = { mtime: -1, value: {} }; return true; }
 
 // ---------------------------------------------------------------------------- CLI
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const argv = process.argv.slice(2);
   if (argv.includes('--clear')) { clearAll(); console.log('forgot everybody'); }
+  else if (argv.includes('--forgive-ours')) {
+    // Every ROSTER name out of this fleet's book, the strangers left alone. The roster is
+    // resolved the way everything else resolves it (`--fleet`, M59_FLEET, fleet-default).
+    const { stateFile } = resolveFleet(argv);
+    let ours;
+    try { ours = rosterCharacterNames(JSON.parse(readFileSync(stateFile, 'utf8'))); }
+    catch (e) { console.error(`cannot read the roster at ${stateFile}: ${e.message}`); process.exit(1); }
+    const removed = forgiveAll(ours);
+    console.log(removed.length
+      ? `forgave ${removed.length} of ours (roster: ${ours.size}): ${removed.join(', ')}`
+      : `none of ours in the book (roster: ${ours.size})`);
+    const left = Object.keys(readAll()).length;
+    console.log(`${left} entr${left === 1 ? 'y' : 'ies'} remain, none of them ours`);
+  }
   else if (argv.includes('--forgive')) {
     const who = argv[argv.indexOf('--forgive') + 1];
     console.log(forgive(who) ? `forgave ${who}` : `no grudge against ${who}`);

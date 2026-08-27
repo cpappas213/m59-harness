@@ -364,5 +364,111 @@ party.resetParties();
   ok('the first pair goes to the valley', plan[0].room === 544);
 }
 
+// ---------------------------------------------------------------- who is us
+//
+// A KEEPER PROCESS HAS NO BROKER IN IT, so the roster source the broker installs is not
+// there — and for two days on prod `isFleetmate` answered "stranger" for all twenty-one of
+// our own characters, which filled the grudge book with fleetmates and got Statler killed
+// by four of them the moment a mis-click turned him red. These pin the file-backed source
+// the keeper process installs instead, the whole chain from it to `mayReturnFire`, and
+// the fact that the keeper process still installs it.
+console.log('\nwho is us, in a process with no broker in it');
+{
+  const { mkdtempSync, writeFileSync, rmSync, utimesSync, readFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const dir = mkdtempSync(join(tmpdir(), 'm59-party-roster-'));
+  const rosterPath = join(dir, 'roster.json');
+  const roster = {
+    t3:  { credentials: { account: 'a3',  password: 'x', character: 'Statler' } },
+    t17: { credentials: { account: 'a17', password: 'x', character: 'Zoot' } },
+    t99: { note: 'a slot nobody has created yet' },
+  };
+  writeFileSync(rosterPath, JSON.stringify(roster));
+
+  party.resetParties();
+  party.setRosterSource(null);
+  ok('with no roster source every name is a stranger — the failure mode, pinned so it is visible',
+     party.isFleetmate('Statler') === false && party.hasRosterSource() === false);
+
+  const names = party.rosterCharacterNames(roster);
+  ok('every character name in the roster, and nothing else',
+     names.size === 2 && names.has('Statler') && names.has('Zoot'));
+  ok('a slot with no credentials is skipped, not fatal and not a name', !names.has(undefined));
+  ok('a roster that is not an object has no names', party.rosterCharacterNames(null).size === 0);
+
+  party.setRosterSource(party.rosterFileSource(rosterPath, { minStatMs: 0 }));
+  ok('a roster name is one of ours', party.isFleetmate('Statler') && party.isFleetmate('Zoot'));
+  ok('a stranger is still a stranger', party.isFleetmate('Morpheus') === false);
+  ok('case and whitespace off the wire do not make a stranger of one of ours',
+     party.isFleetmate('statler') && party.isFleetmate('  Zoot '));
+  ok('an empty name is nobody', party.isFleetmate('') === false && party.isFleetmate(null) === false);
+
+  // A character added by hand reaches a running keeper on its next look.
+  roster.t4 = { credentials: { account: 'a4', password: 'x', character: 'Waldorf' } };
+  writeFileSync(rosterPath, JSON.stringify(roster));
+  const later = Date.now() / 1000 + 5;
+  utimesSync(rosterPath, later, later);
+  ok('a name added to the file is picked up when its mtime moves', party.isFleetmate('Waldorf'));
+
+  // A roster that stops being readable does not turn the fleet into strangers.
+  rmSync(rosterPath);
+  ok('an unreadable roster keeps the last answer rather than making everyone a stranger',
+     party.isFleetmate('Waldorf') && party.isFleetmate('Statler'));
+
+  // And one that has somehow lost its names is not believed either.
+  writeFileSync(rosterPath, JSON.stringify({}));
+  utimesSync(rosterPath, later + 5, later + 5);
+  ok('a roster that shrank to nobody is not believed over the last good one',
+     party.isFleetmate('Statler'));
+
+  // `extra` is this process's own character, ours whether or not the file can be read.
+  party.setRosterSource(party.rosterFileSource(join(dir, 'missing.json'),
+                                               { extra: ['Kermit'], minStatMs: 0 }));
+  ok('the keeper\'s own character is one of ours before any file is read', party.isFleetmate('Kermit'));
+  ok('and a missing file with no seed knows nobody else', party.isFleetmate('Statler') === false);
+
+  // `seed` is the roster the keeper already parsed at startup.
+  party.setRosterSource(party.rosterFileSource(join(dir, 'missing.json'),
+                                               { seed: roster, minStatMs: 0 }));
+  ok('a seeded source answers from the seed when the file cannot be read',
+     party.isFleetmate('Statler') && party.isFleetmate('Waldorf'));
+
+  // THE CHAIN. A fleetmate with a grudge on file AND a live outlaw flag — Statler's exact
+  // state at 04:25Z — is a target to a keeper that cannot tell it is ours, and refused
+  // before anything else is asked by one that can.
+  process.env.M59_GRUDGE_FILE = join(dir, 'grudges.json');
+  const grudge = await import('./m59-grudge.mjs');
+  const { OF, PF } = await import('./m59-parse.mjs');
+  grudge.recordAttack('Statler', { who: 'Zoot', room: 544, playerClass: 'outlaw' });
+  const red = { name: 'Statler', flags: (OF.PLAYER | OF.ATTACKABLE | PF.OUTLAW) >>> 0 };
+  const blind = grudge.mayReturnFire(red, { fleetmate: false });
+  const sighted = grudge.mayReturnFire(red, { fleetmate: party.isFleetmate(red.name) });
+  ok('a red name with a grudge on file IS a target to a keeper that cannot tell it is ours',
+     blind.engage === true);
+  ok('and is refused as "one of ours" by one that can — the assertion that was missing',
+     sighted.engage === false && sighted.why === 'one of ours');
+
+  // The repair: every roster name out of the book, the strangers left alone.
+  grudge.recordAttack('Morpheus', { who: 'Zoot', room: 150, playerClass: 'killer' });
+  const gone = grudge.forgiveAll(party.rosterCharacterNames(roster));
+  ok('forgiveAll removes exactly the roster names and reports them as the book had them',
+     gone.length === 1 && gone[0] === 'Statler');
+  ok('and leaves the strangers alone',
+     !!grudge.grudgeAgainst('Morpheus') && !grudge.grudgeAgainst('Statler'));
+  ok('forgiving nobody writes nothing and returns nothing',
+     grudge.forgiveAll([]).length === 0 && grudge.forgiveAll(null).length === 0);
+
+  // THE KEEPER PROCESS INSTALLS IT. It cannot be imported — importing runs it — so this
+  // reads its source. The day this fails, every keeper is blind to its own fleet again.
+  const src = readFileSync(new URL('./m59-keeper-process.mjs', import.meta.url), 'utf8');
+  ok('m59-keeper-process.mjs installs a file-backed roster source at startup',
+     /party\.setRosterSource\(party\.rosterFileSource\(fleetPath/.test(src));
+
+  party.setRosterSource(null);
+  delete process.env.M59_GRUDGE_FILE;
+  rmSync(dir, { recursive: true, force: true });
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

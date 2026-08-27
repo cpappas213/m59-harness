@@ -46,6 +46,8 @@
 // claimedSpots and lastRoom: every session in a broker shares this process. It does
 // NOT survive a broker restart — pairings are re-established by whoever set them up.
 
+import { readFileSync, statSync } from 'node:fs';
+
 // agent -> record. One map, not five, because every consumer wants the partner's whole
 // situation at once: what it is fighting, how hurt it is, and where it is standing.
 const roster = new Map();
@@ -101,10 +103,13 @@ export function report(agent, patch = {}) {
   return r;
 }
 
-// WHO IS US — and it is this map's keys because `report` is called with `this.s.name`,
-// the CHARACTER name, once a pass by every keeper in the broker.
+// WHICH KEEPERS HAVE REPORTED. The keys are AGENT ids — `report` is called with
+// `this.s.name`, which is `t3`, never `Statler` — so this set answers "who has had a
+// pass", and it must not be read as "is that name one of ours". That question is
+// `isFleetmate`, below, and it is answered from the ROSTER. (This comment used to claim
+// the keys were character names, and code was written against that claim.)
 //
-// The question it answers is "is that player a fleetmate or a stranger", which nothing
+// The question underneath is "is that player a fleetmate or a stranger", which nothing
 // could ask before. It matters because the keeper is deliberately blind to players
 // (`inReachOfUs` filters OF_PLAYER, and it should — this fleet must not start swinging at
 // people on a shared server), so a stranger standing over a character was, until now,
@@ -116,32 +121,92 @@ export function report(agent, patch = {}) {
 // this returns the set rather than a verdict.
 export const knownCharacters = () => new Set(roster.keys());
 
-// AND THE ROSTER UNDERNEATH IT, BECAUSE THE MAP ABOVE IS EMPTY AT BOOT AND THAT IS
-// EXACTLY WHEN THIS IS ASKED.
+// THE ROSTER IS THE ANSWER, AND EVERY PROCESS THAT ASKS HAS TO HOLD ONE.
 //
-// The map is populated by `report`, once a pass, per keeper — so for the first seconds
-// after a broker restart it is EMPTY, and every one of our own characters answers
-// "stranger". That is not a hypothetical: the first live run of the grudge book recorded
-// six fleetmates as attackers within a minute of a restart, because a keeper starting up
-// saw a fleetmate standing next to it while its own health happened to tick down.
+// The map above is empty at boot and that is exactly when this is asked: the first live
+// run of the grudge book recorded six fleetmates as attackers within a minute of a
+// restart, because a keeper starting up saw a fleetmate standing next to it while its
+// own health happened to tick down. The fix was the broker installing `fleetCharacters`
+// — live sessions unioned with the roster file — as the source consulted here.
 //
-// Nothing fired — the live PF flag is what gates an actual swing, and none of ours is a
-// murderer — but the record was wrong, and a record of who attacked us is exactly the
-// thing that must not name our own people.
+// AND THEN IT HAPPENED AGAIN, FOR TWO DAYS, ON PROD. The fleet had moved to one keeper
+// PROCESS per character (m59-keeper-process.mjs); the resolver was still installed only
+// in the broker; and the map above is keyed by agent id. So inside every keeper this
+// answered "stranger" for all twenty-one of our own characters. Every monster bite with
+// a fleetmate within reach was written into the grudge book as that fleetmate's attack
+// (Zoot: fifty-nine "hits" on twelve of ours), which satisfied the memory rule; a hand
+// mis-click that turned Statler red satisfied the live-flag rule; and the server's safety
+// permits hitting an outlaw. Four keepers returned fire on him, 2026-08-27 04:25–04:30Z,
+// until he was dead. The live PF flag "is what actually protects us" — and it is exactly
+// the protection a manual accident removes.
 //
-// `resumeFleet` already learned this and wrote it down: match against the ROSTER rather
-// than against sessions, because at boot there are none. So the resolver is installed by
-// the broker (`fleetCharacters`, which unions the live sessions WITH the roster file) and
-// consulted whenever the runtime map does not already know the name.
+// So three things, none of them optional:
+//   - a process without a broker installs `rosterFileSource` (the keeper process does,
+//     at startup, and m59-party-test reads its source to check that it still does);
+//   - the comparison folds case and whitespace the way the grudge book folds its keys,
+//     because a name off the wire and a name in a roster file are typed by different
+//     people;
+//   - a source that cannot be read keeps its LAST answer rather than turning everyone
+//     into a stranger. Being wrong here must cost a missed defence, never a fight.
 let rosterSource = null;
 export function setRosterSource(fn) { rosterSource = typeof fn === 'function' ? fn : null; }
+export const hasRosterSource = () => rosterSource !== null;
+
+const foldName = n => String(n ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 export const isFleetmate = (name) => {
   if (!name) return false;
   if (roster.has(name)) return true;
-  try { const known = rosterSource?.(); return !!known && known.has(name); }
-  catch { return false; }
+  let known = null;
+  try { known = rosterSource?.() ?? null; } catch { known = null; }
+  if (!known) return false;
+  if (known.has(name)) return true;
+  const key = foldName(name);
+  if (!key) return false;
+  for (const n of known) if (foldName(n) === key) return true;
+  return false;
 };
+
+// EVERY CHARACTER NAME IN A ROSTER FILE. A named fleet (`substrate/fleets/<name>.json`)
+// and the unnamed one (`substrate/fleet-state.json`) have the same shape —
+// agent -> { credentials: { character } } — and an entry without a character is skipped
+// rather than fatal, because a slot that has not been created yet is not a stranger.
+export function rosterCharacterNames(fleet) {
+  const names = new Set();
+  if (!fleet || typeof fleet !== 'object') return names;
+  for (const e of Object.values(fleet)) {
+    const c = e?.credentials?.character;
+    if (typeof c === 'string' && c.trim()) names.add(c.trim());
+  }
+  return names;
+}
+
+// A ROSTER SOURCE READ FROM THE FILE, for a process with no broker in it.
+//
+// Re-read when the file's mtime moves, so a character added by hand reaches every running
+// keeper on its next look; stat'd at most once per `minStatMs`, because this is asked
+// per object per pass; and never downgraded — a read that fails, or a file that has
+// somehow lost its names, keeps the last good set. `seed` is the roster this process
+// already parsed at startup, so the first answer is right before the first stat; `extra`
+// is always in the set (the keeper passes its own character).
+export function rosterFileSource(path, { seed = null, extra = [], minStatMs = 5000,
+                                         fs = { readFileSync, statSync } } = {}) {
+  const withExtra = set => { for (const n of extra) if (n) set.add(String(n).trim()); return set; };
+  let names = withExtra(seed ? rosterCharacterNames(seed) : new Set());
+  let mtime = -1, checkedAt = 0;
+  return () => {
+    const now = Date.now();
+    if (now - checkedAt < minStatMs) return names;
+    checkedAt = now;
+    try {
+      const m = fs.statSync(path).mtimeMs;
+      if (m === mtime) return names;
+      const fresh = withExtra(rosterCharacterNames(JSON.parse(fs.readFileSync(path, 'utf8'))));
+      if (fresh.size >= names.size) { names = fresh; mtime = m; }
+    } catch { /* keep the last good answer */ }
+    return names;
+  };
+}
 
 // The partner's record, or null if there is no partner or the reading is stale.
 export function mateOf(agent) {
