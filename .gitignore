@@ -440,3 +440,8 @@ _verify2.mjs
 # .roo in seconds, and an inventory of guesses rather than of confirmed jumps — the
 # confirmed ones are declarations and live in substrate/m59-falljumps.json, committed.
 /substrate/jumpfinder-*.json
+
+# Which keeper port band each fleet claimed. This machine's answer — assigned on first use,
+# stable thereafter, and meaningless in a checkout with different fleets. See
+# keeperPortBaseFor in m59-broker.mjs.
+/substrate/keeper-bands.json

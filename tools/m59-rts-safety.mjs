@@ -116,10 +116,25 @@ export function rtsJobReport(job, now = Date.now()) {
   return {
     last_action: job.label,
     took_s: elapsed,
+    // `ok` MEANT "THE FUNCTION RETURNED", WHICH IS NOT WHAT ANY READER THINKS IT MEANS.
+    //
+    // A journey that gives up resolves normally -- `{arrived:false, reason:'...'}` is a
+    // return value, not a throw -- so it landed in the `ok: true` default below and the job
+    // reported success. Measured on shadow: `travel to 2` from inside Ukgoth answered
+    // `{last_action:'walk to room 2', took_s:0, ok:true}` while the character did not move a
+    // square, from four different starting positions, and every instrument above this one
+    // repeated the claim. It is the same class of mistake as `busy` being absent and read as
+    // false: a field whose failure mode is looking fine.
+    //
+    // A result that carries `arrived` is a movement job, and for those `arrived` IS the
+    // outcome. Anything else keeps the old meaning, because a commerce or errand job has no
+    // such field and its own verification is handled above.
     ...(cancelled ? { cancelled: true }
       : job.error ? { failed: job.error }
       : job.result?.verification_failed === true || job.result?.committed === false
         ? { failed: 'server outcome could not be verified; no success was claimed' }
+      : job.result && job.result.arrived === false
+        ? { failed: job.result.reason ?? job.result.note ?? 'did not arrive, and gave no reason' }
       : { ok: true }),
     ...commerceResult,
   };

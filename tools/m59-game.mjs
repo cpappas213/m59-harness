@@ -22,7 +22,8 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
          from './m59-map.mjs';
-import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
+import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry,
+         MAX_STEP_HEIGHT } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 // THE GATE THAT WAS NEVER WIRED IN. `traversable()` is the only thing that honours a
 // declaration's `requires: {running: true}`, and until now this module was imported by
@@ -5437,13 +5438,46 @@ class Session {
         // Only a DECLARED jump takes this path. That is the whole safeguard: the table is
         // operator-supplied and walked, never derived, so this cannot become a general
         // licence to move through geometry the mover refuses.
-        const jumpHere = (here && geo && typeof geo.declaredFallJumps === 'function')
+        const declaredJumpHere = (here && geo && typeof geo.declaredFallJumps === 'function')
           ? geo.declaredFallJumps(here.row, here.col)
               // declaredFallJumps returns the LANDING as {row, col, dir:'fall', distance},
               // not a nested {to:{...}} — reading it as the latter is a check that silently
               // never fires, which is the failure mode this repository keeps meeting.
               .some(j => j.row === target.row && j.col === target.col)
           : false;
+        // A BAKED ROUTE'S OWN DROP IS A FALL TOO, EVEN WHEN NOBODY DECLARED IT.
+        //
+        // The declared table describes ONE jump in Ukgoth, 36,16 -> 38,10. The baked route
+        // the fleet actually rides does not use it: its tail is 34,19 -> 38,15 -> 38,12,
+        // and 38,15 is floor 6080 while 38,12 is 3840. That step is a 2240-unit drop, and
+        // because it is not in the table `jumpHere` was false, so the rail reached it with
+        // `walkFine` — and this file already measured what that does:
+        //
+        //     fall=false  slide=true   ends 38.1,12.3   destinationFloor 3200   the gulley
+        //     fall=true   slide=true   ends 38.1,10.3   destinationFloor 3840   the shelf
+        //
+        // So the rail was walking off the drop instead of falling down it, landing in the
+        // hole every time, and every jump fix in this file applied only to a pair the route
+        // never takes. The operator saw it from inside the room before the ledger did: "the
+        // jumps I'm watching just don't look like they're trying the right thing".
+        //
+        // THIS IS NOT A NEW CLAIM ABOUT THE MAP, which is the line the declared table
+        // exists to hold. The waypoint pair comes from the route bake, which computed it on
+        // the mover's own geometry and stored it; all that is added here is sending it with
+        // the flag that matches what it IS. Only downward, only along a baked rail, and only
+        // past MAX_STEP_HEIGHT — a step the mover could walk needs no special handling.
+        const bakedDropHere = (() => {
+          if (declaredJumpHere || !here || !geo || !target) return false;
+          try {
+            const a = geo.standPoint(here.row, here.col);
+            const b = geo.standPoint(target.row, target.col);
+            if (!a || !b) return false;
+            const fa = geo.floorBaseAtClient(a.x, a.y), fb = geo.floorBaseAtClient(b.x, b.y);
+            if (!Number.isFinite(fa) || !Number.isFinite(fb)) return false;
+            return (fa - fb) > MAX_STEP_HEIGHT;
+          } catch { return false; }
+        })();
+        const jumpHere = declaredJumpHere || bakedDropHere;
         // AND AIM THE JUMP AT WHICHEVER LANDING IS CLEAREST, NOT ALWAYS THE DECLARED ONE.
         //
         // Measured over 54 attempts in Ukgoth with the fleet running a circuit through the

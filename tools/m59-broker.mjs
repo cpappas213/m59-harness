@@ -51,6 +51,7 @@ import { CLIENT_FINENESS, elideLoops, protocolToClient, clientToProtocol,
          loadRoo, buildAllRoomGeometry } from './m59-roo.mjs';
 import { recordTactic } from './m59-tactics.mjs';
 import { recordCrossing } from './m59-crossings.mjs';
+import { Lru } from './m59-lru.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
 import { traceMove } from './m59-collision-trace.mjs';
@@ -559,7 +560,13 @@ let roomRooLookup;
 try {
   roomRooLookup = new Map(JSON.parse(_rfs2(new URL('../substrate/room-roo-lookup.json', import.meta.url), 'utf8')));
 } catch { roomRooLookup = new Map(); }
-const _walkableCache = new Map(); // roomName -> walkable array
+// NOT A MAP, AND NOT ONLY WALKABLE ARRAYS. The name predates the contents: this is keyed by
+// nine prefixes and the biggest entries are whole decoded `.roo` rooms (`geo:`), height
+// grids and wall chains. Unbounded, it was one entry per room per prefix across 264 rooms,
+// resident for the life of the process — a large heap that only ever grew, which is what
+// Windows was trimming when the broker took a 736-second event-loop stall and started
+// refusing connections on a listening port. See m59-lru.mjs for the measurement.
+const _walkableCache = new Lru();
 
 let worldMap;
 try { worldMap = loadMap(); }
@@ -765,7 +772,56 @@ const keeperProcesses = new Map();     // agent name -> { pid, port, startedAt }
 // anybody. Membership here means "somebody is already bringing this one up"; the sweep
 // steps over it and tries again next lap.
 const keeperSpawning = new Set();
-const KEEPER_PORT_BASE = 8911;
+// EACH FLEET GETS ITS OWN BAND, BECAUSE SHARING ONE BASE PUT TWO FLEETS IN ONE RANGE.
+//
+// This was a flat 8911 for everybody, and the scan-forward allocator then interleaved two
+// live fleets across 8911-8952 on this machine: prod's t8 on 8947 sitting between shadow15
+// on 8929 and shadow21 on 8944, and t1 answering on BOTH 8911 and 8945. The identity check
+// in `keeperHealth` keeps that from being a correctness disaster — an order addressed to
+// "t8" arriving at shadow03's keeper is refused, and the keeper logs
+// `another broker is guessing this port` — but refusing is not reaching, and the broker
+// that could not reach its own keeper reported the order as `started: true` and then
+// nothing moved. Measured: travel from 1,66 in Ukgoth, `started` every time, forty seconds
+// of not moving, no line in the keeper's own log because the order never got there.
+//
+// A band per fleet removes the question rather than answering it faster. One hundred ports
+// is five times what a twenty-one character fleet needs, and the unnamed fleet keeps 8911 so
+// a checkout that has never named a fleet behaves exactly as it did.
+//
+// ASSIGNED AND WRITTEN DOWN, NOT HASHED. A hash was tried first and it is the wrong tool:
+// with the fleets actually on this machine — prod, shadow, arena, boscontrol — every bucket
+// count I tested collided somewhere, and "collides rarely" is exactly the wrong property for
+// something whose failure mode is one fleet quietly posting orders into another's keepers.
+// A registry cannot collide: the first broker to claim a band keeps it, and the answer is
+// stable across restarts because it is on disk rather than recomputed.
+//
+// M59_KEEPER_PORT_BASE overrides it, because a machine with an unusual firewall or a fleet
+// this scheme has never seen is exactly what a derived number cannot anticipate.
+function keeperPortBaseFor(fleet) {
+  if (!fleet) return 8911;                       // the unnamed fleet, unchanged
+  const file = fileURLToPath(new URL('../substrate/keeper-bands.json', import.meta.url));
+  let bands = {};
+  try { bands = JSON.parse(readFileSync(file, 'utf8')); } catch { bands = {}; }
+  if (Number.isFinite(bands[fleet])) return bands[fleet];
+  const used = new Set(Object.values(bands).filter(Number.isFinite));
+  let band = 9011;
+  while (used.has(band)) band += 100;
+  bands[fleet] = band;
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, JSON.stringify(bands, null, 1));
+  } catch { /* an unwritable registry still gives this run a usable band */ }
+  return band;
+}
+// LAZY, because `FLEET` is declared further down this file and reading it here at module
+// load is a TDZ ReferenceError that takes the whole broker with it — which is exactly what
+// it did on the first deploy of this change. Resolved once, on first use, and cached.
+let _keeperPortBase = null;
+function keeperPortBase() {
+  if (_keeperPortBase == null)
+    _keeperPortBase = Number(process.env.M59_KEEPER_PORT_BASE || keeperPortBaseFor(FLEET));
+  return _keeperPortBase;
+}
 
 // A PORT IS NOT A NAME, AND TWO FLEETS ON ONE MACHINE WANTED THE SAME PORTS.
 //
@@ -798,7 +854,7 @@ const portsLostToOthers = new Set();
 function keeperPort(agent, index) {
   const known = keeperProcesses.get(agent)?.port ?? keeperPorts.get(agent);
   if (known) return known;
-  return KEEPER_PORT_BASE + (index ?? 0);
+  return keeperPortBase() + (index ?? 0);
 }
 
 // CAN THE KEEPER ACTUALLY BIND IT? That is the only question that matters, and asking it by
@@ -836,7 +892,7 @@ async function portIsOursOrFree(port, agent) {
 }
 
 async function allocateKeeperPort(agent, index) {
-  const start = KEEPER_PORT_BASE + (index ?? 0);
+  const start = keeperPortBase() + (index ?? 0);
   // A PORT THIS BROKER HAS ALREADY PROMISED TO SOMEBODY ELSE IS NOT FREE, even though
   // nothing answers on it yet. Probing alone has a race the width of a process start: two
   // agents allocating at once both find the same silent port and both take it. Seen in the
@@ -7684,6 +7740,18 @@ const TOOLS = [
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
+      require_safe_wall: { type: 'boolean',
+        description: 'WILL THIS CHARACTER FIGHT WITHOUT A WALL? Default true, and it is not the same ' +
+          'setting as use_safe_spots: that one is whether to PREFER a wall, this is whether to REFUSE ' +
+          'the fight without one. With it on, a character that cannot walk onto a candidate square ' +
+          'retries every pass for ever — "could not reach a wall this pass" — and never swings, which ' +
+          'reads from outside as a bot shuffling in a corner ignoring prey in swing range. Measured on ' +
+          'prod 2026-08-27: nine characters in the Valley of Ileria, five fungus beasts visible, ' +
+          'safe_spot false, zero kills, until this was turned off. Turn it off only where the prey is ' +
+          'cheap — fungus beast is level 50 but DIFFICULTY 1 at attack 210, so an open fight is ' +
+          'survivable; a battered skeleton is difficulty 4 at attack 420 and it is not. It had no ' +
+          'argument here at all until now, so the only way to set it was to reach into a running ' +
+          'keeper, which meant it could never be persisted and never survived a restart' },
       hold_resume_above: { type: 'number',
         description: 'in a safe spot, top up to this fraction of health before swinging again, ' +
           'default 0.9. Stopping costs nothing there, so there is no reason to fight hurt' },
@@ -8307,6 +8375,10 @@ const TOOLS = [
       if (a.inky_reserve_floor !== undefined)
         p.policy.inkyReserveFloor = Math.max(0, Number(a.inky_reserve_floor) || 0);
       if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
+      // Whether to REFUSE a fight without a wall, which is a different question from whether
+      // to prefer one. See the schema entry: with this on and the wall unreachable, the pass
+      // retries for ever and the character never swings at prey standing next to it.
+      if (a.require_safe_wall !== undefined) p.policy.requireSafeWall = !!a.require_safe_wall;
       if (a.hold_resume_above !== undefined) p.policy.holdResumeAbove = Number(a.hold_resume_above);
       // 0 or null means NO LIMIT, not "never pull anything". There is no sensible reading
       // of "fetch things within zero steps", and the default is unlimited — see pull() —
@@ -12934,6 +13006,11 @@ function brokerHealth() {
     // "nobody has tried to move" are different, so this carries the count either way.
     geometry_drift: geometryDriftReport(),
     loop_lag_ms: loopLag(),
+    // The geometry cache, reported so the cap can be judged rather than guessed at. A
+    // hit_rate that collapses means M59_LRU_MAX is set below the fleet's working set of
+    // rooms and the broker is re-parsing `.roo` files on the shared event loop — which is
+    // a worse fault than the resident memory the cap was added to bound.
+    geometry_cache: _walkableCache.stats(),
     ...brokerGameEndpoints(),
   };
 }

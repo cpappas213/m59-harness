@@ -1155,6 +1155,10 @@ const followRail = compileSessionMethod(brokerSource,
     RUN_VIGOR_FLOOR: 12,
     declaredJumpNeedsRun: () => false,
     recordTactic: () => {},
+    // THE REAL 384. A baked route's own drop is taken as a FALL rather than walked off,
+    // and this is the threshold that decides which steps those are — a stubbed value would
+    // test a rail nobody rides.
+    MAX_STEP_HEIGHT: 384,
   });
 const recentreInSquare = compileSessionMethod(brokerSource,
   'async recentreInSquare() {', 'recentreInSquare', {});
