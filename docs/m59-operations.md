@@ -58,6 +58,15 @@ against the **roster** rather than against sessions, and claims those agents as 
 A claim is what the reconciler honours, so one call keeps the character out of the resume
 *and* out of the 45s rejoin sweep.
 
+**A claim records whether the keeper was driving, and a second claim must not forget the
+first one's answer.** Claiming stops the keeper, so anything that recomputes "was it
+running" afterwards reads *stopped* — and this boot-time claim runs before there is a
+session to ask at all. Robin, 2026-08-27: claimed "keeper was running" when the operator
+logged in, re-claimed "keeper was stopped" at a broker resume, released as "stays
+stopped", and rejoined with no keeper. So an existing claim's answer stands, and the resume
+path passes the roster's standing orders as the answer — a character with orders was
+driving, whatever the empty shell says.
+
 Then it checks. A command line says what a process was *asked* to do, not that anyone
 reached the world, so another character reads the who list and looks for that name — and
 if the character is **not** online, the claim is released and the character resumed after
@@ -164,8 +173,15 @@ the session after `[Miscellaneous] Timeout` minutes (20 by default) with no key 
 the setting is per-machine and rewritten on exit, and nothing on a launch line can turn it
 off; a client left up overnight to gather data was gone by morning with a clean `REQ_QUIT`
 in the log and no other trace. In the patched build the timer never arms. The Timeout
-dialog still saves its number and the number is not read. `M59_CLIENT` names the binary
-when it is not in the default tree; the build line is what `--check` prints when nothing is
+dialog still saves its number and the number is not read. Two more, since 2026-08-27:
+**the safety is on at every login** — stock reads `[Interface] Aggressive` back from the ini
+and merintr sends it as the `UC_SAFETY` on entering the game, so one `safetyoff` in an
+earlier session came back for every session after it; the patched build never reads it,
+and `safetyoff` or the preferences dialog still turns it off for the rest of that session
+only. And **a stackable purchase opens at 50** (`DEFAULT_PURCHASE` in `buy.c`) instead of
+the merchant's own stack size — the 5 herbs and 4 elderberries at Morrigan's that every
+restock began by retyping; withdrawals still open at all of what is there. `M59_CLIENT`
+names the binary when it is not in the default tree; the build line is what `--check` prints when nothing is
 there (**`vcvars64`**, not 32 — the objects in `clientd3d
 elease` are x64, and one x86
 object among them fails the link rather than producing a wrong binary).
