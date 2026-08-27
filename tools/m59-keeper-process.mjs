@@ -88,8 +88,17 @@ if (!entry?.credentials) {
 const { account, password, character } = entry.credentials;
 const credHost = entry.credentials.host || host;
 const credPort = entry.credentials.port || serverPort;
-const policy = entry.autopilot?.policy || {};
-const mode = entry.autopilot?.mode || 'goap';
+// THE BOOT ORDERS, AND THEY ARE RE-APPLIED ON EVERY REJOIN — so they are `let`, not
+// `const`. `join()` ends with `autopilot.mode = mode; Object.assign(autopilot.policy,
+// policy)`, which means the roster snapshot this process read at startup is re-imposed
+// every time the character reconnects: the 45s sweep, a phantom recovery, a pilot handing
+// the character back. A policy pushed over /policy that updated only the live Autopilot
+// would therefore survive until the next rejoin and then silently revert to the boot
+// orders — the same disappearing-order bug the push was added to end, just on a longer
+// fuse and far harder to catch. /policy updates these too, so a rejoin re-applies the
+// CURRENT orders rather than the ones this process happened to start with.
+let policy = entry.autopilot?.policy || {};
+let mode = entry.autopilot?.mode || 'goap';
 
 // Every character has its own process, so safe-wall reservations need a shared store.
 // Scope it to BOTH the resolved roster and the game endpoint: two fleets may use the same
@@ -2095,13 +2104,47 @@ const server = createServer(async (req, res) => {
 
     if (req.method === 'POST' && path === '/policy') {
       const body = JSON.parse(await readBody(req));
+      // A WRITE IS ADDRESSED LIKE EVERY OTHER WRITE. See `keeperEnvelope` in
+      // m59-broker.mjs: a broker that has guessed this port would otherwise re-policy a
+      // stranger's character, and a policy is the least visible thing you can change —
+      // no logout, no server line, just somebody else's fleet quietly hunting the wrong
+      // creature in the wrong room. Fails OPEN on an unaddressed body, as everywhere else.
+      if (!addressedToUs(body?.agent)) { refuseMisaddressed(body.agent); return; }
+      // TWO RESERVED KEYS, NEITHER OF WHICH IS A POLICY FIELD. `agent` is the envelope.
+      // `mode` lives on the Autopilot object, not in `policy` — assigning it into the
+      // policy would leave a `policy.mode` that looks authoritative and is read by nothing,
+      // which is the `purpose`-shaped bug this repository has already paid for once.
+      const { agent: _addressed, mode: wantMode, ...fields } = body;
+      const applied = [];
+      let modeChange = null;
+      // The boot orders move with the live ones. See the `let policy` / `let mode`
+      // declarations: without this the push survives only until the next rejoin.
+      Object.assign(policy, fields);
+      if (wantMode) mode = wantMode;
       if (autopilot) {
-        Object.assign(autopilot.policy, body);
-        if (Object.hasOwn(body, 'partner'))
+        Object.assign(autopilot.policy, fields);
+        applied.push(...Object.keys(fields));
+        if (Object.hasOwn(fields, 'partner'))
           rememberFileSpotPartner(agent, autopilot.policy.partner ?? null);
-        log(`[keeper] ${agent} policy updated: ${JSON.stringify(body)}`);
+        // `this.mode` is consulted fresh on every pass (m59-autopilot.mjs: `this.mode ===
+        // 'farm'`), so this lands on the next decision without restarting the loop or
+        // dropping the socket. Restarting the keeper was the only way to change a mode
+        // before this, and it costs a logout and a rejoin sweep per character.
+        if (wantMode && wantMode !== autopilot.mode) {
+          modeChange = { from: autopilot.mode ?? null, to: wantMode };
+          autopilot.mode = wantMode;
+        }
+        log(`[keeper] ${agent} policy updated: ${JSON.stringify(fields)}` +
+            (modeChange ? ` | mode ${modeChange.from} -> ${modeChange.to}` : ''));
       }
-      json({ ok: true });
+      // REPORT WHAT LANDED, NOT `ok: true`. This endpoint exists because a policy change
+      // that silently did nothing is indistinguishable from one that worked, so a bare
+      // acknowledgement would rebuild the exact failure on the receiving side. `applied`
+      // is also the version marker the broker reads to tell a real confirmation from an
+      // older keeper's reflexive ok.
+      json({ ok: true, agent, applied, mode: autopilot?.mode ?? null,
+             mode_changed: modeChange, running: !!autopilot?.running,
+             no_autopilot: !autopilot });
       return;
     }
 

@@ -75,6 +75,15 @@ export const PULSE_MOVEMENT_SAMPLES = 3;
 // takes it back. Four pulses: long enough that a driver pausing at a door is not treated as
 // an abandonment, short enough to matter at these health totals.
 export const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
+// HOW LONG A HEALTHY CHARACTER MAY BE PENNED IN WHILE SUPPOSEDLY GOING SOMEWHERE.
+//
+// Deliberately much longer than WATCHDOG_BLOCKED_MS. The 3s handbrake is an EMERGENCY —
+// health has crossed the withdraw line and every second is damage. This one is not urgent,
+// it is just wrong: nothing is hurting the character, so the only cost of waiting is time.
+// A long fight, a slow pull and a mid-journey pause are all legitimately still for several
+// seconds, and cancelling those would be the guard picking fights with the pass. Twenty
+// seconds of covering no ground at all is not any of them.
+export const WATCHDOG_PINNED_MS = Number(process.env.M59_WATCHDOG_PINNED_MS || 20_000);
 
 const pct = v => (v && v.max ? v.value / v.max : null);
 
@@ -101,11 +110,19 @@ export function inertBleeding(w, hp) {
 }
 
 // The scratch the tick keeps. Created here so a host cannot forget a field.
+// THE STATES WHOSE WHOLE CONTENT IS "THE CHARACTER SHOULD BE GETTING CLOSER TO SOMEWHERE".
+// One copy, because both the pulse and the handbrake below ask the same question and a
+// second copy of this list is how one of them quietly stops matching the other.
+export const GOING = ['travelling', 'pulling', 'converging', 'zoning'];
+
 export function freshState() {
   return { ticks: 0, frames: 0, interrupts: 0, rescues: 0, rescuedPass: null,
            longest_block_ms: 0,
            lastHealth: null, blockedSince: null, interruptedPass: null,
-           pulses: [], lastPulseAt: 0, wedged: null, wedges: 0 };
+           pulses: [], lastPulseAt: 0, wedged: null, wedges: 0,
+           // When the body was first penned in while supposedly going somewhere, and how
+           // many times that has had to be broken. See THE SECOND ARM in tick().
+           pinnedSince: null, pinnedInterrupts: 0 };
 }
 
 // start/stop own the timer. `unref` so a watchdog never holds a process open.
@@ -153,7 +170,6 @@ export function pulse(host, now, hp) {
   const w = host.watch, c = host.s?.client, me = c?.self;
   if (!w) return null;
   const doing = host.doing ?? null;
-  const GOING = ['travelling', 'pulling', 'converging', 'zoning'];
   const at = me ? { at: now, room: c.room?.id ?? null, col: me.col ?? null,
                     row: me.row ?? null, x: me.x ?? null, y: me.y ?? null,
                     health: hp?.value ?? null, doing } : null;
@@ -294,6 +310,16 @@ export function tick(host) {
     }
   }
 
+  // 1d. HOW LONG THE BODY HAS COVERED NO GROUND WHILE SUPPOSEDLY GOING SOMEWHERE.
+  //
+  // Kept here rather than in pulse() because it must be cleared the instant any of its
+  // excuses becomes true — a character that takes a wall, or is handed to an errand, has
+  // stopped being wedged at that moment and not a pulse later. Clearing on the way out is
+  // what makes `pinnedSince` a duration rather than a high-water mark.
+  if (GOING.includes(host.doing ?? null) && !host.inert && !host.hold && pennedIn(w))
+    w.pinnedSince ??= now;
+  else w.pinnedSince = null;
+
   // 2. THE HANDBRAKE.
   const blockedFor = host.passStartedAt ? now - host.passStartedAt : 0;
   if (blockedFor > w.longest_block_ms) w.longest_block_ms = blockedFor;
@@ -311,7 +337,60 @@ export function tick(host) {
   const frac = pct(hp);
   if (frac === null) return;
   const fleeAt = host.safety().fleeAt;
-  if (frac >= fleeAt) return;
+
+  // 2b. THE SECOND ARM — WEDGED WHILE PERFECTLY HEALTHY.
+  //
+  // THE HOLE THIS FILLS. Everything above is gated on `frac < fleeAt`, so a character that
+  // is wedged and NOT being hurt was invisible to the whole guard: the position pulse saw
+  // it and said so in as many words — "Flagged for debugging; nothing was cancelled" — and
+  // the handbrake returned one line later because health was fine. The only thing that ever
+  // rescued a wedge was taking enough damage to be dying, which means the instrument fired
+  // reliably only once it was too late to be worth firing.
+  //
+  // Measured on prod 2026-08-27, six characters in the Valley of Ileria: Robin at 40/40
+  // spent an entire pass — 46 seconds and counting — shuffling between squares 72,65 and
+  // 73,64 with two fungus beasts in swing range, 8 passes in 30 minutes against a healthy
+  // keeper's 77 in 26. Nothing was hurting them, so nothing interrupted them, so the pass
+  // that would have decided to fight never ended. They were not fighting because they were
+  // never getting to the part where you decide to fight.
+  //
+  // AND THE SHUFFLE IS WHY `wedged` COULD NOT BE USED FOR THIS. That flag needs the SAME
+  // square twice; two squares alternating clears it on every other sample, so the one
+  // symptom that most needs catching is the one it resets on. `pennedIn` asks the question
+  // the right way round — one room, within a square, over the newest three samples — and
+  // CLAUDE.md has said so since the shuttle runs: a stall detector that requires stillness
+  // misses the commonest way of standing still.
+  //
+  // IT STILL DECIDES NOTHING. Same single action as the arm below, once per pass:
+  // cancelMovement, so the wedged await returns and the NEXT pass chooses with fresh
+  // numbers. `host.hold` and `host.inert` are already excluded above and in pennedIn's
+  // caller — a held wall is standing still on purpose and an errand is not ours to cancel.
+  const pinnedFor = w.pinnedSince ? now - w.pinnedSince : 0;
+  if (frac >= fleeAt) {
+    if (pinnedFor < WATCHDOG_PINNED_MS) return;
+    w.interruptedPass = host.passes;
+    w.pinnedInterrupts++;
+    w.pinnedSince = null;
+    host.tally.watchdog_pinned_interrupts = (host.tally.watchdog_pinned_interrupts || 0) + 1;
+    const broke = (() => {
+      try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
+    })();
+    const spot = w.pulses[w.pulses.length - 1];
+    host.note('WATCHDOG — broke a wedge that was not hurting anybody', {
+      health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
+      doing: host.doing ?? null,
+      penned_for_s: Math.round(pinnedFor / 1000),
+      pass_blocked_for_s: Math.round(blockedFor / 1000),
+      square: spot ? `${spot.col},${spot.row}` : null, room: spot?.room ?? null,
+      interrupted: broke.interrupted ?? null,
+      why: 'covering no ground for ' + Math.round(pinnedFor / 1000) + 's while ' +
+           (host.doing ?? 'going somewhere') + ', and full health meant nothing else here ' +
+           'would ever interrupt it. The walk is cancelled so the next pass can decide ' +
+           'with real numbers — this keeper does not decide anything itself',
+    });
+    host.progress('watchdog broke a healthy wedge');
+    return;
+  }
 
   w.interruptedPass = host.passes;
   w.interrupts++;

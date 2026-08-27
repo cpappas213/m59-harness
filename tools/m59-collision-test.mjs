@@ -1066,6 +1066,11 @@ const ordinaryStep = compileSessionMethod(brokerSource,
     // the gate's own logic is pinned in m59-impossible-test against the real table.
     RUN_VIGOR_FLOOR: 12,
     declaredJumpNeedsRun: () => false,
+    // Every fall step now writes a telemetry row; the ledger has its own suite.
+    recordTactic: () => {},
+    // The jump telemetry asks the server's MOVEON bits which nearby objects actually block,
+    // so a corpse the server marks walk-through never counts as being on the line.
+    blocksMovement,
     // THE REAL VALUES FROM m59-game.mjs (:67, :72), not stand-ins. `step` grew these
     // when combat facing landed, and a compiled method whose constants are invented is
     // testing a different function from the one that ships. The dependency check below

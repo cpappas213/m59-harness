@@ -12,7 +12,7 @@
 // only while the guard lived inside the monolith and broke the moment it moved. Testing
 // a real import instead of a string slice is the point of having extracted it.
 //
-import { pulse } from './m59-watchdog.mjs';
+import { pulse, tick, freshState, WATCHDOG_PINNED_MS, WATCHDOG_BLOCKED_MS } from './m59-watchdog.mjs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, detail) => {
@@ -153,6 +153,111 @@ console.log('\nit decides nothing, and that is deliberate');
   zoned.s.client.room.id = 588;
   ok('crossing into another room at the same coordinates is not a stall',
      zoned.tick(2000) === null);
+}
+
+// ---------------------------------------------------------------------------
+// THE WEDGE THAT IS NOT HURTING ANYBODY — the second arm of the handbrake.
+//
+// Everything in the handbrake used to be gated on `frac < fleeAt`, so a character wedged
+// at FULL health was invisible to the entire guard: the pulse above saw it and said so —
+// "Flagged for debugging; nothing was cancelled" — and the handbrake returned one line
+// later because health was fine. The only thing that ever broke a wedge was taking enough
+// damage to be dying.
+//
+// Measured on prod 2026-08-27 in the Valley of Ileria: Robin at 40/40 spent one entire
+// pass — 46 seconds — alternating between squares 72,65 and 73,64 with two fungus beasts
+// in swing range. 8 passes in 30 minutes against a healthy keeper's 77 in 26. They were
+// not fighting because the pass that decides to fight never ended.
+//
+// And the alternation is why `wedged` could not be used for it: that flag wants the SAME
+// square twice and two squares alternating clears it on every other sample. These drive
+// the REAL tick() against a body that shuffles, which is the case that matters.
+console.log('\na wedge at full health is still a wedge');
+{
+  // A fuller host than `keeper()` above: tick() reads vitals, safety and the pass counter.
+  const wedgeHost = ({ health = 50, fleeAt = 0.4, doing = 'travelling',
+                       hold = null, inert = null, moving = false } = {}) => {
+    const self = { col: 72, row: 65, x: 0, y: 0 };
+    const notes = [], cancels = [];
+    let step = 0;
+    return {
+      // passStartedAt must be TRUTHY: the handbrake reads `host.passStartedAt ? ... : 0`,
+      // so a pass that began at epoch 0 reads as "not blocked at all".
+      doing, inert, hold, tally: {}, passes: 8, passStartedAt: 1, lastFrameAt: 0,
+      watch: freshState(),
+      s: { live: true,
+           cancelMovement: () => { cancels.push(true); return { cancelled: true, interrupted: 'walk' }; },
+           client: { self, room: { id: 544 }, state: 'game',
+                     vitals: () => ({ health: { value: health, max: 50 } }) } },
+      safety: () => ({ fleeAt }),
+      note: (what, detail) => notes.push({ what, detail }),
+      recordFrame: () => {}, progress: () => {},
+      notes, cancels,
+      // Two squares, alternating — the shuffle. Or real ground, when `moving`.
+      //
+      // Alternated on the PULSE cadence (1s), not the tick cadence (500ms): the pulse ring
+      // is what pennedIn reads, and flipping twice between samples would land every sample
+      // on the same square — a plain wedge, which is the case this section is NOT about.
+      // `tick(host)` takes NO clock — it reads Date.now() itself, unlike pulse(host, now).
+      // So the clock is stubbed for the run and restored in a finally. Without this every
+      // tick lands in the same millisecond, the 1s pulse gate opens once, and the ring
+      // never grows past one sample — which looks exactly like the guard not firing.
+      run(untilMs) {
+        const realNow = Date.now;
+        try {
+          for (let t = 500; t <= untilMs; t += 500) {
+            Date.now = () => t;
+            if (moving) { self.col += 2; self.row += 2; }
+            else {
+              const odd = Math.floor(t / 1000) % 2;
+              self.col = odd ? 73 : 72;
+              self.row = odd ? 64 : 65;
+            }
+            tick(this);
+            step++;
+          }
+        } finally { Date.now = realNow; }
+        return this;
+      },
+    };
+  };
+
+  const shuffling = wedgeHost().run(WATCHDOG_PINNED_MS + 4_000);
+  ok('a full-health body that alternates between two squares IS eventually broken out of',
+     shuffling.cancels.length === 1, `${shuffling.cancels.length} cancels`);
+  const note = shuffling.notes.find(n => n.what.startsWith('WATCHDOG — broke a wedge'));
+  ok('and it says so in a note a person can grep for', !!note);
+  ok('which reports how long it covered no ground', (note?.detail?.penned_for_s ?? 0) >= 20,
+     `${note?.detail?.penned_for_s}s`);
+  ok('and counts it separately from the emergency arm',
+     shuffling.tally.watchdog_pinned_interrupts === 1 &&
+     !shuffling.tally.watchdog_interrupts);
+  ok('it fires ONCE per pass, not once per tick', shuffling.cancels.length === 1);
+
+  // NOT BEFORE ITS TIME. The 3s emergency threshold is for a character that is bleeding;
+  // applying it here would cancel every legitimate slow walk in the game.
+  const early = wedgeHost().run(WATCHDOG_BLOCKED_MS + 2_000);
+  ok('a few seconds of shuffling is NOT enough — that is an ordinary slow walk',
+     early.cancels.length === 0);
+
+  // The three excuses, each for its own reason.
+  ok('holding a safe wall is standing still on purpose and is never broken',
+     wedgeHost({ hold: { at: {} } }).run(WATCHDOG_PINNED_MS + 4_000).cancels.length === 0);
+  ok('an errand that owns the character is not ours to cancel',
+     wedgeHost({ inert: { why: 'an errand' } }).run(WATCHDOG_PINNED_MS + 4_000).cancels.length === 0);
+  ok('and a character that is not going anywhere cannot be wedged on the way there',
+     wedgeHost({ doing: 'fighting' }).run(WATCHDOG_PINNED_MS + 4_000).cancels.length === 0);
+  ok('nor is a body that is actually covering ground',
+     wedgeHost({ moving: true }).run(WATCHDOG_PINNED_MS + 4_000).cancels.length === 0);
+
+  // AND THE EMERGENCY ARM IS UNCHANGED. A hurt character is still interrupted at 3s by the
+  // original path, not made to wait twenty for the new one.
+  const hurt = wedgeHost({ health: 10 }).run(WATCHDOG_BLOCKED_MS + 1_500);
+  ok('a character below the flee line is still interrupted at the OLD threshold',
+     hurt.cancels.length === 1 && hurt.tally.watchdog_interrupts === 1);
+  ok('and it is the blind-walk note, not the new one',
+     hurt.notes.some(n => n.what.startsWith('WATCHDOG — pulled the character out')) &&
+     !hurt.notes.some(n => n.what.startsWith('WATCHDOG — broke a wedge')));
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);

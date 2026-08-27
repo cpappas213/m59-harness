@@ -1098,6 +1098,60 @@ async function keeperAction(agent, index, name, args) {
   }
 }
 
+// PUSH AN ORDER TO THE PROCESS THAT WILL ACTUALLY OBEY IT.
+//
+// `autopilot action=start` wrote to two places and NEITHER of them was the character:
+// the broker's own in-process Autopilot shell, and the roster on disk. On a keeper-backed
+// broker the shell drives nobody, and the roster is read by a keeper exactly once — at
+// startup (m59-keeper-process.mjs reads `entry.autopilot.policy` and `.mode` at line ~90
+// and never again). So a policy change applied cleanly, persisted correctly, and answered
+// `running: true, mode: "farm"` while the keeper went on running the orders it booted with.
+//
+// Measured on prod 2026-08-26: nine characters in Familiars were switched to
+// farm / "fungus beast" / assigned_room 544 / confinement released. All nine were correct
+// on disk and all nine were still `survive` with the old confinement in the live keeper a
+// minute later. Nothing errored. That is exactly the silent-success shape this repository
+// keeps paying for, sitting in the path an operator uses most.
+//
+// THE BODY IS FLAT, on purpose. An older keeper's handler is
+// `Object.assign(autopilot.policy, body)`, so a flat body lands correctly there and the two
+// reserved keys (`agent`, `mode`) become inert extras rather than a policy that never
+// arrived. Wrapping the fields in `{policy: {...}}` would have made every keeper predating
+// this change silently ignore the lot — the failure this function exists to end.
+//
+// `mode` is NOT a policy field. It lives on the Autopilot object and is re-read on every
+// pass; assigning it into `policy` would leave a `policy.mode` that looks authoritative and
+// is read by nothing.
+async function keeperPolicy(agent, index, { policy, mode } = {}) {
+  const port = keeperPort(agent, index);
+  const body = { ...(policy || {}) };
+  if (mode) body.mode = mode;
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/policy`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: keeperEnvelope(agent, body),
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return { pushed: false, error: `keeper ${res.status}` };
+    const j = await res.json().catch(() => ({}));
+    // `applied` is absent from a keeper predating this change. Say so rather than
+    // reporting a confident `pushed: true` about a reply that never confirmed anything.
+    return { pushed: true, confirmed: Array.isArray(j.applied), ...j };
+  } catch (e) {
+    return { pushed: false, error: e.message };
+  }
+}
+
+// The one place that decides whether an order needs pushing at all. A directly-held
+// session IS the thing the tools mutate, so there is nothing to forward; a KeeperProxy is
+// a window onto another process and everything has to go over the wire.
+async function pushPolicyToKeeper(agent, p) {
+  const s = sessions.get(agent);
+  if (!(s instanceof KeeperProxy)) return null;
+  return keeperPolicy(agent, s._index, { policy: p.policy, mode: p.mode });
+}
+
 // ---------------------------------------------------------------- keeper proxy
 //
 // A proxy object that looks like a Session but forwards method calls to the
@@ -7840,7 +7894,7 @@ const TOOLS = [
         ] },
       full_journal: { type: 'boolean', description: 'return the whole journal, not just the tail' },
     }, required: ['agent', 'action'] },
-    run: (a) => {
+    run: async (a) => {
       if (a.action === 'list') return { autopilots: allAutopilots() };
       const s = session(a.agent);
       s.need();
@@ -8274,7 +8328,14 @@ const TOOLS = [
       // restart the keeper is rebuilt from these fields alone.
       rememberAutopilot(a.agent, { mode: p.mode, policy: { ...p.policy } });
       const started = p.start();
-      return retired ? { ...started, retired } : started;
+      // AND HAND IT TO THE PROCESS THAT WILL OBEY IT. The two lines above update this
+      // broker's shell and the roster on disk; on a keeper-backed broker neither of those
+      // is the character, and without this the order takes effect only at the keeper's
+      // next restart. `keeper_push` rides back in the reply on purpose — the caller that
+      // needs to know whether an order landed is the one reading this.
+      const keeper_push = await pushPolicyToKeeper(a.agent, p);
+      const out = retired ? { ...started, retired } : { ...started };
+      return keeper_push ? { ...out, keeper_push } : out;
     },
   },
   {
@@ -11587,6 +11648,11 @@ const TOOLS = [
           if (!p) continue;
           p.policy.assignedRoom = o.room;
           rememberAutopilot(o.agent, { mode: p.mode, policy: { ...p.policy } });
+          // The same push as `autopilot action=start`, for the same reason: `spread`'s
+          // whole promise is "make the assignment STICK", and on a keeper-backed broker
+          // an assignment written only to the shell and the roster sticks to nobody until
+          // that keeper next restarts. Reported per character below.
+          o.keeper_push = await pushPolicyToKeeper(o.agent, p);
           if (a.travel && o.moves) {
             const s = session(o.agent);
             // `travelJob` rather than a hand-rolled `startJob`: this one did claim the

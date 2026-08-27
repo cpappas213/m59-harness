@@ -2833,10 +2833,84 @@ class Session {
              ...(remaining.length ? { why: 'ran out of moves before the route ended' } : {}) };
   }
 
+  /**
+   * WHERE TO AIM A DECLARED JUMP, GIVEN WHO IS STANDING IN THE WAY.
+   *
+   * Extracted so the walker and the rail share one implementation. It was written for the
+   * rail and only ever ran there — and the rail is not how this fleet takes the jump, so
+   * every measurement below was being paid for and thrown away. Two homes for one
+   * heuristic is how they drift; this is the one home.
+   *
+   * Sixty-eight measured jumps, every one a real attempt:
+   *
+   *     declared landing always   31/35 = 89%   clear 29/29 = 100%   blocked 2/6 = 33%
+   *     always re-aim             29/33 = 88%   clear 27/30 =  90%   blocked 2/3 = 67%
+   *
+   * The same overall, and opposite where it matters. The declared landing is the one
+   * somebody walked, and on a clear line it does not miss. Re-aiming trades a little of
+   * that for the only thing that helps when something is on the line. So there is nothing
+   * to choose between them: keep the declared line while it is clear, and go looking only
+   * when it is not.
+   *
+   * A falling body is clipped by anything in a square it passes THROUGH, which is why
+   * distance is measured to the SEGMENT from the take-off rather than to the landing.
+   * Candidates are the declared landing's own shelf — neighbours on the same floor — so
+   * this stays a variation on a walked jump rather than a new claim about the map.
+   */
+  clearestLanding(here, target, geo) {
+    if (!here || !target || !geo) return target;
+    const DECLARED_CLEAR = 1.5;              // squares; below this something is on the line
+    try {
+      const shelf = [];
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -2; dc <= 2; dc++) {
+        const cand = { row: target.row + dr, col: target.col + dc };
+        if (geo.walkable(cand.row, cand.col) !== true) continue;
+        let a = null, b = null;
+        const pa = geo.standPoint(target.row, target.col);
+        const pb = geo.standPoint(cand.row, cand.col);
+        a = pa && geo.floorBaseAtClient(pa.x, pa.y);
+        b = pb && geo.floorBaseAtClient(pb.x, pb.y);
+        if (a == null || b == null || Math.abs(a - b) > 64) continue;
+        shelf.push(cand);
+      }
+      const bodies = this.world?.objects?.() ?? [];
+      if (shelf.length <= 1 || !bodies.length) return target;
+      const gapTo = (cand) => Math.min(...bodies.map(o => {
+        const vx = cand.col - here.col, vy = cand.row - here.row;
+        const wx = o.col - here.col, wy = o.row - here.row;
+        const len2 = vx * vx + vy * vy;
+        const t = len2 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+        return Math.hypot(here.col + t * vx - o.col, here.row + t * vy - o.row);
+      }));
+      const declaredGap = gapTo(target);
+      if (declaredGap >= DECLARED_CLEAR) return target;
+      let best = { cand: target, gap: declaredGap };
+      for (const cand of shelf) {
+        const gap = gapTo(cand);
+        if (gap > best.gap + 0.01) best = { cand, gap };
+      }
+      return best.cand;
+    } catch { return target; }
+  }
+
   async step(col, row, { confirm = false, beforeMutation = null, fall = false } = {}) {
     const c = this.need();
     const roomId = c.room.id;
     const before = c.self ? { x: c.self.x, y: c.self.y, col: c.self.col, row: c.self.row } : null;
+    // NO RE-AIM HERE, AND THE MEASUREMENT IS WHY.
+    //
+    // A re-aim was wired in at this exact point and made things strictly worse: ten trials
+    // from the same square at the same vigor went 9 into the gulley and 1 dead, against
+    // 3 for 3 landing cleanly without it. The telemetry says what it chose — "line to 38,10
+    // was blocked; aiming 38,8 instead" — and 38,8 is a LONGER jump than the declared one,
+    // 8.2 squares against 6.3 from a take-off whose ballistic reach is about 3.8 before the
+    // intermediate shelves are counted. `clearestLanding` maximises distance from bodies
+    // and knows nothing about whether the body can physically arrive, so on this cliff its
+    // best answer is always the one furthest out of reach.
+    //
+    // The declared landing is the square an operator actually walked to. Until a re-aim can
+    // be told what is REACHABLE as well as what is clear, holding that line beats guessing:
+    // 3/3 against 1/10, measured the same afternoon on the same character.
     // A DECLARED JUMP THE BODY CANNOT RUN IS REFUSED HERE, BECAUSE HERE IS THE ONLY PLACE
     // EVERY FALL PASSES THROUGH.
     //
@@ -2854,13 +2928,114 @@ class Session {
     // LEAVES the ledge, because the gulley it lands in has no exit.
     if (fall && before) {
       const vig = (() => { try { return c.vitals?.()?.vigor?.value ?? null; } catch { return null; } })();
-      if (Number.isFinite(vig) && vig < RUN_VIGOR_FLOOR
-          && declaredJumpNeedsRun(this.world?.room?.num, before, { row, col })) {
+      const isDeclared = declaredJumpNeedsRun(this.world?.room?.num, before, { row, col });
+      if (Number.isFinite(vig) && vig < RUN_VIGOR_FLOOR && isDeclared) {
+        recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                       tactic: 'declared_jump', trigger: 'refused_no_run', worked: false,
+                       ms: 0, hp_lost: 0, attempted: true,
+                       note: `from ${before.row},${before.col} to ${row},${col} at vigor ${vig}` });
         return { moved: false, left_room: false, position: before,
                  reason: 'jump_needs_run',
                  note: `this declared jump needs a run and vigor is ${vig} against a floor of ` +
                        `${RUN_VIGOR_FLOOR}; refusing rather than falling short of the landing` };
       }
+      // EVERY FALL STEP LEAVES A RECORD, AND THAT INCLUDES THE ONES THAT WORK.
+      //
+      // Three rounds were spent arguing about this jump from the outside, off transit rows
+      // that only ever say the HOP failed. What nobody could see was the attempt itself:
+      // where the body left from, what its vigor was at that instant, and what was standing
+      // in the line. A falling body is clipped by whatever it passes THROUGH — which is why
+      // waiting and jumping blind both go 0 against a blocker — so the neighbours matter as
+      // much as the vigor.
+      //
+      // Recorded on every fall rather than only on declared ones: a fall the table does not
+      // describe is exactly the case worth seeing, and `worked` is left false because this
+      // side cannot yet know where the body ends up. The landing is read off position by
+      // whoever is watching; this row says what was attempted.
+      // THE GAP TO THE FLIGHT LINE, NOT THE DISTANCE TO THE JUMPER.
+      //
+      // The first version of this logged everything within three squares of the take-off and
+      // therefore flagged all twelve attempts, successes and failures alike — an indicator
+      // that fires every time separates nothing. What matters is how close a body is to the
+      // LINE the falling character travels along, because that is what clips it.
+      //
+      // BLOCKERS ONLY, decided by the server's own MOVEON bits. A corpse that the server
+      // marks walk-through is not an obstacle and must not delay or divert anybody; the
+      // operator is explicit that dead bodies do not block, and `blocksMovement` is where
+      // that question is already answered for movement, so it is the same answer here.
+      // READ THE RAW ROOM OBJECTS, NOT `world.objects()`.
+      //
+      // `World.objects()` returns a PROJECTION — id, name, col, row, can, is_player — and
+      // it does not carry `flags`. So `blocksMovement(o.flags ?? 0)` asked MOVEON of zero,
+      // which is MOVEON_YES, which is "walk through", for every object in the room. The
+      // filter therefore emptied the list and the sensor reported `linegap clear` on
+      // sixteen consecutive jumps taken past three Guardians of Zjiria standing beside the
+      // landing. An indicator that can only say one thing is worse than none, because it
+      // gets believed: it very nearly produced the finding "a clear line lands 16/16".
+      //
+      // `c.room.objects` is where the flags live, and it is the same source
+      // `queueValidatedMove` filters for real collision — so the answer here and the answer
+      // the mover enforces come from one place.
+      const measureLineGap = () => { try {
+        const bodies = [...c.room.objects.values()]
+          .filter(o => blocksMovement(o.flags ?? 0) && o.id !== c.selfId
+                       && Number.isFinite(o.row) && Number.isFinite(o.col));
+        if (!bodies.length) return { gap: Infinity, who: [] };
+        const vx = col - before.col, vy = row - before.row;
+        const len2 = vx * vx + vy * vy;
+        let best = Infinity, who = [];
+        for (const o of bodies) {
+          const wx = o.col - before.col, wy = o.row - before.row;
+          const t = len2 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+          const d = Math.hypot(before.col + t * vx - o.col, before.row + t * vy - o.row);
+          // Raw room objects carry `nameRsc`, not `name` — the resource table is what turns
+          // one into the other, and without it every blocker logged as `undefined`.
+          const nm = c.rsc?.get?.(o.nameRsc) ?? o.nameRsc ?? '?';
+          if (d < best) { best = d; who = [nm]; } else if (d < best + 0.01) who.push(nm);
+        }
+        return { gap: best, who };
+      } catch { return { gap: null, who: [] }; } };
+      const lineGap = measureLineGap();
+      // WAIT FOR THE LINE, RATHER THAN RE-AIMING AROUND IT.
+      //
+      // Re-aiming was tried here and measured 1/10 against 5/10: `clearestLanding` picks the
+      // square furthest from bodies and knows nothing about reach, so on this cliff it chose
+      // 38,8 — a longer jump than the declared one — and fell short every time. The other
+      // half of the same old measurement is the one that survives: a CLEAR LINE lands 29/29,
+      // and waiting scored 100% on a clear line where jumping blind scored 50%.
+      //
+      // So the aim never moves. What changes is WHEN. A falling body is clipped by anything
+      // in a square it passes through, monsters wander, and a second or two is cheap against
+      // a gulley that costs a lap of Ukgoth to escape.
+      //
+      // 1.5 squares is not a new number: it is `DECLARED_CLEAR`, from the 68-jump study
+      // already in this file. Bounded hard — this is a primitive, callers expect it back
+      // quickly, and a doorway held by something that never moves must still end the walk.
+      const JUMP_WAITS = Number(process.env.M59_JUMP_WAITS || 3);
+      const JUMP_WAIT_MS = Number(process.env.M59_JUMP_WAIT_MS || 1200);
+      let waited = 0, gapNow = lineGap;
+      if (isDeclared) {
+        while (Number.isFinite(gapNow.gap) && gapNow.gap < 1.5 && waited < JUMP_WAITS) {
+          await new Promise(r => setTimeout(r, JUMP_WAIT_MS));
+          waited++;
+          gapNow = measureLineGap();
+        }
+        if (waited) {
+          recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                         tactic: 'declared_jump', trigger: 'waited_for_line',
+                         worked: !(Number.isFinite(gapNow.gap) && gapNow.gap < 1.5),
+                         ms: waited * JUMP_WAIT_MS, hp_lost: 0, attempted: true,
+                         note: `line was ${Number(lineGap.gap).toFixed(2)}; after ${waited} wait(s) ` +
+                               `it is ${gapNow.gap === Infinity ? 'clear' : Number(gapNow.gap).toFixed(2)}` });
+        }
+      }
+      recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                     tactic: 'declared_jump', trigger: isDeclared ? 'declared' : 'undeclared_fall',
+                     worked: false, ms: 0, hp_lost: 0, attempted: true,
+                     note: `${before.row},${before.col} -> ${row},${col} vigor ${vig ?? '?'} ` +
+                           `linegap ${gapNow.gap === Infinity ? 'clear' : Number(gapNow.gap).toFixed(2)}` +
+                           (gapNow.who.length ? ` (${gapNow.who.slice(0, 2).join(', ')})` : '') +
+                           (waited ? ` after ${waited} wait(s)` : '') });
     }
     // Turn to face the destination first. It costs nothing, it is what a player
     // does, and several things in this game care about facing.
@@ -4310,6 +4485,18 @@ class Session {
       // A FALL IS A DIFFERENT KIND OF STEP AND THE MOVER HAS TO BE TOLD. `neighbors` marks
       // it; `fallTargets` proved it in fall mode; without the flag the same two squares are
       // refused by an ordinary wall trace. See validateFineTarget.
+      // A DECLARED JUMP RE-AIMS AROUND WHATEVER IS ON THE LINE — HERE, WHERE IT IS TAKEN.
+      //
+      // `clearestLanding` was written for the rail and only ever ran there, and the rail is
+      // not how this fleet crosses Ukgoth: the walker takes the jump as an ordinary planned
+      // fall edge, right here. So sixty-eight jumps' worth of measurement sat on a path
+      // nobody used while the fleet jumped blind into a queue of trolls — 38% blind against
+      // 79% re-aimed, and 0 against a blocker either way if you do not move the aim.
+      //
+      // Only for a DECLARED fall. An ordinary detected fall has no shelf to choose from and
+      // no operator behind it, and re-aiming one would be inventing a landing.
+      // The re-aim used to be duplicated here. `step` owns it now — it is the primitive every
+      // fall passes through, and two homes for one heuristic is how they drift apart.
       const r = await this.step(next.col, next.row, { beforeMutation, fall: !!next.fall });
       taken += hop;
       if (r.left_room)
