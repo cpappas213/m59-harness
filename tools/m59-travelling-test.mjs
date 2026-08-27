@@ -609,8 +609,14 @@ console.log('\nthe safe-wall A/B is retired');
 console.log('');
 console.log('A TRIP IS REFUGE TO REFUGE — DIVERTS ARE EAGER, CANCELS ARE RARE');
 {
+  // AND THE THRESHOLD IS "HAVE I TAKEN A HIT", NOT A FRACTION. This pinned 0.95, which was a
+  // threshold pretending to be a rule: there is no mechanism that makes 96% fine. The operator
+  // set it to below-full on 2026-08-27, and diverting is free — the wall is already on the
+  // route and `onArrive` walks past one it turns out not to need.
   ok('the divert has its own threshold, separate from the cancel',
-     /travelDivertBelow \?\? 0\.95/.test(AUTOPILOT_SRC));
+     /travelDivertBelow \?\? 1\)/.test(AUTOPILOT_SRC));
+  ok('and that threshold is any damage at all, not a fraction of the bar',
+     /return hp < \(this\.policy\.travelDivertBelow \?\? 1\);/.test(AUTOPILOT_SRC));
   ok('and the cancel is for real trouble only',
      /travelWallBelow \?\? 0\.5\)/.test(AUTOPILOT_SRC));
   // THE ASSERTION THAT WOULD HAVE CAUGHT THE ORIGINAL BUG: the fuel-stop `need()` must not
@@ -662,7 +668,12 @@ console.log('A REFUGE IS SOMEWHERE YOU STOP UNTIL YOU ARE WHOLE');
 
   // THE SKIP IS THE OTHER HALF OF THE RULE.
   ok('a character that is already whole walks straight past',
-     /if \(whole\) return false;/.test(AUTOPILOT_SRC));
+     /if \(whole\) \{ settle\(\{[\s\S]{0,140}\); return false; \}/.test(AUTOPILOT_SRC));
+  // AND IT STILL SAYS SO ON DISK. A run that reached its wall and did not need it is the good
+  // case, and without an outcome row it is indistinguishable from one that never arrived —
+  // which is the fault this ledger exists to tell apart. See tools/m59-shelter.mjs.
+  ok('and a stop that was not needed is still recorded as having been reached',
+     /arrived whole — walked on without resting/.test(AUTOPILOT_SRC));
   ok('and one that is not rests to FULL health and the resting cap',
      /health: 1, vigor: REST_VIGOR_CAP/.test(AUTOPILOT_SRC));
   ok('bounded, so a refuge that cannot heal cannot hold a crossing for ever',

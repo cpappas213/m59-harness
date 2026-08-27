@@ -465,3 +465,8 @@ _verify2.mjs
 # A COPY OF A DERIVED BOOK, TAKEN BEFORE A RE-TEST. Backups of generated state are this
 # machine's safety net for one afternoon, not a fact about the map.
 /substrate/*.before-*.json
+
+# WHERE THIS MACHINE'S CHARACTERS RAN FOR COVER, and whether they got there. Evidence about
+# one fleet on one set of roads, named per character and stamped with the movement epoch it
+# was measured under. See tools/m59-shelter.mjs.
+/substrate/shelter-runs-*.json

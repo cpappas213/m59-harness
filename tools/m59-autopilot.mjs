@@ -42,6 +42,7 @@ import { arenaCall } from './m59-chatter.mjs';
 import { describeCommitment } from './m59-commitment.mjs';
 import * as tougher from './m59-tougher.mjs';
 import { recordEvent } from './m59-ledger.mjs';
+import { recordShelterRun } from './m59-shelter.mjs';
 import { traceLadder, traceDecision } from './m59-keeper-trace.mjs';
 import { detailSettings, recordStrategyStat, saveVaultSnapshot }
   from './m59-strategy-stats.mjs';
@@ -8114,8 +8115,17 @@ export class Autopilot {
           const v = this.s.client?.vitals?.();
           const hp = v?.health?.max ? v.health.value / v.health.max : null;
           if (hp === null) return false;
-          // Anything that is not "untouched" is worth the next wall on the way past.
-          return hp < (this.policy.travelDivertBelow ?? 0.95);
+          // ANYTHING THAT IS NOT UNTOUCHED. The operator's rule, 2026-08-27: seek roadside
+          // shelter below 100% health, not below some fraction of it. This defaulted to 0.95,
+          // which is a threshold pretending to be a rule — it says a character at 96% is fine
+          // to carry on, and there is no mechanism that makes 96% fine. Diverting is free: the
+          // wall is already on the route, `shelterAhead` refuses anything behind us or further
+          // than `maxDetour` off it, and `onArrive` walks straight past a wall it turns out not
+          // to need. So the honest bar is "have I taken a hit".
+          //
+          // It does not need conditioning on dangerous rooms either. A safe room does no damage,
+          // so in a safe room this never fires; where it fires IS the definition of dangerous.
+          return hp < (this.policy.travelDivertBelow ?? 1);
         },
         // AND SIT DOWN WHEN WE GET THERE, IF WE ARE NOT WHOLE.
         //
@@ -8133,7 +8143,24 @@ export class Autopilot {
           const hp = v?.health?.max ? v.health.value / v.health.max : null;
           const vig = vigorPct(v);
           const whole = (hp === null || hp >= 1) && (vig === null || vig >= REST_VIGOR_CAP);
-          if (whole) return false;                     // the stop we did not need — walk on
+          // THE OUTCOME ROW, WRITTEN WHETHER OR NOT WE REST. A run that reached its wall and
+          // did not need it is the good case and has to be distinguishable from one that never
+          // arrived — without this row both are "a `chose` with no `settled`".
+          const settle = (extra) => {
+            if (!this.shelterRun) return;
+            recordShelterRun({
+              run: this.shelterRun.id, kind: 'settled', character: this.s.name,
+              room: this.s.client?.room?.id ?? null, arrived: true,
+              ms: Date.now() - this.shelterRun.at,
+              health: v?.health?.value ?? null, max_health: v?.health?.max ?? null,
+              health_pct: hp, vigor: v?.vigor?.value ?? null,
+              hp_gained: (v?.health?.value ?? null) != null && this.shelterRun.health != null
+                ? (v.health.value - this.shelterRun.health) : null,
+              ...extra,
+            });
+            this.shelterRun = null;
+          };
+          if (whole) { settle({ rested_to: null, why: 'arrived whole — walked on without resting' }); return false; }
           this.note('resting at a refuge on the way', {
             where, health: hp === null ? null : Math.round(hp * 100) + '%', vigor: vig,
             why: 'a refuge passed at less than full is a square rather than a refuge. The ' +
@@ -8148,14 +8175,58 @@ export class Autopilot {
             maxSeconds: this.policy.refugeRestSeconds ?? 90,
           }).catch(e => ({ ok: false, why: e.message }));
           this.note('leaving the refuge', { where, ...(done?.ok === false ? { cut_short: done.why } : {}) });
+          const after = this.s.client?.vitals?.();
+          settle({
+            rested_to: after?.health?.max ? after.health.value / after.health.max : null,
+            health: after?.health?.value ?? null,
+            hp_gained: (after?.health?.value ?? null) != null && this.shelterRun?.health != null
+              ? (after.health.value - this.shelterRun.health) : null,
+            cut_short: done?.ok === false ? done.why : null,
+          });
           return true;
         },
-        onDivert: (stop, at) => this.note('taking a wall on the way past', {
-          where: { col: stop.col, row: stop.row }, proven: stop.proven,
-          off_the_road: stop.detour, at_step: at.atStep,
-          why: 'hurt, and this was already on the route — no stop, no replan, one more ' +
-               'waypoint than the crossing had a moment ago',
-        }),
+        // THE DECISION ROW — WRITTEN WHEN THE WALL IS CHOSEN, NOT WHEN IT IS REACHED.
+        //
+        // The operator's ask, 2026-08-27: record BOTH squares and the health at the moment of
+        // the decision, so the run for cover can be recreated. A ledger written on arrival
+        // cannot see the runs that never arrive, and those are the ones that end in a
+        // postmortem. See tools/m59-shelter.mjs for the argument and the schema.
+        onDivert: (stop, at) => {
+          const v = this.s.client?.vitals?.();
+          const hp = v?.health?.max ? v.health.value / v.health.max : null;
+          const me = this.s.client?.self ?? null;
+          const from = me && Number.isFinite(me.row)
+            ? { row: me.row, col: me.col } : null;
+          // How far the character actually has to WALK, which is the number that costs health —
+          // `detour` is only how far the wall sits off the planned road. Chebyshev, because
+          // that is how a step moves.
+          const squares = from && Number.isFinite(stop.row)
+            ? Math.max(Math.abs(stop.row - from.row), Math.abs(stop.col - from.col)) : null;
+          this.shelterRun = { id: `${this.s.name}-${Date.now()}`, at: Date.now(),
+                              health: v?.health?.value ?? null };
+          recordShelterRun({
+            run: this.shelterRun.id, kind: 'chose', character: this.s.name,
+            room: this.s.client?.room?.id ?? null,
+            room_name: this.s.client?.room?.name ?? null,
+            health: v?.health?.value ?? null, max_health: v?.health?.max ?? null,
+            health_pct: hp, vigor: v?.vigor?.value ?? null,
+            health_per_second: this.healthRate?.(this.recent5 ?? []) ?? null,
+            threats: (this.threatsHere?.() ?? []).map(t => t.name ?? t.kind ?? '?').slice(0, 12),
+            fleet: undefined,
+            from, to: { row: stop.row, col: stop.col },
+            detour: stop.detour ?? null, squares, proven: stop.proven ?? null,
+            at_step: at?.atStep ?? null,
+            legs_left: Number.isFinite(at?.legsLeft) ? at.legsLeft : null,
+            why: 'hurt on the road — the next route-adjacent wall',
+          });
+          this.note('taking a wall on the way past', {
+            where: { col: stop.col, row: stop.row }, from, squares_to_walk: squares,
+            health: hp === null ? null : Math.round(hp * 100) + '%',
+            proven: stop.proven, off_the_road: stop.detour, at_step: at.atStep,
+            why: 'hurt, and this was already on the route — no stop, no replan, one more ' +
+                 'waypoint than the crossing had a moment ago',
+          });
+        },
       };
     }
     // `attempts` RIDES ON THE JOURNEY, and it has to. The counter cannot live only on the
@@ -9857,6 +9928,72 @@ export class Autopilot {
           hunting: this.policy.hunt,
           strategy: this.policy.strategy,
           flee_threshold: this.safety().fleeAt,
+          // AND WHAT THAT NUMBER ACTUALLY GOVERNED, because on its own it misleads and it
+          // misled the operator on 2026-08-27. `flee_threshold: 0.7` next to a travelling
+          // death reads as "it should have fled at 70% and did not", and the truth is the
+          // opposite: a traveller is not supposed to flee from a monster at all. The rung is
+          // gated on `worthEnding`, which under the default `travel_flee_from: 'players'` is
+          // PEOPLE ONLY — so 0.7 is the ordinary ladder's number being reported at a moment
+          // when the ordinary ladder was not the thing in charge.
+          //
+          // A postmortem that reports a threshold has to report which policy was live, or the
+          // reader reconstructs the wrong doctrine from the right number.
+          governed_by: this.travelling
+            ? { doctrine: 'travel', flee_from: this.policy.travelFleeFrom ?? 'players',
+                divert_below: this.policy.travelDivertBelow ?? 1,
+                shelter_detour: this.policy.travelShelterDetour ?? 5,
+                guard: this.travelGuard?.() ?? null,
+                note: 'a monster cannot end a journey; the answer to a monster is the next '
+                    + 'route-adjacent wall, so flee_threshold above did not apply here' }
+            : { doctrine: 'ordinary ladder', flee_at: this.safety().fleeAt },
+          // WAS IT STILL GOING ANYWHERE? The operator's question, 2026-08-27, and it separates
+          // two deaths that read identically in a health trail: a character overwhelmed while
+          // crossing ground, and a character that stopped covering ground some seconds earlier
+          // and was then chewed where it stood. `ms_since_moved` cannot answer it — it measures
+          // the KEEPER, and CLAUDE.md is explicit that a two-square shuffle against a wall
+          // resets every stillness timer it meets. Squares per second over the last frames does
+          // answer it, and `net` against `gross` is the shuffle detector: a body that covered
+          // eleven squares of travel and ended one square from where it started was fighting a
+          // wall, not walking.
+          movement: (() => {
+            const f = before.filter(x => x.at != null
+              && Number.isFinite(x.row) && Number.isFinite(x.col));
+            if (f.length < 2) return { samples: f.length, why: 'not enough frames to say' };
+            const span = (f[f.length - 1].at - f[0].at) / 1000;
+            let gross = 0;
+            const steps = [];
+            for (let i = 1; i < f.length; i++) {
+              // Chebyshev, because that is how a step moves — and a room change is not
+              // distance, it is a different coordinate system, so it is skipped rather than
+              // counted as a leap of forty squares.
+              if (f[i].num !== f[i - 1].num) { steps.push(null); continue; }
+              const d = Math.max(Math.abs(f[i].row - f[i - 1].row),
+                                 Math.abs(f[i].col - f[i - 1].col));
+              gross += d;
+              const dt = (f[i].at - f[i - 1].at) / 1000;
+              steps.push(dt > 0 ? +(d / dt).toFixed(2) : null);
+            }
+            const net = f[f.length - 1].num === f[0].num
+              ? Math.max(Math.abs(f[f.length - 1].row - f[0].row),
+                         Math.abs(f[f.length - 1].col - f[0].col))
+              : null;
+            const last4 = steps.slice(-4).filter(x => x != null);
+            return {
+              samples: f.length,
+              seconds: +span.toFixed(1),
+              squares_per_second: span > 0 ? +(gross / span).toFixed(2) : null,
+              // The four passes before it died, which is the window that decides whether the
+              // death was "caught while moving" or "died standing".
+              squares_per_second_at_the_end: last4.length
+                ? +(last4.reduce((a, b) => a + b, 0) / last4.length).toFixed(2) : null,
+              gross_squares: gross,
+              net_squares: net,
+              // Ground covered that went nowhere. High gross with low net is the shuffle.
+              shuffled: net != null && gross >= 4 && net <= 1,
+              rooms_crossed: new Set(f.map(x => x.num)).size - 1,
+              per_pass: steps.slice(-8),
+            };
+          })(),
           // The two questions worth asking of any death.
           fled_in_time: at && at.max ? (at.health / at.max) : null,
           had_flasks: this.hadFlasks ?? null,
