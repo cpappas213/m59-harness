@@ -1175,6 +1175,10 @@ let leaveViaRoutesFixture = null;
 const leaveVia = compileSessionMethod(brokerSource,
   'async leaveVia(exit, {', 'leaveVia', {
     isTerminalMovementReason, KOD_FINENESS, MOVE_INTERVAL_MS: 0, atEdgeOpening,
+    // THE REAL 1. A character one square short of the opening now STEPS in rather than
+    // fanning nine headings for it, and this is the distance that decides which. Stubbing
+    // it to 0 would quietly retire the branch that stops a body sliding off a two-wide spur.
+    EDGE_STEP_IN_WITHIN: 1,
     // The tactics ledger, as the real one. `leaveVia` now writes down whether the baked
     // rail carried the crossing or slipped, and the ledger is written to be unable to
     // throw — which is the property worth exercising rather than stubbing. It writes under

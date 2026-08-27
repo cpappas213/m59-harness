@@ -753,6 +753,11 @@ const EDGE_CONFIRM_MS = Number(process.env.M59_EDGE_CONFIRM_MS || 3000);
 const EDGE_NUDGE_MAX_STEPS = Number(process.env.M59_EDGE_NUDGE_MAX_STEPS || 6);
 
 const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
+// HOW FAR SHORT OF THE OPENING A CHARACTER STILL WALKS IN RATHER THAN FEELING FOR IT.
+// One square: the case the operator watched is a body standing beside a two-wide spur
+// fanning nine headings for the doorway and sliding off the cliff instead. Two would start
+// covering ground the ordinary approach walk should have covered.
+const EDGE_STEP_IN_WITHIN = Number(process.env.M59_EDGE_STEP_IN_WITHIN || 1);
 
 // HOW MANY WAYPOINTS MAY PASS WITH THE BODY NO FURTHER ALONG THE LINE before the follower
 // stops asking for the next square and jumps. Small, because each one is a second or two
@@ -6298,13 +6303,43 @@ class Session {
       // watched a production character make the jump, cross the whole room, reach the door,
       // wiggle, and put itself off the cliff.
       //
-      // So the nudge is for characters that are NEAR the opening, which is what it was
-      // written for. One that is standing in it skips straight to the outward step.
-      const atDoor = (() => {
+      // AND A CHARACTER ONE SQUARE SHORT WALKS FORWARD, IT DOES NOT FAN.
+      //
+      // The operator's account of how these exits work is the whole design note: "the player
+      // knows just keep going forward into the narrowing spur, because that's how these
+      // exits work". A boundary crossing is a WALK OFF THE EDGE, so the move that gets you
+      // there is a step in the direction of the edge — not a nine-heading search for a point
+      // inside the doorway square.
+      //
+      // So the skip widens by a square, and it widens by STEPPING rather than by ignoring
+      // the gap. `step` is the mover's own square primitive: one validated move, no fan, no
+      // slide-until-something-sticks. If it lands us in the opening the nudge has nothing
+      // left to do; if it does not, the fine path is still there and behaves exactly as it
+      // did. What is removed is the case that killed characters — being one square off a
+      // two-wide spur and searching for the doorway by feel.
+      let atDoor = (() => {
         const me = c.self;
         return !!(me && exit.stand_on
                   && me.col === exit.stand_on.col && me.row === exit.stand_on.row);
       })();
+      if (!atDoor && exit.stand_on) {
+        const me = c.self;
+        const away = me ? Math.max(Math.abs(me.row - exit.stand_on.row),
+                                   Math.abs(me.col - exit.stand_on.col)) : Infinity;
+        if (away <= EDGE_STEP_IN_WITHIN) {
+          for (let n = 0; n < EDGE_STEP_IN_WITHIN && !atDoor; n++) {
+            const r = await this.step(exit.stand_on.col, exit.stand_on.row,
+                                      { movementGeneration, controlToken })
+              .catch(() => null);
+            if (r?.left_room || c.room.id !== edgeStartRoom)
+              return { left: true, arrived_in: c.rsc.get(c.roomNameRsc),
+                       note: 'stepped straight out of the room while closing on the opening' };
+            const now = c.self;
+            atDoor = !!(now && now.col === exit.stand_on.col && now.row === exit.stand_on.row);
+            if (!r?.moved) break;                 // refused: let the fine path try instead
+          }
+        }
+      }
       for (const point of (atDoor ? [] : finePath)) {
         // A SHORT NUDGE, NOT A SEARCH — AND THIS IS THE WIGGLE AT THE DOOR.
         //
