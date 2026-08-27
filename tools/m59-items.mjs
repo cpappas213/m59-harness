@@ -111,6 +111,39 @@ export function buildItemTable(koddbFile = KODDB) {
     }
   }
 
+  // UNIDENTIFIED SPELL ITEMS NAME THEMSELVES AFTER THEIR BASE CLASS, AND KODDB DROPPED IT.
+  //
+  // An unread scroll is "scroll" and an unidentified wand is "wand" — Scroll and Wand set
+  // vrName to Scroll_name_rsc / Wand_name_rsc (scroll.kod:19,59; wand.kod:19,65) and show
+  // the real label only once identified. koddb carries no vrName for either class, so the
+  // loop above filed them as abstract and the table never learned the name the protocol
+  // actually hands us. The cost was not a wrong weight but a refused pass: weighPack marks
+  // the pack "unweighable", checkIfShouldSell turns that into an unconditional market trip,
+  // and a character confined to its room re-decided that trip every second instead of
+  // resting or eating — Janice at vigor 13 with 136 mushrooms aboard, 2026-08-26.
+  //
+  // The weights are still read off the chain, never typed here: Scroll declares 3/5
+  // itself (scroll.kod:48-49) and Wand inherits SpellItem's 3/5 (spelitem.kod:61-62).
+  const GENERIC_UNIDENTIFIED = { scroll: 'scroll', wand: 'wand' };
+  for (const [clsKey, name] of Object.entries(GENERIC_UNIDENTIFIED)) {
+    const cls = classes[clsKey];
+    if (!cls || byName.has(name)) continue;
+    const chain = cls.chain || [];
+    const w = inherited(classes, chain, 'viWeight');
+    const b = inherited(classes, chain, 'viBulk');
+    if (!w || !b) { defaulted++; }
+    considered++;
+    byName.set(name, {
+      name,
+      weight: w?.value ?? DEFAULT_WEIGHT,
+      bulk: b?.value ?? DEFAULT_BULK,
+      cls: cls.name,
+      declared_by: { weight: w?.from ?? 'Item (default)', bulk: b?.from ?? 'Item (default)' },
+      also: [],
+      unidentified: true,
+    });
+  }
+
   // WHAT COUNTS AS FOOD, taken from the class tree rather than from a word list.
   //
   // This matters more than it looks. Resting stops awarding vigor at 80 of 200

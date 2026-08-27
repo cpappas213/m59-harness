@@ -6329,7 +6329,30 @@ class Session {
                  crossed_from_alternate: true };
       }
       const finePath = exit.fine_path?.length ? exit.fine_path : [exit.fine_stand_on];
-      for (const point of finePath) {
+      // ALREADY IN THE DOORWAY SQUARE? THEN DO NOT WIGGLE AT ALL — STEP OUT.
+      //
+      // The note below already argues the precision is not load-bearing: the crossing is
+      // triggered by the OUTWARD step, not by where you stood, and two characters teleported
+      // onto different openings crossed in zero seconds from both. If that is true — and it
+      // is — then a character that has ALREADY been walked into the exit square has nothing
+      // left to gain here, and something real to lose.
+      //
+      // What it loses is the character. Ukgoth's Castle Victoria doorway sits on a finger of
+      // cliff top three squares wide at row 1 and narrowing to two by row 4, with a drop on
+      // every other side. `walkFine` fans NINE headings and slides, and the floors on that
+      // finger differ by exactly 384 in places — MAX_STEP_HEIGHT — so each slid step down is
+      // individually legal while the sequence of them walks off the edge. The operator
+      // watched a production character make the jump, cross the whole room, reach the door,
+      // wiggle, and put itself off the cliff.
+      //
+      // So the nudge is for characters that are NEAR the opening, which is what it was
+      // written for. One that is standing in it skips straight to the outward step.
+      const atDoor = (() => {
+        const me = c.self;
+        return !!(me && exit.stand_on
+                  && me.col === exit.stand_on.col && me.row === exit.stand_on.row);
+      })();
+      for (const point of (atDoor ? [] : finePath)) {
         // A SHORT NUDGE, NOT A SEARCH — AND THIS IS THE WIGGLE AT THE DOOR.
         //
         // `arriveWithin: 1` asks to land within ONE fine unit, a 64th of a square, and
