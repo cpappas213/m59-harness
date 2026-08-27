@@ -84,6 +84,21 @@ export const INERT_RESCUE_MS = Number(process.env.M59_INERT_RESCUE_MS || 4_000);
 // seconds, and cancelling those would be the guard picking fights with the pass. Twenty
 // seconds of covering no ground at all is not any of them.
 export const WATCHDOG_PINNED_MS = Number(process.env.M59_WATCHDOG_PINNED_MS || 20_000);
+// HOW FAR FROM WHERE IT STARTED STILL COUNTS AS GETTING NOWHERE, in squares.
+//
+// THIS IS A DISPLACEMENT TEST, NOT A STILLNESS TEST, and the difference is the whole
+// reason the first version of this guard did not fire. `pennedIn` asks whether the newest
+// three samples are within a square OF EACH OTHER, which a shuffle defeats: measured on
+// prod 2026-08-27, Robin's wedge ranged over columns 71-74 while going nowhere, so every
+// few samples were "moving" and the timer reset before it could ever mature. Anchoring
+// instead — where were we when this started, and are we still near it — asks the question
+// CLAUDE.md has been asking since the shuttle runs: not "is it still" but "has it
+// covered any ground".
+//
+// Three squares is generous against a false positive. A character actually travelling
+// runs at roughly five squares a second, so twenty seconds of real movement is a hundred
+// squares; anything that has not cleared three in that time is not on its way anywhere.
+export const WATCHDOG_PINNED_SQUARES = Number(process.env.M59_WATCHDOG_PINNED_SQUARES || 3);
 
 const pct = v => (v && v.max ? v.value / v.max : null);
 
@@ -122,7 +137,7 @@ export function freshState() {
            pulses: [], lastPulseAt: 0, wedged: null, wedges: 0,
            // When the body was first penned in while supposedly going somewhere, and how
            // many times that has had to be broken. See THE SECOND ARM in tick().
-           pinnedSince: null, pinnedInterrupts: 0 };
+           pinnedSince: null, pinnedAnchor: null, pinnedInterrupts: 0 };
 }
 
 // start/stop own the timer. `unref` so a watchdog never holds a process open.
@@ -316,9 +331,24 @@ export function tick(host) {
   // excuses becomes true — a character that takes a wall, or is handed to an errand, has
   // stopped being wedged at that moment and not a pulse later. Clearing on the way out is
   // what makes `pinnedSince` a duration rather than a high-water mark.
-  if (GOING.includes(host.doing ?? null) && !host.inert && !host.hold && pennedIn(w))
-    w.pinnedSince ??= now;
-  else w.pinnedSince = null;
+  //
+  // The measure is DISPLACEMENT FROM AN ANCHOR, not stillness between samples — see
+  // WATCHDOG_PINNED_SQUARES for why the obvious version of this never fired.
+  const spot = w.pulses[w.pulses.length - 1] ?? null;
+  const eligible = GOING.includes(host.doing ?? null) && !host.inert && !host.hold && spot;
+  if (!eligible) { w.pinnedSince = null; w.pinnedAnchor = null; }
+  else {
+    const a = w.pinnedAnchor;
+    const nearAnchor = a && a.room === spot.room
+      && Math.abs((spot.col ?? 0) - a.col) <= WATCHDOG_PINNED_SQUARES
+      && Math.abs((spot.row ?? 0) - a.row) <= WATCHDOG_PINNED_SQUARES;
+    // Re-anchor the moment it genuinely gets somewhere. A journey that is working resets
+    // this constantly and can never trip it; one that is looping never leaves the box.
+    if (!nearAnchor) {
+      w.pinnedAnchor = { room: spot.room, col: spot.col ?? 0, row: spot.row ?? 0 };
+      w.pinnedSince = now;
+    }
+  }
 
   // 2. THE HANDBRAKE.
   const blockedFor = host.passStartedAt ? now - host.passStartedAt : 0;
@@ -370,7 +400,7 @@ export function tick(host) {
     if (pinnedFor < WATCHDOG_PINNED_MS) return;
     w.interruptedPass = host.passes;
     w.pinnedInterrupts++;
-    w.pinnedSince = null;
+    w.pinnedSince = null; w.pinnedAnchor = null;
     host.tally.watchdog_pinned_interrupts = (host.tally.watchdog_pinned_interrupts || 0) + 1;
     const broke = (() => {
       try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }

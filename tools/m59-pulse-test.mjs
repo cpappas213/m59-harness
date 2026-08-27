@@ -12,7 +12,7 @@
 // only while the guard lived inside the monolith and broke the moment it moved. Testing
 // a real import instead of a string slice is the point of having extracted it.
 //
-import { pulse, tick, freshState, WATCHDOG_PINNED_MS, WATCHDOG_BLOCKED_MS } from './m59-watchdog.mjs';
+import { pulse, tick, freshState, WATCHDOG_PINNED_MS, WATCHDOG_BLOCKED_MS, WATCHDOG_PINNED_SQUARES } from './m59-watchdog.mjs';
 
 let pass = 0, fail = 0;
 const ok = (what, cond, detail) => {
@@ -209,9 +209,14 @@ console.log('\na wedge at full health is still a wedge');
             Date.now = () => t;
             if (moving) { self.col += 2; self.row += 2; }
             else {
-              const odd = Math.floor(t / 1000) % 2;
-              self.col = odd ? 73 : 72;
-              self.row = odd ? 64 : 65;
+              // A CORNER, NOT A SQUARE. This is Robin's actual wedge from prod: columns
+              // 71-74 and rows 64-65, drifting around a pocket while getting nowhere. The
+              // first version of this guard used `pennedIn` — all samples within ONE square
+              // of each other — and this pattern cleared it every few samples, so the timer
+              // reset for ever and the breaker never fired once on the live fleet.
+              const step4 = Math.floor(t / 1000) % 4;
+              self.col = [72, 73, 74, 71][step4];
+              self.row = step4 % 2 ? 64 : 65;
             }
             tick(this);
             step++;
@@ -223,8 +228,12 @@ console.log('\na wedge at full health is still a wedge');
   };
 
   const shuffling = wedgeHost().run(WATCHDOG_PINNED_MS + 4_000);
-  ok('a full-health body that alternates between two squares IS eventually broken out of',
+  ok('a full-health body drifting around a CORNER is eventually broken out of',
      shuffling.cancels.length === 1, `${shuffling.cancels.length} cancels`);
+  // The regression that shipped and did nothing: measuring stillness instead of ground.
+  ok('and it is caught even though it never sits on the same square twice',
+     !shuffling.watch.wedged,
+     'the same-square detector should never have latched on this pattern');
   const note = shuffling.notes.find(n => n.what.startsWith('WATCHDOG — broke a wedge'));
   ok('and it says so in a note a person can grep for', !!note);
   ok('which reports how long it covered no ground', (note?.detail?.penned_for_s ?? 0) >= 20,

@@ -29,7 +29,7 @@ import { isTerminalMovementReason } from './m59-movement.mjs';
 // nobody at all -- so every declared jump was attempted whatever the character's vigor,
 // and a character that could not run fell into the gulley instead of clearing it. See the
 // jump_rest block in rideTrack.
-import { fallJumpsIn, traversable as fallJumpTraversable } from './m59-falljump.mjs';
+import { fallJumpsIn, traversable as fallJumpTraversable, physics as fallPhysics } from './m59-falljump.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
 import { loadSpells, karmaAllows, requiredKarma, SCHOOLS } from './m59-spells.mjs';
 import * as abilities from './m59-abilities.mjs';
@@ -2859,33 +2859,56 @@ class Session {
    */
   clearestLanding(here, target, geo) {
     if (!here || !target || !geo) return target;
-    const DECLARED_CLEAR = 1.5;              // squares; below this something is on the line
+    const CLEAR = 1.5;                       // squares; below this something is on the line
     try {
-      const shelf = [];
-      for (let dr = -1; dr <= 1; dr++) for (let dc = -2; dc <= 2; dc++) {
-        const cand = { row: target.row + dr, col: target.col + dc };
-        if (geo.walkable(cand.row, cand.col) !== true) continue;
-        let a = null, b = null;
-        const pa = geo.standPoint(target.row, target.col);
-        const pb = geo.standPoint(cand.row, cand.col);
-        a = pa && geo.floorBaseAtClient(pa.x, pa.y);
-        b = pb && geo.floorBaseAtClient(pb.x, pb.y);
-        if (a == null || b == null || Math.abs(a - b) > 64) continue;
-        shelf.push(cand);
-      }
-      const bodies = this.world?.objects?.() ?? [];
-      if (shelf.length <= 1 || !bodies.length) return target;
-      const gapTo = (cand) => Math.min(...bodies.map(o => {
+      const floorAt = (r, c) => { const sp = geo.standPoint?.(r, c);
+                                  return sp ? (geo.floorBaseAtClient?.(sp.x, sp.y) ?? null) : null; };
+      // WHERE THE JUMP IS MEANT TO END UP. Not the aim — the FLOOR the aim is for. Ukgoth's
+      // shelf is 3840 and the gulley beside it is 3200, and an aim is only worth considering
+      // if the arc it produces finishes on the first.
+      const wantFloor = (() => {
+        const a = fallPhysics(here, target, floorAt);
+        return a?.ok ? floorAt(a.lands.row, a.lands.col) : floorAt(target.row, target.col);
+      })();
+      if (wantFloor == null) return target;
+
+      const bodies = [...(this.client?.room?.objects?.values?.() ?? [])]
+        .filter(o => blocksMovement(o.flags ?? 0) && o.id !== this.client?.selfId
+                     && Number.isFinite(o.row) && Number.isFinite(o.col));
+      const gapTo = (cand) => {
+        if (!bodies.length) return Infinity;
         const vx = cand.col - here.col, vy = cand.row - here.row;
-        const wx = o.col - here.col, wy = o.row - here.row;
         const len2 = vx * vx + vy * vy;
-        const t = len2 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
-        return Math.hypot(here.col + t * vx - o.col, here.row + t * vy - o.row);
-      }));
-      const declaredGap = gapTo(target);
-      if (declaredGap >= DECLARED_CLEAR) return target;
-      let best = { cand: target, gap: declaredGap };
-      for (const cand of shelf) {
+        return Math.min(...bodies.map(o => {
+          const wx = o.col - here.col, wy = o.row - here.row;
+          const t = len2 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+          return Math.hypot(here.col + t * vx - o.col, here.row + t * vy - o.row);
+        }));
+      };
+      if (gapTo(target) >= CLEAR) return target;
+
+      // THREAD THE NEEDLE, BUT ONLY THROUGH AIMS THE BODY CAN ACTUALLY REACH.
+      //
+      // The first version of this picked whichever square was furthest from the blockers and
+      // scored 1/10 against 5/10, because on this cliff that is always the aim furthest out
+      // of reach — it chose 38,8, an 8.2-square jump from a ledge with about 3.8 squares of
+      // carry. Distance from a troll is not the constraint; the arc is.
+      //
+      // So every candidate is put through the same ballistics the operator's own jump was
+      // measured with, and kept only if it FINISHES ON THE SAME FLOOR the declared jump
+      // finishes on. Measured offline from 36,16: aiming at 39,12 lands 39,12 on the shelf,
+      // aiming at 38,13 lands 38,12 on the shelf, and the declared 38,10 lands 37,13 on an
+      // intermediate ledge — so there are genuinely several ways down, and only some of them
+      // are reachable. Among those, the clearest line wins; ties keep the declared aim.
+      let best = { cand: target, gap: gapTo(target) };
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -3; dc <= 3; dc++) {
+        const cand = { row: target.row + dr, col: target.col + dc };
+        if (!dr && !dc) continue;
+        if (geo.walkable(cand.row, cand.col) !== true) continue;
+        const arc = fallPhysics(here, cand, floorAt);
+        if (!arc?.ok) continue;
+        const lands = floorAt(arc.lands.row, arc.lands.col);
+        if (lands == null || Math.abs(lands - wantFloor) > 96) continue;   // not our shelf
         const gap = gapTo(cand);
         if (gap > best.gap + 0.01) best = { cand, gap };
       }
@@ -3027,6 +3050,27 @@ class Session {
                          ms: waited * JUMP_WAIT_MS, hp_lost: 0, attempted: true,
                          note: `line was ${Number(lineGap.gap).toFixed(2)}; after ${waited} wait(s) ` +
                                `it is ${gapNow.gap === Infinity ? 'clear' : Number(gapNow.gap).toFixed(2)}` });
+        }
+        // WAITING FIRST, THREADING SECOND — because a blocker that wanders costs nothing to
+        // outlast and the aim that worked is the one somebody walked. But some of them do
+        // not wander: measured here, `line was 0.95; after 3 wait(s) it is 0.95` twelve
+        // times running, all twelve into the gulley. Against a troll that has decided to
+        // stand there, waiting is just a slower way to jump blind.
+        //
+        // So once the line has failed to clear, look for another aim — and `clearestLanding`
+        // now only offers aims whose ARC finishes on the same shelf, so this cannot repeat
+        // the 1/10 mistake of choosing a landing the body cannot reach.
+        if (Number.isFinite(gapNow.gap) && gapNow.gap < 1.5) {
+          const threaded = this.clearestLanding(before, { row, col }, this.world?.geometry);
+          if (threaded && (threaded.row !== row || threaded.col !== col)) {
+            recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),
+                           tactic: 'declared_jump', trigger: 'threaded', worked: false, ms: 0,
+                           hp_lost: 0, attempted: true,
+                           note: `line to ${row},${col} stayed at ${Number(gapNow.gap).toFixed(2)}; ` +
+                                 `threading to ${threaded.row},${threaded.col} instead` });
+            row = threaded.row; col = threaded.col;
+            gapNow = measureLineGap();
+          }
         }
       }
       recordTactic({ character: this.character ?? null, room: Number(this.world?.room?.num ?? 0),

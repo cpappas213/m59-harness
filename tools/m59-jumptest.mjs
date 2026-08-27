@@ -222,7 +222,19 @@ for (let n = 1; n <= TRIALS; n++) {
     if (Number.isFinite(s.vigor)) lowVigor = Math.min(lowVigor ?? s.vigor, s.vigor);
     const pos = s.pos;
     const what = classify(rn, pos);
-    if (/CROSSED|DIED|LANDED|FELL/.test(what)) { best = { what, pos, rn }; break; }
+    // SETTLE BEFORE BELIEVING IT. A fall takes under a second and this polls at 600ms, so a
+    // sample can land MID-FLIGHT — the body passes over the gulley on its way to the shelf,
+    // and reading that instant as "FELL" would both mis-score the trial and reset the
+    // character while it was still moving. The operator spotted exactly that from inside the
+    // game. So a terminal-looking reading has to repeat before it counts.
+    if (/CROSSED|DIED|LANDED|FELL/.test(what)) {
+      await sleep(1200);
+      const s2 = await where();
+      const confirmed = classify(s2.room, s2.pos);
+      if (confirmed === what) { best = { what, pos: s2.pos ?? pos, rn: s2.room ?? rn }; break; }
+      // It moved on: keep watching rather than scoring the frame we happened to catch.
+      continue;
+    }
     lastRoom = rn;
     if (Date.now() - t0 > PATIENCE) { best = { what, pos, rn }; break; }
   }
