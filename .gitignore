@@ -411,6 +411,9 @@ _verify2.mjs
 # ledgers by tools/m59-roomview.mjs. Derived, per-machine, and they carry character names
 # out of the transit logs — so they are regenerated, never committed.
 /substrate/roomviews/
+# Raw jam recordings (m59-recordjam.mjs): derived, and with --names they carry character
+# names. A redacted one meant as a fixture is written to tools/fixtures/ on purpose.
+/substrate/jams/
 
 # Jump-trial attempts: this machine measuring one cliff, appended to per attempt.
 /substrate/jumptrials.jsonl

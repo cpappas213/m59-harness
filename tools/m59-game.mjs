@@ -23,7 +23,7 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
          from './m59-map.mjs';
 import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry, sharedRoomGeometry,
-         MAX_STEP_HEIGHT, MIN_NOMOVEON } from './m59-roo.mjs';
+         MAX_STEP_HEIGHT, MIN_NOMOVEON, PLAYER_HEIGHT } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 // THE GATE THAT WAS NEVER WIRED IN. `traversable()` is the only thing that honours a
 // declaration's `requires: {running: true}`, and until now this module was imported by
@@ -3855,10 +3855,56 @@ class Session {
       // `c.room.objects` is where the flags live, and it is the same source
       // `queueValidatedMove` filters for real collision — so the answer here and the answer
       // the mover enforces come from one place.
+      // A BODY IN A GULLY IS NOT ON THE LINE. IT IS UNDER IT.
+      //
+      // This measured distance from `o.col`/`o.row` alone — squares, flat — so anything sharing
+      // a square with the arc counted as blocking it however far below it stood. A fall-jump is
+      // the one move where that is routinely wrong: the whole point of it is that the ground in
+      // between is at a different height.
+      //
+      // The Sewers of Barloque, row 27, is the case that makes it undeniable
+      // (tools/fixtures/sewers-108-row27.json):
+      //
+      //     28,43  floor 2304      the take-off
+      //     27,43  floor  820      the gully — six giant rats standing in it, one per square
+      //     26,43  floor 1920      the landing
+      //
+      // The arc runs 2304 -> 1920 and the rats are ELEVEN HUNDRED UNITS BELOW IT. Flat, the rat
+      // at 27,43 reads as gap 0 and the jump can never be taken; it waits three times, re-aims,
+      // logs, and repeats for as long as the rat stands there — which is for ever, because the
+      // rats in that fixture never moved across seventy seconds of observation.
+      //
+      // The rule is the same one CLAUDE.md puts in capitals about floor, applied to bodies: a
+      // square is a summary. A body can only clip a jump if it is at a height the jump passes
+      // through, and `PLAYER_HEIGHT` is the client's own figure for how tall one is. Anything
+      // more than that below the LOWER end of the arc is under the traveller's feet.
+      //
+      // Conservative in the direction that matters: an unknown floor counts as ON the line, so
+      // a body we cannot place is still respected. Only a body we can prove is beneath the arc
+      // is discounted.
+      const arcFloor = (() => { try {
+        const g = this.world?.geometry;
+        if (typeof g?.floorBaseAtClient !== 'function') return null;
+        const a = g.floorBaseAtClient(protocolToClient(before.x ?? (before.col * KOD_FINENESS + 32)),
+                                      protocolToClient(before.y ?? (before.row * KOD_FINENESS + 32)));
+        const b = g.floorBaseAtClient(protocolToClient(col * KOD_FINENESS + 32),
+                                      protocolToClient(row * KOD_FINENESS + 32));
+        return Number.isFinite(a) && Number.isFinite(b) ? Math.min(a, b) : null;
+      } catch { return null; } })();
+      const underTheArc = (o) => {
+        if (arcFloor === null) return false;
+        try {
+          const g = this.world?.geometry;
+          const f = g.floorBaseAtClient(protocolToClient(o.x ?? (o.col * KOD_FINENESS + 32)),
+                                        protocolToClient(o.y ?? (o.row * KOD_FINENESS + 32)));
+          return Number.isFinite(f) && (arcFloor - f) > PLAYER_HEIGHT;
+        } catch { return false; }
+      };
       const measureLineGap = () => { try {
         const bodies = [...c.room.objects.values()]
           .filter(o => blocksMovement(o.flags ?? 0) && o.id !== c.selfId
-                       && Number.isFinite(o.row) && Number.isFinite(o.col));
+                       && Number.isFinite(o.row) && Number.isFinite(o.col)
+                       && !underTheArc(o));
         if (!bodies.length) return { gap: Infinity, who: [] };
         const vx = col - before.col, vy = row - before.row;
         const len2 = vx * vx + vy * vy;

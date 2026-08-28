@@ -296,6 +296,22 @@ export function digest(file) {
     threats: pm.threats?.present_at_the_end ?? [],
     most_at_once: pm.threats?.most_at_once ?? null,
     players_present: pm.threats?.players_present ?? [],
+    // DID THIS HAPPEN AT A SAFE WALL, AND WAS IT A PERSON THAT DID IT?
+    //
+    // The claim the safe-spot machine now stands or falls on: `proven` was retired on
+    // 2026-08-28 because a wall the fleet identifies is trusted with lives, so a death ON one
+    // should only ever be PVP. Surfaced rather than left in the JSON, because a falsifiable
+    // claim nobody reads is not falsifiable.
+    //
+    // `wall_death_by_monster` is the one worth alerting on: it means the square was not a
+    // wall, and the book needs to hear about it.
+    at_a_safe_wall: pm.summary?.at_a_safe_wall ?? null,
+    wall_death_by_monster: (() => {
+      const w = pm.summary?.at_a_safe_wall;
+      if (!w) return false;
+      const people = (w.players_present ?? []).length > 0;
+      return !people && (w.killed_by ?? []).length > 0;
+    })(),
     during_keeper_outage: pm.during_keeper_outage ?? null,
     last_frame: last ? { room: last.room, num: last.num, col: last.col, row: last.row,
                          health: last.health, max: last.max, threats: last.threats ?? [],

@@ -288,6 +288,13 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   is its own module for the reason this document exists: `m59-broker.mjs` cannot be imported
   without taking the fleet lock and starting rejoin timers) and
   `node tools/m59-describe-test.mjs` (52) and
+  `node tools/m59-recordjam-test.mjs` (36 — **turning a live traffic jam into a fixture**:
+  that `m59-recordjam.mjs` reads a region col,row like every square here, collapses a run of
+  samples to what stood still and what wiggled (a trace of position CHANGES with when each
+  was first seen), counts a player once however many observers saw it while keeping two
+  same-named rats apart by id, redacts our names to `player A…` and other people's to
+  `stranger A…` unless `--names`, and measures the floor under the region off the real BSP —
+  against the Sewers of Barloque, the rat picket line it was written for) and
   `node tools/m59-fightback-test.mjs` (36 — **the fight-back edict**, an operator's order
   that is off by default: that the watchdog half counts blows only with something in reach,
   asks for a fight at ten seconds and not nine, pulls the handbrake once per pass, and stays

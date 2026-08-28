@@ -36,13 +36,14 @@
 // anything starts deciding passability by counting squares.
 import { readFileSync } from 'node:fs';
 import { sharedRoomGeometry, KOD_FINENESS, CLIENT_FINENESS, PLAYER_RADIUS, MIN_NOMOVEON,
-         protocolToClient } from './m59-roo.mjs';
+         PLAYER_HEIGHT, protocolToClient } from './m59-roo.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 // THE SHIPPED METHOD, not a paraphrase and not a text-lift. m59-game.mjs imports without
 // taking the fleet lock (unlike m59-broker.mjs, which CLAUDE.md is explicit about), so the
 // real prototype is reachable — and a suite that re-implemented the aim would pin its own
 // arithmetic rather than the mover's.
 import { Session, distanceToSegment, lineClearsBodies, bodyWalkArrives } from './m59-game.mjs';
+const GAME_SRC = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
 
 let pass = 0, fail = 0;
 const ok = (what, cond, extra = '') => {
@@ -546,5 +547,112 @@ console.log('\nAND THE NEGATIVE: A CORRIDOR THAT REALLY IS SHUT STAYS SHUT');
      JSON.stringify(r.trail.filter(t => Math.floor(t.x / KOD_FINENESS) !== t.col)));
 }
 
+
+// ============ THE SEWER PIPE, AND THE GULLY WITH THE RATS IN IT ============
+//
+// tools/fixtures/sewers-108-row27.json — seventy seconds of five keepers watching row 27 of
+// the Sewers of Barloque, recorded on 2026-08-28. It is the Twisted Wood claim again in a
+// smaller pipe, with two things the Twisted Wood did not have: the margin is HALF A UNIT
+// rather than a body width, and the way through is a JUMP.
+//
+// What the fixture recorded, in its own words: "six giant rats one per square on row 27,
+// columns 40-45, each on or within 5 units of its square centre, 64 apart, and they never
+// moved… Nobody got past a rat."
+//
+// THE PIPE. Columns 39-41 have floor only across row 27 — y 1728..1792, one square — with a rat
+// at the centre of each. A body needs PLAYER_RADIUS (15.5) from the wall and MIN_NOMOVEON (16)
+// from the rat, so at column 41 the passable band is y 1743.5..1744.0. Half a unit. It is
+// passable and it is the tightest ground the fleet has ever been measured on.
+//
+// THE GULLY. Column 43 is not pipe at all:
+//
+//     28,43  floor 2304      the take-off
+//     27,43  floor  820      the gully — the rats are standing in THIS
+//     26,43  floor 1920      the landing
+//
+// The rats are ELEVEN HUNDRED UNITS BELOW the arc. `measureLineGap` measured distance from
+// `o.col`/`o.row` alone — flat — so the rat at 27,43 read as gap 0 and the jump could never be
+// taken: three waits, a re-aim, a log, repeat, for as long as the rat stood there. Which was
+// for ever; the fixture watched them not move for seventy seconds.
+//
+// That is the same lesson CLAUDE.md puts in capitals about floor, in the third dimension: a
+// square is a summary. These pin both halves.
+console.log('\nTHE SEWER PIPE AT COLUMNS 39-41 — HALF A UNIT OF MARGIN');
+{
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/sewers-108-row27.json', import.meta.url), 'utf8'));
+  const rats = fx.static.filter(o => o.kind === 'monster');
+  ok('the fixture recorded six rats on row 27', rats.length === 6, String(rats.length));
+  ok('one per square, columns 40 to 45',
+     rats.map(r => r.col).sort((a, b) => a - b).join() === '40,41,42,43,44,45');
+  ok('and they never moved across the whole recording',
+     rats.every(r => r.seen === fx.samples), rats.map(r => r.seen).join());
+
+  // THE MARGIN, computed rather than quoted. If either constant moves this arithmetic moves
+  // with it, which is the point of deriving it here.
+  const pipe = fx.geometry.floor_y_by_col['41'];
+  ok('column 41 is one square of floor', pipe.hi - pipe.lo === KOD_FINENESS,
+     `${pipe.lo}..${pipe.hi}`);
+  const rat41 = rats.find(r => r.col === 41);
+  const northLo = pipe.lo + WALL_KOD, northHi = rat41.y - CLEAR;
+  ok('and the band north of the rat is under a unit wide',
+     northHi - northLo > 0 && northHi - northLo < 1,
+     `y ${northLo}..${northHi} = ${(northHi - northLo).toFixed(2)} units`);
+  ok('so it is passable, barely — which is the whole claim', northHi > northLo);
+}
+
+console.log('\nTHE GULLY — A BODY UNDER THE ARC IS NOT ON THE LINE');
+{
+  const fx = JSON.parse(readFileSync(new URL('./fixtures/sewers-108-row27.json', import.meta.url), 'utf8'));
+  const geo108 = sharedRoomGeometry(map.rooms['108']);
+  const floorAt = (row, col) => {
+    try { return geo108.floorBaseAtClient(protocolToClient(col * KOD_FINENESS + 32),
+                                          protocolToClient(row * KOD_FINENESS + 32)); }
+    catch { return null; }
+  };
+  const takeoff = floorAt(28, 43), gully = floorAt(27, 43), landing = floorAt(26, 43);
+  ok('the take-off and landing are within a step of each other',
+     Math.abs(takeoff - landing) < 512, `${takeoff} -> ${landing}`);
+  ok('and the square between them is a gully far below both',
+     Math.min(takeoff, landing) - gully > PLAYER_HEIGHT,
+     `${gully}, which is ${Math.min(takeoff, landing) - gully} below the arc`);
+
+  // THE RATS ARE IN IT. Their own floor, read from the same geometry rather than assumed from
+  // the square they are in.
+  const ratFloors = fx.static.filter(o => o.kind === 'monster').map(o => {
+    try { return geo108.floorBaseAtClient(protocolToClient(o.x), protocolToClient(o.y)); }
+    catch { return null; }
+  });
+  ok('every rat is standing on the gully floor, not on the arc',
+     ratFloors.every(f => f !== null && Math.min(takeoff, landing) - f > PLAYER_HEIGHT),
+     JSON.stringify(ratFloors));
+
+  // AND THE MOVER DISCOUNTS THEM. Source-level, because the guard lives inside a closure in
+  // `step` that a fixture cannot reach — but the arithmetic above is what it computes, and
+  // the constant it compares against is named here so a change to either fails this.
+  ok('the jump line discounts a body more than a player-height below the arc',
+     /\(arcFloor - f\) > PLAYER_HEIGHT/.test(GAME_SRC));
+  ok('and PLAYER_HEIGHT is the client\'s own figure, imported rather than written out',
+     /MAX_STEP_HEIGHT, MIN_NOMOVEON, PLAYER_HEIGHT \} from '\.\/m59-roo\.mjs'/.test(GAME_SRC));
+  // CONSERVATIVE IN THE RIGHT DIRECTION. A body whose floor cannot be read must still block,
+  // or a failed height lookup becomes a licence to jump through people.
+  ok('a body whose floor cannot be read still counts as on the line',
+     /if \(arcFloor === null\) return false;/.test(GAME_SRC)
+     && /catch \{ return false; \}/.test(GAME_SRC));
+}
+
+console.log('\nAND THE ROUTE OUT NEEDS THE JUMP — THERE IS NO WALK AROUND IT');
+{
+  const geo108 = sharedRoomGeometry(map.rooms['108']);
+  const walk = (r, c) => { try { return geo108.walkable(r, c); } catch { return false; } };
+  // Row 28 is the wall the gully cuts: only columns 38 and 43 are open, so a body at 29,43
+  // that cannot cross 27,43 has one way north and it is through the gully square.
+  const open28 = []; for (let c = 38; c <= 48; c++) if (walk(28, c)) open28.push(c);
+  ok('row 28 offers only two ways north out of the region',
+     open28.length <= 2 && open28.includes(43), JSON.stringify(open28));
+  ok('and 27,43 — the gully — is the one above the start',
+     walk(27, 43) && walk(28, 43) && walk(26, 43));
+  // So the fixture's scenario is not a preference between routes. Refusing the jump is
+  // refusing to leave.
+}
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

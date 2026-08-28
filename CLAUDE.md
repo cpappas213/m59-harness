@@ -268,7 +268,18 @@ casting and reads as well stocked to anything that sums. Both are explained in
 node tools/m59-roomview.mjs 599            # one self-contained HTML file for that room
 node tools/m59-roomview.mjs "Cragged"      # by name; two rooms share that one, and it says so
 node tools/m59-roomview.mjs --list         # every room with a baked route
+node tools/m59-recordjam.mjs --room 108 --region 38,25-48,29   # a live jam, sampled for 5s, as a redacted fixture
 ```
+
+**Asked to capture a traffic jam as a test case** — a line of rats in a one-square sewer
+pipe, a doorway with a crowd in it — `m59-recordjam.mjs` reads the fleet's own keepers in
+that room over loopback, unions what they see for a few seconds, keeps one line for
+anything that stood still and a trace for anything that wiggled, redacts every player to
+`player A…`/`stranger A…` so the file can be committed, and measures the fine floor under
+the region off the BSP so a needle test has the corridor and not just the bodies.
+`tools/fixtures/sewers-108-row27.json` is the first: six giant rats one per square centre
+on row 27 of the Sewers of Barloque, columns 39–41 exactly one square wide, and two
+characters oscillating in the gaps for seventy seconds.
 
 "Ukgoth crossed 7 times out of 190" is true and tells you nothing about where. This draws
 the room the way the mover sees it — the coarse grid, the BSP floor, the step degree, the

@@ -1234,6 +1234,13 @@ const ordinaryStep = compileSessionMethod(brokerSource,
     // ReferenceError in the eval'd copy while working perfectly in the broker — which is
     // the whole class of failure this dependency map exists to catch. It did catch it.
     traceMove: () => {},
+    // AND THE JUMP LINE'S HEIGHT TEST, added 2026-08-28. `measureLineGap` used to work in
+    // squares alone, so a body eleven hundred units down a gully read as sitting on the arc
+    // and a fall-jump over it could never be taken. It now asks the geometry for the floor
+    // under the body and discounts anything more than PLAYER_HEIGHT below the lower end of
+    // the arc — which means `step` reaches two more module-scope names. The guard caught both;
+    // that is the second time today it has earned its place.
+    protocolToClient, PLAYER_HEIGHT,
   });
 // THE AIM, LIFTED LIKE EVERYTHING ELSE. `step` calls `this.aimInto` to decide where in the
 // next square to walk, so a fixture without it is a fixture testing a different method —

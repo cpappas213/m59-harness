@@ -1,0 +1,478 @@
+{
+ "format": "m59-jam/1",
+ "captured_at": "2026-08-28T04:28:42.944Z",
+ "fleet": "prod",
+ "room": {
+  "num": 108,
+  "name": "The Sewers of Barloque",
+  "roo": "barlsew.roo",
+  "cols": 50,
+  "rows": 71
+ },
+ "region": {
+  "c1": 38,
+  "r1": 25,
+  "c2": 48,
+  "r2": 29
+ },
+ "units_note": "fine coordinates are kod units, 64 per coarse square; col = floor(x/64), row = floor(y/64). A body blocks a move that would END within 16 units of its centre (MIN_NOMOVEON) — see m59-needle-test.mjs",
+ "seconds": 70,
+ "interval_ms": 1000,
+ "samples": 25,
+ "observers": [
+  "player A",
+  "player B",
+  "player E",
+  "player D",
+  "player C"
+ ],
+ "static": [
+  {
+   "name": "emerald",
+   "kind": "item",
+   "col": 39,
+   "row": 27,
+   "x": 2528,
+   "y": 1760,
+   "seen": 1
+  },
+  {
+   "name": "knight's shield",
+   "kind": "item",
+   "col": 39,
+   "row": 27,
+   "x": 2528,
+   "y": 1760,
+   "seen": 1
+  },
+  {
+   "name": "giant rat",
+   "kind": "monster",
+   "col": 40,
+   "row": 27,
+   "x": 2579,
+   "y": 1755,
+   "seen": 25
+  },
+  {
+   "name": "blue mushroom",
+   "kind": "item",
+   "col": 41,
+   "row": 27,
+   "x": 2656,
+   "y": 1760,
+   "seen": 1
+  },
+  {
+   "name": "giant rat",
+   "kind": "monster",
+   "col": 41,
+   "row": 27,
+   "x": 2656,
+   "y": 1760,
+   "seen": 25
+  },
+  {
+   "name": "giant rat",
+   "kind": "monster",
+   "col": 42,
+   "row": 27,
+   "x": 2720,
+   "y": 1760,
+   "seen": 25
+  },
+  {
+   "name": "giant rat",
+   "kind": "monster",
+   "col": 43,
+   "row": 27,
+   "x": 2784,
+   "y": 1760,
+   "seen": 25
+  },
+  {
+   "name": "giant rat",
+   "kind": "monster",
+   "col": 44,
+   "row": 27,
+   "x": 2848,
+   "y": 1760,
+   "seen": 25
+  },
+  {
+   "name": "player A",
+   "kind": "player",
+   "col": 44,
+   "row": 27,
+   "x": 2864,
+   "y": 1747,
+   "seen": 26
+  },
+  {
+   "name": "giant rat",
+   "kind": "monster",
+   "col": 45,
+   "row": 27,
+   "x": 2912,
+   "y": 1760,
+   "seen": 25
+  },
+  {
+   "name": "player D",
+   "kind": "player",
+   "col": 43,
+   "row": 29,
+   "x": 2792,
+   "y": 1904,
+   "seen": 24
+  }
+ ],
+ "moving": [
+  {
+   "name": "player C",
+   "kind": "player",
+   "seen": 26,
+   "points": [
+    {
+     "t_ms": 0,
+     "col": 40,
+     "row": 27,
+     "x": 2563,
+     "y": 1745
+    },
+    {
+     "t_ms": 0,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1745
+    },
+    {
+     "t_ms": 35403,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1776
+    },
+    {
+     "t_ms": 36452,
+     "col": 39,
+     "row": 26,
+     "x": 2505,
+     "y": 1722
+    },
+    {
+     "t_ms": 39115,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1748
+    },
+    {
+     "t_ms": 40628,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1746
+    },
+    {
+     "t_ms": 42448,
+     "col": 39,
+     "row": 27,
+     "x": 2518,
+     "y": 1744
+    },
+    {
+     "t_ms": 45853,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1745
+    },
+    {
+     "t_ms": 47264,
+     "col": 40,
+     "row": 27,
+     "x": 2563,
+     "y": 1744
+    },
+    {
+     "t_ms": 48619,
+     "col": 39,
+     "row": 27,
+     "x": 2547,
+     "y": 1745
+    },
+    {
+     "t_ms": 50455,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1776
+    },
+    {
+     "t_ms": 53408,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1745
+    },
+    {
+     "t_ms": 56815,
+     "col": 40,
+     "row": 27,
+     "x": 2563,
+     "y": 1745
+    },
+    {
+     "t_ms": 58832,
+     "col": 39,
+     "row": 27,
+     "x": 2517,
+     "y": 1745
+    },
+    {
+     "t_ms": 61619,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1745
+    },
+    {
+     "t_ms": 63297,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1748
+    },
+    {
+     "t_ms": 65040,
+     "col": 39,
+     "row": 27,
+     "x": 2517,
+     "y": 1746
+    },
+    {
+     "t_ms": 66568,
+     "col": 39,
+     "row": 27,
+     "x": 2518,
+     "y": 1744
+    },
+    {
+     "t_ms": 69691,
+     "col": 39,
+     "row": 27,
+     "x": 2513,
+     "y": 1745
+    }
+   ]
+  },
+  {
+   "name": "player B",
+   "kind": "player",
+   "seen": 26,
+   "points": [
+    {
+     "t_ms": 0,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1750
+    },
+    {
+     "t_ms": 37465,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1746
+    },
+    {
+     "t_ms": 40628,
+     "col": 43,
+     "row": 27,
+     "x": 2801,
+     "y": 1750
+    },
+    {
+     "t_ms": 42448,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1747
+    },
+    {
+     "t_ms": 44045,
+     "col": 44,
+     "row": 27,
+     "x": 2832,
+     "y": 1745
+    },
+    {
+     "t_ms": 45853,
+     "col": 44,
+     "row": 27,
+     "x": 2829,
+     "y": 1747
+    },
+    {
+     "t_ms": 48619,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1755
+    },
+    {
+     "t_ms": 50455,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1747
+    },
+    {
+     "t_ms": 51870,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1745
+    },
+    {
+     "t_ms": 53408,
+     "col": 43,
+     "row": 27,
+     "x": 2801,
+     "y": 1750
+    },
+    {
+     "t_ms": 56815,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1747
+    },
+    {
+     "t_ms": 57822,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1773
+    },
+    {
+     "t_ms": 60057,
+     "col": 44,
+     "row": 27,
+     "x": 2829,
+     "y": 1747
+    },
+    {
+     "t_ms": 61619,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1755
+    },
+    {
+     "t_ms": 65040,
+     "col": 43,
+     "row": 27,
+     "x": 2795,
+     "y": 1747
+    },
+    {
+     "t_ms": 66568,
+     "col": 44,
+     "row": 27,
+     "x": 2824,
+     "y": 1745
+    },
+    {
+     "t_ms": 67876,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1747
+    },
+    {
+     "t_ms": 69691,
+     "col": 43,
+     "row": 27,
+     "x": 2800,
+     "y": 1745
+    }
+   ]
+  }
+ ],
+ "geometry": {
+  "floor_y_by_col": {
+   "38": {
+    "lo": 1728,
+    "hi": 1918
+   },
+   "39": {
+    "lo": 1728,
+    "hi": 1792
+   },
+   "40": {
+    "lo": 1728,
+    "hi": 1792
+   },
+   "41": {
+    "lo": 1728,
+    "hi": 1792
+   },
+   "42": {
+    "lo": 1728,
+    "hi": 1918
+   },
+   "43": {
+    "lo": 1600,
+    "hi": 1918
+   },
+   "44": {
+    "lo": 1728,
+    "hi": 1918
+   },
+   "45": {
+    "lo": 1668,
+    "hi": 1918
+   },
+   "46": {
+    "lo": 1600,
+    "hi": 1918
+   },
+   "47": {
+    "lo": 1856,
+    "hi": 1918
+   },
+   "48": {
+    "lo": null,
+    "hi": null
+   }
+  },
+  "floor_x_by_row": {
+   "25": {
+    "lo": 2752,
+    "hi": 3008
+   },
+   "26": {
+    "lo": 2752,
+    "hi": 3008
+   },
+   "27": {
+    "lo": 2432,
+    "hi": 3004
+   },
+   "28": {
+    "lo": 2432,
+    "hi": 2808
+   },
+   "29": {
+    "lo": 2432,
+    "hi": 3072
+   }
+  },
+  "note": "fine kod units, 64 per square; null means no floor found in that column/row of the region"
+ },
+ "redaction": "player names replaced by roles in order of appearance; recorded by hand from five keepers before m59-recordjam.mjs existed, then rebuilt through it",
+ "what_was_seen": "six giant rats one per square on row 27, columns 40-45, each on or within 5 units of its square centre (y 1760), 64 apart, and they never moved. Columns 39-41 have floor only across row 27 (y 1728-1792): one square wide, a rat in the middle of each. Three fleet characters on the row: one parked in the gap between the 2848 and 2912 rats, one oscillating between x~2800 and x~2830 (the gaps either side of the 2784/2848 rats), one oscillating x~2513-2563 west of the first rat. Nobody got past a rat. The first sample is a five-observer snapshot; the run of 24 that follows began 35s later."
+}

@@ -278,11 +278,29 @@ console.log('\n--- proving a spot that works ---');
   w.addMonster(1, 1, 0, MONSTER);                    // a rat, adjacent
   holdAt(p, 5, 5, { x: 340, y: 360 });
   look(p);                                            // first reading, nothing to compare
-  ok('an untested spot is not trusted', !p.holdWorks(), 'holdWorks() false on arrival');
-  look(p, 8000);                                      // 8s quiet with the rat next to us
-  ok('still not trusted after 8s', !p.holdWorks(), `quiet ${Math.round(p.hold.quietMs / 1000)}s`);
+  // A SAFE WALL IS A SAFE WALL, FROM THE MOMENT IT IS TAKEN.
+  //
+  // These three used to assert the opposite: not trusted on arrival, not trusted after 8s,
+  // trusted only after 16s of being stood on while something adjacent failed to land a hit.
+  // The operator retired `proven` on 2026-08-28 — **anything we identify as a safe wall must be
+  // trusted with lives** — and the reason is that the identification changed underneath the
+  // flag. The wall search reads the fine geometry now, not the coarse grid; `proven` was the
+  // compensation for a book that held fifteen squares in the Cragged Mountains against 1,778
+  // real walls in the room.
+  //
+  // What the old rule cost: RESTING is gated on `holdWorks()` and taking a wall is not, so a
+  // character could hold a good wall and still refuse to sit down — for ever, because proving
+  // one requires being attacked on it and a character that will not rest does not linger.
+  // Fozzie, prod, same day: vigor 1 among twenty-three giant rats, health sliding 48 -> 37,
+  // holding nothing and unable to earn anything.
+  ok('a wall is trusted the moment it is taken', p.holdWorks(), 'holdWorks() true on arrival');
+  look(p, 8000);
+  ok('and stays trusted', p.holdWorks(), `quiet ${Math.round(p.hold.quietMs / 1000)}s`);
   look(p, 8000);                                      // 16s total
-  ok('trusted once it has held long enough', p.holdWorks(),
+  // THE PROOF MACHINERY STILL RUNS — it is what writes the book and what DISCREDITS a square
+  // that fails, which is the next group. Only the permission it used to gate is gone.
+  ok('the quiet time is still measured, because the book is still learned',
+     p.hold.quietMs >= 16000,
      `quiet ${Math.round(p.hold.quietMs / 1000)}s with ${p.hold.mostAttackers} adjacent`);
   ok('written to the book', p.book.get(999, 5, 5)?.held === 1,
      JSON.stringify(p.book.get(999, 5, 5)));
@@ -483,8 +501,12 @@ console.log('\n--- quiet because of the walls, or quiet because of the grace per
   holdAt(p, 3, 3);
   p.rejoinedAt = Date.now();                          // just logged back in
   look(p); look(p, 8000); look(p, 8000); look(p, 8000);
-  ok('quiet during the grace period proves nothing', !p.holdWorks(),
-     `${Math.round(p.hold.quietMs / 1000)}s of quiet, and none of it counted`);
+  // THE GRACE PERIOD STILL DISCOUNTS THE EVIDENCE — it just no longer decides whether the
+  // character may rest. `holdWorks()` is now "am I on a wall" (see the proving block above);
+  // what the grace period governs is what gets WRITTEN DOWN, and quiet bought by a monster
+  // that has not noticed you yet is not evidence about the square.
+  ok('quiet during the grace period is not counted as proof',
+     !p.hold.proven, `${Math.round(p.hold.quietMs / 1000)}s of quiet, proven=${!!p.hold.proven}`);
   ok('nothing written to the book on that evidence', !p.book.get(999, 3, 3));
 
   p.turnedAt = Date.now();                            // now act, and wake the room

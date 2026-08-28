@@ -166,8 +166,22 @@ order.forEach((r, n) => assignment.set(r.agent, CITIES[n % CITIES.length]));
 // operator's "five towns and Castle Victoria" said as a list of rooms. Each character enters
 // it at its own city, so twenty-one of them are spread around the ring rather than all walking
 // the same leg at once — which would measure contention, not roads.
+//
+// AND ROOM 110, "A shadowy corner", ADDED 2026-08-28 ON PURPOSE.
+//
+// The other six stops are inns and a castle gate — the easy ends of roads. 110 is reached
+// through the Sewers of Barloque, and row 27 of that sewer is the hardest ground the fleet
+// walks: six giant rats one per square across columns 40-45, sixty-four apart, that do not
+// move, in a pipe whose floor is ONE SQUARE WIDE at columns 39-41. It is the Twisted Wood
+// claim again with the margin cut to half a unit, and it has a fall-jump in it.
+//
+// A ring made only of easy ends measures the roads nobody was worried about. This one is here
+// because it is the leg we expect to fail, and a cycle that never attempts it cannot tell us
+// whether any of today's work helped where it matters.
+const SHADOWY_CORNER = { room: 110, name: 'A shadowy corner', city: null };
 const RING = [...CITIES.map(c => ({ room: CITY_INNS[c].inn, name: CITY_INNS[c].innName, city: c })),
-              { room: TO, name: null, city: null }];
+              { room: TO, name: null, city: null },
+              SHADOWY_CORNER];
 
 const destName = fleet.rooms?.[String(TO)]?.name ?? null;
 console.log(`fleet "${FLEET}" -> ${rostered.host}:${rostered.port}`);

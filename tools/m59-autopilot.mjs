@@ -302,6 +302,24 @@ const REST_VIGOR_CAP = 0.4;
 // one thing it is NOT: that constant decides whether an existing rest bothers waiting for
 // vigor, and this one decides whether a rest happens at all.
 const TRAVEL_VIGOR_FLOOR = Number(process.env.M59_TRAVEL_VIGOR_FLOOR ?? 40);
+// AND THE FLOOR NO ORDINARY ACTIVITY MAY CROSS AT ALL — travel, farm, or errand.
+//
+// Operator's number, 2026-08-28. Raw vigor again, and deliberately well above the server's
+// RUN_VIGOR_FLOOR of 12: the point is not to keep running for one more second, it is that the
+// interesting failures all start once vigor is spent, and the cheapest moment to fix vigor is
+// long before it runs out.
+//
+// It is a MUST, not a preference. Everything else that mentions vigor here is a target — what
+// a rest asks for once it is happening, or whether a journey bothers topping up. This decides
+// that a rest happens, and it is not weighed against wanting to fight, wanting to travel, or
+// wanting to finish an errand. A character below it stops and sits down.
+//
+// Why it needs to exist alongside `vigorRestAt`, which already fires at 80 of 200: that trigger
+// makes a character WANT to rest, and every path from wanting to resting could be refused —
+// by a combat zone, by not holding a wall, by an errand in flight. Fozzie sat at vigor 1 for
+// the better part of an hour with that trigger firing every pass. A floor that cannot be
+// out-argued is the difference between a preference and a rule.
+const ORDINARY_VIGOR_FLOOR = Number(process.env.M59_ORDINARY_VIGOR_FLOOR ?? 20);
 // A TRAVELLER IS NOT MADE TO SIT FOR VIGOR IT CANNOT AFFORD TO EARN.
 //
 // Resting recovers vigor towards REST_VIGOR_CAP (80 of 200) and everything above that has to
@@ -2368,7 +2386,28 @@ export class Autopilot {
   // Are we standing somewhere we have EVIDENCE about, or somewhere that merely looks
   // right? Nothing in this file may spend the safe-spot advantage on a guess: an
   // unproven spot is treated exactly like open floor, which is what it might be.
-  holdWorks() { return !!(this.hold && this.hold.proven); }
+  // A SAFE WALL IS A SAFE WALL. THERE IS NO SUCH THING AS AN UNPROVEN ONE ANY MORE.
+  //
+  // This used to be `!!(this.hold && this.hold.proven)`, and `proven` meant a square that had
+  // been stood on under attack without being hit. Everything that decides whether a character
+  // may REST asks this, so an unproven wall was a wall you could stand on and not sit down at.
+  //
+  // The operator retired the distinction on 2026-08-28: **anything we identify as a safe wall
+  // must be trusted with lives.** The reason is that the identification changed underneath the
+  // flag. The wall search now works on the fine geometry rather than the coarse grid — the same
+  // correction that ran through the mover today — so a "safe spot" is no longer the ordinary
+  // floor it was when `proven` was introduced to compensate. Fifteen squares in the Cragged
+  // Mountains against 1,778 real walls in the room is what the old book contained, and `proven`
+  // was the patch over it.
+  //
+  // What it cost while it stood: resting is gated on this, taking a wall is not, so a character
+  // could hold a perfectly good wall and still refuse to rest — for ever, because proving a wall
+  // requires standing on it WHILE SOMETHING ATTACKS YOU, and a character that will not sit down
+  // does not linger. Fozzie, prod, 2026-08-28: vigor 1 in a room with twenty-three giant rats,
+  // full health falling to 37/48 over ten minutes, holding no wall and unable to earn one.
+  //
+  // The bar is now "am I on a wall", which is the question every caller thought it was asking.
+  holdWorks() { return !!this.hold; }
 
   // IS THERE A WEAPON IN OUR HAND — asked of the server, never of our own intentions.
   //
@@ -6252,6 +6291,20 @@ export class Autopilot {
   // CACHED FOR A SECOND, because this is asked once per walk leg and the answer cannot
   // change faster than the room does. `loadSpawns` memoises the table, so the cost is the
   // room scan rather than the file.
+  // The PEOPLE in the room, by name — the other half of "was this death PVP".
+  namedPlayersHere() {
+    const c = this.s?.client;
+    if (!c?.room?.objects) return [];
+    const out = [];
+    for (const o of c.room.objects.values()) {
+      if (o.id === c.selfId) continue;
+      if (!(o.flags & OF.PLAYER)) continue;
+      const name = c.rsc?.get?.(o.nameRsc);
+      if (name) out.push(name);
+    }
+    return out;
+  }
+
   // The attackable non-players in the room, by name. One enumeration, two callers — the
   // ledger wants the list and `roomOutranksUs` wants to know whether any of them outranks us.
   namedThreatsHere() {
@@ -9978,6 +10031,29 @@ export class Autopilot {
           hunting: this.policy.hunt,
           strategy: this.policy.strategy,
           flee_threshold: this.safety().fleeAt,
+          // DID THIS HAPPEN AT A SAFE WALL? THE ANSWER SHOULD BE "ONLY TO A PERSON".
+          //
+          // The operator's expectation, 2026-08-28, and it is a falsifiable claim about the
+          // whole safe-spot machine rather than a diagnostic: a wall the fleet identifies is
+          // now trusted with lives — `proven` was retired the same day — so a death ON one
+          // should only ever be PVP. A monster killing somebody at a wall means the wall was
+          // not a wall, and that is the single most important thing this record can say.
+          //
+          // Flagged rather than inferred, because inferring it later is exactly what goes
+          // wrong: `hold` is cleared on death by several paths, so a postmortem written a
+          // moment afterwards cannot reconstruct where the body was standing. `lastHold`
+          // already carries it for the 30s window `diedHolding` uses.
+          at_a_safe_wall: diedHolding ? {
+            at: { col: diedHolding.col, row: diedHolding.row },
+            held_for_s: Math.round((Date.now() - diedHolding.at) / 1000),
+            // The killers, so "only PVP" can be checked rather than asserted. `players_present`
+            // is the other half — a monster landing the last blow during a PVP fight is still
+            // a PVP death, and the two columns together say which it was.
+            killed_by: at?.threats?.length ? at.threats : null,
+            players_present: this.namedPlayersHere?.() ?? null,
+            expectation: 'a death at a safe wall should be PVP. A monster here means the wall '
+                       + 'was not one, and the safe-spot book needs to hear about it.',
+          } : null,
           // AND WHAT THAT NUMBER ACTUALLY GOVERNED, because on its own it misleads and it
           // misled the operator on 2026-08-27. `flee_threshold: 0.7` next to a travelling
           // death reads as "it should have fled at 70% and did not", and the truth is the
@@ -11745,7 +11821,16 @@ export class Autopilot {
     // For vigor the trigger is what resting can actually deliver; the shortfall above
     // it is a food problem, and eat()/loot runs are what answer it.
     const vigorRestAt = Math.min(this.policy.restBelow, REST_VIGOR_CAP);
-    const hurt = (hp !== null && hp < restAt) || (vig !== null && vig < vigorRestAt);
+    // SPENT is not the same as hurt, and it is not negotiable. See ORDINARY_VIGOR_FLOOR: the
+    // vigor trigger above makes a character want to rest, and wanting has been refused for an
+    // hour at a time. This is the floor no ordinary activity crosses.
+    // THE RAW VALUE, READ DIRECTLY. `vig` here is `vigorPct`, which divides by `scale_max`,
+    // and reconstructing a raw number from a fraction means guessing which denominator was
+    // used. The floor is written in the server's own unit, so read the server's own number.
+    const rawVigor = this.s.client?.vitals?.()?.vigor?.value ?? null;
+    const spent = Number.isFinite(rawVigor)
+      && rawVigor < (this.policy.ordinaryVigorFloor ?? ORDINARY_VIGOR_FLOOR);
+    const hurt = (hp !== null && hp < restAt) || (vig !== null && vig < vigorRestAt) || spent;
 
     // RUN THE EXPERIMENT ON PURPOSE. A spot is only proved by standing in it without
     // swinging while something tries to kill us — and every other branch here is
