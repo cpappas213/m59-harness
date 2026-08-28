@@ -43,7 +43,7 @@ const flag = (name, fallback = null) => {
 const has = name => argv.includes('--' + name);
 
 const KNOWN = new Set(['fleet', 'to', 'port', 'timeout', 'seed', 'agents', 'inns', 'no-retry',
-                       'dry-run', 'help', 'h', 'cycle']);
+                       'dry-run', 'help', 'h', 'cycle', 'reverse']);
 for (const a of argv) {
   if (!a.startsWith('--')) continue;
   if (!KNOWN.has(a.slice(2))) {
@@ -179,15 +179,27 @@ order.forEach((r, n) => assignment.set(r.agent, CITIES[n % CITIES.length]));
 // because it is the leg we expect to fail, and a cycle that never attempts it cannot tell us
 // whether any of today's work helped where it matters.
 const SHADOWY_CORNER = { room: 110, name: 'A shadowy corner', city: null };
-const RING = [...CITIES.map(c => ({ room: CITY_INNS[c].inn, name: CITY_INNS[c].innName, city: c })),
-              { room: TO, name: null, city: null },
-              SHADOWY_CORNER];
+// AND `--reverse` WALKS THE SAME RING THE OTHER WAY, WHICH IS NOT THE SAME TEST.
+//
+// An exit is not a door and exits are not 1:1 — the map's own rule — so the road from A to B
+// and the road from B to A are two roads, baked from two anchors, and only one of them has
+// been measured by a forward cycle. Room 578 is the standing example: the operator walked
+// 35,1 -> 49,12 and found the reverse baked straight through a mountain. A ring walked in one
+// direction can report every leg green while half the world's doorways have never been tried.
+//
+// The first square each character starts from is unchanged, so the two runs are comparable
+// leg for leg: `106 -> 153` forward is the same pair of rooms as `153 -> 106` reversed.
+const RING_FORWARD = [...CITIES.map(c => ({ room: CITY_INNS[c].inn, name: CITY_INNS[c].innName, city: c })),
+                      { room: TO, name: null, city: null },
+                      SHADOWY_CORNER];
+const REVERSE = has('reverse');
+const RING = REVERSE ? RING_FORWARD.slice().reverse() : RING_FORWARD;
 
 const destName = fleet.rooms?.[String(TO)]?.name ?? null;
 console.log(`fleet "${FLEET}" -> ${rostered.host}:${rostered.port}`);
 console.log(CYCLE
   ? `${rows.length} character(s) scattered over ${CITIES.length} inn(s), CYCLING the ring of ` +
-    `${RING.length} rooms for ${TIMEOUT / 1000}s, seed ${SEED}`
+    `${RING.length} rooms ${REVERSE ? 'REVERSED' : 'forward'} for ${TIMEOUT / 1000}s, seed ${SEED}`
   : `${rows.length} character(s) scattered over ${CITIES.length} inn(s), all bound for ` +
     `room ${TO}${destName ? ` (${destName})` : ''}, ${TIMEOUT / 1000}s each, seed ${SEED}`);
 for (const c of CITIES) {
