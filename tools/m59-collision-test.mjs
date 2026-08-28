@@ -1178,6 +1178,57 @@ ok('the client object rule and the walk over it both compiled',
   ok('and a longer stride cannot teleport a body through that wall either',
      bodyWalkArrives(2848, 1888, 2976, 1888, wall, { stride: 16 }) === false);
 }
+// ================= ARRIVED IS A FACT, NOT A BELIEF =================
+//
+// The most expensive bug of 2026-08-28, and the one that made every other movement finding
+// that day unreadable.
+//
+// `walkTo` decided `arrived` from `c.self`, and `predictSelf` writes to `c.self` after every
+// proved leg WITHOUT a read-back — which is the right trade per leg and is what the proof
+// licenses. What it is not is evidence at the end. When a prediction was wrong the belief was
+// wrong, and the walk reported success for a step the body never made.
+//
+// Measured live on the shadow fleet with the keeper HELD so nothing else could move the
+// character, twice in a row:
+//
+//     walk 47,14 -> 46,15 in room 578, The Cragged Mountains
+//     reply   { arrived: true, position: { col: 15, row: 46 }, steps: 1, replans: 0 }
+//     server   47,14, fine 928,3040 — the exact centre of the take-off square
+//
+// That is what "the baked route goes through a wall" looks like from the inside. The planner
+// believes the step exists, the mover believes it happened, the body has not moved, and
+// NOTHING logs a failure — so characters sat in that room at full health with live jobs while
+// `baked_rail/exit_crossing` rows read OK for crossings that never happened, and the pilgrimage
+// scored legs that were never walked.
+//
+// The operator said twice that the route went through a wall. Both times the answer was a
+// comparison of step predicates, because predicates are measurable; the thing to measure was
+// whether the body moved.
+//
+// THERE ARE TWO PATHS AND BOTH REPORT SUCCESS, so both confirm. The second is worse: a
+// zero-step "already there" is a success a caller cannot argue with — nothing was tried,
+// nothing was refused, there is nothing to retry — and `c.self` goes stale two ordinary ways,
+// a wrong prediction and a DM relocate the client has not seen yet.
+{
+  const src = brokerSource;
+  ok('walkTo confirms its position before deciding it arrived',
+     /await this\.confirmPosition\?\.\(\)\.catch\(\(\) => \{\}\);[\s\S]{0,40}const me = c\.self/.test(src));
+  ok('and confirms before answering "already there"',
+     /if \(me0\.col === col && me0\.row === row\) \{[\s\S]{0,900}await this\.confirmPosition\?\.\(\)/.test(src));
+  ok('and a stale belief falls through to a real walk rather than reporting success',
+     /\/\/ The belief was stale\. Carry on and walk it properly from where we actually are\./.test(src));
+  // ONE READ PER WALK, NOT PER STEP — the same trade the proved-route path already made, and
+  // the reason this is affordable at all. If either of these grows into a per-step read the
+  // walker gets 1.2-5.6s slower per square and somebody will rip it out again.
+  ok('the proved-route path still confirms exactly once after the run',
+     /ONE READ AFTER THE RUN, NOT ONE PER LEG/.test(src));
+  // AND THE OPTIONAL CALL IS NOT THE OTHER BUG. `this.x?.()` on a name that never existed
+  // reads as a true answer and cost a whole run of blank telemetry the same day; this one is
+  // guarded because the method is LIFTED into fixtures, and it is on the real prototype.
+  ok('confirmPosition is a real method on the shipped Session, not a phantom',
+     /^  async confirmPosition\(\) \{$/m.test(src));
+}
+
 const atEdgeOpening = liftFunction(brokerSource,
   'function atEdgeOpening(position, opening, direction)', { KOD_FINENESS });
 ok('the extracted edge-opening predicate compiled', typeof atEdgeOpening === 'function');
@@ -1660,6 +1711,13 @@ console.log('\nterminal movement propagation and edge packet authority');
         need() { return this.client; },
         movementWasCancelled() { return false; },
         threatsHere() { return []; },
+        // WALKTO CONFIRMS ITS POSITION NOW, both before an "already there" and before deciding
+        // it arrived — `c.self` is a belief that `predictSelf` writes without a read-back, and
+        // a stale one made the mover report success for steps the body never took. This
+        // fixture has no wire, so the confirmation is a no-op that leaves `client.self` alone,
+        // which is the same answer a confirmed read would give here.
+        async confirmPosition() { return true; },
+        async selfOrResync() { return this.client.self; },
         // No way round, so the walker must fall through to the occupancy path either way.
         sidestepAround() { return null; },
         async step() {

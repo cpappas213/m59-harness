@@ -4854,8 +4854,33 @@ class Session {
     const me0 = c.self ?? await this.selfOrResync();
     if (!me0) return { arrived: false, reason: 'own_position_unknown',
                        note: 'own position is unknown and a re-read did not recover it' };
-    if (me0.col === col && me0.row === row)
-      return { arrived: true, position: { col, row }, steps: 0, note: 'already there' };
+    // "ALREADY THERE" IS A SUCCESS REPORT, SO IT HAS TO BE CHECKED LIKE ONE.
+    //
+    // `c.self` is a belief. `predictSelf` writes to it after every proved leg without a
+    // read-back, and a DM relocate moves the body on the server with the client learning only
+    // when the next room read lands — so there are two ordinary ways for it to be stale, and
+    // both of them end here returning `arrived: true, steps: 0` for a body somewhere else.
+    //
+    // Seen immediately after the false-arrival fix below, 2026-08-28: a walk that had wrongly
+    // predicted 46,15 left the belief there; the body was relocated to 47,14; `/state` said
+    // 47,14 and this said "already there". A zero-step success is exactly the shape a caller
+    // cannot argue with — no steps taken, nothing refused, nothing to retry.
+    //
+    // One read, and only on this path: every other route through `walkTo` does real work and
+    // pays for its own confirmation at the end.
+    if (me0.col === col && me0.row === row) {
+      // Optional, for the reason `aimInto` guards its own calls: this method is lifted out of
+      // this file by text and run against fixtures that have only what they inject, and a bare
+      // call is a TypeError rather than a missing confirmation. `confirmPosition` IS on the
+      // real prototype — this is not a call to a name that never existed, which is the other
+      // failure this repository has had today and a different thing entirely.
+      await this.confirmPosition?.().catch(() => {});
+      const now0 = c.self ?? me0;
+      if (now0.col === col && now0.row === row)
+        return { arrived: true, position: { col, row }, steps: 0, note: 'already there' };
+      // The belief was stale. Carry on and walk it properly from where we actually are.
+      me0.col = now0.col; me0.row = now0.row; me0.x = now0.x; me0.y = now0.y;
+    }
 
     if (!geo) {
       return { arrived: false, steps: 0, reason: 'collision_geometry_unavailable',
@@ -6123,7 +6148,34 @@ class Session {
       queue = re.steps.slice();
       pulled = undefined;          // a new plan needs its own proof
     }
-    const me = c.self;
+    // ARRIVED IS A FACT ABOUT THE WORLD, AND `c.self` IS A BELIEF ABOUT IT.
+    //
+    // This read `c.self` directly, and `predictSelf` writes to `c.self` after every proved leg
+    // WITHOUT a read-back — that is the whole point of a proof, and it is the right trade per
+    // leg. What it is not is evidence at the end. When a prediction is wrong the belief is
+    // wrong, `arrived` is computed from the wrong belief, and the walk reports success for a
+    // step the body never made.
+    //
+    // Measured on the shadow fleet, 2026-08-28, with the keeper held so nothing else could move
+    // the character, twice in a row:
+    //
+    //     walk 47,14 -> 46,15 in room 578
+    //     reply  { arrived: true, position: { col: 15, row: 46 }, steps: 1, replans: 0 }
+    //     server  47,14, fine 928,3040 — the exact centre of the take-off square
+    //
+    // That is the operator's "the baked route goes through a wall", seen from the inside: the
+    // planner believes the step exists, the mover believes it happened, and the body has not
+    // moved. It is why characters sat in the Cragged Mountains at full health with live jobs
+    // and NOTHING logged a failure — every leg reported success — and why `baked_rail` rows
+    // read OK for crossings that never happened. I spent an hour comparing step predicates
+    // because they were measurable; the thing to measure was whether the body moved.
+    //
+    // ONE READ, AT THE END. The same trade the proved-route path above already makes at
+    // `confirmPosition()` — one round trip per walk, not per step. A walk is seconds of work
+    // and this is 1.2 to 5.6s at worst on a bad link; reporting a false arrival costs a leg,
+    // and silently, which is far more expensive.
+    await this.confirmPosition?.().catch(() => {});
+    const me = c.self ?? await this.selfOrResync?.().catch(() => null) ?? null;
     const arrived = !!me && me.col === col && me.row === row;
     // MONSTER COLLISION DURING TRAVEL IS NAMED, EVERY TIME, INCLUDING ON SUCCESS.
     //

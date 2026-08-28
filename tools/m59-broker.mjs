@@ -8070,7 +8070,41 @@ const TOOLS = [
       // mode — writing the stub's default here is what silently reverted 'tick' back to
       // 'survive' on every rejoin (the stub never knows the keeper is running tick).
       const rosterMode = fleetState.get(a.agent)?.autopilot?.mode ?? p.mode;
-      if (a.action === 'status') return p.status({ full: !!a.full_journal });
+      // ASK THE PROCESS THAT IS ACTUALLY RUNNING, NOT THE SHELL IN THIS ONE.
+      //
+      // `p` is an Autopilot built on `session(agent)`, and for a keeper-backed character that
+      // session is a KeeperProxy. Since the ghost guard the shell is never started — correctly,
+      // because a pass loop on a proxy throws on every pass — so its status reads
+      // `running: false, passes: 0, activity: "stopped"` for a character whose real keeper has
+      // run 2,646 passes and is holding a wall.
+      //
+      // That is worse than the ghost it replaced. The ghost at least reported `running: true`;
+      // this reports a confident, wrong "stopped", and the operator read the fleet as disabled
+      // on the strength of it. A status that is honest about the wrong object is still a status
+      // nobody can use.
+      //
+      // The keeper publishes its own in `/state` as `autopilot_status`. That is the answer to
+      // "is this character's keeper running", so that is what comes back — with `shell` kept
+      // alongside for anyone debugging the broker itself rather than the character.
+      if (a.action === 'status') {
+        const shell = p.status({ full: !!a.full_journal });
+        const proxied = sessions.get(a.agent);
+        if (!(proxied instanceof KeeperProxy)) return shell;
+        // FRESH, because a status read is exactly the moment the two-second cache is wrong:
+        // somebody is asking because they suspect the character is not doing what they think.
+        const live = await keeperState(a.agent, proxied._index, { fresh: true }).catch(() => null);
+        const keeper = live?.autopilot_status ?? null;
+        if (!keeper) return { ...shell, keeper_backed: true,
+                              note: 'the keeper did not answer; the fields above describe this '
+                                  + "broker's shell, which never runs for a keeper-backed character" };
+        return { ...keeper, keeper_backed: true,
+                 room: live.room ?? null, you: live.you ?? null,
+                 hp: live.hp ?? null, vigor: live.vigor ?? null,
+                 hold: live.hold ?? null, stuck: live.stuck ?? null,
+                 waiting_on: live.waiting_on ?? null, refusals: live.refusals ?? null,
+                 shell: { running: shell.running, passes: shell.passes,
+                          note: 'this broker holds no pass loop for a keeper-backed character' } };
+      }
       // SAY WHY IT STOPPED. The uptime ledger already records a reason and nothing ever
       // supplied one, so every stop looked identical — and death attribution could not
       // tell a keeper that CRASHED from one an errand was deliberately holding while it

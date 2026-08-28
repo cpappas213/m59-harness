@@ -1011,7 +1011,28 @@ const vigorPct = v => {
 // So the floor is now set by what a character needs to FIGHT WELL, and the food supply
 // is expected to meet it. That is not a free choice — everything above 80 has to be
 // eaten — which is exactly why the larder and the vigor floor are one problem.
-const MIN_FIGHT_VIGOR = 100;      // never start a fight below this while there is food
+// EIGHTY, BECAUSE THAT IS WHAT RESTING ALONE DELIVERS — AND 100 WAS NOT SETTABLE.
+//
+// This is a CLAMP, not a default: `fightFloor` is `Math.max(MIN_FIGHT_VIGOR, ...)`, so
+// every value below it was silently raised. An operator setting `fight_above_vigor: 80`
+// got 100, the policy read back 80, and nothing said otherwise — the exact shape of a
+// setting that looks applied and does nothing, which this repository has paid for before.
+// substrate/policy.local.json even documented the trap in a key called
+// `why_the_floor_is_100` rather than the clamp being moved.
+//
+// Measured on prod 2026-08-28: eighteen of twenty characters reported `cannot fight`
+// against a floor of 100, across ten consecutive half-hourly reports with zero toughers
+// and fleet max health falling 1,006 -> 930. Resting stops at REST_VIGOR_CAP (80 of 200),
+// so the only way past 80 is EATING, and a fleet whose larder is thin is a fleet that
+// never starts a fight at all. The escape hatch below (STARVED_FIGHT_VIGOR) only fires on
+// an EMPTY larder — a character with one mushroom and a floor of 100 is still deadlocked.
+//
+// 80 is not an arbitrary loosening. It is exactly the resting cap, so it is the highest
+// floor a character can always reach without the food chain working, which makes it the
+// last value that can never deadlock. Wanting more than that is still expressible — set
+// `fight_above_vigor` higher — but it is now a CHOICE about the food supply rather than a
+// hidden minimum nobody could see.
+const MIN_FIGHT_VIGOR = 80;       // never start a fight below this while there is food
 const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 // THE ESCAPE HATCH, and the reason a hard floor of 100 does not deadlock the fleet.
 // With an empty larder the floor is unreachable by any action the keeper can take, and

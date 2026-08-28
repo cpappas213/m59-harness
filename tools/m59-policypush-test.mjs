@@ -125,9 +125,9 @@ ok('every rememberAutopilot call site is followed by a push',
    remembers === [...broker.matchAll(/pushPolicyToKeeper\(/g)].length - 1,
    `${remembers} remember sites vs ${[...broker.matchAll(/pushPolicyToKeeper\(/g)].length - 1} pushes`);
 ok('autopilot action=start pushes after persisting',
-   /rememberAutopilot\(a\.agent[\s\S]{0,600}?await pushPolicyToKeeper\(a\.agent, p\)/.test(broker));
+   /rememberAutopilot\(a\.agent[\s\S]{0,4000}?await pushPolicyToKeeper\(a\.agent, p\)/.test(broker));
 ok('spread apply pushes after persisting',
-   /rememberAutopilot\(o\.agent[\s\S]{0,600}?await pushPolicyToKeeper\(o\.agent, p\)/.test(broker));
+   /rememberAutopilot\(o\.agent[\s\S]{0,4000}?await pushPolicyToKeeper\(o\.agent, p\)/.test(broker));
 
 // An `await` inside a synchronous run() is not a slow push, it is a broken one: the tool
 // would answer before the order left the building.

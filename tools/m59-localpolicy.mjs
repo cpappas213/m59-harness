@@ -53,7 +53,18 @@ export const REST_VIGOR_CAP = 80;
 // engages under it breaks off part-way and then recovers slower than if it had waited.
 // m59-autopilot.mjs enforces it as MIN_FIGHT_VIGOR and this file will not let a local
 // override pretend otherwise.
-export const MIN_FIGHT_VIGOR = 100;
+//
+// EIGHTY, AND IT IS A SECOND COPY OF A NUMBER THAT MOVED. It read 100 while the keeper's
+// clamp read 100 too, and when the clamp moved to 80 this file went on warning that a
+// local 80 "will not lower it" — advice that was true yesterday and is now exactly
+// backwards. A warning that is confidently wrong is worse than no warning, because it
+// talks an operator out of a setting that works.
+//
+// Kept as a constant rather than imported because importing m59-autopilot.mjs to read one
+// number would drag the whole keeper into a tool that only reads a JSON file. That is a
+// deliberate trade and it has a cost, which is this comment: if MIN_FIGHT_VIGOR moves
+// again, it has to move here too. m59-vigorfloor-test.mjs asserts the two agree.
+export const MIN_FIGHT_VIGOR = 80;
 
 // ---------------------------------------------------------------------------
 // THE OVERRIDABLE SURFACE. A closed set, for the same reason the playbook verbs are:
