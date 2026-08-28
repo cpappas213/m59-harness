@@ -3578,7 +3578,9 @@ class Session {
 
       // A PROVED LEG: one move, aimed at the pivot, paced by its own length.
       const aim = pull.points[1];
-      const target = { x: clientToProtocol(aim.x), y: clientToProtocol(aim.y) };
+      // `let`, because a refused pivot may be retried at another point in the SAME square —
+      // see the refusal below. The square is the plan; the point is a choice within it.
+      let target = { x: clientToProtocol(aim.x), y: clientToProtocol(aim.y) };
       // BUT A PROOF ABOUT WALLS IS NOT A PROOF ABOUT BODIES.
       //
       // The pull proved this line against the .roo, offline, in an empty room — and a body is
@@ -3620,7 +3622,7 @@ class Session {
       const owed = Math.round(1000 * dist / squaresPerSecond(speed));
       const deg = (Math.atan2(target.y - me.y, target.x - me.x) * 180 / Math.PI + 360) % 360;
       await this.pacer.submit('turn', () => (c.room.id === roomId ? c.face(deg) : false));
-      const queued = await this.queueValidatedMove(target.x, target.y,
+      let queued = await this.queueValidatedMove(target.x, target.y,
         { speed, slide: false, minGap: Math.max(this._moveGapMs ?? MOVE_INTERVAL_MS, owed),
           expectedRoomId: roomId });
       // Traced at the CALL SITE, never inside `queueValidatedMove` — that method is lifted
@@ -3629,9 +3631,43 @@ class Session {
       traceMove({ agent: this.name, room: this.world?.room?.num ?? null, kind: 'pivot',
                   to: { x: target.x, y: target.y }, sent: !!queued.sent,
                   reason: queued.validation?.reason ?? null });
-      if (!queued.sent)
-        return { done: false, legs, singles, why: queued.validation?.reason ?? 'refused',
-                 note: queued.validation?.note };
+      if (!queued.sent) {
+        // A PIVOT IS A SQUARE, AND A STAND POINT IS ONE POINT IN IT.
+        //
+        // This gave up on the whole proved leg the moment the pivot's stand point was refused,
+        // and a stand point is refusable while the square is perfectly enterable — it is one
+        // point of a 64-unit square, chosen for openness, not for reachability FROM HERE.
+        //
+        // Measured on the shadow fleet, 2026-08-28, room 578 stepping 47,14 -> 46,15, by asking
+        // the body to aim at each lattice point in turn:
+        //
+        //     992,2976  the stand point          geometry_blocked
+        //     992,2992                           MOVED, landed in 46,15
+        //     976,2992 and 1008,2992             MOVED, landed in 46,15
+        //
+        // Three of nine points work and the one this aimed at is not one of them. So the baked
+        // route was right that the step exists, the square walker's `aimInto` would have found
+        // it, and only the pivot walker could not — it is the one path that never asks. The
+        // operator watched characters sit in that room for minutes on a route that was correct.
+        //
+        // `aimInto` is exactly the question worth asking here and it is already written: same
+        // square, other points, each proved by the same trace. One retry, and on failure the
+        // leg gives up as before and the square walker takes over below.
+        const other = typeof this.aimInto === 'function'
+          ? this.aimInto(me, Math.floor(target.y / KOD_FINENESS),
+                             Math.floor(target.x / KOD_FINENESS))
+          : null;
+        const retry = other && (other.x !== target.x || other.y !== target.y)
+          ? await this.queueValidatedMove(other.x, other.y,
+              { speed, slide: false, minGap: Math.max(this._moveGapMs ?? MOVE_INTERVAL_MS, owed),
+                expectedRoomId: roomId }).catch(() => null)
+          : null;
+        if (!retry?.sent)
+          return { done: false, legs, singles, why: queued.validation?.reason ?? 'refused',
+                   note: queued.validation?.note };
+        queued = retry;
+        target = other;
+      }
       this._moveGapMs = owed;
       legs++;
       // PREDICTED, WHICH IS WHAT THE PROOF IS FOR. `slide: false` means the move either
