@@ -2766,10 +2766,42 @@ async function reconcileFleet() {
             if (!ok) throw new Error('keeper respawn failed');
           }
         } catch (e) {
-          // Keeper process is dead — respawn it
-          console.error(`[rejoin] ${agent} keeper not reachable, respawning`);
-          const ok = await spawnKeeper(agent, index, credentials);
-          if (!ok) throw new Error('keeper respawn failed');
+          // A KEEPER THAT DID NOT ANSWER IS A QUESTION, NOT A CORPSE.
+          //
+          // This caught every failure of the fetch above — a 30s timeout as readily as a
+          // refused connection — and respawned on all of them. Respawning kills the running
+          // keeper's journey, so a keeper that was merely BUSY lost its leg and the character
+          // stopped where it stood.
+          //
+          // Measured on the 30-minute cycle of 2026-08-28: 135 rejoin events, around twenty
+          // respawns, and thirteen of twenty-one characters ending the run stacked in room 568
+          // at full health with one road showing twelve unfinished crossings. Five of them were
+          // inside a single 64-unit square. It reads as a movement failure and it is a
+          // supervision failure: the sweep was pulling the rug out from under keepers that were
+          // working. It also leaked ports — 9111..9137 in use for a 21-port band — because each
+          // respawn allocates a new one.
+          //
+          // This is the lesson m59-which.mjs already learned about BROKERS and nobody carried
+          // across to keepers: prod's /health was measured at 1046ms idle and 2573ms under load,
+          // so THE BUSIEST ONE IS THE MOST LIKELY TO BE MISSED AND IT IS ALWAYS THE ONE THAT
+          // MATTERS. A keeper mid-travel is exactly the keeper worth not killing; one
+          // postmortem here shows a pass blocked in a single await for 15,856ms.
+          //
+          // So the pid decides, not the silence. We spawned the child and recorded its pid; if
+          // that process is still alive, the keeper is busy and the next sweep will find it in
+          // 45 seconds. Only a pid that is genuinely gone earns a respawn.
+          const rec = keeperProcesses.get(agent);
+          let alive = false;
+          if (rec?.pid) { try { process.kill(rec.pid, 0); alive = true; } catch { alive = false; } }
+          if (alive) {
+            console.error(`[rejoin] ${agent} keeper did not answer in time but pid ${rec.pid} is ` +
+                          `alive — leaving it alone (${e?.name ?? 'error'})`);
+          } else {
+            console.error(`[rejoin] ${agent} keeper not reachable and pid ` +
+                          `${rec?.pid ?? 'unknown'} is gone, respawning`);
+            const ok = await spawnKeeper(agent, index, credentials);
+            if (!ok) throw new Error('keeper respawn failed');
+          }
         }
         const proxy = sessions.get(agent) || makeKeeperProxy(agent, index);
         sessions.set(agent, proxy);

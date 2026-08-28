@@ -106,5 +106,36 @@ console.log('\nWHY A PROXY CANNOT RUN A PASS — the three methods it does not h
      /The client is\s*\n\s*\/\/ rebuilt from each `\/state` snapshot and is a picture, not a wire/.test(BROKER));
 }
 
+console.log('\nA KEEPER THAT DID NOT ANSWER IS A QUESTION, NOT A CORPSE');
+{
+  // The 45s sweep POSTs /rejoin to each keeper and used to respawn on ANY failure of that
+  // fetch — a 30s timeout as readily as a refused connection. Respawning kills the running
+  // keeper's journey, so a keeper that was merely BUSY lost its leg and the character stopped
+  // where it stood.
+  //
+  // Measured on the 30-minute cycle of 2026-08-28: 135 rejoin events, around twenty respawns,
+  // and thirteen of twenty-one characters ending the run stacked in room 568 at full health
+  // with one road showing twelve unfinished crossings — five of them inside a single 64-unit
+  // square. It reads as a movement failure and it is a supervision failure: the sweep was
+  // pulling the rug out from under keepers that were working. It leaked ports too — 9111..9137
+  // in use for a 21-port band — because every respawn allocates a new one.
+  //
+  // m59-which.mjs already learned this about BROKERS: "a port that does not answer is a
+  // question, not a fleet", with prod's /health measured at 1046ms idle and 2573ms under load,
+  // so the busiest one is the most likely to be missed and it is always the one that matters.
+  // Nobody carried it across to keepers. One postmortem here shows a pass blocked in a single
+  // await for 15,856ms, which is a keeper worth NOT killing.
+  ok('the sweep asks whether the pid is alive before condemning a keeper',
+     /const rec = keeperProcesses\.get\(agent\);[\s\S]{0,200}process\.kill\(rec\.pid, 0\)/.test(BROKER));
+  ok('and a busy keeper is left alone rather than respawned',
+     /keeper did not answer in time but pid \$\{rec\.pid\} is /.test(BROKER));
+  ok('and only a pid that is genuinely gone earns a respawn',
+     /is gone, respawning[\s\S]{0,120}await spawnKeeper\(agent, index, credentials\)/.test(BROKER));
+  // THE SIGNAL-0 PROBE IS THE WHOLE POINT, and it must not be swapped for something weaker: a
+  // /health round trip would reintroduce exactly the timeout this exists to survive.
+  ok('the liveness probe is a signal, not another request',
+     /process\.kill\(rec\.pid, 0\); alive = true; \} catch \{ alive = false; \}/.test(BROKER));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
