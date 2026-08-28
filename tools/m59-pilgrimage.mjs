@@ -43,7 +43,7 @@ const flag = (name, fallback = null) => {
 const has = name => argv.includes('--' + name);
 
 const KNOWN = new Set(['fleet', 'to', 'port', 'timeout', 'seed', 'agents', 'inns', 'no-retry',
-                       'dry-run', 'help', 'h']);
+                       'dry-run', 'help', 'h', 'cycle']);
 for (const a of argv) {
   if (!a.startsWith('--')) continue;
   if (!KNOWN.has(a.slice(2))) {
@@ -73,6 +73,21 @@ const ONLY = flag('agents') ? String(flag('agents')).split(',').map(s => s.trim(
 
 // The mainland five, in the canonical table's own order. Ko'catan is across the sea and is
 // not a mainland road, so it is left out unless somebody names it.
+// SCATTER-AND-CONVERGE, OR KEEP GOING. Two different questions, and conflating them cost a
+// day of reading one as the other.
+//
+// Without `--cycle` this measures ONE crossing per character: everybody starts somewhere
+// different, everybody walks to one room, and a character that gets there is finished. That is
+// the right shape for "can the fleet cross the map", and every earlier run used it, so it stays
+// the default and stays comparable.
+//
+// It is NOT a loop, and it was being read as one. Characters that arrived stood at the
+// destination for the rest of the window with no objective, which looks exactly like being
+// stuck — thirteen of them at once — and it means a longer timeout buys nothing for anyone who
+// arrives early. `--cycle` is the loop that reading assumed: arrive, then set off for the next
+// place, until the clock stops. It measures sustained travel rather than one crossing, so the
+// headline number becomes LEGS COMPLETED rather than characters arrived.
+const CYCLE = has('cycle');
 const MAINLAND = ['Tos', 'Barloque', 'Cornoth', 'Marion', 'Jasper'];
 const CITIES = flag('inns') ? String(flag('inns')).split(',').map(s => s.trim()) : MAINLAND;
 for (const c of CITIES) if (!CITY_INNS[c]) {
@@ -147,10 +162,20 @@ const order = rows.map((r, i) => ({ r, k: draw(), i }))
 const assignment = new Map();
 order.forEach((r, n) => assignment.set(r.agent, CITIES[n % CITIES.length]));
 
+// THE RING A CYCLING CHARACTER WALKS. The five city inns and the destination, which is the
+// operator's "five towns and Castle Victoria" said as a list of rooms. Each character enters
+// it at its own city, so twenty-one of them are spread around the ring rather than all walking
+// the same leg at once — which would measure contention, not roads.
+const RING = [...CITIES.map(c => ({ room: CITY_INNS[c].inn, name: CITY_INNS[c].innName, city: c })),
+              { room: TO, name: null, city: null }];
+
 const destName = fleet.rooms?.[String(TO)]?.name ?? null;
 console.log(`fleet "${FLEET}" -> ${rostered.host}:${rostered.port}`);
-console.log(`${rows.length} character(s) scattered over ${CITIES.length} inn(s), all bound for ` +
-            `room ${TO}${destName ? ` (${destName})` : ''}, ${TIMEOUT / 1000}s each, seed ${SEED}`);
+console.log(CYCLE
+  ? `${rows.length} character(s) scattered over ${CITIES.length} inn(s), CYCLING the ring of ` +
+    `${RING.length} rooms for ${TIMEOUT / 1000}s, seed ${SEED}`
+  : `${rows.length} character(s) scattered over ${CITIES.length} inn(s), all bound for ` +
+    `room ${TO}${destName ? ` (${destName})` : ''}, ${TIMEOUT / 1000}s each, seed ${SEED}`);
 for (const c of CITIES) {
   const n = [...assignment.values()].filter(v => v === c).length;
   console.log(`  ${c.padEnd(10)} inn ${String(CITY_INNS[c].inn).padStart(4)}  ${CITY_INNS[c].innName.padEnd(34)} ${n} traveller(s)`);
@@ -166,8 +191,14 @@ const dm = await import('./m59-dm.mjs');
 async function launch(r) {
   const city = assignment.get(r.agent);
   const inn = CITY_INNS[city].inn;
+  // A CYCLING CHARACTER ENTERS THE RING AT ITS OWN CITY and walks to the next room along, so
+  // twenty-one of them are spread around it rather than all on one leg. `legs` is the record
+  // of every completed crossing; it is what the cycle is measured on.
+  const at = Math.max(0, RING.findIndex(x => x.room === inn));
   const out = { character: r.character, agent: r.agent, city, inn,
-                began: Date.now(), rooms: new Set(), low: null, outcome: 'running' };
+                began: Date.now(), rooms: new Set(), low: null, outcome: 'running',
+                ring: at, to: CYCLE ? RING[(at + 1) % RING.length].room : TO,
+                legBegan: Date.now(), legs: [] };
   // Idle, unparked and NOT roaming: a character that wanders off to hunt is not measuring
   // the road, and `roam` is the one setting that quietly reintroduces that.
   await call('autopilot', { agent: r.agent, mode: 'idle', roam: false, confine_rooms: [] });
@@ -188,7 +219,7 @@ async function launch(r) {
     }
   } catch { /* healing is a courtesy; the leg is still a leg without it */ }
 
-  const sent = await call('travel', { agent: r.agent, to: TO, max_hops: 30, background: true,
+  const sent = await call('travel', { agent: r.agent, to: out.to, max_hops: 30, background: true,
                                       run_errands: false });
   if (sent?._error || sent?.ok === false) {
     out.outcome = 'refused';
@@ -217,12 +248,42 @@ async function watchAll(outs) {
       if (!o) continue;
       const room = Number(row.room_num ?? NaN);
       if (Number.isFinite(room)) { o.rooms.add(room); o.ended = room; o.endedName = row.room ?? null; }
-      const hp = Number(row.health ?? NaN);
+      // A FLEET ROW'S `health` IS THE STRING "53/53", AND `max_health` IS NULL.
+      //
+      // `Number("53/53")` is NaN, so `low` was never recorded and the report's `low` column
+      // was blank on every row of every run this tool has ever produced. Worse than cosmetic:
+      // the death-retry gate below needs `hp / max >= 0.95`, and with both NaN it is always
+      // false — so a character that died, walked itself to an inn and rested to full was never
+      // sent out again. That is very likely the fourteen characters found sitting in inns at
+      // full health at the end of the 1800s run, read at the time as an unexplained stall.
+      //
+      // The same comment two screens up says a fleet row's `room` is the NAME and `room_num`
+      // is the number. The health pair has the same shape and was missed.
+      const [hpRaw, maxRaw] = String(row.health ?? '').split('/');
+      const hp = Number(hpRaw);
+      const max = Number(row.max_health ?? row.health_max ?? maxRaw);
       if (Number.isFinite(hp)) o.low = o.low === null ? hp : Math.min(o.low, hp);
-      const max = Number(row.max_health ?? row.health_max ?? NaN);
       if (Number.isFinite(max)) o.max = max;
-      if (room === TO) {
-        o.outcome = 'arrived'; o.ms = Date.now() - o.began; live.delete(row.agent); continue;
+      if (room === o.to) {
+        // ONE LEG DONE. Recorded either way — in cycle mode it is a row in a series, and
+        // without it, it is the whole measurement.
+        o.legs.push({ from: o.legFrom ?? o.inn, to: o.to, ms: Date.now() - o.legBegan,
+                      deaths: (o.deaths ?? 0) - (o.deathsAtLegStart ?? 0) });
+        if (!CYCLE) {
+          o.outcome = 'arrived'; o.ms = Date.now() - o.began; live.delete(row.agent); continue;
+        }
+        // AND STRAIGHT ON TO THE NEXT. No pause, no heal, no relocate — the point of a cycle
+        // is that the fleet keeps travelling, and a leg that starts from wherever the last one
+        // ended at whatever health it ended with is the honest one. The death retry below is
+        // still the only thing that intervenes.
+        o.ring = (o.ring + 1) % RING.length;
+        o.legFrom = o.to;
+        o.to = RING[(o.ring + 1) % RING.length].room;
+        o.legBegan = Date.now();
+        o.deathsAtLegStart = o.deaths ?? 0;
+        await call('travel', { agent: o.agent, to: o.to, max_hops: 30, background: true,
+                               run_errands: false });
+        continue;
       }
       // THE UNDERWORLD IS A DEATH, and it is the only honest way to see one from here: the
       // journey does not report it, the room read does.
@@ -259,13 +320,13 @@ async function watchAll(outs) {
         if (!whole) continue;
         o.state = 'running';
         o.retries = (o.retries ?? 0) + 1;
-        await call('travel', { agent: o.agent, to: TO, max_hops: 30, background: true,
+        await call('travel', { agent: o.agent, to: o.to, max_hops: 30, background: true,
                                run_errands: false });
       }
     }
   }
   for (const o of live.values()) {
-    o.outcome = o.deaths ? 'still trying' : 'timed out';
+    o.outcome = CYCLE ? 'cycling' : (o.deaths ? 'still trying' : 'timed out');
     o.ms = Date.now() - o.began;
   }
   return outs;
@@ -281,6 +342,63 @@ const results = await watchAll(launched);
 
 // ------------------------------------------------------------------ the report
 const pad = (s, n) => String(s ?? '').padEnd(n);
+
+// A CYCLE IS JUDGED ON LEGS, NOT ON ARRIVALS.
+//
+// "Nine of twenty-one arrived" is the right headline for one crossing each and a meaningless
+// one for a loop, where a character that walked six legs and one that walked none both end the
+// window mid-journey. So the cycle prints what it actually measured: how many crossings the
+// fleet completed, how long they took, and how many deaths it cost — per road, because the
+// per-road column is the one that has been carrying the finding every time.
+if (CYCLE) {
+  const legs = results.flatMap(o => o.legs.map(l => ({ ...l, who: o.character })));
+  const deaths = results.reduce((a, o) => a + (o.deaths ?? 0), 0);
+  const mins = TIMEOUT / 60000;
+  console.log(`\nTHE CYCLE`);
+  console.log(`  legs completed  ${legs.length}   by ${results.filter(o => o.legs.length).length} of ${results.length} characters`);
+  console.log(`  deaths          ${deaths}`);
+  console.log(`  legs per character  min ${Math.min(...results.map(o => o.legs.length))}, ` +
+              `max ${Math.max(...results.map(o => o.legs.length))}, ` +
+              `avg ${(legs.length / results.length).toFixed(1)} over ${mins.toFixed(0)} minutes`);
+  if (legs.length) {
+    const t = legs.map(l => l.ms).sort((a, b) => a - b);
+    console.log(`  a completed leg took  fastest ${Math.round(t[0] / 1000)}s, ` +
+                `median ${Math.round(t[t.length >> 1] / 1000)}s, ` +
+                `slowest ${Math.round(t[t.length - 1] / 1000)}s`);
+    console.log(`  legs per death        ${deaths ? (legs.length / deaths).toFixed(1) : '∞'}`);
+  }
+  console.log('\n  BY THE ROAD THEY WALKED');
+  const byRoad = new Map();
+  for (const l of legs) {
+    const k = `${l.from} -> ${l.to}`;
+    const e = byRoad.get(k) ?? { n: 0, ms: 0, deaths: 0 };
+    e.n++; e.ms += l.ms; e.deaths += l.deaths ?? 0; byRoad.set(k, e);
+  }
+  // AND THE ROADS NOBODY FINISHED. A road that never appears above is the interesting one and
+  // it is invisible in a table of completions, which is how "Marion 0/4" nearly got averaged
+  // away the first time.
+  const attempted = new Map();
+  for (const o of results) if (o.outcome === 'cycling') {
+    const k = `${o.legFrom ?? o.inn} -> ${o.to}`;
+    attempted.set(k, (attempted.get(k) ?? 0) + 1);
+  }
+  const roads = new Set([...byRoad.keys(), ...attempted.keys()]);
+  console.log('    road                 done   avg    deaths   unfinished at the bell');
+  for (const k of [...roads].sort()) {
+    const e = byRoad.get(k) ?? { n: 0, ms: 0, deaths: 0 };
+    console.log('    ' + pad(k, 20) + String(e.n).padStart(5)
+      + (e.n ? String(Math.round(e.ms / e.n / 1000) + 's').padStart(7) : '      —')
+      + String(e.deaths).padStart(9) + String(attempted.get(k) ?? 0).padStart(9));
+  }
+  console.log('\n  WHERE EACH CHARACTER GOT TO');
+  for (const o of results.sort((a, b) => b.legs.length - a.legs.length))
+    console.log('    ' + pad(o.character, 9) + String(o.legs.length).padStart(3) + ' leg(s)'
+      + String(o.deaths ?? 0).padStart(4) + ' death(s)   '
+      + pad(String(o.ended ?? '?') + (o.endedName ? ' ' + o.endedName : ''), 26)
+      + (o.low === null ? '' : `  low ${o.low}${o.max ? '/' + o.max : ''}`));
+  console.log('');
+  process.exit(0);
+}
 console.log('\n  character  from        outcome      s  died  ended            low');
 for (const o of results.sort((a, b) => a.city.localeCompare(b.city) || a.character.localeCompare(b.character)))
   console.log('  ' + pad(o.character, 10) + pad(o.city, 11) + pad(o.outcome, 11) +
