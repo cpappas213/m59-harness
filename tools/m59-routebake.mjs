@@ -6,6 +6,7 @@
 //   node tools/m59-routebake.mjs --check         report, write nothing
 //   node tools/m59-routebake.mjs --resume        keep what is already on disk, bake the rest
 //   node tools/m59-routebake.mjs --grid          the old coarse view, for comparison only
+//   node tools/m59-routebake.mjs --jobs 8      one room per core; 1680s -> ~250s
 //
 // THIRTEEN MINUTES ON THIS MACHINE, FLUSHED EVERY MINUTE. `--resume` adopts the rooms
 // already in the table when — and only when — they were baked from the same geometry and
