@@ -39,6 +39,7 @@ const { recordShelterRun, shelterRuns, pairRuns, shelterFile } =
   await import('./m59-shelter.mjs');
 
 const AUTOPILOT_SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+const { Autopilot } = await import('./m59-autopilot.mjs');
 const GAME_SRC = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
 
 console.log('\n(A) THE DECISION IS RECORDED WHEN THE WALL IS CHOSEN, NOT WHEN IT IS REACHED');
@@ -183,6 +184,55 @@ console.log('\nTHE BAR IS "HAVE I TAKEN A HIT", NOT A FRACTION');
   // cancellation won, because it runs in the keeper on a one-second clock.
   ok('and it is a different number from the one that could end a crossing',
      /SO THIS IS NOT THE SAME NUMBER AS `travelShelterBelow`/.test(AUTOPILOT_SRC));
+}
+
+console.log('\nA WALL ANSWERS NOTHING IN A PLACE THAT IS ALREADY SAFE');
+{
+  // Measured on the first cycle run with no ghost autopilots, 2026-08-28: nine shelter runs,
+  // and SIX were somewhere a wall cannot help.
+  //
+  //     room 1   The Underworld    2/29, 1/33, 2/36, 2/36   all 24,10 -> 28,5, none reached
+  //     room 106 Brownestone Inn   15/52                         10,11 -> 7,5
+  //
+  // Four dead characters in the Underworld all picking the same square, and one sitting in an
+  // inn. The Underworld has nothing to shelter FROM — the answer to being in it is
+  // `escapeUnderworld`, which is a different rung — and an inn is a sanctuary, where the
+  // correct move is to rest exactly where you stand. Both fired because the gate only ever
+  // asked about health, and a corpse at 7% and a traveller at 7% look identical to a number.
+  //
+  // It also poisoned the measurement. "Seven of eight runs never settled" was mostly this,
+  // which reads as the doctrine failing when it is really the doctrine being asked a question
+  // that has no answer.
+  ok('the divert refuses in the Underworld',
+     /if \(room\?\.num === 1 \|\| \/underworld\/i\.test\(room\?\.name \?\? ''\)\) return false;/
+       .test(AUTOPILOT_SRC));
+  ok('and in a sanctuary, where nothing can reach you anyway',
+     /if \(this\.sanctuary\(room\)\) return false;/.test(AUTOPILOT_SRC));
+  ok('and both refusals come before the health threshold is consulted',
+     AUTOPILOT_SRC.indexOf('if (this.sanctuary(room)) return false;')
+       < AUTOPILOT_SRC.indexOf('return hp < this.travelDivertAt();'));
+}
+
+console.log('\nAND EVERY METHOD THE GATE CALLS ACTUALLY EXISTS');
+{
+  // THE BUG CLASS, NOT THE BUG. `this.threatsHere?.()` was written into the ledger earlier the
+  // same day; it is not a method on this class, and optional chaining on a name that was never
+  // there is indistinguishable from a true answer. It recorded `null` threats for a whole run
+  // with nothing failing, and the blank column was read as "no threats" rather than "never
+  // asked". A SURVIVAL GATE written the same way would read as "safe" — which is why this
+  // asserts the property rather than the instance.
+  //
+  // COMMENTS ARE NOT CODE, and the first version of this failed on its own prose: the note
+  // above names `this.threatsHere?.()` in order to explain it, and the scan counted that as an
+  // occurrence. Whole-line comments are dropped; a trailing `//` on a line of code is left
+  // alone, because stripping those needs a parser and getting it wrong makes this MORE
+  // permissive, which is the one direction a guard must never fail in.
+  const code = AUTOPILOT_SRC.split('\n').filter(l => !/^\s*\/\//.test(l)).join('\n');
+  const own = new Set(Object.getOwnPropertyNames(Autopilot.prototype));
+  const phantom = [...new Set([...code.matchAll(/this\.([A-Za-z_][A-Za-z0-9_]*)\?\.\(/g)]
+    .map(m => m[1]))].filter(n => !own.has(n));
+  ok('no optional call in the keeper names a method that does not exist',
+     phantom.length === 0, phantom.map(n => 'this.' + n + '?.()').join(', '));
 }
 
 console.log('\nTHE LEDGER ITSELF');

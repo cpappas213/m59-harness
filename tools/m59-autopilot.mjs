@@ -8125,6 +8125,31 @@ export class Autopilot {
           const v = this.s.client?.vitals?.();
           const hp = v?.health?.max ? v.health.value / v.health.max : null;
           if (hp === null) return false;
+          // NOWHERE THAT IS ALREADY SAFE. Measured on the first clean cycle, 2026-08-28: nine
+          // shelter runs, and SIX of them were somewhere a wall answers nothing —
+          //
+          //     room 1  The Underworld     2/29, 1/33, 2/36, 2/36    all 24,10 -> 28,5
+          //     room 106 Brownestone Inn   15/52                          10,11 -> 7,5
+          //
+          // Four dead characters in the Underworld picking the same square and never reaching
+          // it, and one sitting in an inn. The Underworld has nothing to shelter FROM and the
+          // answer to being in it is `escapeUnderworld`, which is a different rung; an inn is a
+          // sanctuary, where the correct move is to rest exactly where you stand. Both were
+          // firing because the threshold only ever asked about health, and a corpse at 7% and a
+          // traveller at 7% look identical to a number.
+          //
+          // They also poisoned the measurement: "seven of eight runs never settled" was mostly
+          // this, which reads as the doctrine failing when it is the doctrine being asked a
+          // question with no answer.
+          // Tested two ways, and NEITHER of them is an optional call to a method that may not
+          // exist. `this.threatsHere?.()` was written into this file four hours ago, is not a
+          // method on this class, and recorded `null` for every row of a whole run without
+          // anything failing — optional chaining on a name that was never there is
+          // indistinguishable from a true answer. The room number is the fact; the name is the
+          // belt to its braces, because room 1 is also what a stub reports.
+          const room = this.s.world?.room;
+          if (room?.num === 1 || /underworld/i.test(room?.name ?? '')) return false;
+          if (this.sanctuary(room)) return false;
           // ANY DAMAGE AT ALL — WHERE THE MAP OUTRANKS US, AND AN ORDINARY THRESHOLD ELSEWHERE.
           // See travelDivertAt: the condition is what makes the sensitive half affordable, and
           // I shipped it unconditional for one run and watched arrivals fall from 43% to 10%.
