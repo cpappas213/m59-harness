@@ -64,7 +64,8 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
-import { sharedRoomGeometry, CLIENT_FINENESS, STEP_MASK_VERSION } from './m59-roo.mjs';
+import { sharedRoomGeometry, CLIENT_FINENESS, STEP_MASK_VERSION,
+         PLAYER_RADIUS, WF } from './m59-roo.mjs';
 
 // WHAT THIS BAKE COMPUTES, VERSIONED — because --resume could not tell that it had changed.
 //
@@ -137,6 +138,200 @@ export function replay(fromRow, fromCol, path) {
   return out;
 }
 
+// ============ CONSERVATIVE REACHABILITY: WHERE A BODY CAN GET TO ON ITS OWN ============
+//
+// WHY A THIRD VIEW EXISTS AND WHAT IT IS ALLOWED TO DO. `exitAnchors` already ranks its
+// staging squares by two reachability sets and the note there explains both: the collision
+// body is too permissive (it walks 27 of 28 squares of rock across the top of Ukgoth) and
+// the coarse grid is the corrective. In Lake of Jala's Song both waved through 2,1 -- a
+// square sealed inside the wall in the northwest corner -- and the bake staked the whole
+// west boundary on it. Characters ordered to Jasper walked at that square and piled up two
+// squares away; one job record reads `walk to Yonder Inn of Jasper, took_s 2217`. The
+// operator walked the room and named the real crossing, around 10,1.
+//
+// What separates the two, when nothing else did: 2,1's own aim point sits INSIDE a
+// non-passable wall. `standPoint` returns a square's centre whenever it has floor and
+// headroom and never asks whether the player CYLINDER fits -- deliberately, because
+// `_traceMoverStep` is supposed to be the gate. It is not one here: it re-aims up to eight
+// times at the quantized slid position, so a body slithers into the pocket and the step
+// reports arrival.
+//
+// So this asks a deliberately conservative question -- can a body get here by steps between
+// points it could actually STAND on, without leaning on the slide-retry -- and the answer is
+// used for NOTHING except preferring one already-baked staging square over another.
+//
+// THAT RESTRAINT IS THE WHOLE SAFETY ARGUMENT. It does not touch `moverStepLands`, so no
+// character walks differently because of it. It cannot delete a doorway, because
+// `exitAnchors` orders and never filters: an exit with no conservatively-reachable stage
+// falls through to the answer this file gave yesterday. Rooms where the strict view
+// collapses (Outskirts of Tos goes to 8 squares) therefore express no preference and lose
+// nothing, which is the correct behaviour for a view allowed to be wrong in one direction.
+
+/** Walls a body cannot be on both sides of -- move.c:551's third term, on its own. */
+const barrierSegments = geo => (geo.walls ?? []).filter(w => {
+  const passable = sd => sd && (sd.flags & WF.PASSABLE);
+  return !passable(w.posSidedefRec) || !passable(w.negSidedefRec);
+});
+
+/**
+ * Distance from a point to the nearest barrier, capped -- past the cap it only breaks ties.
+ *
+ * A CLIFF IS NOT A BARRIER TO STANDING. Adding "the two floors differ by more than a step"
+ * here was tried and it emptied the Cragged Mountains: `canCrossWallAt` only ever tests the
+ * climb, so a drop is a fall the game allows, and treating it as a wall put a 248-unit
+ * exclusion along every ledge in the room. Passability alone.
+ */
+function clearanceProbe(geo, cap = 512, cell = 512) {
+  const segs = barrierSegments(geo).map(w => [w.x0, w.y0, w.x1, w.y1]);
+  const bins = new Map();
+  segs.forEach(([x0, y0, x1, y1], i) => {
+    const cx0 = Math.floor(Math.min(x0, x1) / cell), cx1 = Math.floor(Math.max(x0, x1) / cell);
+    const cy0 = Math.floor(Math.min(y0, y1) / cell), cy1 = Math.floor(Math.max(y0, y1) / cell);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const k = cx + ',' + cy; let b = bins.get(k); if (!b) bins.set(k, b = []); b.push(i);
+    }
+  });
+  return (x, y) => {
+    let best = cap;
+    const cx0 = Math.floor((x - cap) / cell), cx1 = Math.floor((x + cap) / cell);
+    const cy0 = Math.floor((y - cap) / cell), cy1 = Math.floor((y + cap) / cell);
+    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
+      const b = bins.get(cx + ',' + cy); if (!b) continue;
+      for (const i of b) {
+        const [x0, y0, x1, y1] = segs[i];
+        const dx = x1 - x0, dy = y1 - y0, L = dx * dx + dy * dy;
+        let t = L ? ((x - x0) * dx + (y - y0) * dy) / L : 0;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+        const d = Math.hypot(x - (x0 + t * dx), y - (y0 + t * dy));
+        if (d < best) { best = d; if (best === 0) return 0; }
+      }
+    }
+    return best;
+  };
+}
+
+/**
+ * The point in a square a body could stand at, or null.
+ *
+ * `standPoint`'s algorithm with one word changed -- what counts as floor -- and the
+ * objective deliberately left alone. Replacing the objective with "furthest from a wall"
+ * was tried and it is wrong in the way standPoint's own comment warns about: it REWARDS a
+ * point hard against the square's boundary whenever the neighbour is open, so the aim
+ * drifts next door and the step lands there. Furthest-from-the-edge, counting outside the
+ * square as edge, stays exactly as it was.
+ */
+function bodyStandPoint(geo, clearance, row, col, N = 9) {
+  const x0 = (col - 1) * CLIENT_FINENESS, y0 = (row - 1) * CLIENT_FINENESS;
+  const half = CLIENT_FINENESS / 2;
+  const fits = (x, y) => geo._occupiable(x, y) && clearance(x, y) >= PLAYER_RADIUS;
+  if (fits(x0 + half, y0 + half)) return { x: x0 + half, y: y0 + half };
+  const step = CLIENT_FINENESS / N, floor = [];
+  for (let sy = 0; sy < N; sy++) for (let sx = 0; sx < N; sx++) {
+    const x = x0 + Math.round((sx + 0.5) * step), y = y0 + Math.round((sy + 0.5) * step);
+    if (fits(x, y)) floor.push({ x, y, sx, sy });
+  }
+  if (!floor.length) return null;
+  const isFloor = new Set(floor.map(p => p.sx + ',' + p.sy));
+  let best = floor[0], bestScore = -1;
+  for (const p of floor) {
+    let d = Infinity;
+    for (let sy = -1; sy <= N; sy++) for (let sx = -1; sx <= N; sx++) {
+      if (sx >= 0 && sx < N && sy >= 0 && sy < N && isFloor.has(sx + ',' + sy)) continue;
+      const dd = Math.max(Math.abs(sx - p.sx), Math.abs(sy - p.sy));
+      if (dd < d) d = dd;
+    }
+    const score = d * 1e6 - Math.hypot(p.x - (x0 + half), p.y - (y0 + half));
+    if (score > bestScore) { bestScore = score; best = p; }
+  }
+  return { x: best.x, y: best.y };
+}
+
+/**
+ * Squares a body can reach from `seed` by single steps between standable points.
+ *
+ * One trace per step and NO re-aim: the eight-attempt retry in `_traceMoverStep` is exactly
+ * what authorises the pocket, so a view whose job is to be conservative must not use it.
+ */
+export function bodyReachableFrom(geo, seeds) {
+  // THE SEED DECIDES THE ANSWER, AND ONE SEED IS NOT ENOUGH -- the same lesson
+  // `reachedFromBody` records a few lines above its own flood. Seeded from `mainSeed`
+  // alone, Lake of Jala's Song answered 113 squares against 1826 permissive, because that
+  // square is in a part of the lake this stricter view cannot leave. Seeded honestly it
+  // answers 1694 and names the west crossing. So take the largest flood over the region
+  // representatives, exactly as the permissive view does, and skip any representative an
+  // earlier flood already covered -- if A is reachable from B then everything A reaches is
+  // too, so A's set cannot be the larger one.
+  const list = Array.isArray(seeds) ? seeds : seeds ? [seeds] : [];
+  if (!geo?.collisionReady || !list.length) return new Set();
+  const clearance = clearanceProbe(geo);
+  const aim = new Map();
+  const at = (r, c) => {
+    const k = r + ',' + c;
+    if (!aim.has(k)) aim.set(k, bodyStandPoint(geo, clearance, r, c));
+    return aim.get(k);
+  };
+  const lands = (r, c, nr, nc) => {
+    if (!geo.walkable(nr, nc)) return false;
+    const A = at(r, c), B = at(nr, nc);
+    if (!A || !B) return false;
+    try {
+      const t = geo.traceFineMoveClient(A.x, A.y, B.x, B.y, { slide: true });
+      return !!t.arrived
+        && Math.floor(t.x / CLIENT_FINENESS) + 1 === nc
+        && Math.floor(t.y / CLIENT_FINENESS) + 1 === nr;
+    } catch { return false; }
+  };
+  const floodFrom = (sr, sc) => {
+    const seen = new Set([sr + ',' + sc]);
+    const stack = [[sr, sc]];
+    while (stack.length) {
+      const [r, c] = stack.pop();
+      for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+        if (!dr && !dc) continue;
+        const nr = r + dr, nc = c + dc;
+        if (nr < 1 || nc < 1 || nr > geo.rows || nc > geo.cols) continue;
+        const k = nr + ',' + nc;
+        if (seen.has(k) || !lands(r, c, nr, nc)) continue;
+        seen.add(k); stack.push([nr, nc]);
+      }
+    }
+    return seen;
+  };
+  // THE BODY IS THE REGION YOU CAN GET *TO*, NOT THE ONE YOU CAN GET *OUT OF*.
+  //
+  // "Largest flood wins" is the obvious rule and it is wrong here, because this relation is
+  // DIRECTED. In Lake of Jala's Song the northwest corner is a one-way pocket: from inside
+  // it you can walk out into the room, so a flood seeded there covers the pocket AND the
+  // body -- 1738 squares against 1694 from the body itself -- and being the largest it won.
+  // Which put 2,1 back in the answer, the very square this view exists to reject. Only
+  // seeds inside the pocket (4,1, 7,1, 7,4, 10,7) ever reach it; no square in the room can.
+  //
+  // So a seed is judged by how many of the OTHER floods contain it. A square in the body is
+  // reachable from all over the room; a square in a one-way pocket is reachable only from
+  // itself. Pick the flood whose own seed is the most widely reachable, largest breaking
+  // ties. That is seed-independent in the way "largest" is not.
+  const floods = [];
+  const covered = new Set();
+  for (const sd of list) {
+    const r = sd.r ?? sd.row, c = sd.c ?? sd.col;
+    if (!Number.isInteger(r) || !Number.isInteger(c)) continue;
+    const k = r + ',' + c;
+    if (covered.has(k)) continue;
+    const set = floodFrom(r, c);
+    for (const q of set) covered.add(q);
+    floods.push({ k, set });
+    if (floods.length >= 12) break;      // the tail is pockets; the bake is not a survey
+  }
+  if (!floods.length) return new Set();
+  let best = floods[0], bestScore = -1;
+  for (const f of floods) {
+    const reachedFrom = floods.reduce((n, o) => n + (o.set.has(f.k) ? 1 : 0), 0);
+    const score = reachedFrom * 1e7 + f.set.size;
+    if (score > bestScore) { bestScore = score; best = f; }
+  }
+  return best.set;
+}
+
 /**
  * The squares a room's exits are used from.
  *
@@ -144,7 +339,9 @@ export function replay(fromRow, fromCol, path) {
  * do you stand to cross this boundary". A `go` exit names its square outright. Both are
  * reduced to a square, because that is what a route ends at.
  */
-export function exitAnchors(room, geometry, { reachable = null, playerReachable = null } = {}) {
+export function exitAnchors(room, geometry,
+                            { reachable = null, playerReachable = null,
+                              bodyReachable = null } = {}) {
   const out = [];
   for (const e of room.edgeExits ?? []) {
     const dir = e.leaveName ?? null;
@@ -189,7 +386,17 @@ export function exitAnchors(room, geometry, { reachable = null, playerReachable 
     //
     // Ordered, never filtered: a stage that satisfies neither is still baked, because a
     // bake must never be the reason a doorway disappears.
-    let best = null, second = null, fallback = null;
+    // AND A FOURTH PREFERENCE ABOVE ALL THREE: A STAGE A BODY CAN ACTUALLY GET TO.
+    //
+    // See `bodyReachableFrom`. Both sets below waved through Lake of Jala's Song's 2,1, a
+    // pocket sealed in the wall, and the whole west boundary was staked on it. This asks
+    // the conservative question instead and, in that room, walks past 2,1 to the crossing
+    // at 9,1 that the operator names -- candidate 75 of 183 rather than 8.
+    //
+    // Ranked, not required, exactly like the two below it: a room whose strict view
+    // collapses expresses no preference and keeps the answer it had. `strict` is recorded
+    // so a reader can tell a chosen doorway from an inherited one.
+    let strict = null, best = null, second = null, fallback = null;
     try {
       for (const a of edgeCandidatesOf(room, e)) {
         for (const stage of a.stages ?? []) {
@@ -197,15 +404,18 @@ export function exitAnchors(room, geometry, { reachable = null, playerReachable 
           const k = `${stage.row},${stage.col}`;
           const bodyOk = !reachable || reachable.has(k);
           const playerOk = !playerReachable || playerReachable.has(k);
-          if (bodyOk && playerOk) { best = stage; break; }
-          if (bodyOk) second ??= stage;
+          if (bodyReachable?.has(k) && bodyOk && playerOk) { strict = stage; break; }
+          if (bodyOk && playerOk) best ??= stage;
+          else if (bodyOk) second ??= stage;
         }
-        if (best) break;
+        if (strict) break;
       }
     } catch { /* an unbaked direction simply offers nothing */ }
-    best ??= second ?? fallback;
+    const chosen = strict ?? best ?? second ?? fallback;
+    best = chosen;
     if (!best) continue;
-    out.push({ kind: 'edge', dir, to: e.to, row: best.row, col: best.col });
+    out.push({ kind: 'edge', dir, to: e.to, row: best.row, col: best.col,
+               ...(strict ? { body_reachable: true } : {}) });
   }
   for (const g of room.goExits ?? []) {
     if (!Number.isInteger(g.row) || !Number.isInteger(g.col)) continue;
@@ -621,8 +831,11 @@ export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = 
     for (const [k, v] of seen) if (v === bestId) out.add(k);
     return out;
   })();
+  // Seeded from the same square the permissive flood found most of the room from, so the
+  // two views are answering about the same room rather than about two different corners.
+  const bodyReachable = bodyReachableFrom(geometry, [mainSeed, ...reps].filter(Boolean));
   const anchors = exitAnchors(room, geometry,
-    { reachable: reachedFromBody, playerReachable: coarseBody });
+    { reachable: reachedFromBody, playerReachable: coarseBody, bodyReachable });
   const regionOf = a => comp.label[comp.at(a.row, a.col)];
   const tagged = anchors.map(a => ({ ...a, region: regionOf(a),
                                      from_body: reachedFromBody.has(`${a.row},${a.col}`) }));
@@ -769,9 +982,15 @@ export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = 
     // `from_body` is the one a router should read: can the room walk to this exit. `region`
     // is kept beside it because a pocket exit and a main-body exit behave differently once
     // you are standing on one — the first cannot be stepped back off.
+    // `body_reachable` records WHICH VIEW CHOSE this square: present means the conservative
+    // one named it, absent means that view had nothing to say here and the square is the one
+    // the older tiers picked. It is the only way to tell a doorway this bake reasoned about
+    // from one it inherited, which is exactly what has to be auditable after a bake changes
+    // where twenty-one characters walk.
     anchors: tagged.map(a => ({ kind: a.kind, dir: a.dir ?? null, to: a.to ?? null,
                                 row: a.row, col: a.col, region: a.region,
-                                from_body: !!a.from_body })),
+                                from_body: !!a.from_body,
+                                ...(a.body_reachable ? { body_reachable: true } : {}) })),
     routes,
     // The same routes as verified PIVOTS. See where these are built: a walker given
     // squares re-discovers the off-plan problem; a walker given pivots does not.
