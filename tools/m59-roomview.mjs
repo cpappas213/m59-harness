@@ -885,7 +885,7 @@ function readout(sq){
   h += '</dl>';
   var notes = [];
   if (ref > 0) notes.push('<b>' + ref + ' of the ' + (ref + off) + ' ways in are refused</b> by the coarse grid the monsters path on. That gap is what makes a wall hold, and it is the number safeSpots() scores.');
-  if (stand && !walk) notes.push('The coarse grid refuses this square, so <b>the mover will not step onto it</b> — moverStepLands() requires a coarse-walkable destination unless M59_CLIP_STEPS is set. A body would fit; the walker will not go.');
+  if (stand && !walk) notes.push('The coarse grid refuses this square, but <b>the mover will still step onto it</b> — moverStepLands() allows a fine-only destination by default; set M59_CLIP_STEPS=0 for the strict rule and it will not.');
   var anch = (D.anchors||[]).filter(function(a){ return a.row===r && a.col===c; })[0];
   if (anch) notes.push('Exit anchor: <b>' + esc(anch.dir) + '</b> to room <b>' + anch.to + '</b>' + (anch.from_body ? ', reachable from the main body' : ', <b>not</b> reachable from the main body'));
   if (boarding[k]){

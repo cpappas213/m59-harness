@@ -2078,7 +2078,7 @@ export class RoomGeometry {
   moverStepLands(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
     if (!this.inBounds(toRow, toCol)) return false;
-    // ======================= FINE-ONLY TERRAIN: OFF BY DEFAULT =======================
+    // ======================= FINE-ONLY TERRAIN: ON BY DEFAULT  =======================
     //
     // `standable` returns true for a square the coarse grid calls SOLID whenever any part
     // of it holds fine floor. Requiring only that let the mover authorise a step INTO rock,
@@ -2101,9 +2101,20 @@ export class RoomGeometry {
     // squares and 334 clip steps, 5.3% of everything in it. It is not a shortcut; it is a
     // pit that opens wherever the grid ends.
     //
-    // So the destination must be ground the coarse grid agrees exists. `M59_CLIP_STEPS=1`
-    // restores the old behaviour for anyone who wants to measure it — see clipsweep, which
-    // has always called this disagreement the one that "cannot be explained by coarseness".
+    // CORRECTED 2026-08-28. The paragraphs above are the argument for requiring the coarse
+    // grid, and they end with "so the destination must be ground the coarse grid agrees
+    // exists" — which is NOT what the line below does and has not been for some time. The
+    // switch was flipped off, measured, and flipped back; CLIP_STEPS' own declaration holds
+    // the numbers and is the authority. Re-measured today and unchanged: room 598's largest
+    // connected body is 2513 squares with the permission and 720 without it, 578 goes 1439
+    // -> 778. Requiring the coarse grid does not stop a bot walking into rock, it stops it
+    // walking.
+    //
+    // So `M59_CLIP_STEPS=0` is the STRICT setting and it is NOT the default. This comment
+    // said the reverse, and a reader who trusted it proposed "fixing" the polarity of the
+    // line below — which would have taken 71% of the Cragged Mountains away from both live
+    // fleets. See clipsweep, which has always called this disagreement the one that
+    // "cannot be explained by coarseness".
     if (!(CLIP_STEPS ? this.standable(toRow, toCol) : this.walkable(toRow, toCol))) return false;
     const mask = this._stepMask;
     if (mask) {

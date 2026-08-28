@@ -6321,7 +6321,13 @@ export class Autopilot {
       if (o.id === c.selfId) continue;
       if (!(o.flags & OF.PLAYER)) continue;
       const name = c.rsc?.get?.(o.nameRsc);
-      if (name) out.push(name);
+      // A NAME THE RESOURCE TABLE COULD NOT RESOLVE IS NOT A PERSON.
+      //
+      // `rsc.get` answers `<dynamic 1000081>` for an id it has no string for, and that is a
+      // truthy string. Counting it made a death surrounded by six trolls read as PVP —
+      // Uuuu, 2026-08-28 — which is exactly backwards for the one column that decides whether
+      // a wall failed. An unresolved id is unknown, and unknown must not read as a person.
+      if (name && !/^<.*>$/.test(name)) out.push(name);
     }
     return out;
   }
@@ -10064,7 +10070,12 @@ export class Autopilot {
           // wrong: `hold` is cleared on death by several paths, so a postmortem written a
           // moment afterwards cannot reconstruct where the body was standing. `lastHold`
           // already carries it for the 30s window `diedHolding` uses.
-          at_a_safe_wall: diedHolding ? {
+          // ON the wall, not NEAR one. `diedHolding` is "held a wall in the last 30 seconds",
+          // which is a different claim and a much weaker one. Uuuu, 2026-08-28: held 46,13,
+          // died at 47,14, and this reported a death at a safe wall — the character had left
+          // it. A flag that fires for a body one square away cannot test whether walls hold.
+          at_a_safe_wall: (diedHolding && at
+                           && diedHolding.col === at.col && diedHolding.row === at.row) ? {
             at: { col: diedHolding.col, row: diedHolding.row },
             held_for_s: Math.round((Date.now() - diedHolding.at) / 1000),
             // The killers, so "only PVP" can be checked rather than asserted. `players_present`

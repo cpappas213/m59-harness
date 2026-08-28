@@ -1449,10 +1449,54 @@ class KeeperProxy {
       route: () => ({ found: null,
                       reason: 'this character is driven by a keeper process; ask it over ' +
                               '/action {name:"route"} — the broker holds a snapshot, not a World' }),
+      // See `exits()` below: answerable here because a room's exits belong to the room.
+      exits: () => this.exits(),
       geometry: null,
     };
   }
   set world(v) { this._world = v; }
+
+  // AND `exits()`, FOR THE SAME REASON AND WITH THE SAME HONESTY AS `route` ABOVE.
+  //
+  // That comment records a tool reaching past `room` and throwing. `go_through` reaches
+  // past it too — `s.world.exits()` — and died with "s.world.exits is not a function" for
+  // every keeper-backed character, which is every character in a running fleet. It was
+  // found by trying to walk one out of Lake of Jala's Song: the tool is unusable on prod
+  // and shadow alike, and nothing reported it because nothing else calls it.
+  //
+  // Unlike `route`, this one CAN be answered here. A room's exits are a property of the
+  // ROOM and not of the body standing in it, and the baked map holds them. What cannot be
+  // answered on this side is the enrichment the live World adds — `stand_on` and
+  // `steps_away` need geometry and a position, and a two-second-old snapshot has neither.
+  // So the baked anchor supplies the square where there is one, the enrichment is simply
+  // ABSENT rather than invented, and `snapshot: true` says which kind of answer this is.
+  // A caller that needs the enriched form asks the keeper over /action, exactly as `route`
+  // already tells it to.
+  exits() {
+    const s = this._state;
+    const num = s?.room?.num;
+    const room = num == null ? null : worldMap?.rooms?.[String(num)];
+    if (!room) return [];
+    const table = activeRoutes();
+    const nameOf = to => worldMap?.rooms?.[String(to)]?.name ?? null;
+    const out = [];
+    for (const e of room.edgeExits ?? []) {
+      if (e.to == null) continue;
+      const a = anchorFor(table, num, e.to);
+      out.push({ kind: 'edge', to: e.to, to_name: nameOf(e.to), direction: e.leaveName ?? null,
+                 ...(a ? { row: a.row, col: a.col, from_body: a.from_body ?? null } : {}),
+                 snapshot: true });
+    }
+    for (const g of room.goExits ?? []) {
+      if (g.to == null) continue;
+      out.push({ kind: 'go', to: g.to, to_name: nameOf(g.to), direction: null,
+                 ...(Number.isInteger(g.row) ? { row: g.row } : {}),
+                 ...(Number.isInteger(g.col) ? { col: g.col } : {}),
+                 ...(g.locked ? { locked: true } : {}),
+                 snapshot: true });
+    }
+    return out;
+  }
 
   // THE JOB SLOT, WHICH IS WHAT THE TRAVEL TOOL ACTUALLY CALLS.
   //
