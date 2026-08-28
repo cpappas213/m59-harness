@@ -83,11 +83,24 @@ export function recordShelterRun(row = {}) {
       detour: num(row.detour),
       squares: num(row.squares),
       proven: row.proven ?? null,
+      // WHICH ARM OF THE DIVERT RULE WAS IN FORCE. "Any damage at all" is only defensible
+      // where the map outranks the character; everywhere else an ordinary threshold applies.
+      // Without this column a row cannot be read against the rule that produced it.
+      outranked: row.outranked === true ? true : row.outranked === false ? false : null,
+      divert_at: num(row.divert_at),
       at_step: num(row.at_step),
       legs_left: num(row.legs_left),
 
       // Filled on the `settled` row.
+      //
+      // `arrived` is CHECKED against the body's own square, not taken from whoever called the
+      // arrival handler. It was taken on trust for one afternoon and the ledger reported
+      // fifteen refuges that cost health — every one of them a character resting several
+      // squares past the wall, in the open, because a proved leg had swallowed the waypoint.
+      // `rested_at` is here so the next version of that mistake is one column away.
       arrived: row.arrived === true ? true : row.arrived === false ? false : null,
+      on_the_wall: row.on_the_wall === true ? true : row.on_the_wall === false ? false : null,
+      rested_at: sq(row.rested_at),
       ms: num(row.ms),
       rested_to: num(row.rested_to),
       hp_gained: num(row.hp_gained),
@@ -181,6 +194,8 @@ if (process.argv[1] && import.meta.url.endsWith(path.basename(process.argv[1])))
       + (c.proven ? ', proven' : ''));
     if (!s) console.log('            NEVER SETTLED — no outcome row for this run');
     else console.log(`            ${s.arrived ? 'got there' : 'did NOT get there'}`
+      + (s.on_the_wall === false && s.rested_at
+         ? `  — SAT AT ${s.rested_at.row},${s.rested_at.col}, NOT ON THE WALL` : '')
       + (s.ms != null ? ` in ${(s.ms / 1000).toFixed(1)}s` : '')
       + (s.hp_gained != null ? `, healed ${s.hp_gained}` : '')
       + (s.cut_short ? `, cut short: ${s.cut_short}` : ''));

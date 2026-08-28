@@ -609,14 +609,21 @@ console.log('\nthe safe-wall A/B is retired');
 console.log('');
 console.log('A TRIP IS REFUGE TO REFUGE — DIVERTS ARE EAGER, CANCELS ARE RARE');
 {
-  // AND THE THRESHOLD IS "HAVE I TAKEN A HIT", NOT A FRACTION. This pinned 0.95, which was a
-  // threshold pretending to be a rule: there is no mechanism that makes 96% fine. The operator
-  // set it to below-full on 2026-08-27, and diverting is free — the wall is already on the
-  // route and `onArrive` walks past one it turns out not to need.
+  // AND IT IS CONDITIONED THE SAME WAY THE CANCEL IS, which took two corrections to land.
+  //
+  // It pinned 0.95 — a threshold pretending to be a rule, since nothing makes 96% fine. Then it
+  // pinned a flat 1, which cost 33 points of arrival on one run (43% to 10%, same seed) because
+  // a detour is free once and ruinous every time anything scratches you across twenty-six hops.
+  // The operator's rule has a condition in it and the condition is the load-bearing half: any
+  // damage at all **where the map holds things stronger than us**, an ordinary threshold
+  // everywhere else. A hundred-hitpoint character nicked by a baby spider walks on.
   ok('the divert has its own threshold, separate from the cancel',
-     /travelDivertBelow \?\? 1\)/.test(AUTOPILOT_SRC));
-  ok('and that threshold is any damage at all, not a fraction of the bar',
-     /return hp < \(this\.policy\.travelDivertBelow \?\? 1\);/.test(AUTOPILOT_SRC));
+     /travelDivertAt\(\) \{/.test(AUTOPILOT_SRC));
+  ok('and it is a pair, like the cancel — outranked, and ordinary',
+     /travelDivertBelowOutranked \?\? 1/.test(AUTOPILOT_SRC)
+     && /travelDivertBelow \?\? 0\.95/.test(AUTOPILOT_SRC));
+  ok('and both arms turn on the same roomOutranksUs the cancel uses',
+     /travelDivertAt\(\) \{\s*return this\.roomOutranksUs\(\)/.test(AUTOPILOT_SRC));
   ok('and the cancel is for real trouble only',
      /travelWallBelow \?\? 0\.5\)/.test(AUTOPILOT_SRC));
   // THE ASSERTION THAT WOULD HAVE CAUGHT THE ORIGINAL BUG: the fuel-stop `need()` must not
@@ -659,10 +666,23 @@ console.log('A REFUGE IS SOMEWHERE YOU STOP UNTIL YOU ARE WHOLE');
      /onArrive: sp\.onArrive \?\? null/.test(BROKER_SRC));
   ok('and the walker awaits it when it lands on a refuge',
      /target\.shelter && typeof shelter\?\.onArrive === 'function'/.test(BROKER_SRC));
-  // A PROVED LEG CAN SWALLOW THE WAYPOINT TOO. Handling only the single-step arrival would
-  // make this look intermittent rather than broken, which is worse than either.
-  ok('including when a proved leg swallowed the waypoint whole',
-     /remaining\.slice\(0, cut \+ 1\)\.some\(st => st\.shelter\)/.test(BROKER_SRC));
+  // A PROVED LEG CAN SWALLOW THE WAYPOINT, AND THIS USED TO PIN THE BUG THAT CAUSED.
+  //
+  // It asserted that any leg whose consumed squares INCLUDED a shelter called `onArrive` —
+  // which is true, and was the defect: the handler got the end of the LEG, up to thirteen
+  // squares past the wall, and the character rested there in the open. Measured on the shadow
+  // fleet 2026-08-27: fifteen shelter stops lost 134 health between them, 92 of it on one
+  // square, and every one read as `arrived: true`. The operator's correction — those squares
+  // are valid safe spots, and a character that reaches one is safe on it — is what turned the
+  // finding round.
+  //
+  // A test can pin the wrong half of a behaviour and look like coverage. What is wanted is
+  // that the refuge is not SKIPPED, not that it is counted from wherever we stopped.
+  ok('a proved leg that swallowed the waypoint turns back to it',
+     /const swallowed = remaining\.slice\(0, cut \+ 1\)\.filter\(st => st\.shelter\);/.test(BROKER_SRC)
+     && /remaining\.unshift\(back\);/.test(BROKER_SRC));
+  ok('and rests only once the body is on the square',
+     /const onIt = swallowed\.some\(st => st\.col === at\.col && st\.row === at\.row\);/.test(BROKER_SRC));
   ok('and a rest that cannot happen does not strand the crossing',
      /a rest that cannot happen must not strand the crossing/.test(BROKER_SRC));
 

@@ -3645,12 +3645,38 @@ class Session {
       const at = c.self;
       let cut = remaining.findIndex(st => st.col === at.col && st.row === at.row);
       if (cut < 0) cut = 0;
-      // A PROVED LEG CAN SWALLOW THE REFUGE TOO, so the same stop belongs here. Without it
-      // the rest happens only when the shelter was reached by a single unproved step, which
-      // is the less common half and would make this look intermittent rather than broken.
-      const sheltered = remaining.slice(0, cut + 1).some(st => st.shelter);
+      // A PROVED LEG CAN SWALLOW THE REFUGE, AND BEING PAST IT IS NOT BEING AT IT.
+      //
+      // This used to call `onArrive({ col: at.col, row: at.row })` for any leg whose consumed
+      // squares included a shelter — `at` being where the LEG ENDED, which on a proved leg is
+      // up to thirteen squares beyond the wall. So the character sat down wherever the pivot
+      // put it, in the open, and rested there.
+      //
+      // Measured on the shadow fleet, 2026-08-27: of 41 shelter stops that reported arriving,
+      // fifteen LOST health — 134 points given away at places the ledger called refuges — and
+      // 598 51,22 alone took 92 of that across eight characters. The operator's correction is
+      // what identified it: those squares are valid safe spots, and a character that reaches
+      // one is safe on it. They were not reaching them. The wall was never the problem, and a
+      // ledger that says `arrived: true` for a body standing somewhere else is worse than no
+      // ledger, because it moves the blame onto the geometry.
+      //
+      // So a swallowed refuge is PUT BACK rather than counted. The walker's next iteration
+      // aims at it as an ordinary waypoint and the other call site — which checks the position
+      // before resting — does the honours. The cost is one short leg backwards; the thing it
+      // buys is that "arrived" means arrived.
+      const swallowed = remaining.slice(0, cut + 1).filter(st => st.shelter);
+      const onIt = swallowed.some(st => st.col === at.col && st.row === at.row);
       remaining = remaining.slice(cut + 1);
-      if (sheltered && typeof shelter?.onArrive === 'function') {
+      if (swallowed.length && !onIt) {
+        // Nearest first: a leg can swallow more than one, and the one worth turning back for
+        // is the one we are closest to.
+        const back = swallowed.reduce((best, st) =>
+          !best || Math.max(Math.abs(st.col - at.col), Math.abs(st.row - at.row))
+                 < Math.max(Math.abs(best.col - at.col), Math.abs(best.row - at.row)) ? st : best, null);
+        remaining.unshift(back);
+        continue;                                  // aim at it properly, then rest on it
+      }
+      if (onIt && typeof shelter?.onArrive === 'function') {
         try { await shelter.onArrive({ col: at.col, row: at.row }); }
         catch { /* a rest that cannot happen must not strand the crossing */ }
         if (this.movementWasCancelled(movementGeneration, controlToken))

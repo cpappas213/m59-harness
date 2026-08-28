@@ -438,8 +438,8 @@ export function noTargetFoundNode(keeper) {
     }
 
     keeper.emptyPasses++;
-    const barren = keeper.sanctuary(room);
-    if (barren && keeper.emptyPasses >= 2) {
+    const inSanctuary = keeper.sanctuary(room);
+    if (inSanctuary && keeper.emptyPasses >= 2) {
       const home = keeper.policy.assignedRoom ?? keeper.homeRoom;
       if (home != null && home !== room?.num) {
         if (!await keeper.readyToLeaveSanctuary(home)) return RUNNING;

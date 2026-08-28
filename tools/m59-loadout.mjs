@@ -136,7 +136,7 @@ export const POLICY_KEYS = {
   assigned_room:           { type: 'number',  as: 'assignedRoom' },
   karma:                   { type: 'number',  as: 'karma' },
   buy_reagents:            { type: 'boolean', as: 'buyReagents' },
-  pulls_before_barren:     { type: 'number',  as: 'pullsBeforeBarren' },
+  pulls_before_moving_on:  { type: 'number',  as: 'pullsBeforeMovingOn' },
   fight_rounds:            { type: 'number',  as: 'fightRounds' },
   use_bt:                  { type: 'boolean', as: 'useBT' },
   conflict_response_hops:  { type: 'number',  as: 'conflict_response_hops' },

@@ -7768,6 +7768,13 @@ const TOOLS = [
       use_safe_spots: { type: 'boolean',
         description: 'fight from a wall whenever the kill would pay (default true). Turning this off ' +
           'gives up the largest survival advantage in the game and is almost never right' },
+      clear_weak: { type: 'boolean',
+        description: 'KILL WHAT IS HOLDING THE SPAWN CAP, even when it is not what we hunt. Default ' +
+          'true, and it is usually right: the cap is a room-wide TOTAL, so the creatures declined ' +
+          'are exactly what stops the prey appearing. It applies ONLY to the room this character ' +
+          'is assigned to — clearing a room it is merely standing in buys nothing, and the movement ' +
+          'it issues cancels the walk back to the room that does. It had no argument here at all ' +
+          'until now, so the only way to set it was to reach into a running keeper' },
       require_safe_wall: { type: 'boolean',
         description: 'WILL THIS CHARACTER FIGHT WITHOUT A WALL? Default true, and it is not the same ' +
           'setting as use_safe_spots: that one is whether to PREFER a wall, this is whether to REFUSE ' +
@@ -7820,10 +7827,6 @@ const TOOLS = [
       pull_within: { type: 'number',
         description: 'how many steps it may go to fetch a monster that will not come to the wall, ' +
           'default 8. It hits it once and walks straight back' },
-      barren_spots_before_room_decision: { type: 'number',
-        description: 'how many top-ranked walls may each fail repeated, fully-waited pulls before ' +
-          'the keeper stops searching this room (default 3). This makes a room-scoped choice to ' +
-          'fight open when the safety gates permit it or relocate; it never blocks the goal' },
       defend_against_players: { type: 'boolean',
         description: 'swing back at a PLAYER who has attacked this fleet, default false. Three ' +
           'things must all hold: the name is in the fleet-wide grudge book from the last hour, the ' +
@@ -8446,6 +8449,9 @@ const TOOLS = [
       if (a.inky_reserve_floor !== undefined)
         p.policy.inkyReserveFloor = Math.max(0, Number(a.inky_reserve_floor) || 0);
       if (a.use_safe_spots !== undefined) p.policy.useSafeSpots = !!a.use_safe_spots;
+      // See the schema entry: clearing applies only to the assigned room, and it had no
+      // way in from here at all — a `clear_weak` passed to this tool was silently dropped.
+      if (a.clear_weak !== undefined) p.policy.clearWeak = !!a.clear_weak;
       // Whether to REFUSE a fight without a wall, which is a different question from whether
       // to prefer one. See the schema entry: with this on and the wall unreachable, the pass
       // retries for ever and the character never swings at prey standing next to it.
@@ -8463,9 +8469,6 @@ const TOOLS = [
       if (a.pull_within !== undefined)
         p.policy.pullWithin = (a.pull_within === null || Number(a.pull_within) <= 0)
           ? null : Number(a.pull_within);
-      if (a.barren_spots_before_room_decision !== undefined)
-        p.policy.barrenSpotsBeforeRoomDecision = Math.max(1,
-          Math.floor(Number(a.barren_spots_before_room_decision) || 1));
       if (a.defend_against_players !== undefined)
         p.policy.defendAgainstPlayers = !!a.defend_against_players;
       if (a.ask_for_help !== undefined) p.policy.askForHelp = !!a.ask_for_help;

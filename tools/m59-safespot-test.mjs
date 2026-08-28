@@ -153,10 +153,10 @@ console.log('\n--- a pull that cannot REACH the quarry relocates, it does not bl
   // TOO FAR, not that the wall is bad. So pullAttemptFailed must never blacklist the square
   // and never abandon the wall strategy — it signals the caller to relocate to a closer
   // wall. This is a different failure from pullDidNotConvert (reached, hit, nothing followed),
-  // which still retires cliff squares above.
+  // which gives up the STAND above — neither of them retires a square any more.
   const w = world();
   const p = keeper(w);
-  p.policy.pullsBeforeBarren = 2;
+  p.policy.pullsBeforeMovingOn = 2;
   const spot = { room: 999, col: 5, row: 5 };
 
   const first = p.pullAttemptFailed(spot, 'no route beside the target');
@@ -165,8 +165,8 @@ console.log('\n--- a pull that cannot REACH the quarry relocates, it does not bl
   const second = p.pullAttemptFailed(spot, 'no route beside the target');
   ok('repeated failed reaches ask the caller to relocate, not to retire',
      second.relocate === true, JSON.stringify(second));
-  ok('and the square is NEVER added to the barren blacklist',
-     !p.barrenSpots?.get(999)?.has('5,5'), JSON.stringify([...(p.barrenSpots?.get(999) ?? [])]));
+  ok('and there is no blacklist for it to be added to — barrenSpots is gone',
+     p.barrenSpots === undefined, JSON.stringify(p.barrenSpots ?? null));
   ok('nor is the room condemned — the wall strategy is not abandoned',
      !p.noWallRooms?.get(999));
   ok('the note calls it a distant wall, not an unusable one',
@@ -180,32 +180,49 @@ console.log('\n--- a pull that cannot REACH the quarry relocates, it does not bl
      again.relocate === false && again.attempt === 1);
 }
 
-console.log('\n--- a room does not become an unbounded wall experiment ---');
+console.log('\n--- A ROOM IS NEVER WRITTEN OFF FOR ITS WALLS ---');
 {
+  // THIS SECTION USED TO ASSERT THE OPPOSITE, and the change is the operator's, 2026-08-27:
+  // **there is no concept of a safe wall that does not work.**
+  //
+  // What it pinned: after `pullsBeforeBarren` non-converting pulls a square entered
+  // `barrenSpots`, and after `barrenSpotsBeforeRoomDecision` such squares the room entered
+  // `noWallRooms` with `ROOM WALL SEARCH EXHAUSTED`, and every later combat pass short-
+  // circuited on it. Two squares in this fixture, three by default, and a room the fleet
+  // crosses daily was closed to wall-fighting for the life of the process — with nothing that
+  // could ever take it back out, because nothing ever removed an entry.
+  //
+  // The evidence was always circumstantial. A pull that does not convert is a fact about the
+  // PULL — where the quarry was, what lay between, whether it wandered off — and the square
+  // being stood on is the one thing in that sentence that did not move.
   const w = world();
   const p = keeper(w);
-  p.policy.pullsBeforeBarren = 1;
-  p.policy.barrenSpotsBeforeRoomDecision = 2;
+  p.policy.pullsBeforeMovingOn = 1;
 
   holdAt(p, 5, 5, { proven: true });
-  ok('one fully failed wall is retired without condemning the room',
-     p.pullDidNotConvert('nothing reached the first wall') && !p.noWallRooms?.get(999));
+  ok('a wall that produced no fight is given up on',
+     p.pullDidNotConvert('nothing reached the first wall') === true);
+  ok('and nothing is written against it',
+     p.barrenSpots === undefined && !p.noWallRooms?.get(999));
 
   holdAt(p, 6, 5, { proven: true });
-  ok('a bounded sample of independent failed walls ends the room search',
-     p.pullDidNotConvert('nothing reached the second wall') &&
-       /2 top-ranked walls/.test(p.noWallRooms?.get(999) || ''),
-     p.noWallRooms?.get(999));
-  ok('the decision says it is room-scoped and leaves the strategic goal alone',
-     p.journal.some(e => e.what === 'ROOM WALL SEARCH EXHAUSTED' &&
-       /does not block/.test(e.goal_scope || '')));
+  ok('a second one likewise',
+     p.pullDidNotConvert('nothing reached the second wall') === true);
+  ok('and the room is STILL not condemned, however many walls disappoint',
+     !p.noWallRooms?.get(999), p.noWallRooms?.get(999));
+  ok('and nothing claims the room has been exhausted',
+     !p.journal.some(e => e.what === 'ROOM WALL SEARCH EXHAUSTED'));
+  ok('what it records instead is a move, which is not a verdict',
+     p.journal.some(e => e.what === 'MOVING ON — this stand produced no fight' &&
+                         /nothing is recorded against this square/.test(e.note || '')));
 
-  // A truthy geometry is enough because the room decision must short-circuit before
-  // another candidate scan or route. Travel holds remain allowed to use walls here.
+  // AND THE NEXT PASS STILL SEARCHES. The short circuit it used to hit is gone, so a room
+  // that disappointed twice is asked again from scratch — which is the point: the quarry has
+  // moved by then, and that was always the variable.
   w.s.world.geometry = {};
   const stopped = await p.takeSafeSpot('another fight wall', null);
-  ok('another combat pass does not start researching a third wall',
-     !stopped.took && stopped.unreachable_terrain && /stopping the wall search/.test(stopped.why));
+  ok('another combat pass is not short-circuited by an earlier disappointment',
+     !stopped.unreachable_terrain, JSON.stringify(stopped));
 }
 
 console.log('\n--- unrelated combat does not erase a pending pull ---');

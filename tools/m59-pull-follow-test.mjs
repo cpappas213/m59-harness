@@ -28,7 +28,7 @@ function keeper() {
   Object.assign(k, {
     policy: {}, pullTargetCooldowns: new Map(), pullsWithoutContact: 0,
     foeId: 10, hold: { room: 544, col: 5, row: 5, quarry_id: 10 },
-    barrenSpots: new Map(), noWallRooms: new Map(), notes: [], progressLog: [],
+    noWallRooms: new Map(), notes: [], progressLog: [],
     s: {
       name: 'pull-follow-test',
       client: { room: { objects }, rsc: { get: id => id === 10 ? 'rat A' : 'rat B' } },
@@ -77,7 +77,6 @@ await test('a closer live position resets the non-closing count', () => {
 
 await test('stalled quarry rotates target and wall without condemning the old wall', async () => {
   const k = keeper();
-  const beforeBarren = k.barrenSpots.size;
   const waiting = { ...k.pendingPull, stalled: true, non_closing_samples: 3 };
   const result = await k.switchFromStalledPull(
     waiting,
@@ -88,7 +87,6 @@ await test('stalled quarry rotates target and wall without condemning the old wa
   assert.equal(k.takenFor, 11);
   assert.equal(k.hold.quarry_id, 11);
   assert.ok(k.pullTargetCooling(544, 10), 'old target was not cooled');
-  assert.equal(k.barrenSpots.size, beforeBarren, 'stalled target blacklisted a wall');
   assert.equal(k.noWallRooms.size, 0, 'stalled target condemned the room');
 });
 

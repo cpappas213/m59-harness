@@ -823,7 +823,6 @@ export function nearestSafeSpot(geo, from, {
   let reachableByQuarry = 0;
   let eligible = 0;
   let unreachableToUs = 0;
-  let empiricallyBarren = 0;
   let partitionRejected = 0;
   for (const s of all) {
     const seen = known?.get(key(s.col, s.row)) || null;
@@ -872,8 +871,9 @@ export function nearestSafeSpot(geo, from, {
     // sufficient to declare every wall in the room a clifftop — before a character had
     // stood on even one of them. The live observation is cheaper and stronger: take the
     // best predicted-reachable wall first, but if none exists take the best predicted-
-    // unreachable wall and actually try to pull the quarry there. `barrenSpots` below is
-    // the empirical veto, learned only after repeated swings and a full follow window.
+    // unreachable wall and actually try to pull the quarry there. There is no empirical veto
+    // any more: `barrenSpots` used to be one, and it was removed on 2026-08-27 because there
+    // is no such thing as a safe wall that does not work — see Autopilot.pullDidNotConvert.
     let predictedUnreachable = false;
     let quarryPrediction = null;
     if (quarryReach) {
@@ -897,7 +897,6 @@ export function nearestSafeSpot(geo, from, {
     const p = reach ? reach(s.col, s.row) : { reachable: true, steps: d };
     if (!p?.reachable) {
       unreachableToUs++;
-      if (/empirically barren/i.test(String(p?.reason || p?.why || ''))) empiricallyBarren++;
       continue;
     }
     // Prefer defensibility, then closeness. A spot two squares further away that
@@ -953,15 +952,13 @@ export function nearestSafeSpot(geo, from, {
   // presenting the map's guess as a fact.
   best ??= bestPredictedUnreachable;
   // Keep the map prediction and the live verdict separate in the diagnostics. A doubtful
-  // square is no longer dropped merely for being doubtful; `empirically_barren` counts
-  // the ones repeated pull tests have actually retired.
+  // square is not dropped merely for being doubtful — it is offered, and tried.
   if (stats) {
     stats.considered = all.length;
     stats.eligible = eligible;
     stats.unreachable_by_quarry = unreachableByQuarry;
     stats.reachable_by_quarry = reachableByQuarry;
     stats.unreachable_to_us = unreachableToUs;
-    stats.empirically_barren = empiricallyBarren;
     stats.partition_rejected = partitionRejected;
     stats.used_predicted_unreachable = !!best?.predicted_unreachable_by_quarry;
   }

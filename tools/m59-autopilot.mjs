@@ -1329,16 +1329,11 @@ export class Autopilot {
       dropJunk: true,
       // How often to look for and drop broken gear, independently of the pack being full.
       dropBrokenEverySec: 120,
-      // How many COMPLETE pulls that never turn into a fight before the square is
-      // written off. Geometry only ranks candidates; this live test is the veto.
-      pullsBeforeBarren: 4,
-      // Do not turn a room with hundreds of wall candidates into a multi-hour research
-      // project. Each entry in this sample has already failed `pullsBeforeBarren`
-      // complete pulls with a distance-sized follow window. After several independent,
-      // top-ranked walls agree, make the existing room-scoped safety decision: fight in
-      // the open only when the open-fight gates permit it, otherwise relocate. This is
-      // deliberately a room decision, never a goal-wide block.
-      barrenSpotsBeforeRoomDecision: 3,
+      // How many COMPLETE pulls that never turn into a fight before the keeper stops
+      // standing here and picks somewhere else. It WRITES NOTHING DOWN — see the note on
+      // pullDidNotConvert, and `barrenSpotsBeforeRoomDecision`, which used to live beside
+      // this and turned three such squares into a verdict on the whole room.
+      pullsBeforeMovingOn: 4,
       // Give the quarry enough time to walk the same ground we just crossed. Decisions
       // run every second, while one square of movement takes about a second; counting
       // the very next decision as a failed pull condemned distant but working walls.
@@ -3002,10 +2997,6 @@ export class Autopilot {
         return { took: false, why: 'the quarry was gone when we reached its side' };
       return this.takeSafeSpot(why, liveQuarry, { source, islandCrossings: islandCrossings + 1, nearQuarry });
     }
-    // Squares we have already discovered nothing can be pulled to. Without this the
-    // keeper re-picks the same unusable corner every pass for ever, because the
-    // geometry's opinion of it never changes and neither does ours.
-    const barren = this.barrenSpots?.get(room.num);
     // Can the thing we came to fight actually get to fighting distance of the square?
     const los = this.policy.los ?? 0;                       // LOS_OLD, the server default
     // PICK A WALL THE SELECTED QUARRY CAN ACTUALLY FIGHT AT.
@@ -3081,7 +3072,7 @@ export class Autopilot {
       for (let attempt = 0; attempt < 32; attempt++) {
         for (const k of Object.keys(spotStats)) delete spotStats[k]; // stats describe LAST attempt
         spot = this.searchSafeSpot(geo, me, room, {
-          within, quarryReach, strictQuarryReach, los, quarry, barren,
+          within, quarryReach, strictQuarryReach, los, quarry,
           stats: spotStats, shareCap, nearQuarry, exclusiveClaim });
         if (!spot) break;
         const claimed = exclusiveClaim
@@ -3107,27 +3098,16 @@ export class Autopilot {
           why: 'no unoccupied safe spot lets this quarry reach combat distance on the coarse grid',
         };
       }
-      // ONLY EMPIRICAL FAILURES EARN THE CATEGORICAL TERRAIN VERDICT.
+      // THERE IS NO SUCH THING AS A SAFE WALL THAT DOES NOT WORK, so nothing here decides
+      // that a room's walls have been used up.
       //
-      // This used to fire when `unreachable_by_quarry > 0`: one coarse-grid rejection
-      // among hundreds of candidates was enough for the sentence "every defensible
-      // square". Even when every geometry candidate was rejected, that was still a map
-      // prediction made before standing on one. A square enters `barrenSpots` only after
-      // repeated pulls, each allowed a distance-sized follow window. Equality here means
-      // every currently eligible square has actually failed that experiment.
-      const allEmpiricallyBarren = spotStats.eligible > 0 &&
-        spotStats.empirically_barren === spotStats.eligible;
-      if (allEmpiricallyBarren) {
-        this.note('every defensible square here is out of the fight\'s reach', {
-          considered: spotStats.eligible, unreachable: spotStats.empirically_barren,
-          quarry: quarry ? { col: quarry.col, row: quarry.row } : null,
-          why: 'every eligible wall has been tried repeatedly, and pulls from each one ' +
-               'failed to produce a fight after the quarry had time to follow.',
-          note: 'fighting in the open here is the correct answer; a better room is a better one' });
-        return { took: false, unreachable_terrain: true,
-                 why: `all ${spotStats.empirically_barren} eligible defensible squares here ` +
-                      'failed repeated pull tests' };
-      }
+      // What stood at this spot was `allEmpiricallyBarren`: when every eligible square had
+      // failed repeated pulls, the room came back `unreachable_terrain: true` and the keeper
+      // stopped looking for a wall in it. Removed with the rest of `barrenSpots` on the
+      // operator's instruction, 2026-08-27. The reasoning is the same one that has been right
+      // about this room every time: a wall is a wall, and a pull that does not convert is a
+      // fact about the pull — about where the quarry was and what lay between — not a verdict
+      // on the square somebody was standing on.
       return { took: false, why: 'nothing in this room is more defensible than open floor' };
     }
 
@@ -4688,7 +4668,7 @@ export class Autopilot {
   // without duplicating the option block — a second copy of these arguments is exactly
   // how the two would come to disagree about `los` or the book.
   searchSafeSpot(geo, me, room, { within, quarryReach, strictQuarryReach = false,
-                                  los, quarry, barren, stats, shareCap = 1, nearQuarry = false,
+                                  los, quarry, stats, shareCap = 1, nearQuarry = false,
                                   exclusiveClaim = false }) {
     const s = this.s;
     // One room search can inspect hundreds of candidate squares. Reading the shared
@@ -4726,8 +4706,6 @@ export class Autopilot {
       // Both are expressed as "unreachable" because that is the question the ranking
       // already asks, and neither is worth a second mechanism.
       reach: (col, r2) => {
-        if (barren?.has(`${col},${r2}`))
-          return { reachable: false, reason: 'empirically barren after repeated pulls' };
         const claimed = exclusiveClaim
           ? spotClaimedByAnotherExclusive(this.s.name, room.num, col, r2, spotClaims)
           : spotTakenByAnother(this.s.name, room.num, col, r2, shareCap, spotClaims);
@@ -6274,6 +6252,21 @@ export class Autopilot {
   // CACHED FOR A SECOND, because this is asked once per walk leg and the answer cannot
   // change faster than the room does. `loadSpawns` memoises the table, so the cost is the
   // room scan rather than the file.
+  // The attackable non-players in the room, by name. One enumeration, two callers — the
+  // ledger wants the list and `roomOutranksUs` wants to know whether any of them outranks us.
+  namedThreatsHere() {
+    const c = this.s?.client;
+    if (!c?.room?.objects) return [];
+    const out = [];
+    for (const o of c.room.objects.values()) {
+      if (o.id === c.selfId) continue;
+      if (!(o.flags & OF.ATTACKABLE) || (o.flags & OF.PLAYER)) continue;
+      const name = c.rsc?.get?.(o.nameRsc);
+      if (name) out.push(name);
+    }
+    return out;
+  }
+
   roomOutranksUs(ttlMs = 1000) {
     const now = Date.now();
     if (this._outranksAt && now - this._outranksAt < ttlMs) return this._outranks;
@@ -6371,6 +6364,28 @@ export class Autopilot {
     return this.roomOutranksUs()
       ? (this.policy.travelWallBelowOutranked ?? 0.55)
       : (this.policy.travelWallBelow ?? 0.5);
+  }
+
+  // WHEN A FREE DETOUR IS WORTH TAKING, AND IT IS NOT ONE NUMBER EITHER.
+  //
+  // The operator's rule, 2026-08-27: **any damage at all is a reason to take a wall when the
+  // map holds things stronger than us, and only then.** A hundred-hitpoint character nicked by
+  // a baby spider does not need to sit down, and a rule that makes it sit down is a rule that
+  // turns every crossing of a safe wood into a series of stops.
+  //
+  // I had this at a flat 1 for one run and it cost 33 percentage points of arrival — 43% down
+  // to 10% on the same seed, with fourteen of twenty-one parked in inns at full health. The
+  // reasoning was that diverting is free, and it IS free per detour; what is not free is
+  // taking one every time anything scratches you across a road with twenty-six hops.
+  //
+  // So it is conditioned on the same question the cancel threshold already asks. This is the
+  // pair `travelShelterBelow` above has, and deliberately the same shape: in a zone the
+  // character would happily fight in, an ordinary threshold; in a zone it would refuse to
+  // engage anything in, the first scratch is the warning it gets.
+  travelDivertAt() {
+    return this.roomOutranksUs()
+      ? (this.policy.travelDivertBelowOutranked ?? 1)
+      : (this.policy.travelDivertBelow ?? 0.95);
   }
 
   /**
@@ -6929,8 +6944,8 @@ export class Autopilot {
   // reported "fighting from an untrusted safe spot" and "hunting centipedes" while doing
   // neither, for hours.
   //
-  // Nothing caught it, and the reason is precise. barrenSpots is written when pull()
-  // FAILS. Here pull() SUCCEEDED every time — it reached the monster, hit it, and walked
+  // Nothing caught it, and the reason is precise. The wall bookkeeping was written when
+  // pull() FAILED. Here pull() SUCCEEDED every time — it reached the monster, hit it, and walked
   // back, which is exactly what it claims to do — so `progress('pulled something to the
   // wall')` fired every pass and cleared the stall counter. The keeper was busy, honest,
   // and completely stuck, and its own health check said so.
@@ -6940,55 +6955,49 @@ export class Autopilot {
   // monster cannot follow, whatever the geometry says about the square. Counting them is
   // empirical and needs no height data, which is just as well: none is available, and
   // this failure catches human players too.
+  // AND IT COUNTS, IT DOES NOT CONVICT. Removed 2026-08-27 on the operator's instruction:
+  // **there is no concept of a safe wall that does not work.**
+  //
+  // What used to happen here: after `pullsBeforeBarren` non-converting pulls the square went
+  // into `barrenSpots`, a per-room set the wall search then refused candidates from; after
+  // `barrenSpotsBeforeRoomDecision` such squares the whole ROOM went into `noWallRooms` and
+  // the keeper stopped looking for a wall in it at all. Three squares, and a room the fleet
+  // crosses every day was written off for the life of the process.
+  //
+  // The argument against it is the one that has been right about this room every time. A pull
+  // that does not convert is a fact about the PULL — where the quarry was, what lay between,
+  // whether it lost interest — and the square somebody happened to be standing on is the one
+  // thing in that sentence which did not move. The evidence was always circumstantial and it
+  // was recorded as a verdict, in a structure with no way to be wrong: nothing ever left
+  // `barrenSpots`, so one bad afternoon in a room permanently narrowed it, and the narrowing
+  // was invisible because the keeper went on reporting that it was fighting.
+  //
+  // So the counter stays and the memory goes. Four pulls that produce nothing still means
+  // stop standing here — that is a live decision about now, costs nothing if it is wrong, and
+  // is what stops a character grinding a cliff edge for an hour. It just no longer writes
+  // anything down, and the next selection is free to pick this square again.
   pullDidNotConvert(why) {
     this.pullsWithoutContact = (this.pullsWithoutContact ?? 0) + 1;
-    const limit = this.policy.pullsBeforeBarren ?? 4;
+    const limit = this.policy.pullsBeforeMovingOn ?? 4;
     if (this.pullsWithoutContact < limit) {
       this.note('pulled, but nothing came', {
         attempt: this.pullsWithoutContact, of: limit, why,
-        hint: 'if this keeps happening the square cannot be fought from' });
+        hint: 'if this keeps happening, stand somewhere else and try from there' });
       return false;
     }
     const room = this.s.world?.room;
-    if (room?.num != null && this.hold) {
-      (this.barrenSpots ??= new Map());
-      const set = this.barrenSpots.get(room.num) ?? new Set();
-      set.add(`${this.hold.col},${this.hold.row}`);
-      this.barrenSpots.set(room.num, set);
-      const roomLimit = Math.max(1,
-        Math.floor(Number(this.policy.barrenSpotsBeforeRoomDecision) || 3));
-      if (set.size >= roomLimit) {
-        const reason = `${set.size} top-ranked walls each failed ${limit} complete pull ` +
-          `window(s); stopping the wall search in this room`;
-        const wasDecided = !!this.noWallRooms?.get(room.num);
-        (this.noWallRooms ??= new Map()).set(room.num, reason);
-        if (!wasDecided) this.note('ROOM WALL SEARCH EXHAUSTED', {
-          room: room.name, room_num: room.num, walls_tested: set.size,
-          pulls_per_wall: limit,
-          why: 'each wall survived a full distance-sized follow window repeatedly and none ' +
-               'produced contact; testing hundreds more would be an unbounded research loop',
-          doing_instead: 'using the existing room-scoped decision: fight open only if the ' +
-                         'health, vigor, and damage gates allow it; otherwise relocate',
-          goal_scope: 'unchanged — this does not block or fail the strategic goal',
-        });
-      }
-    }
-    // NOT recorded in the SafeSpotBook, deliberately. The book's `failed` means "we were
-    // hit standing here" and feeds `discredited`, which is a SAFETY judgement. A cliff
-    // square is perfectly safe — it is useless, which is the opposite problem — and
-    // filing it under failed would teach the book a lie to get one convenient effect.
-    // The cost is that this knowledge is per-process and a restart re-learns it, four
-    // fully-waited pulls at a time. Worth fixing with a second book, not with a wrong flag.
-    this.note('SPOT UNUSABLE — nothing can reach it', {
+    this.note('MOVING ON — this stand produced no fight', {
       at: this.hold ? { col: this.hold.col, row: this.hold.row } : null,
       room: room?.num, attempts: this.pullsWithoutContact,
       why: 'every pull reached the target and none of them ever produced a fight. The ' +
            'commonest cause is standing somewhere the monsters cannot climb to, which ' +
            'also means a melee weapon cannot reach down to them.',
-      note: 'excluded in this room; the keeper will pick somewhere else' });
+      note: 'nothing is recorded against this square — the next selection may well choose it ' +
+            'again, and if the quarry is somewhere else by then it will work',
+    });
     this.pullsWithoutContact = 0;
-    this.releaseHold('nothing can reach this square');
-    this.noProgress('holding a square nothing can reach');
+    this.releaseHold('this stand produced no fight');
+    this.noProgress('holding a square that produced no fight');
     return true;
   }
 
@@ -6997,19 +7006,20 @@ export class Autopilot {
   // `pull()` can fail before the attack because a moving quarry invalidated its approach
   // square or because one walk was refused. The old branch retired the wall after that
   // single miss. Count per square and require the same patience as a pull that succeeded
-  // but did not convert; only then does the square enter the empirical barren set.
+  // but did not convert; at the limit the answer is to RELOCATE, and nothing is recorded
+  // against the square — see pullDidNotConvert for why there is no such record any more.
   pullAttemptFailed(spot, why) {
     if (spot?.room == null || spot?.col == null || spot?.row == null)
-      return { relocate: false, attempt: 0, limit: this.policy.pullsBeforeBarren ?? 4 };
+      return { relocate: false, attempt: 0, limit: this.policy.pullsBeforeMovingOn ?? 4 };
     const id = `${spot.room}:${spot.col},${spot.row}`;
     (this.pullFailures ??= new Map());
     const attempt = (this.pullFailures.get(id) ?? 0) + 1;
     this.pullFailures.set(id, attempt);
-    const limit = this.policy.pullsBeforeBarren ?? 4;
+    const limit = this.policy.pullsBeforeMovingOn ?? 4;
     if (attempt < limit) return { relocate: false, attempt, limit };
     // A WALL THE QUARRY CANNOT BE PULLED TO IS NOT A BAD WALL — IT IS A DISTANT ONE.
     //
-    // This used to add the square to `barrenSpots` and return `retired: true`, which
+    // This used to add the square to the removed `barrenSpots` set and return `retired: true`, which
     // released the hold and — three walls later, via pullDidNotConvert/noWallRooms —
     // abandoned wall-fighting for the whole room. But a failed *reach* is about the
     // geometry BETWEEN us and the monster, not about the square we stand on: the common
@@ -8115,17 +8125,10 @@ export class Autopilot {
           const v = this.s.client?.vitals?.();
           const hp = v?.health?.max ? v.health.value / v.health.max : null;
           if (hp === null) return false;
-          // ANYTHING THAT IS NOT UNTOUCHED. The operator's rule, 2026-08-27: seek roadside
-          // shelter below 100% health, not below some fraction of it. This defaulted to 0.95,
-          // which is a threshold pretending to be a rule — it says a character at 96% is fine
-          // to carry on, and there is no mechanism that makes 96% fine. Diverting is free: the
-          // wall is already on the route, `shelterAhead` refuses anything behind us or further
-          // than `maxDetour` off it, and `onArrive` walks straight past a wall it turns out not
-          // to need. So the honest bar is "have I taken a hit".
-          //
-          // It does not need conditioning on dangerous rooms either. A safe room does no damage,
-          // so in a safe room this never fires; where it fires IS the definition of dangerous.
-          return hp < (this.policy.travelDivertBelow ?? 1);
+          // ANY DAMAGE AT ALL — WHERE THE MAP OUTRANKS US, AND AN ORDINARY THRESHOLD ELSEWHERE.
+          // See travelDivertAt: the condition is what makes the sensitive half affordable, and
+          // I shipped it unconditional for one run and watched arrivals fall from 43% to 10%.
+          return hp < this.travelDivertAt();
         },
         // AND SIT DOWN WHEN WE GET THERE, IF WE ARE NOT WHOLE.
         //
@@ -8146,11 +8149,27 @@ export class Autopilot {
           // THE OUTCOME ROW, WRITTEN WHETHER OR NOT WE REST. A run that reached its wall and
           // did not need it is the good case and has to be distinguishable from one that never
           // arrived — without this row both are "a `chose` with no `settled`".
+          // ARRIVED MEANS STANDING ON IT, AND THE LEDGER HAS TO CHECK RATHER THAN TRUST.
+          //
+          // `onArrive` is called by the walker, and one of its two call sites used to fire for
+          // any proved leg that merely CONSUMED the shelter square — handing over the end of
+          // the leg, up to thirteen squares past the wall. The ledger wrote `arrived: true` for
+          // every one of them, so fifteen stops that lost 134 health between them read as
+          // refuges that did not work. They were bodies resting in the open.
+          //
+          // The walker no longer does that. This checks anyway: a ledger is evidence, and
+          // evidence that takes its subject's word for the one fact it exists to record is
+          // decoration. `on_the_wall: false` is now a visible outcome rather than a silent one.
           const settle = (extra) => {
             if (!this.shelterRun) return;
+            const at = this.s.client?.self ?? null;
+            const onTheWall = !!(at && this.shelterRun.to
+              && at.col === this.shelterRun.to.col && at.row === this.shelterRun.to.row);
             recordShelterRun({
               run: this.shelterRun.id, kind: 'settled', character: this.s.name,
-              room: this.s.client?.room?.id ?? null, arrived: true,
+              room: this.s.world?.room?.num ?? null, arrived: onTheWall,
+              on_the_wall: onTheWall,
+              rested_at: at ? { row: at.row, col: at.col } : null,
               ms: Date.now() - this.shelterRun.at,
               health: v?.health?.value ?? null, max_health: v?.health?.max ?? null,
               health_pct: hp, vigor: v?.vigor?.value ?? null,
@@ -8203,18 +8222,24 @@ export class Autopilot {
           const squares = from && Number.isFinite(stop.row)
             ? Math.max(Math.abs(stop.row - from.row), Math.abs(stop.col - from.col)) : null;
           this.shelterRun = { id: `${this.s.name}-${Date.now()}`, at: Date.now(),
-                              health: v?.health?.value ?? null };
+                              health: v?.health?.value ?? null,
+                              to: { row: stop.row, col: stop.col } };
           recordShelterRun({
             run: this.shelterRun.id, kind: 'chose', character: this.s.name,
-            room: this.s.client?.room?.id ?? null,
-            room_name: this.s.client?.room?.name ?? null,
+            room: this.s.world?.room?.num ?? null,
+            room_name: this.s.world?.room?.name ?? null,
             health: v?.health?.value ?? null, max_health: v?.health?.max ?? null,
             health_pct: hp, vigor: v?.vigor?.value ?? null,
             health_per_second: this.healthRate?.(this.recent5 ?? []) ?? null,
-            threats: (this.threatsHere?.() ?? []).map(t => t.name ?? t.kind ?? '?').slice(0, 12),
-            fleet: undefined,
+            // WHAT WAS ACTUALLY STANDING THERE. This asked `this.threatsHere()`, which does
+            // not exist on this class — so it silently recorded `null` for every row of the
+            // first run and the "what was on it" column was blank throughout. Optional
+            // chaining on a method that was never there is indistinguishable from an empty
+            // room. Enumerated the same way `roomOutranksUs` does it, off the room objects.
+            threats: this.namedThreatsHere().slice(0, 12),
             from, to: { row: stop.row, col: stop.col },
             detour: stop.detour ?? null, squares, proven: stop.proven ?? null,
+            outranked: this.roomOutranksUs(), divert_at: this.travelDivertAt(),
             at_step: at?.atStep ?? null,
             legs_left: Number.isFinite(at?.legsLeft) ? at.legsLeft : null,
             why: 'hurt on the road — the next route-adjacent wall',
@@ -13174,7 +13199,43 @@ export class Autopilot {
       // first version only asked when the room held no prey at all, and so did nothing
       // in the case it was built for: two centipedes among eight baby spiders reads as
       // "prey available", and the keeper hunted the two while the eight held the cap.
-      if (this.policy.clearWeak !== false) {
+      // CLEARING IS A FARMING DECISION ABOUT THE ROOM WE FARM. IT IS NEVER A REASON TO
+      // STOP GOING SOMEWHERE.
+      //
+      // The argument for clearing is that the spawn cap is a room-wide TOTAL, so the
+      // creatures we decline to kill are what stop our prey appearing. That is true of the
+      // room we are ASSIGNED to and meaningless anywhere else: a character standing in a
+      // room it is only passing through has no stake in that room's generator, and killing
+      // its occupants buys nothing.
+      //
+      // Worse, it does not merely waste the pass — it CANCELS THE JOURNEY. Clearing issues
+      // movement, and a new command cancels the walk in flight. Measured on prod
+      // 2026-08-27, Clifford stranded in "Off the beaten path" (room 567) while assigned to
+      // 39: 1,322 passes of `clearing the room so it can spawn again` against 8 giant rats
+      // in a room with zero of his prey, two passes a second, and his own placement record
+      // reading
+      //
+      //     aimed_at_assignment 3 · returned_to_assignment 0 · failed 3
+      //     why_not: [{room: 39, why: "movement cancelled by a newer command"} x3]
+      //
+      // He tried to go home three times and his own clearing cancelled it every time. He
+      // sat there for eighteen minutes, at full health, with nothing wrong with him.
+      //
+      // So: only clear where we are supposed to be. No assignment means every room is ours
+      // to farm and the old behaviour stands, which is what an unassigned character wants.
+      const farmingHere = this.policy.assignedRoom == null
+        || Number(room?.num) === Number(this.policy.assignedRoom);
+      if (!farmingHere && this.policy.clearWeak !== false && this.clearWeakElsewhere !== room?.num) {
+        this.clearWeakElsewhere = room?.num;
+        this.note('not clearing this room — it is not the one we farm', {
+          room: room?.name, here: room?.num, assigned: this.policy.assignedRoom,
+          why: 'the spawn cap is a room-wide total for the room we hunt in, and this is not ' +
+               'it. Clearing here buys nothing and the movement it issues cancels the walk ' +
+               'back to the room that does.',
+        });
+      }
+      if (farmingHere) this.clearWeakElsewhere = null;
+      if (farmingHere && this.policy.clearWeak !== false) {
         const capped = this.capBlockers(room);
         if (capped?.should_clear) {
           const target = capped.clearable[0];
@@ -13394,8 +13455,8 @@ export class Autopilot {
         // answer is no, leaving is not roaming — it is going to work — so it does not
         // wait on the roam permission, which exists to stop characters wandering off
         // productive ground.
-        const barren = this.sanctuary(room);
-        if (barren && this.emptyPasses >= 2) {
+        const inSanctuary = this.sanctuary(room);
+        if (inSanctuary && this.emptyPasses >= 2) {
           // policy.assignedRoom is where `spread` put us; homeRoom is where we last
           // settled. `this.assignedRoom` does not exist — reading it would have made this
           // whole branch quietly do nothing, which is the failure mode this fix is about.

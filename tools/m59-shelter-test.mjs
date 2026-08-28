@@ -39,6 +39,7 @@ const { recordShelterRun, shelterRuns, pairRuns, shelterFile } =
   await import('./m59-shelter.mjs');
 
 const AUTOPILOT_SRC = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+const GAME_SRC = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
 
 console.log('\n(A) THE DECISION IS RECORDED WHEN THE WALL IS CHOSEN, NOT WHEN IT IS REACHED');
 {
@@ -55,8 +56,14 @@ console.log('\n(A) THE DECISION IS RECORDED WHEN THE WALL IS CHOSEN, NOT WHEN IT
   // bleeding two rooms ago are not the same decision and the threshold cannot tell them apart.
   ok('and the rate it was losing health at',
      /kind: 'chose'[\s\S]{0,700}health_per_second: this\.healthRate/.test(AUTOPILOT_SRC));
+  // AND IT ASKS SOMETHING THAT EXISTS. The first version called `this.threatsHere?.()`, which
+  // is not a method on this class — optional chaining on a method that was never there is
+  // indistinguishable from an empty room, so every row of the first run recorded `null` and
+  // the column was blank throughout without anything failing.
   ok('and what was standing there',
-     /kind: 'chose'[\s\S]{0,800}threats: \(this\.threatsHere/.test(AUTOPILOT_SRC));
+     /kind: 'chose'[\s\S]{0,900}threats: this\.namedThreatsHere\(\)/.test(AUTOPILOT_SRC));
+  ok('asked of a method that actually exists on the class',
+     /^  namedThreatsHere\(\) \{$/m.test(AUTOPILOT_SRC));
 }
 
 console.log('\n(B) HOW FAR IT HAS TO WALK, WHICH IS NOT HOW FAR THE WALL IS OFF THE ROAD');
@@ -91,12 +98,84 @@ console.log('\n(C) WAS IT STILL GOING ANYWHERE WHEN IT DIED');
      /movement: \(\(\) => \{[\s\S]{0,2000}Chebyshev/.test(AUTOPILOT_SRC));
 }
 
+console.log('\nARRIVED MEANS STANDING ON IT');
+{
+  // THE OPERATOR'S CORRECTION, 2026-08-27, AND IT INVERTED A FINDING.
+  //
+  // The ledger's first run reported fifteen shelter stops that LOST health — 134 points given
+  // away at squares it called refuges, 92 of them on 598 51,22 across eight characters. Read
+  // off the ledger alone, that says the walls are bad, and that is what it was reported as.
+  // The operator's answer was that those squares are valid safe spots and a character that
+  // reaches one is safe on it, which leaves exactly one possibility: they were not standing
+  // on them.
+  //
+  // They were not. `walkPivots` has two arrival paths. The single-step one checks
+  // `now.col === target.col && now.row === target.row` before resting. The PROVED-LEG one did
+  // not: any leg whose consumed squares happened to include a shelter called `onArrive` with
+  // the END OF THE LEG — up to thirteen squares past the wall — and the character sat down
+  // there, in the open, and the ledger wrote `arrived: true`.
+  //
+  // The lesson is not about walls. It is that a measurement which takes its subject's word
+  // for the one fact it exists to establish will confidently blame the wrong thing.
+  ok('a proved leg that goes past a refuge puts it back rather than counting it',
+     /const swallowed = remaining\.slice\(0, cut \+ 1\)\.filter\(st => st\.shelter\);/.test(GAME_SRC)
+     && /remaining\.unshift\(back\);/.test(GAME_SRC));
+  ok('and only rests when the body is actually on the square',
+     /const onIt = swallowed\.some\(st => st\.col === at\.col && st\.row === at\.row\);/.test(GAME_SRC)
+     && /if \(onIt && typeof shelter\?\.onArrive === 'function'\)/.test(GAME_SRC));
+  // NEAREST FIRST, because a long proved leg can swallow more than one and the one worth
+  // turning back for is the closest.
+  ok('and when a leg swallows several, it turns back to the nearest',
+     /Nearest first/.test(GAME_SRC));
+  // AND THE OTHER PATH IS UNTOUCHED — it was always right, and it is the reference for what
+  // "arrived" has to mean.
+  ok('the single-step path still confirms the square before resting',
+     /if \(now\.col === target\.col && now\.row === target\.row\)/.test(GAME_SRC));
+
+  // AND THE LEDGER CHECKS RATHER THAN TRUSTS.
+  ok('the outcome row measures the body against the wall it chose',
+     /const onTheWall = !!\(at && this\.shelterRun\.to/.test(AUTOPILOT_SRC));
+  ok('and `arrived` is that measurement, not the caller\'s claim',
+     /arrived: onTheWall,/.test(AUTOPILOT_SRC));
+  ok('and where it actually sat is recorded, so the next version of this is one column away',
+     /rested_at: at \? \{ row: at\.row, col: at\.col \} : null,/.test(AUTOPILOT_SRC));
+
+  // The ledger accepts and reports the distinction.
+  recordShelterRun({ run: 'Wwww-1', kind: 'chose', character: 'Wwww', room: 598,
+    health: 12, max_health: 40, health_pct: 0.3, from: { row: 40, col: 20 },
+    to: { row: 51, col: 22 }, detour: 2, squares: 11 });
+  recordShelterRun({ run: 'Wwww-1', kind: 'settled', character: 'Wwww', room: 598,
+    arrived: false, on_the_wall: false, rested_at: { row: 44, col: 21 },
+    ms: 19800, hp_gained: -12 });
+  const w = pairRuns(shelterRuns({ thisEpochOnly: false })).find(p => p.chose.run === 'Wwww-1');
+  ok('a rest taken off the wall is recorded as not having arrived',
+     w?.settled?.arrived === false && w?.settled?.on_the_wall === false);
+  ok('and it says where the body actually sat, which is the whole diagnosis',
+     w?.settled?.rested_at?.row === 44 && w?.settled?.rested_at?.col === 21,
+     JSON.stringify(w?.settled?.rested_at));
+}
+
 console.log('\nTHE BAR IS "HAVE I TAKEN A HIT", NOT A FRACTION');
 {
-  // The operator's rule: seek roadside shelter below 100% health. 0.95 is a threshold
-  // pretending to be a rule — there is no mechanism that makes 96% fine.
-  ok('the divert fires below full health',
-     /return hp < \(this\.policy\.travelDivertBelow \?\? 1\);/.test(AUTOPILOT_SRC));
+  // THE OPERATOR'S RULE, IN FULL: any damage at all is a reason to take a wall **when the map
+  // holds things stronger than us**, and only then. A hundred-hitpoint character nicked by a
+  // baby spider does not need to sit down.
+  //
+  // Shipped unconditional for exactly one run and it cost 33 points of arrival — 43% to 10% on
+  // the same seed, fourteen of twenty-one parked in inns at full health. Diverting IS free per
+  // detour; taking one every time anything scratches you across twenty-six hops is not.
+  ok('the divert threshold is conditioned, not a constant',
+     /return hp < this\.travelDivertAt\(\);/.test(AUTOPILOT_SRC));
+  ok('any damage at all where the map outranks the character',
+     /travelDivertAt\(\) \{[\s\S]{0,220}travelDivertBelowOutranked \?\? 1/.test(AUTOPILOT_SRC));
+  ok('and an ordinary threshold where it does not',
+     /travelDivertAt\(\) \{[\s\S]{0,260}travelDivertBelow \?\? 0\.95/.test(AUTOPILOT_SRC));
+  ok('asking the same question the cancel threshold already asks',
+     /travelDivertAt\(\) \{\s*return this\.roomOutranksUs\(\)/.test(AUTOPILOT_SRC));
+  // AND THE LEDGER RECORDS WHICH ARM FIRED, or a row cannot be read against the rule that
+  // produced it.
+  ok('and every decision row says which arm was in force',
+     /outranked: this\.roomOutranksUs\(\), divert_at: this\.travelDivertAt\(\),/.test(AUTOPILOT_SRC));
   ok('and it is still overridable, because it is a number and numbers are this machine\'s',
      /travelDivertBelow/.test(AUTOPILOT_SRC));
   // AND IT IS NOT THE CANCELLATION THRESHOLD. Both used to read one number, so every moment
@@ -113,7 +192,12 @@ console.log('\nTHE LEDGER ITSELF');
     room_name: 'The Cragged Mountains', health: 12, max_health: 20, health_pct: 0.6,
     vigor: 48, health_per_second: -0.29, threats: ['troll', 'troll'],
     from: { row: 21, col: 17 }, to: { row: 24, col: 19 }, detour: 2, squares: 3 });
-  let rows = shelterRuns({ thisEpochOnly: false });
+  // SCOPED TO ITS OWN RUN. The book is shared with every other group in this file, and an
+  // assertion that says `rows.length === 1` is really saying "nothing else in this suite has
+  // ever written a row" — which was true when it was written and stopped being true the moment
+  // a group was added above it. Filtering by `run` is what the id is for.
+  const mine = () => shelterRuns({ thisEpochOnly: false }).filter(r => r.run === run);
+  let rows = mine();
   ok('a decision row lands on disk', rows.length === 1, JSON.stringify(rows));
   ok('with both squares intact',
      rows[0].from.row === 21 && rows[0].from.col === 17
@@ -129,7 +213,7 @@ console.log('\nTHE LEDGER ITSELF');
 
   recordShelterRun({ run, kind: 'settled', character: 'Tttt', room: 598,
     arrived: true, ms: 4200, rested_to: 1, hp_gained: 8 });
-  rows = shelterRuns({ thisEpochOnly: false });
+  rows = mine();
   const paired = pairRuns(rows);
   ok('the outcome row pairs with its decision',
      paired.length === 1 && paired[0].settled?.arrived === true && paired[0].chose.health === 12);
@@ -141,7 +225,7 @@ console.log('\nTHE LEDGER ITSELF');
   ok('a malformed row is dropped rather than thrown',
      recordShelterRun({ run: 'x', from: 'not a square', to: null }) !== undefined);
   ok('and a square that is not a square records as absent rather than as garbage',
-     shelterRuns({ thisEpochOnly: false }).at(-1).from === null);
+     shelterRuns({ thisEpochOnly: false }).filter(r => r.run === 'x').at(-1).from === null);
 
   ok('the file is per fleet, so two fleets do not pool their roads',
      shelterFile('a') !== shelterFile('b'));
