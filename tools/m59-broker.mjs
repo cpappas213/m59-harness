@@ -8478,7 +8478,49 @@ const TOOLS = [
       // Persist the instruction, not the running object: on the far side of a
       // restart the keeper is rebuilt from these fields alone.
       rememberAutopilot(a.agent, { mode: p.mode, policy: { ...p.policy } });
-      const started = p.start();
+      // A KEEPER-BACKED CHARACTER MUST NOT GET A SECOND BRAIN IN THIS PROCESS.
+      //
+      // `p` here is an Autopilot built on whatever `session(agent)` returned, and for every
+      // keeper-backed character that is a KeeperProxy — whose client is, in this file's own
+      // words twenty lines down, "rebuilt from each /state snapshot… a picture, not a wire".
+      // It has no `eventsSince`, no `roomContents`; its world has no `exits`. Starting a pass
+      // loop on it produces a keeper that throws on EVERY pass, for ever:
+      //
+      //     pass failed — c.eventsSince is not a function
+      //     pass failed — c.roomContents is not a function
+      //     pass failed — s.world?.exits is not a function
+      //
+      // Measured 2026-08-28: twenty-one of twenty-one shadow characters had one of these
+      // running, and prod did too. It never drove anything — the real keeper process did —
+      // but it WROTE THE FRAMES AND THE POSTMORTEMS, so every death record of the day was
+      // written by a blind observer that had never completed a pass. `doing` was null in all
+      // of them, which prints as "stalled"; `governed_by` said the ordinary ladder was in
+      // force, because a travel state is entered by a pass and no pass ever finished. Both
+      // were read as facts about the character. Neither was.
+      //
+      // `resumeFleet` already drops the in-process autopilot for keeper-backed characters and
+      // the reconciler at `keeperWasRunning` already tests `!(s instanceof KeeperProxy)`. This
+      // path — the one an operator or a harness actually calls — never got the same check.
+      //
+      // The order is not lost by refusing: `rememberAutopilot` above has already written it to
+      // the roster, and `pushPolicyToKeeper` below hands it to the process that will obey it.
+      // Starting a shell here was never how a keeper-backed character was driven.
+      // AND IT IS REFUSED, NOT TORN DOWN. The obvious cleanup — `dropAutopilot(a.agent)` —
+      // is wrong here and the reason is a cross-process one. It stops the shell HARD, which
+      // calls `releaseSpot(name)` and `releaseQuarry(name)`, and spot claims are FILE-BACKED
+      // (`releaseFileSpot`) so they are shared with the keeper process. The ghost holds no
+      // wall, but the release is BY CHARACTER NAME, so it would drop the claim the real
+      // keeper is standing on. Leaving an unstarted shell costs nothing: this code already
+      // uses it only as somewhere to assemble the policy that `pushPolicyToKeeper` sends.
+      //
+      // Ghosts already running when this shipped are cleared by the broker restart that
+      // deploys it, which is the only way to stop them without the same release.
+      const proxied = sessions.get(a.agent) instanceof KeeperProxy;
+      const started = proxied
+        ? { started: false, keeper_backed: true,
+            why: 'this character is driven by its own keeper process; the order was recorded '
+               + 'and pushed to that process rather than run in the broker' }
+        : p.start();
       // AND HAND IT TO THE PROCESS THAT WILL OBEY IT. The two lines above update this
       // broker's shell and the roster on disk; on a keeper-backed broker neither of those
       // is the character, and without this the order takes effect only at the keeper's

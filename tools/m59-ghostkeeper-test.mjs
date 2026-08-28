@@ -1,0 +1,110 @@
+#!/usr/bin/env node
+// ONE CHARACTER, ONE BRAIN.
+//
+//   node tools/m59-ghostkeeper-test.mjs
+//
+// Offline. Reads source, opens no socket, touches no roster.
+//
+// ======================== WHAT THIS PINS ========================
+//
+// Every keeper is a child process of the broker, and the broker talks to it through a
+// `KeeperProxy` — a Session-shaped object whose client is, in m59-broker.mjs's own words,
+// "rebuilt from each /state snapshot… a picture, not a wire". It has no `eventsSince`, no
+// `roomContents`; its world has no `exits`.
+//
+// So an Autopilot started on a KeeperProxy cannot complete a single pass. It throws:
+//
+//     pass failed — c.eventsSince is not a function
+//     pass failed — c.roomContents is not a function
+//     pass failed — s.world?.exits is not a function
+//
+// The `autopilot` tool did exactly that. Measured 2026-08-28: twenty-one of twenty-one
+// shadow characters had one running, and prod did too. It never drove anything — the real
+// keeper process did — but IT WROTE THE FRAMES AND THE POSTMORTEMS. So every death record of
+// that day was authored by a blind observer that had never finished a pass: `doing` was null
+// in all of them, which prints as "stalled", and `governed_by` reported the ordinary ladder
+// because a travel state is entered by a pass and no pass ever completed. Both were read as
+// facts about the character. Neither was.
+//
+// The distinction was already known — `resumeFleet` drops the in-process autopilot for
+// keeper-backed characters, and the reconciler tests `!(s instanceof KeeperProxy)`. The tool
+// an operator or a harness actually calls never got the same check.
+//
+// THE FIX IS A REFUSAL, NOT A TEARDOWN, and that is the second half of this file. The obvious
+// cleanup is `dropAutopilot`, which stops the shell hard — and a hard stop calls
+// `releaseSpot(name)`, whose claims are FILE-BACKED and therefore shared with the keeper
+// process. The ghost holds no wall, but the release is by character name, so it would drop the
+// claim the real keeper is standing on. A fix for a two-brains bug that reaches across a
+// process boundary to unclaim a live wall is a worse bug than the one it fixes.
+import { readFileSync } from 'node:fs';
+
+let pass = 0, fail = 0;
+const ok = (what, cond, extra = '') => {
+  if (cond) { pass++; console.log('  ok   ' + what); }
+  else { fail++; console.log('  FAIL ' + what + (extra ? '  ' + extra : '')); }
+};
+
+const BROKER = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+const AUTOPILOT = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+
+console.log('\nA KEEPER-BACKED CHARACTER GETS NO SECOND BRAIN IN THE BROKER');
+{
+  // The tool assembles a policy on a shell and pushes it; what it must not do is run a pass
+  // loop on a proxy. `p.start()` has to be behind the proxy test.
+  const started = BROKER.indexOf('const started = proxied');
+  ok('the autopilot tool decides whether to start on the proxy test', started > 0);
+  ok('and it names the proxy class the rest of the file uses',
+     /const proxied = sessions\.get\(a\.agent\) instanceof KeeperProxy;/.test(BROKER));
+  ok('and a proxied character is told plainly that its keeper owns it',
+     /started: false, keeper_backed: true/.test(BROKER));
+  // THE ORDER STILL LANDS. Refusing to run a shell is only correct because the instruction
+  // reaches the process that obeys it by another road — the roster, and a direct push.
+  const remember = BROKER.indexOf("rememberAutopilot(a.agent, { mode: p.mode, policy: { ...p.policy } });");
+  const push = BROKER.indexOf('const keeper_push = await pushPolicyToKeeper(a.agent, p);');
+  ok('the order is written to the roster before the decision', remember > 0 && remember < started);
+  ok('and pushed to the keeper process after it', push > started);
+}
+
+console.log('\nAND THE REFUSAL DOES NOT REACH ACROSS THE PROCESS BOUNDARY');
+{
+  // `dropAutopilot` stops hard, and a hard stop releases spot and quarry claims by NAME.
+  ok('a hard stop is what dropAutopilot does', /if \(p\) p\.stop\('the keeper is being discarded', \{ hard: true \}\);/.test(AUTOPILOT));
+  ok('and a hard stop releases the spot claim', /releaseSpot\(this\.s\.name\);/.test(AUTOPILOT));
+  // FILE-BACKED, which is what makes it a cross-process hazard rather than a tidy-up.
+  ok('and spot claims can be file-backed, so that release is shared with the keeper',
+     /releaseFileSpot\(agent\)/.test(AUTOPILOT));
+  ok('so the guard refuses instead of dropping',
+     !/const proxied = sessions\.get\(a\.agent\) instanceof KeeperProxy;\s*\n\s*if \(proxied\) dropAutopilot/.test(BROKER));
+  ok('and says why, because the next reader will reach for the teardown',
+     /would drop the claim the real\n\s*\/\/ keeper is standing on/.test(BROKER));
+}
+
+console.log('\nTHE DISTINCTION WAS ALREADY MADE ELSEWHERE, AND STILL IS');
+{
+  // These two are the prior art. If either disappears, the argument above has lost its
+  // footing and this file should be re-read rather than re-passed.
+  ok('resumeFleet still drops an in-process autopilot for a proxied character',
+     /if \(s instanceof KeeperProxy\) dropAutopilot\(agent\);/.test(BROKER));
+  ok('and the reconciler still refuses to restore one',
+     /if \(s\?\.live && p\.keeperWasRunning && !\(s instanceof KeeperProxy\)\)/.test(BROKER));
+}
+
+console.log('\nWHY A PROXY CANNOT RUN A PASS — the three methods it does not have');
+{
+  // Named individually so that a proxy which later grows one of them does not quietly make
+  // this suite's premise half-true.
+  for (const m of ['eventsSince', 'roomContents'])
+    ok(`the pass ladder calls c.${m}, which lives on the real client`,
+       new RegExp(`c\\.${m}\\(`).test(AUTOPILOT));
+  ok('and the pass ladder calls s.world.exits()', /s\.world\?\.exits\(\)|world\.exits\(\)/.test(AUTOPILOT));
+  // The proxy puts roomContents on the SESSION on purpose — the comment there is the whole
+  // reason the client cannot have it — so the mismatch is by design and permanent.
+  ok('while the proxy carries roomContents on the session, not the client',
+     /async roomContents\(opts = \{\}\) \{ return keeperAction\(this\.name, this\._index, 'room_contents', opts\); \}/
+       .test(BROKER));
+  ok('and says why: the client is a picture, not a wire',
+     /The client is\s*\n\s*\/\/ rebuilt from each `\/state` snapshot and is a picture, not a wire/.test(BROKER));
+}
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);
