@@ -3929,10 +3929,34 @@ class Session {
           }
         }
       }
+      // WHAT THIS ROW IS, AND WHY IT IS NOT A FAILURE.
+      //
+      // It is written BEFORE the jump is attempted — it records the line as measured, so that a
+      // jump that goes wrong can be read against what was known at the time. `worked: false`
+      // was hardcoded here, and the ledger has no other state for "not an outcome", so this
+      // became the largest entry in the whole book and the largest entry in its
+      // SPENDING TIME AND NOT WORKING section:
+      //
+      //     declared_jump on undeclared_fall: 0/1616 (prod), 0/5524 (shadow)
+      //
+      // Nothing was failing. It is one row per candidate landing per evaluation — thirteen of
+      // them share a single timestamp in Rowlf's log, and the row immediately after is a rail
+      // boarded successfully — so the count is the number of aims considered, not attempts, and
+      // the 0% is a constant. Read as a tactic it says the fleet cannot jump; read correctly it
+      // says nothing at all about outcomes.
+      //
+      // It cost an hour of this session: 244 rows from one square read as 244 stuck attempts,
+      // and a character that had already moved on read as pinned. The ledger is what every
+      // movement question gets asked of, so a row that cannot be right is worse than no row.
+      //
+      // `attempted: false` is the honest label. `recordTactic` scores `worked ? ok : fail` and
+      // the ledger's own note says a row for a DECISION rather than an attempt is what made
+      // Ukgoth read as an 84% rail failure — the same mistake, already written down.
       recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                      tactic: 'declared_jump', trigger: isDeclared ? 'declared' : 'undeclared_fall',
-                     worked: false, ms: 0, hp_lost: 0, attempted: true,
-                     note: `${before.row},${before.col} -> ${row},${col} vigor ${vig ?? '?'} ` +
+                     worked: false, ms: 0, hp_lost: 0, attempted: false,
+                     note: `line as measured, before the jump: ` +
+                           `${before.row},${before.col} -> ${row},${col} vigor ${vig ?? '?'} ` +
                            `linegap ${gapNow.gap === Infinity ? 'clear' : Number(gapNow.gap).toFixed(2)}` +
                            (gapNow.who.length ? ` (${gapNow.who.slice(0, 2).join(', ')})` : '') +
                            (waited ? ` after ${waited} wait(s)` : '') });
