@@ -59,7 +59,10 @@
 // checked map with its own manifest; this is derived from it and regenerable, and mixing
 // the two would mean rebaking geometry to change a routing decision.
 
-import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync,
+         rmSync } from 'node:fs';
+import { fork } from 'node:child_process';
+import { tmpdir } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadMap, edgeCandidatesOf } from './m59-map.mjs';
@@ -1107,6 +1110,30 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
   const collision = !argv.includes('--grid');
 
   const map = loadMap(movementMapFile());
+
+  // THE SHARD CHILD, and it deliberately shares nothing with the parent's bookkeeping.
+  //
+  // It adopts no table, flushes nothing, and writes exactly the rooms it was handed to the
+  // file it was given. Keeping it this dumb is what makes `--jobs` safe: a shard cannot
+  // half-write the real table, and the parent is the only thing that ever touches it.
+  const shardRooms = val('--shard-rooms')?.split(',').map(Number).filter(Number.isFinite) ?? null;
+  const shardOut = val('--shard-out');
+  if (shardRooms && shardOut) {
+    const acc = { rooms: {}, skipped: 0, pairs: 0, pockets: 0, stranded: 0 };
+    for (const num of shardRooms) {
+      const room = map.rooms[String(num)];
+      if (!room?.roo) { acc.skipped++; continue; }
+      const baked = bakeRoom(room, { collision });
+      if (baked.skipped) { acc.skipped++; continue; }
+      acc.rooms[baked.room] = baked;
+      acc.pairs += Object.keys(baked.routes).length;
+      acc.pockets += baked.pockets ?? 0;
+      acc.stranded += baked.stranded_exits ?? 0;
+      process.send?.({ done: 1, room: baked.room });
+    }
+    writeFileSync(shardOut, JSON.stringify(acc));
+    process.exit(0);
+  }
   const manifest = map.geometryManifestSha256 ?? null;
   const rooms = Object.values(map.rooms)
     .filter(r => r?.roo && (!only || only.includes(Number(r.num))));
@@ -1209,7 +1236,74 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     }));
   };
 
-  for (const [i, room] of todo.entries()) {
+  // ============================ ONE ROOM PER CORE ============================
+  //
+  // A full bake was 1680s here, single-threaded, on a machine with cores to spare. Every
+  // room is independent — `bakeRoom` reads the map and returns a record, and the only
+  // shared thing in the whole run is the table it goes into — so the work is embarrassingly
+  // parallel and was only sequential because nothing had asked it not to be.
+  //
+  // WHY CHILD PROCESSES AND NOT WORKERS. `bakeRoom` is CPU-bound and synchronous, and it
+  // reaches through `sharedRoomGeometry` into a module-level cache; a worker thread would
+  // need that cache to be thread-safe or per-thread, and a fork gets the second for free.
+  // The map is re-read per child, which costs a few seconds once and nothing after.
+  //
+  // ROUND-ROBIN OVER THE COST ORDER, NOT CONTIGUOUS BLOCKS. `todo` is sorted most-walked
+  // first and room cost spans two orders of magnitude (18ms to 30s), so contiguous blocks
+  // would put every expensive room in shard 0 and the run would take as long as that shard.
+  // Dealing them out one at a time gives each shard the same mix.
+  //
+  // A shard that dies takes its rooms with it and the parent says so and exits non-zero,
+  // rather than writing a table with a hole in it — the same refusal `--rooms` already makes
+  // for the same reason.
+  const jobs = Math.max(1, Number(val('--jobs') || 1));
+  let ranParallel = false;
+  if (jobs > 1 && todo.length > 1) {
+    const shardDir = join(tmpdir(), `m59-bake-${process.pid}`);
+    mkdirSync(shardDir, { recursive: true });
+    const lists = Array.from({ length: Math.min(jobs, todo.length) }, () => []);
+    todo.forEach((r, i) => lists[i % lists.length].push(Number(r.num)));
+    console.error(`  ${lists.length} shard(s): ${lists.map(l => l.length).join(', ')} room(s) each`);
+    let done = 0;
+    const started = Date.now();
+    const children = lists.map((list, i) => {
+      const outFile = join(shardDir, `shard-${i}.json`);
+      const args = ['--shard-rooms', list.join(','), '--shard-out', outFile];
+      if (!collision) args.push('--grid');
+      const child = fork(fileURLToPath(import.meta.url), args, { stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+      child.on('message', m => {
+        if (!m?.done) return;
+        done++;
+        process.stderr.write(`\r  ${done}/${todo.length} room(s) across ${lists.length} shard(s), ` +
+          `${((Date.now() - started) / 1000).toFixed(0)}s      `);
+      });
+      return new Promise((res, rej) => {
+        child.on('exit', code => code === 0 ? res(outFile)
+          : rej(new Error(`shard ${i} exited ${code} with ${list.length} room(s) unbaked`)));
+        child.on('error', rej);
+      });
+    });
+    let files;
+    try { files = await Promise.all(children); }
+    catch (e) {
+      process.stderr.write('\n');
+      console.error(`parallel bake failed: ${e.message}`);
+      console.error('nothing was written — rerun, or drop --jobs to bake in one process');
+      try { rmSync(shardDir, { recursive: true, force: true }); } catch {}
+      process.exit(1);
+    }
+    process.stderr.write('\n');
+    for (const f of files) {
+      const part = JSON.parse(readFileSync(f, 'utf8'));
+      for (const [num, baked] of Object.entries(part.rooms ?? {})) out[num] = baked;
+      skipped += part.skipped ?? 0; pairs += part.pairs ?? 0;
+      pockets += part.pockets ?? 0; stranded += part.stranded ?? 0;
+    }
+    try { rmSync(shardDir, { recursive: true, force: true }); } catch {}
+    ranParallel = true;
+  }
+
+  for (const [i, room] of (ranParallel ? [] : todo).entries()) {
     const t = Date.now();
     const baked = bakeRoom(room, { collision });
     if (baked.skipped) { skipped++; continue; }
