@@ -1041,6 +1041,26 @@ const WANT_FIGHT_VIGOR = 140;     // what every pattern aims to set out at
 const STARVED_FIGHT_VIGOR = 70;
 // The game's own ceiling: `eat` refuses anything that would carry vigor past it.
 const VIGOR_CAP = 200;
+// AND THE GAME'S OWN FLOOR FOR CASTING, WHICH IS NOT ABOUT MANA AT ALL.
+// `CanPayManaVigor` (spell.kod:597) tests vigor BEFORE it tests mana, and returns FALSE
+// without spending anything when the caster is too tired:
+//
+//     % Make sure caster is not too tired
+//     if (NOT Send(who,@HasVigor,#amount=viSpellExertion))     % viSpellExertion = 13
+//        Send(who,@MsgSendUser,#message_rsc=spell_too_tired,#parm1=vrName);
+//        return FALSE;
+//
+// A refusal that costs no mana is indistinguishable, from this side, from a cast that was
+// never sent — so it read as a mystery rather than as a precondition. Beaker spent 3.6
+// hours and 5194 casts on `create weapon` with mana at 25 of 25 and vigor at 1, while the
+// keeper reported "not enough mana". See m59-conjure-test.mjs.
+const SPELL_EXERTION_VIGOR = 13;
+// AND THE PACK HAS TO BE ABLE TO HOLD WHAT THE SPELL MAKES. `ReqNewHold` refuses on bulk
+// and creaweap.kod:116-129 then DELETES the weapon — AFTER the mana is spent. The spell
+// rolls between six weapons (creaweap.kod:71-105) and the largest is the scimitar at 70
+// bulk, so a pack with less headroom than this is paying 15 mana for a coin flip.
+// Measured 2026-08-29: Beaker had 57 bulk free and Janice 12, both stuffed with mushrooms.
+const CONJURED_WEAPON_BULK = 70;
 
 // WHERE THE MONEY GOES. Jasper and Tos share one banking system, so either counter
 // pays into the same balance and the only question is which is nearer — which really
@@ -2045,10 +2065,30 @@ export class Autopilot {
   async makeWeapon(why = 'no weapon in the pack') {
     const s = this.s, c = s.client;
     if (!c) return false;
+    // THE SERVER CHECKS VIGOR BEFORE MANA, SO THIS DOES TOO. Checking mana first reports
+    // "not enough mana" to a character holding a full bar of it, which is precisely the
+    // misdiagnosis that hid this for 5194 casts.
+    const vigorNow = vigorOf(c.vitals?.());
+    if ((vigorNow ?? 0) < SPELL_EXERTION_VIGOR)
+      return this.declinedCast('create weapon', 'too tired',
+        { vigor: vigorNow, needs: SPELL_EXERTION_VIGOR,
+          why: 'spell.kod:597 CanPayManaVigor refuses under viSpellExertion and spends ' +
+               'nothing, so this would look exactly like a cast that never left' });
     const mana = c.vitals?.()?.mana;
     if ((mana?.value ?? 0) < 15)
       return this.declinedCast('create weapon', 'not enough mana',
         { mana: mana?.value ?? null, needs: 15 });
+    // ONLY WHEN WE POSITIVELY KNOW THERE IS NO ROOM. carryCapacity withholds `room_for`
+    // whenever anything in the pack is unweighed, and refusing on that silence would build
+    // a fresh deadlock for exactly the characters this one already stranded — so an
+    // unknown load still attempts the cast. Certainty in one direction only.
+    const cap = skills.carryCapacity(c);
+    const bulkFree = cap?.room_for?.bulk ?? null;
+    if (bulkFree != null && bulkFree < CONJURED_WEAPON_BULK)
+      return this.declinedCast('create weapon', 'no room for the weapon',
+        { bulk_free: bulkFree, needs: CONJURED_WEAPON_BULK,
+          why: 'ReqNewHold refuses on bulk and creaweap.kod deletes the weapon after the ' +
+               'mana is spent, so this costs 15 mana and produces nothing' });
     await s.pacer.submit('read', () => c.requestSpells()).catch(() => {});
     await new Promise(x => setTimeout(x, 400));
     const spell = (c.spells || []).find(sp => (c.rsc.get(sp.nameRsc) || '').toLowerCase() === 'create weapon');
@@ -11350,17 +11390,58 @@ export class Autopilot {
       // WAITING FOR MANA IS THE PLAN, NOT A STALL. Churning the keeper restarts the
       // decision, not the wait, and that is why it never used to finish.
       const manaNow = c.vitals?.()?.mana?.value ?? 0;
-      this.waitFor('MANA_FOR_CREATE_WEAPON', {
-        // Mana regenerates on its own timer; this is an estimate for a reader deciding
-        // whether to look again, not a promise.
-        expectedMs: Math.max(0, (15 - manaNow)) * 20_000,
-        why: `unarmed with no donor; ${manaNow} of the 15 mana create weapon needs` });
+      const vigorLeft = vigorOf(c.vitals?.()) ?? 0;
+      // LAST RESORT: SIT ANYWAY, BECAUSE VIGOR DOES NOT COME BACK STANDING.
+      //
+      // `rests: 0` across 3.6 hours is what this exists for. settle() declines in a room
+      // that spawns, and the sit-anywhere fallback above is gated on sanctuary(), so an
+      // unarmed character in the Valley ended EVERY pass still on its feet — in the one
+      // posture that recovers nothing. If nothing is near enough to reach us, sitting is
+      // strictly better than what this branch used to do, which was nothing at all.
+      if (vigorLeft < SPELL_EXERTION_VIGOR && !sat?.settled && !this.sanctuary()) {
+        const t = this.threat?.() ?? {};
+        if (!(t.near?.length) && !(t.adjacent?.length)) {
+          const sitAt = Date.now();
+          if (!this.sittingFor || sitAt - this.sittingFor > 60_000) {
+            await s.pacer.submit('rest', () => c.rest()).catch(() => {});
+            this.sittingFor = sitAt;
+            this.note('sitting where it stands for the vigor a cast needs', {
+              vigor: vigorLeft, needs: SPELL_EXERTION_VIGOR, could_reach_us: 0,
+              why: 'unarmed, too tired to conjure, and nothing is close enough to reach ' +
+                   'us. This branch used to end the pass standing, which is why vigor sat ' +
+                   'at 1 while the keeper waited for mana it already had' });
+          }
+        }
+      }
+      // WHICH PRECONDITION IS ACTUALLY MISSING. The two have different remedies and only
+      // one returns on its own: mana regenerates while we wait, vigor needs a rest or a
+      // meal. Reporting mana while vigor was the blocker is the whole bug.
+      const blocker = vigorLeft < SPELL_EXERTION_VIGOR ? 'vigor'
+                    : manaNow < 15 ? 'mana' : 'neither';
+      if (blocker === 'vigor') {
+        this.waitFor('VIGOR_FOR_CREATE_WEAPON', {
+          expectedMs: Math.max(0, SPELL_EXERTION_VIGOR - vigorLeft) * 10_000,
+          why: `unarmed and too tired to cast; ${vigorLeft} of the ` +
+               `${SPELL_EXERTION_VIGOR} vigor create weapon needs (spell.kod:597)` });
+      } else {
+        this.waitFor('MANA_FOR_CREATE_WEAPON', {
+          // Mana regenerates on its own timer; this is an estimate for a reader deciding
+          // whether to look again, not a promise.
+          expectedMs: Math.max(0, (15 - manaNow)) * 20_000,
+          why: `unarmed with no donor; ${manaNow} of the 15 mana create weapon needs` });
+      }
       this.refuse('UNARMED_NO_DONOR', {
         faculty: 'work', blocking: true,
-        why: `unarmed — ${manaNow} mana, needs 15 to make one`,
-        remedy: 'hand it a weapon, or leave it alone until it can cast one',
+        why: blocker === 'vigor'
+          ? `unarmed — too tired to cast: ${vigorLeft} vigor, needs ${SPELL_EXERTION_VIGOR}`
+          : `unarmed — ${manaNow} mana, needs 15 to make one`,
+        remedy: blocker === 'vigor'
+          ? 'let it rest or feed it — casting spends vigor, and vigor is what it is short of'
+          : 'hand it a weapon, or leave it alone until it can cast one',
         retryAfterMs: 60_000 });
-      this.noProgress(`unarmed -- ${manaNow} mana, needs 15 to make one`);
+      this.noProgress(blocker === 'vigor'
+        ? `unarmed -- ${vigorLeft} vigor, needs ${SPELL_EXERTION_VIGOR} to cast one`
+        : `unarmed -- ${manaNow} mana, needs 15 to make one`);
       return HANDLED;
     }
 
