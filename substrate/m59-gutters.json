@@ -1,0 +1,56 @@
+{
+  "_what": "DECLARED GUTTERS. A gutter is a place the room can drop you into and not walk you out of, where the only remaining move is a long way round. The bake detects some of these itself (see m59-routebake.mjs), but detection runs on a collision model that has repeatedly proved too permissive -- it will happily report a route home that a player cannot walk. This file is the operator's answer and it wins, exactly as substrate/m59-falljumps.json does for jumps.",
+  "_shape": "room -> { rails: [ { from: [row,col], to: [row,col], why } ] }. Each entry bakes one route from `from` to `to`. Chain them when the way out has stages: the bake will not invent the chain for you, and a rail that ends at another rail's head is how a staged escape is written down.",
+  "599": {
+    "_name": "Ukgoth, Holy Land of Trolls",
+    "_why": "The operator, 2026-08-29: miss the declared jump at 36,16 -> 38,10 and you land below, where 'there's nowhere else valid to go in Ukgoth once you've missed the Ukgoth jump'. The only move is out through 589 and the long way round -- 589 -> 579 -> 578 -> 587 -- back to Ukgoth to try the jump again. Seven of thirteen deaths in one 30-minute run were here, every health trail the same shape: a body pinned at a low number that stops changing. They were not being killed by a hard road; they were standing in a hole with no way out written down.",
+    "_relic": "THE UPPER GUTTER IS CONDITIONAL, AND THIS IS THE CONDITION. Hold a relic of Qor (kod/object/item/passitem/scepter.kod:19, `scepter_name_rsc = \"relic of Qor\"`; its description reads \"This object bears the markings of Qor. An inscription ... barren place and speak my name.\") and SAY \"Qor the Vile\" -- the phrase is a constant in Ukgoth's own room code, kod/object/active/holder/room/monsroom/i9.kod:9, `i9_qor`, and RID_I9 = 599. The way up then opens. Without the relic it does not, and the gutter below is the whole of the answer: take it, go the long way round through 589, and try the jump again when you get back.",
+    "_note": "This is why the model and the operator disagree, and why the operator wins. The collision geometry says 49,45 and 39,16 can still walk to the Castle Victoria door at 1,27, because the passage they would use is opened by an ITEM AND A SPOKEN PHRASE, and a .roo knows nothing about either. The bake's own detector finds 67,15 -> 71,2 unaided; it cannot find the three heads above it, and no amount of better geometry would. A conditional passage is not a shape.",
+    "rails": [
+      {
+        "from": [
+          49,
+          45
+        ],
+        "to": [
+          67,
+          15
+        ],
+        "why": "east shelf into the lower basin"
+      },
+      {
+        "from": [
+          39,
+          16
+        ],
+        "to": [
+          67,
+          15
+        ],
+        "why": "under the jump, west side"
+      },
+      {
+        "from": [
+          60,
+          41
+        ],
+        "to": [
+          67,
+          15
+        ],
+        "why": "lower basin, east"
+      },
+      {
+        "from": [
+          67,
+          15
+        ],
+        "to": [
+          71,
+          2
+        ],
+        "why": "the basin's only exit, out through 589"
+      }
+    ]
+  }
+}

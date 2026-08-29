@@ -336,6 +336,34 @@ export function bodyReachableFrom(geo, seeds) {
   return best.set;
 }
 
+// DECLARED GUTTERS OVERRIDE THE DETECTOR, for the same reason declared fall jumps do.
+//
+// The detector below asks whether a square has lost exits relative to the room's body, and
+// it answers on the collision model -- which has been too permissive all evening: it claims
+// 49,45 and 39,16 in Ukgoth can still walk to the Castle Victoria door, and the operator,
+// who has played the room, says they cannot. A model that cannot be told it is wrong is a
+// model that stays wrong, so substrate/m59-gutters.json wins wherever it speaks.
+//
+// Additive and inert when absent: a room with no entry gets exactly the detector's answer,
+// and a fresh clone with no file gets today's behaviour unchanged.
+const GUTTER_FILE = join(REPO, 'substrate', 'm59-gutters.json');
+let DECLARED_GUTTERS = null;
+function declaredGutters(roomNum) {
+  if (DECLARED_GUTTERS === null) {
+    try { DECLARED_GUTTERS = JSON.parse(readFileSync(GUTTER_FILE, 'utf8')); }
+    catch { DECLARED_GUTTERS = {}; }
+  }
+  const entry = DECLARED_GUTTERS[String(roomNum)];
+  const rails = Array.isArray(entry?.rails) ? entry.rails : [];
+  return rails
+    .filter(r => Array.isArray(r.from) && Array.isArray(r.to)
+                 && r.from.length === 2 && r.to.length === 2
+                 && r.from.every(Number.isInteger) && r.to.every(Number.isInteger))
+    .map(r => ({ row: r.from[0], col: r.from[1],
+                 reaches: [{ row: r.to[0], col: r.to[1] }],
+                 declared: true, why: r.why ?? null }));
+}
+
 /**
  * The squares a room's exits are used from.
  *
@@ -957,6 +985,130 @@ export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = 
       } catch { /* a route we cannot pull is still a route; the step string stands */ }
     }
   }
+
+  // ============================== GUTTERS ==============================
+  //
+  // A GUTTER IS A PLACE YOU FALL INTO AND CANNOT CLIMB OUT OF. The operator named it, and
+  // named the case: Ukgoth's basin, below the declared jump at 36,16 -> 38,10. "There's
+  // nowhere else valid to go in Ukgoth once you've missed the Ukgoth jump" -- the only move
+  // is out through 589 and the long way round, 589 -> 579 -> 578 -> 587, back to Ukgoth to
+  // try the jump again.
+  //
+  // Measured: from 58,29 a character reaches 319 squares. The 589 door at 71,2 is one of
+  // them. The Castle Victoria door at 1,27 and the Sentinel door at 1,66 are NOT. The body
+  // can fall in; nothing walks back out.
+  //
+  // Every route above is baked ANCHOR TO ANCHOR, so a character down there asks for a line
+  // to 71,2, is told "no baked line to the anchor", and stops. Seven of thirteen deaths in
+  // one 30-minute run were in Ukgoth, every health trail the same shape -- a body pinned at
+  // a low number that stops changing. They were not being killed by a hard road. They were
+  // standing in a hole with no way out written down.
+  //
+  // So: one rail per gutter, from a square inside it to every anchor it CAN reach. Nothing
+  // else changes -- anchor-to-anchor is untouched, and a region that can walk home is not a
+  // gutter and gets nothing.
+  //
+  // BOUNDED, because a room has as many regions as it has corners. Only components big
+  // enough to strand somebody are considered, and only a few per room: the world has 9,375
+  // pockets and almost all of them are two squares behind a rock.
+  const GUTTER_MIN_SQUARES = 24;
+  const GUTTER_LIMIT = 6;
+  const gutters = [];
+  {
+    // WHICH EXITS CAN THIS SQUARE STILL GET TO — asked of every square at once.
+    //
+    // Walking the strongly connected components missed the case entirely: a basin walled by
+    // one-way ledges is mostly SINGLETONS, so the very square the operator's characters were
+    // standing on had a component of one and was skipped, while its forward reach is 319
+    // squares. Components describe shape; a gutter is about lost options.
+    //
+    // So the edges are reversed once and flooded from each anchor. That gives, for every
+    // square, the set of exits it can still reach -- three floods for a room, not thousands.
+    // A square whose set is a PROPER SUBSET of the body's is in a gutter: it is still
+    // somewhere, but not everywhere it should be. Group by that set, and each group gets one
+    // rail from its deepest square to the exits it has left.
+    const back = new Map();                       // "r,c" -> array of squares that step INTO it
+    for (let r = 1; r <= geometry.rows; r++)
+      for (let cc = 1; cc <= geometry.cols; cc++) {
+        if (!geometry.standable(r, cc)) continue;
+        for (const n of geometry.neighbors(r, cc, { collision })) {
+          const k = `${n.row},${n.col}`;
+          const list = back.get(k); if (list) list.push([r, cc]); else back.set(k, [[r, cc]]);
+        }
+      }
+    const reachesAnchor = new Map();              // "r,c" -> Set of anchor keys it can reach
+    for (const a of squares) {
+      const seedKey = `${a.row},${a.col}`;
+      const seen = new Set([seedKey]);
+      const stack = [seedKey];
+      while (stack.length) {
+        const cur = stack.pop();
+        for (const [pr, pc] of back.get(cur) ?? []) {
+          const k = `${pr},${pc}`;
+          if (seen.has(k)) continue;
+          seen.add(k); stack.push(k);
+        }
+      }
+      for (const k of seen) {
+        const set = reachesAnchor.get(k); if (set) set.add(seedKey);
+        else reachesAnchor.set(k, new Set([seedKey]));
+      }
+    }
+    const anchorKeys = new Set(squares.map(q => `${q.row},${q.col}`));
+    const bodySig = reachesAnchor.get(mainSeed ? `${mainSeed.r},${mainSeed.c}` : '') ?? new Set();
+    const groups = new Map();                     // signature -> squares carrying it
+    for (const [k, set] of reachesAnchor) {
+      if (anchorKeys.has(k)) continue;
+      if (set.size === 0 || set.size >= bodySig.size) continue;   // loses nothing
+      let subset = true;
+      for (const a of set) if (!bodySig.has(a)) { subset = false; break; }
+      if (!subset) continue;                      // reaches something the body cannot: not a loss
+      const sig = [...set].sort().join('|');
+      const g = groups.get(sig); if (g) g.push(k); else groups.set(sig, [k]);
+    }
+    for (const [sig, members] of [...groups.entries()].sort((a, b) => b[1].length - a[1].length)) {
+      if (gutters.length >= GUTTER_LIMIT) break;
+      if (members.length < GUTTER_MIN_SQUARES) continue;
+      // The rail starts from the square FURTHEST from the exits it has left, because that is
+      // the one a character is most likely to be standing on and least able to leave.
+      const targets = sig.split('|').map(s => { const [r, c] = s.split(',').map(Number); return { row: r, col: c }; });
+      let deepest = members[0], best = -1;
+      for (const m of members) {
+        const [r, c] = m.split(',').map(Number);
+        const d = Math.min(...targets.map(t => Math.max(Math.abs(t.row - r), Math.abs(t.col - c))));
+        if (d > best) { best = d; deepest = m; }
+      }
+      const [gr, gc] = deepest.split(',').map(Number);
+      gutters.push({ row: gr, col: gc, squares: members.length, reaches: targets });
+    }
+  }
+  // The operator's rails, added to whatever the detector found. A declared head that the
+  // detector also found is kept once -- the declaration carries the `why`, so it wins.
+  for (const d of declaredGutters(room.num)) {
+    const at = `${d.row},${d.col}`;
+    const i = gutters.findIndex(g => `${g.row},${g.col}` === at);
+    if (i >= 0) gutters[i] = { ...gutters[i], ...d, squares: gutters[i].squares };
+    else gutters.push({ ...d, squares: null });
+  }
+  for (const g of gutters) {
+    const { came, key } = bfs(geometry, g.row, g.col, { collision });
+    const strict = preferCoarseFloor
+      ? bfs(geometry, g.row, g.col, { collision, coarseFloor: true, clearance: CLEARANCE_PENALTY })
+      : null;
+    for (const to of g.reaches) {
+      const pair = `${g.row},${g.col}>${to.row},${to.col}`;
+      if (came.has(key(to.row, to.col))) reach[pair] = 1;
+      let p = null;
+      if (strict && strict.came.has(strict.key(to.row, to.col))) {
+        p = pathString(strict.came, strict.key, g.row, g.col, to.row, to.col);
+        if (p != null) strictRoutes++;
+      }
+      if (p == null) p = pathString(came, key, g.row, g.col, to.row, to.col);
+      if (p == null) { if (reach[pair]) unspellable++; continue; }
+      routes[pair] = p;
+    }
+  }
+
   return {
     room: room.num,
     rows: geometry.rows, cols: geometry.cols,
@@ -996,6 +1148,12 @@ export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = 
                                 from_body: !!a.from_body,
                                 ...(a.body_reachable ? { body_reachable: true } : {}) })),
     routes,
+    // GUTTERS — see the block that bakes them. A place the room can drop you into and not
+    // walk you out of, with the anchors it CAN still reach. Recorded because "why is there a
+    // rail from the middle of a room" is a fair question, and because a room growing a new
+    // gutter is a fact about the map worth noticing rather than a line in a route table.
+    ...(gutters.length ? { gutters: gutters.map(g => ({ row: g.row, col: g.col, squares: g.squares,
+                                                       reaches: g.reaches.map(q => `${q.row},${q.col}`) })) } : {}),
     // The same routes as verified PIVOTS. See where these are built: a walker given
     // squares re-discovers the off-plan problem; a walker given pivots does not.
     pivots,
