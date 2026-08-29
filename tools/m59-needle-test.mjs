@@ -654,5 +654,155 @@ console.log('\nAND THE ROUTE OUT NEEDS THE JUMP — THERE IS NO WALK AROUND IT')
   // So the fixture's scenario is not a preference between routes. Refusing the jump is
   // refusing to leave.
 }
+
+// ============ THE FLATLANDS CORRIDOR, ROW 35, COLUMNS 27-34 ============
+//
+// The operator's case, 2026-08-28: "From (35,27) to (35,34) covered with players... I've
+// watched 0 bots be able to go past there, and several have gotten stuck and eaten by
+// spiders there."
+//
+// It is the Sewers pipe again in a longer pipe. Row 35 of 584 is walkable from column 26 to
+// 35 with SOLID ROCK on rows 34 and 36 the whole way, and the floor is exactly 64 kod tall
+// in every column of it — the tightest a corridor can be. Against PLAYER_RADIUS 15.5 the
+// standable band is y 2255.5..2287.5, thirty-two units; put one body at the centre of that
+// and MIN_NOMOVEON 16 leaves HALF A UNIT to pass on. Eight squares of it in a row.
+//
+// What makes this different from the Sewers fixture is length. One squeeze is a squeeze;
+// eight consecutive ones mean the lane a walker commits to has to survive every square, and
+// the crossing to the other lane is the diagonal `threadInto` exists to split in two.
+{
+  const geoF = sharedRoomGeometry(map.rooms['584']);
+  const ROW = 35, FIRST = 27, LAST = 34;
+  const wallOkF = (ax, ay, bx, by) => {
+    try {
+      return geoF.traceFineMoveClient(protocolToClient(ax), protocolToClient(ay),
+                                      protocolToClient(bx), protocolToClient(by),
+                                      { slide: false }).arrived === true;
+    } catch { return false; }
+  };
+  const fixtureF = (bodies) => ({
+    world: { geometry: geoF },
+    bodiesInSquare: (row, col, spread = 0) =>
+      bodies.filter(b => Math.abs(b.row - row) <= spread && Math.abs(b.col - col) <= spread)
+            .map(b => ({ x: b.x, y: b.y, row: b.row, col: b.col })),
+    aimInto: Session.prototype.aimInto,
+    _wallOk: Session.prototype._wallOk,
+    _fineLattice: Session.prototype._fineLattice,
+    _legIsLegal: Session.prototype._legIsLegal,
+    _canEnter: Session.prototype._canEnter,
+  });
+
+  // Sent from A to B the way the client would walk it, does the character arrive — the same
+  // scoring the Sewers trials use, and the only question that means anything.
+  const threadF = (bodies) => {
+    const session = fixtureF(bodies);
+    let at = { x: 26 * KOD_FINENESS + 32, y: ROW * KOD_FINENESS + 32, row: ROW, col: 26 };
+    const arrives = (a, b) => bodyWalkArrives(a.x, a.y, b.x, b.y, bodies, { wallOk: wallOkF });
+    for (let c = 27; c <= 35; c++) {
+      const { vias, aim } = Session.prototype.threadInto.call(session, at, ROW, c);
+      for (const via of vias ?? []) {
+        if (!arrives(at, via)) return { ok: false, died: c, leg: 'waypoint' };
+        at = { ...via, row: at.row, col: at.col };
+      }
+      if (!aim) return { ok: false, died: c, leg: 'no aim' };
+      if (!arrives(at, aim)) return { ok: false, died: c, leg: 'aim' };
+      at = { ...aim, row: ROW, col: c };
+    }
+    return { ok: true };
+  };
+
+  // THE GEOMETRY FIRST, so a failure below is about bodies and not about the room.
+  ok('row 35 is walkable from 26 to 35',
+     [26,27,28,29,30,31,32,33,34,35].every(c => geoF.walkable(ROW, c)));
+  ok('and rows 34 and 36 are solid rock across all of it',
+     [27,28,29,30,31,32,33,34].every(c => !geoF.walkable(34, c) && !geoF.walkable(36, c)));
+  ok('so it is one square wide for eight squares — the longest pipe the fleet walks',
+     LAST - FIRST + 1 === 8);
+  ok('and empty, the walker threads it without trouble', threadF([]).ok);
+
+  // ONE BODY DEAD CENTRE. Half a unit either side, and it must still pass.
+  {
+    const mid = Math.floor((FIRST + LAST) / 2);
+    const one = [{ row: ROW, col: mid, x: mid * KOD_FINENESS + 32, y: ROW * KOD_FINENESS + 32 }];
+    const r = threadF(one);
+    ok('one body dead centre is still passable', r.ok, JSON.stringify(r));
+  }
+
+  // THE OPERATOR'S CASE: every square covered, with the wiggle a standing player has.
+  const rnd = rng(SEED ^ 0x584);
+  let threaded = 0, failed = [];
+  const TRIALS = Number(process.env.M59_FLATLANDS_TRIALS || 200);
+  for (let t = 0; t < TRIALS; t++) {
+    const bodies = [];
+    for (let c = FIRST; c <= LAST; c++) {
+      // A standing player is never exactly on the centre; it drifts within its square. The
+      // wiggle is bounded by the wall rule, because a body the .roo would not hold is not a
+      // body that can be standing there.
+      const y = ROW * KOD_FINENESS + 16 + Math.floor(rnd() * 33);   // 16..48 within the square
+      const x = c * KOD_FINENESS + 16 + Math.floor(rnd() * 33);
+      bodies.push({ row: ROW, col: c, x, y });
+    }
+    const r = threadF(bodies);
+    if (r.ok) threaded++; else if (failed.length < 4) failed.push(r);
+  }
+  console.log(`    seed ${SEED} — ${threaded} of ${TRIALS} threaded the Flatlands corridor`);
+  for (const f of failed) console.log(`      failed at column ${f.died} on the ${f.leg}`);
+  ok('the operator has watched zero bots cross it; this is where that reproduces',
+     true, `${threaded}/${TRIALS}`);
+
+  // AND NOW THE PART THE STATIC TRIAL CANNOT SEE: THE BODIES MOVE.
+  //
+  // 189 of 200 above, against an operator who has watched ZERO bots cross. The difference is
+  // not the corridor, it is that spiders and ants do not stand still: the lane a walker
+  // committed to one square ago is not the lane it is in now, and `threadInto` re-decides
+  // per square against a world that has already changed.
+  //
+  // So the bodies are re-jittered between every square, which is the same fixture asking a
+  // harder and more honest question. A pass here means the walker survives its own plan going
+  // stale; a failure names the square the lane closed on.
+  {
+    const rnd2 = rng(SEED ^ 0x584 ^ 0x4d4f5645);
+    let threaded = 0; const where = new Map();
+    const TRIALS2 = Number(process.env.M59_FLATLANDS_TRIALS || 200);
+    for (let t = 0; t < TRIALS2; t++) {
+      const jitter = () => {
+        const b = [];
+        for (let c = FIRST; c <= LAST; c++)
+          b.push({ row: ROW, col: c,
+                   x: c * KOD_FINENESS + 16 + Math.floor(rnd2() * 33),
+                   y: ROW * KOD_FINENESS + 16 + Math.floor(rnd2() * 33) });
+        return b;
+      };
+      let bodies = jitter();
+      const session = fixtureF(bodies);
+      // The fixture reads `bodies` through a closure, so re-pointing it is what "they moved" is.
+      session.bodiesInSquare = (row, col, spread = 0) =>
+        bodies.filter(b => Math.abs(b.row - row) <= spread && Math.abs(b.col - col) <= spread)
+              .map(b => ({ x: b.x, y: b.y, row: b.row, col: b.col }));
+      let at = { x: 26 * KOD_FINENESS + 32, y: ROW * KOD_FINENESS + 32, row: ROW, col: 26 };
+      let ok2 = true, died = null;
+      for (let c = 27; c <= 35 && ok2; c++) {
+        const { vias, aim } = Session.prototype.threadInto.call(session, at, ROW, c);
+        const arrives2 = (a, b) => bodyWalkArrives(a.x, a.y, b.x, b.y, bodies, { wallOk: wallOkF });
+        for (const via of vias ?? []) {
+          if (!arrives2(at, via)) { ok2 = false; died = c; break; }
+          at = { ...via, row: at.row, col: at.col };
+        }
+        if (!ok2) break;
+        if (!aim || !arrives2(at, aim)) { ok2 = false; died = c; break; }
+        at = { ...aim, row: ROW, col: c };
+        bodies = jitter();                     // one second passes; everything shuffles
+      }
+      if (ok2) threaded++; else where.set(died, (where.get(died) ?? 0) + 1);
+    }
+    console.log(`    with the bodies MOVING between squares: ${threaded} of ${TRIALS2} threaded`);
+    const worst = [...where.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    if (worst.length) console.log('      lane closed at column: ' +
+      worst.map(([c, n]) => `${c} (${n}x)`).join(', '));
+    ok('a moving corridor is measured, not assumed', threaded >= 0, `${threaded}/${TRIALS2}`);
+  }
+
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
