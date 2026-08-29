@@ -497,6 +497,59 @@ never-descend closure from the bottom of the climb reduced 1,660 walkable square
 across nineteen recorded positions. The operator's phrase for it is the right one: these are
 all just constraints in the bot's head.
 
+## A rule the game does not have deletes ground, and the ground it deletes is a corridor
+
+`_occupiable` — the predicate under `standPoint`, and therefore under everything the router
+and the mover agree about — required a sector to be **taller than the player** before a body
+could stand in it: `ceiling - floor >= PLAYER_HEIGHT` (768). Meridian 59 has no such rule.
+
+The client tests height in exactly one place, at a wall crossing, and only when the wall
+carries an above texture (`clientd3d/move.c:551`):
+
+```c
+(sidedef->above_bmap == NULL ||
+ (sidedef->above_bmap != NULL && wall->z2 - z >= player.height))
+```
+
+That is the wall's upper edge against the player's **feet**. Nothing in the client, and
+nothing server-side — `UserMove` bypasses `ReqSomethingMoved` — ever asks whether a body fits
+under the ceiling it is standing beneath. `canCrossWall` already implements the real rule
+faithfully, gating on `!sd.aboveType`; the standing test was a second, invented one.
+
+**What it cost: the 52 -> 110 and 2 -> 110 legs, permanently.** Room 108's jump take-off at
+29,43 is entered by a sewer pipe at col 47, rows 35-42 — eight squares of dead-flat floor,
+961 of 961 fine points standable at one uniform height, with 704 units of headroom. All eight
+were refused, `standPoint` returned null for every one, and the only way in vanished. The
+take-off was stranded on a 12-square island no anchor reached, the bake wrote *"no baked line
+to the anchor 21,37"* 91 times, and those two legs never completed once in any run. The jump
+itself was never the problem: placed on the ledge, `m59-jumptest.mjs` clears it 3 for 3.
+
+Removing the invented rule returns 1.15% of the world — 3961 squares over 74 rooms — and
+joins the take-off to room 108's body (578 -> 604 squares, 66 fragmented regions -> 29).
+
+**HEIGHT DOES NOT SORT WALKABLE FROM UNWALKABLE, which is why no threshold is the answer.**
+The rule was introduced on one counter-example: The Queen's Way 22,10, 512 units of headroom,
+found on inspection to be the inside of a locked tower. But the distribution under 768 is a
+continuum, and most of it is ground people walk on daily — the General Store of Jasper is
+672, East Ende is 640 across 354 squares, The Hungry Vaults 592 across 308. There is no
+number that keeps the tower out and lets the shop in.
+
+**ENCLOSURE is what separates them, and the trace already decides enclosure.** Under the
+corrected predicate the locked tower is a *sealed one-square region*: nothing steps into it,
+because the walls around it are not crossable. An isolated pocket no route reaches costs bake
+time. A deleted corridor costs a leg that can never run. That asymmetry is the whole argument
+for `standable`'s stated posture — permissive here, because the trace is the real gate.
+
+Filler sectors are still refused: the room compiler emits solid space outside the room with
+`ceilingHeight` equal to `floorHeight`, and `ceiling - floor > 0` excludes all 3655 of them.
+
+**A predicate change invalidates every baked step mask**, and the manifest cannot see it —
+it hashes geometry, so a stale table verifies perfectly while encoding the wrong doors. That
+is what `STEP_MASK_VERSION` is for; this change took it to **6**. Until the rebake lands the
+router degrades to coarse-grid planning, which is *more* permissive, not less: the routing
+suite's room 27 fixture starts offering the stranded 2500 boundary. Rebake before reading any
+routing result.
+
 ## Exits, reach and the safe wall
 
 - **EXITS ARE NOT DOORS, AND THEY ARE NOT 1:1.** Walking from room A to room B through

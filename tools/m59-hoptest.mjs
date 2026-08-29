@@ -63,10 +63,18 @@ export function startsIn(geometry, n) {
  * is the thing under test — it picks the exit mechanism, walks to the anchor, and crosses.
  * Testing `go_through` alone would exercise the half that already works.
  */
-export async function tryHop(agent, roomObj, start, to, { maxMs = 180000, pollMs = 3000 } = {}) {
-  const ids = await resolve([agentNameOf(agent)]);
-  const id = ids[agentNameOf(agent)];
-  if (id == null) return { ok: false, why: 'cannot resolve the character' };
+export async function tryHop(agent, roomObj, start, to,
+                              { maxMs = 180000, pollMs = 3000, name = null } = {}) {
+  // THE CHARACTER NAME IS ASKED FOR, NOT LOOKED UP IN A TABLE OF FIVE. `agentNameOf` is a
+  // hard-coded map of the arena fleet, so every other fleet resolved to its own agent id --
+  // `show name shadow01` finds nothing, and the whole sweep came back "cannot resolve the
+  // character" for a character that was in game and healthy. Same shape as this tool's
+  // keeper-port sweep: a copy of a fact that moved. The caller passes the name the broker
+  // itself reports; the table stays as the fallback for the fleets it does describe.
+  const who = name ?? agentNameOf(agent);
+  const ids = await resolve([who]);
+  const id = ids[who];
+  if (id == null) return { ok: false, start, why: `cannot resolve the character ${who}` };
 
   // CANCEL WHATEVER IT WAS DOING FIRST. A character left mid-journey by an earlier run is
   // `busy`, and the broker refuses a second travel with a sentence rather than a code —
@@ -114,6 +122,12 @@ const NAME_OF = { t0: 'TESTER', arena1: 'Alpha', arena2: 'Bravo', arena3: 'Charl
                   arena4: 'Delta', arena5: 'Echo' };
 export const agentNameOf = a => NAME_OF[a] ?? a;
 
+// A FAILURE WITHOUT A START IS STILL A FAILURE, AND THE REPORT MUST SURVIVE IT. One return
+// path in `tryHop` carried no `start`, and the summary line dereferenced it unconditionally
+// -- so a run that failed for a reason worth reading died in its own reporter with a
+// TypeError, printing nothing at all. The reason is the useful half; print it either way.
+const startLabel = s => (s && s.row != null && s.col != null) ? `${s.row},${s.col}` : 'start unknown';
+
 // --------------------------------------------------------------------------- cli
 if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
   const argv = process.argv.slice(2);
@@ -154,6 +168,23 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
   const tries = Number(flag('tries', 3));
   const bots = (flag('bots', 'Alpha,Bravo,Charlie,Delta,Echo')).split(',').map(s => s.trim());
 
+  // ASK THE BROKER WHO ITS CHARACTERS ARE. The alternative is `NAME_OF`, which knows five
+  // arena agents and nothing else, so every fleet outside it failed to resolve -- this run
+  // reported 0/4 with "cannot resolve the character shadow01" about a character that was in
+  // game and healthy, which reads exactly like a broken doorway. Same shape as the keeper
+  // port sweep in this file: a copy of a fact that moved.
+  //
+  // One call, to the same source `m59-which.mjs` trusts. A broker that cannot answer leaves
+  // the map empty and the old table still applies.
+  const nameOf = new Map();
+  try {
+    const f = await broker('fleet', {}, { timeoutMs: 60000 });
+    for (const a of (f?.fleet ?? []))
+      if (a?.agent && a?.character) nameOf.set(a.agent, a.character);
+  } catch { /* fall back to NAME_OF */ }
+  if (nameOf.size) process.stderr.write(`the broker names ${nameOf.size} character(s)
+`);
+
   process.stderr.write('loading the baked map...\n');
   const map = JSON.parse(readFileSync(movementMapFile(), 'utf8'));
   const byRoom = new Map();
@@ -180,8 +211,10 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
 
     // One bot per try, all at once. They are in the same room and may block each other,
     // which is a fact about the fleet rather than a flaw in the test.
-    const attempts = await Promise.all(starts.map((s, k) =>
-      tryHop(agentFor(bots[k % bots.length]), roomObj, s, to)));
+    const attempts = await Promise.all(starts.map((s, k) => {
+      const a = agentFor(bots[k % bots.length]);
+      return tryHop(a, roomObj, s, to, { name: nameOf.get(a) ?? null });
+    }));
 
     // Skipped attempts are not tries. See the note on `skipped` above: a bot that was
     // already busy tells us nothing about the doorway, so it must leave the denominator
@@ -198,7 +231,7 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
       console.log(`      (${skipped.length} attempt(s) skipped — the bot was busy, not a boundary result)`);
     console.log(`  ${String(from).padStart(4)} -> ${String(to).padStart(4)}   ` +
                 `${ok.length}/${results.length}    ${String(Math.round(med / 1000) + 's').padStart(6)}   ` +
-                (fails.length ? `${fails[0].start.row},${fails[0].start.col} — ${String(fails[0].why).slice(0, 46)}` : ''));
+                (fails.length ? `${startLabel(fails[0].start)} — ${String(fails[0].why).slice(0, 46)}` : ''));
     if (fails.length) bad.push({ from, to, fails: fails.map(f => ({ start: f.start, why: f.why, stuck_in: f.stuck_in })) });
     book.runs.push({ at: Date.now(), from, to, tries: results.length, ok: ok.length, median_ms: med,
                      failures: fails.map(f => ({ start: f.start, why: f.why })) });
@@ -210,7 +243,7 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
   if (bad.length) {
     console.log('\n  boundaries with failures:');
     for (const b of bad) console.log(`    ${b.from} -> ${b.to}: ${b.fails.length} — ` +
-      b.fails.map(f => `${f.start.row},${f.start.col} (${String(f.why).slice(0, 40)})`).join('; '));
+      b.fails.map(f => `${startLabel(f.start)} (${String(f.why).slice(0, 40)})`).join('; '));
   }
   console.log(`\nrecorded in ${BOOK}`);
 }

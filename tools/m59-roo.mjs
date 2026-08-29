@@ -596,7 +596,17 @@ export const STEP_MASK_DIRS = DIRS;
 //      `_traceMoverStep`, without which the rule is inert: a square can straddle a cliff
 //      face, and the mover was landing on the low half while `walkTo` counted the square
 //      as reached. See `enforceStepHeight`.
-export const STEP_MASK_VERSION = 5;
+//   5  and stops demanding that a sector be taller than the player before a body may STAND
+//      in it. `_occupiable` required `ceiling - floor >= PLAYER_HEIGHT`, which is a rule
+//      Meridian 59 does not have: the client's only height test is at a wall crossing with
+//      an above texture (move.c:551), never against the ceiling you are standing under.
+//      It deleted 3961 squares over 74 rooms -- the General Store of Jasper at 672, East
+//      Ende at 640, The Hungry Vaults at 592 -- and among them the eight-square sewer pipe
+//      that is the only way to room 108's jump take-off, which is why 52->110 and 2->110
+//      never once completed. A mask baked before this encodes those squares as sealed, and
+//      a mask that verifies while encoding the wrong doors is the thing this counter is
+//      for.
+export const STEP_MASK_VERSION = 6;
 const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies
@@ -1682,7 +1692,42 @@ export class RoomGeometry {
     const ceiling = ceilingHeightAt(x, y, leaf.sector);
     const floor = floorHeightAt(x, y, leaf.sector);
     if (!Number.isFinite(ceiling) || !Number.isFinite(floor)) return false;
-    return ceiling - floor >= PLAYER_HEIGHT;
+    // AND THE SPACE HAS TO BE A SPACE -- BUT NOT TALLER THAN THE PLAYER. The paragraph above
+    // this one is kept because its first half is right and its second half cost the 52->110
+    // leg. Filler sectors with `ceilingHeight` equal to `floorHeight` are still refused, and
+    // that is what stops rock being swallowed into a room body. `>= PLAYER_HEIGHT` is a
+    // different claim, and the game does not make it.
+    //
+    // The client asks about height in exactly one place, at a WALL CROSSING, and only when
+    // the wall carries an above texture (clientd3d/move.c:551):
+    //
+    //     (sidedef->above_bmap == NULL ||
+    //      (sidedef->above_bmap != NULL && wall->z2 - z >= player.height))
+    //
+    // That is the wall's upper edge against the player's FEET. Nothing in the client and
+    // nothing server-side (`UserMove` bypasses `ReqSomethingMoved`) asks whether a body fits
+    // under the ceiling it is standing beneath. `stepAllowedByCollision` and
+    // `_traceMoverStep` already enforce the crossing rule, which is where height lives.
+    //
+    // AND HEIGHT DOES NOT SORT WALKABLE FROM UNWALKABLE, which is the load-bearing fact. The
+    // argument for 768 was one counter-example, The Queen's Way 22,10 at 512 units, found to
+    // be the inside of a locked tower. But the whole distribution under 768 is a continuum,
+    // and it is full of ground people walk on every day: the General Store of Jasper is 672,
+    // East Ende is 640 across 354 squares, The Hungry Vaults 592 across 308. There is no
+    // threshold that keeps the tower out and lets the shop in, because stature is not what
+    // separates them -- ENCLOSURE is, and the trace already decides enclosure.
+    //
+    // WHAT THE INVENTED RULE COST. Room 108's jump take-off is entered by a sewer pipe at col
+    // 47, rows 35-42: eight squares of dead-flat floor, 961 of 961 fine points standable at
+    // one height, 704 units of headroom against the 768 demanded here. All eight refused,
+    // `standPoint` null for every one, and the only way in vanished -- stranding the take-off
+    // 29,43 on a 12-square island no anchor reached. That is the "no baked line to the anchor
+    // 21,37" the ledger wrote 91 times, and why 52->110 and 2->110 never completed once. The
+    // jump was never the problem: placed on the ledge, it clears 3 for 3.
+    //
+    // It returns 1.15% of the world -- 3961 squares over 74 rooms. An isolated pocket that no
+    // route reaches costs bake time; a deleted corridor costs a leg that can never run.
+    return ceiling - floor > 0;
   }
 
   /**

@@ -364,5 +364,90 @@ console.log('THE ARRIVAL GUARD: ask whether we are there before reporting that w
      no.arrived !== true && !!no.reason, JSON.stringify(no));
 }
 
+// ---------------------------------------------------------------------------
+// THE SAFE-WALL POCKET, FOR THE FIRST HOP. A character parked on a safe wall is standing in
+// a collision pocket the router cannot plan out of to its own room's exits — the first hop
+// fails "no route" though the room graph is fine and the character walked in. walkTo already
+// retreats along the breadcrumbs when a FINE target is cut off; travel's ROOM-level route
+// fails before any walkTo runs, so it must run the same escape here or a safe-wall hunter can
+// never set off for town: travel acks started, stumbles six times, and hands the body back.
+console.log('a first-hop route failure retreats off the safe wall instead of giving up');
+{
+  const s = fakeSession({ rooms: [1, 2, 3] });
+  s.pocketed = true;
+  let retreats = 0, sawUntil = false;
+  const realRoute = s.world.route.bind(s.world);
+  s.world.route = (to, opts) => s.pocketed
+    ? { found: false, reason: 'no route the mover can walk through this geometry' }
+    : realRoute(to, opts);
+  s.retreatAlongBreadcrumbs = async ({ until } = {}) => {
+    retreats++;
+    if (typeof until === 'function') sawUntil = true;
+    s.pocketed = false;                 // stepped back into the main region; the route reappears
+    return { moved: true, steps: 3 };
+  };
+  const r = await travel.call(s, 3, {});
+  ok('the pocketed journey still arrives', r.arrived === true);
+  ok('by retreating along the breadcrumbs exactly once', retreats === 1);
+  ok('and the retreat was asked to stop when the route reappeared', sawUntil);
+  ok('and the escape is on the log', (r.log || []).some(e => e.pocket_escape));
+}
+
+{
+  // A pocket with no breadcrumb trail out (a character teleported in, or the trail is stale)
+  // must still end honestly rather than spin: the escape is tried once, comes back empty, and
+  // the ordinary stumble takes over and gives up with the real reason.
+  const s = fakeSession({ rooms: [1, 2] });
+  s.world.route = () => ({ found: false, reason: 'no route the mover can walk through this geometry' });
+  let tries = 0;
+  s.retreatAlongBreadcrumbs = async () => { tries++; return { moved: false, steps: 0 }; };
+  const r = await travel.call(s, 2, { maxStumbles: 2 });
+  ok('a pocket it cannot retreat out of does not spin forever', r.arrived === false);
+  ok('the escape is attempted once, then not again', tries === 1);
+  ok('and the real reason survives', /no route/.test(r.reason));
+}
+
+// ---------------------------------------------------------------------------
+// THE PARKED FIGHTER — breadcrumbs are stale in-place shuffles, so the retreat cannot move it;
+// the main-region escape (walk to a from_body anchor the room body reaches) is what clears it.
+console.log('a stale-breadcrumb pocket escapes to the main region instead of giving up');
+{
+  const s = fakeSession({ rooms: [1, 2, 3] });
+  s.pocketed = true;
+  const realRoute = s.world.route.bind(s.world);
+  s.world.route = (to, opts) => s.pocketed
+    ? { found: false, reason: 'no route the mover can walk through this geometry' }
+    : realRoute(to, opts);
+  let retreats = 0, escapes = 0, sawGen = false;
+  s.retreatAlongBreadcrumbs = async () => { retreats++; return { moved: false, steps: 0 }; };
+  s.escapeToMainRegion = async ({ movementGeneration } = {}) => {
+    escapes++;
+    if (movementGeneration !== undefined) sawGen = true;
+    s.pocketed = false;                        // walked to a from_body anchor; the route reappears
+    return { moved: true, steps: 4, target: { col: 24, row: 9 } };
+  };
+  const r = await travel.call(s, 3, {});
+  ok('the parked-fighter pocket still arrives', r.arrived === true);
+  ok('the breadcrumb retreat was tried first and could not move it', retreats === 1);
+  ok('the main-region escape then ran exactly once', escapes === 1);
+  ok('and it was threaded the movement generation', sawGen);
+  ok('and the main-region escape is on the log',
+     (r.log || []).some(e => e.pocket_escape === 'main_region'));
+}
+
+{
+  // No from_body anchor to reach either — both escapes return moved:false, then the ordinary
+  // stumble gives up honestly rather than spinning.
+  const s = fakeSession({ rooms: [1, 2] });
+  s.world.route = () => ({ found: false, reason: 'no route the mover can walk through this geometry' });
+  let br = 0, mr = 0;
+  s.retreatAlongBreadcrumbs = async () => { br++; return { moved: false, steps: 0 }; };
+  s.escapeToMainRegion = async () => { mr++; return { moved: false, steps: 0 }; };
+  const r = await travel.call(s, 2, { maxStumbles: 2 });
+  ok('a pocket with no escape at all does not spin forever', r.arrived === false);
+  ok('each escape is attempted once, then not again', br === 1 && mr === 1);
+  ok('and the real reason still survives', /no route/.test(r.reason));
+}
+
 console.log(`\n${pass + fail} assertions: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

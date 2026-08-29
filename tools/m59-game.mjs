@@ -2038,8 +2038,28 @@ class Session {
     return this.join(this.credentials);
   }
 
+  // "NOT IN GAME" IS TRUE OF TWO DIFFERENT FAULTS AND ONLY ONE OF THEM IS A CONNECTION.
+  //
+  // A session that HAS joined and dropped is the case this sentence was written for, and
+  // "call join first" is the right advice for it. A session that has NEVER joined — no
+  // client, no join in flight, no credentials — is a session nobody ever tried to log in,
+  // and on this broker that has one overwhelmingly common cause: the name is wrong. A
+  // character name where an agent name goes used to mint exactly such a session, and then
+  // every call against it reported a connection problem for a naming one, which sends the
+  // reader (or a monitoring layer, which is the point of this harness) to restart and
+  // rejoin a character that was never unwell. session() in m59-broker.mjs now refuses that
+  // name outright; this stays because it is the guard that was LYING, and a session can
+  // still reach here unjoined by other routes.
   need() {
-    if (!this.live) throw new Error(`agent "${this.name}" is not in game — call join first`);
+    if (!this.live) {
+      if (!this.client && !this.joining && !this.credentials)
+        throw new Error(`agent "${this.name}" was never joined — this session holds no ` +
+                        `credentials and no connection was ever attempted for it. If the ` +
+                        `character is in game, the agent name is probably wrong (an agent ` +
+                        `name is not the character's name); otherwise join it with an ` +
+                        `account and password.`);
+      throw new Error(`agent "${this.name}" is not in game — call join first`);
+    }
     return this.client;
   }
 
@@ -4978,6 +4998,44 @@ class Session {
     return { moved: steps > 0, steps, crumbs_left: crumbs.length,
              position: me ? { col: me.col, row: me.row, x: me.x, y: me.y } : null,
              ...(blocked ? { reason: blocked } : {}) };
+  }
+
+  // LEAVE A SAFE-WALL POCKET FOR THE ROOM'S MAIN BODY.
+  //
+  // Runtime geometry carries no region labels — only the bake does, and only on exit ANCHORS
+  // (m59-routes.json: each anchor has `region` and `from_body`; the room has `main_region`). A
+  // go-door anchor is itself a one-square pocket (room 39's anchors are region 7/0, not its main
+  // region 21), but `from_body:true` means the room's main body was PROVEN able to walk to it —
+  // which is exactly the square that re-enables the first hop, because reach() is 0 steps from a
+  // square you are standing on and exits() then offers that crossing. Walk to the nearest such
+  // anchor; walkTo's walkFine fallback does the BSP crossing out of the pocket. This is the escape
+  // for a character PARKED on a safe wall, where retreatAlongBreadcrumbs (which needs a fresh trail
+  // in) cannot help. Not lifted by any test, so it may use module-scope `activeRoutes` freely.
+  async escapeToMainRegion({ movementGeneration = this.movementGeneration, controlToken } = {}) {
+    const c = this.need();
+    const geo = this.world?.geometry, me = c.self;
+    const roomNum = Number(this.world?.room?.num ?? NaN);
+    if (!geo || !me || !Number.isFinite(roomNum)) return { moved: false, reason: 'no geometry/self/room' };
+    const table = activeRoutes();
+    const baked = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+    const targets = (baked?.anchors ?? [])
+      .filter(a => a.from_body && Number.isFinite(a.row) && Number.isFinite(a.col))
+      .map(a => ({ col: a.col, row: a.row, d: Math.hypot(a.col - me.col, a.row - me.row) }))
+      .sort((x, y) => x.d - y.d);
+    if (!targets.length) return { moved: false, reason: 'no from_body anchor to aim for' };
+    const startKey = `${me.col},${me.row}`;
+    for (const t of targets) {
+      if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({});
+      if (`${t.col},${t.row}` === startKey) continue;   // already standing on it
+      const walk = await this.walkTo(t.col, t.row, { movementGeneration, controlToken, maxSteps: 60 })
+        .catch(() => null);
+      if (walk?.cancelled) return this.cancelledMovement({});
+      const now = c.self;
+      if (now && `${now.col},${now.row}` !== startKey)
+        return { moved: true, steps: walk?.steps ?? null, arrived: !!walk?.arrived,
+                 target: { col: t.col, row: t.row }, position: { col: now.col, row: now.row } };
+    }
+    return { moved: false, reason: 'could not walk to any main-body anchor' };
   }
 
   // Walk to a square along a route computed through the real geometry, rather than
@@ -9100,7 +9158,7 @@ class Session {
     // "out of the first room" is time in the room exactly like any other.
     const journeyId = `${this.name}-${Date.now().toString(36)}`;
     let enteredAt = Date.now();
-    let hops = 0, stumbles = 0, totalStumbles = 0;
+    let hops = 0, stumbles = 0, totalStumbles = 0, pocketEscaped = false, mainRegionEscaped = false;
     // WHICH DOOR WE CAME IN BY, because that is half of a track's identity. A crossing of a
     // room is not one route, it is one per entrance — Western border of the Twisted Wood is
     // entered from three different rooms and leaves by three more — so a book keyed only on
@@ -9296,6 +9354,57 @@ class Session {
           : null,
       });
       if (!route.found) {
+        // SAFE-WALL POCKET ESCAPE, FOR THE FIRST HOP. A character parked on a safe wall is
+        // standing in one of the 17,402 collision pockets the router cannot plan out of to its
+        // own room's exits — a safe wall IS the coarse grid and the BSP disagreeing (see the
+        // breadcrumb note above and docs/m59-routing.md). `walkTo` already retreats along the
+        // breadcrumbs when a FINE target is cut off, but travel's ROOM-level route fails here,
+        // before any walkTo runs — so without this a character that hunted on a safe wall can
+        // never set off for town: travel acks `started:true`, stumbles six times against the
+        // pocket, and hands the body back to the keeper, which reads as "started then never
+        // moved". Undo the moves that walked it onto the wall until the route reappears, then
+        // re-plan from where that lands. Once per journey — undoing the trail twice unwinds the
+        // journey rather than the pocket, the same bound `walkTo`'s own escape keeps.
+        // `typeof` guard because `travel` is lifted out of this file by text and evaluated
+        // against a minimal fake session in m59-travel-test; the fake has no breadcrumb retreat,
+        // and in that case this must fall through to the ordinary stumble exactly as before.
+        if (!pocketEscaped && typeof this.retreatAlongBreadcrumbs === 'function') {
+          pocketEscaped = true;
+          const escaped = await this.retreatAlongBreadcrumbs({
+            movementGeneration, controlToken,
+            until: () => this.world.route(toRoomNum, {
+              avoid: avoidThisJourney.size || this.barredRooms?.size
+                ? new Set([...(this.barredRooms ?? []), ...avoidThisJourney]) : null,
+            }).found,
+          }).catch(() => null);
+          if (escaped?.cancelled) return this.cancelledMovement({ log });
+          if (escaped?.moved) {
+            log.push({ pocket_escape: true, steps: escaped.steps,
+                       note: 'retreated off a safe wall into the room\'s main region so the first hop could plan' });
+            stumbles = 0;
+            continue;   // re-plan from where the retreat landed
+          }
+        }
+        // POCKET ESCAPE, PART TWO — walk to a square the room BODY reaches. The breadcrumb retreat
+        // above only rescues a body that walked INTO the pocket seconds ago; a character parked and
+        // fighting on a safe wall has breadcrumbs that are tiny in-place shuffles, so the retreat
+        // returns moved:false and the route still cannot plan (from a pocket exits() reaches no
+        // crossing square, availableFirstHops is empty, findPath skips every first hop). So leave
+        // the pocket outright: walk to a from_body exit anchor — a square the bake proved the room's
+        // MAIN body walks to — and standing on a go-anchor makes exits() offer that crossing at 0
+        // steps, which is the first hop the pocket denied. Then re-plan. Once per journey. `typeof`
+        // guard so the lifted-and-evaluated travel test falls straight through to the stumble.
+        if (!mainRegionEscaped && typeof this.escapeToMainRegion === 'function') {
+          mainRegionEscaped = true;
+          const out = await this.escapeToMainRegion({ movementGeneration, controlToken }).catch(() => null);
+          if (out?.cancelled) return this.cancelledMovement({ log });
+          if (out?.moved) {
+            log.push({ pocket_escape: 'main_region', to: out.target ?? null, steps: out.steps ?? null,
+                       note: 'walked off a safe wall to a square the room body reaches so the first hop could plan' });
+            stumbles = 0;
+            continue;   // re-plan from where the escape landed
+          }
+        }
         // A route failure right after an arrival is the transient one. A route failure
         // that survives re-reading the room is real, and is reported as it always was.
         if (await stumble(route.reason || 'no route')) continue;

@@ -53,6 +53,69 @@
    "free_shots": 6,
    "verdict": "inconclusive",
    "why": "nothing hit us on open ground either — nothing was trying"
+  },
+  {
+   "at": 1788037184518,
+   "room": 575,
+   "row": 39,
+   "col": 14,
+   "open": {
+    "row": 34,
+    "col": 9
+   },
+   "seconds": 20,
+   "on_swings": 0,
+   "off_swings": 0,
+   "back_swings": 1,
+   "on_damage": 0,
+   "off_damage": 0,
+   "back_damage": 1,
+   "attackers": 0,
+   "free_shots": 12,
+   "verdict": "inconclusive",
+   "why": "nothing swung at us on open ground either — nothing was trying"
+  },
+  {
+   "at": 1788037251954,
+   "room": 575,
+   "row": 8,
+   "col": 20,
+   "open": {
+    "row": 6,
+    "col": 25
+   },
+   "seconds": 20,
+   "on_swings": 0,
+   "off_swings": 0,
+   "back_swings": 0,
+   "on_damage": 0,
+   "off_damage": 0,
+   "back_damage": 0,
+   "attackers": 0,
+   "free_shots": 11,
+   "verdict": "inconclusive",
+   "why": "nothing swung at us on open ground either — nothing was trying"
+  },
+  {
+   "at": 1788037319277,
+   "room": 575,
+   "row": 14,
+   "col": 8,
+   "open": {
+    "row": 19,
+    "col": 7
+   },
+   "seconds": 20,
+   "on_swings": 0,
+   "off_swings": 2,
+   "back_swings": 0,
+   "on_damage": 0,
+   "off_damage": 3,
+   "back_damage": 0,
+   "attackers": 0,
+   "free_shots": 11,
+   "verdict": "PROVEN",
+   "why": "NOTHING swung on the wall, 2 swing(s) off it, nothing again on return"
   }
  ]
 }

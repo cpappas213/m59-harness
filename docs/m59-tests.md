@@ -193,6 +193,83 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   recycled pid rather than a holder — the process start time is 1ms from the pid file's own
   timestamp, because `m59-service.mjs` writes it as it spawns — and that nothing listening
   anywhere is still exit 0, or `./m59.sh up` could never start a fleet) and
+  `node tools/m59-proxymutate-test.mjs` (59 — **the emulated client could not ACT, and eight
+  MCP tools died on that**. `KeeperProxy.need()` hands its picture client to every tool that
+  acts on something, and it implemented the reading side only — so `fight`, `attack`,
+  `rest`, `escape_underworld`, `cast`, `shop`, `act` and `faction_status` threw a TypeError
+  in the broker before a byte reached the wire: `c.roomContents is not a function`,
+  `c.attack is not a function`, `c.apply is not a function`, and four more. Measured over
+  ~4 hours of supervised play: no usable mutation path at all, on the only kind of
+  character a running fleet has. Three things had to exist for the fix, and this pins all
+  three. THE METHODS, each forwarding to `/action` — the same route the movement tools have
+  used since the keeper split, so the broker still never touches the wire — with the
+  argument names checked on BOTH sides, because a mismatch there is invisible (the keeper's
+  own `travel` case records `toRoomNum` against `to` sending every journey nowhere while
+  the fleet blamed the terrain). THE EVENT WINDOW, because sending the packet is never the
+  whole of a tool here — a merchant refusal is a sentence spoken to the room — and
+  `waitFor` used to answer "there is no event stream here", which eighty-odd call sites
+  read as "nothing happened"; it now asks the process that owns the socket, and keeps the
+  empty shape with `no_event_stream` as the fallback so an older keeper still reads as
+  "nobody could hear" rather than "nothing was said". AND THE REAL SELF OBJECT ID, which is
+  the half that would have gone wrong quietly: `selfId` was the placeholder `-1`, harmless
+  only while this client could not act, and `apply(food, selfId)` is how EATING works
+  (food.kod:56) — the only way past the vigor-80 rest cap. Both ends now refuse to forward
+  a negative target) and
+  `node tools/m59-policyrevert-test.mjs` (42 — **a spot policy that reverts has to leave a
+  line, and for the two flags that have killed people it has to name the writer**. The
+  persistence layer logged exactly one transition, `autopilot.mode`, and the comment beside
+  it says why: a silent revert "was the undiagnosable part". That argument was never
+  carried to the rest of the policy, so `useSafeSpots`/`requireSafeWall` going `true/true`
+  -> `false/false` between two writes left NO line anywhere in the broker log, by
+  construction — and those are the flags deaths #24, #25 and #26 were root-caused to.
+  Death #26: room 586, centipede, `in_safe_spot: false`, every trial reading "not holding a
+  spot — nothing to test", pinned in the open ~18 minutes, after a re-arm 19 minutes
+  earlier had VERIFIED both flags true. Pins that the diff covers EVERY field rather than a
+  watchlist — a watchlist is how `purpose` stayed out of a schema for a year with every
+  keeper's audit switched off — while sorting the survival pair to the front and reading it
+  in the order the policy is reasoned in rather than alphabetically; that a key appearing
+  or disappearing is a change and not a silence, which is what a revert actually looks like
+  on disk; that `requireSafeWall` without `useSafeSpots` is coerced UP rather than down,
+  because a caller that asked for a wall asked for MORE caution and clearing the stricter
+  flag would answer that by removing it, while the other three combinations are all
+  meaningful and are left alone; and that the keeper's one `policy updated` line now
+  carries before -> after and names the writer, which is the third reserved key on the
+  wire beside `agent` and `mode`) and
+  `node tools/m59-phantom-test.mjs` (40 — **one mistyped agent name used to degrade every
+  health check for the life of the broker process**. `session()` minted a bare `Session` for
+  any non-empty string, and a bare session can never be in game, because nothing ever tries
+  to join a name the roster does not know. So naming the CHARACTER (`JohnsSlave`) where the
+  AGENT (`psycho`) goes — the fleet page prints both — got `agent "JohnsSlave" is not in
+  game — call join first`, which is a sentence about a CONNECTION for a fault that is a
+  NAME, and sends a monitoring layer to rejoin a character that was never unwell. Two calls
+  one second apart, same broker, same character, answered "fine" and "call join first". The
+  phantom then outlived every 45s sweep — the sweep iterates the ROSTER — while
+  `m59-service.mjs status` printed "the broker rejoins them on its own; watch the log" about
+  a row it could never reach. Pins that an unknown name is refused before any session
+  exists and that the refusal NAMES the agent whose character that is, that `join` and
+  `create_character` keep the exemption because introducing a new name is their job and
+  nothing else claims it, that a never-joined session stops blaming the connection, and that
+  `status` counts and rejoin-promises only rows the sweep can actually see — failing OPEN on
+  a broker too old to send `in_roster`, because reading undefined as "not mine" would report
+  an empty fleet, which is the louder bug. The rule itself is in `m59-agent-name.mjs`
+  precisely so it can be asked a question without starting a broker) and
+  `node tools/m59-lasterror-test.mjs` (28 — **`last_error` is the field the status snapshot
+  calls "the one field worth reading before anything else", and it was write-once for the
+  life of the process**. Set in two places, cleared in one: the constructor. So it meant
+  "the most recent error ever" while every reader — operator, hourly strategy review,
+  ten-minute play tick — read it in the present tense. And the error it holds is usually a
+  survival FEATURE firing: `breakOutViaLogoff` leaves a crowded spot via reconnect(), which
+  nulls the client for ~800ms, so the in-flight pass throws. Sixteen of those in 58 minutes
+  of healthy farming; six minutes after one, the same process reported "fighting from a
+  proven safe spot", 4 kills, 0 deaths — and the identical stale error. Pins that a
+  completed pass on a LIVE session clears it and leaves a `recovered` journal line, that a
+  completed pass on a session that is NOT live does not (a pass can finish without touching
+  the wire, and the class being cleared is exactly "the session went away"), and that the
+  error is stamped and attributed — `last_error_live: false` is the self-healing reconnect
+  window, `true` is a fault the session was awake for, and a climbing `failing_passes` is
+  the genuinely dangerous case that used to look identical to the blip. It drives the real
+  `notePassSucceeded`/`notePassFailed`, which were named for this: the catch arm sleeps five
+  seconds, so a test going through `loop()` could ask one question a working day) and
   `node tools/m59-unattended-test.mjs` (44 — **the contract test for the carve-out**: with
   no bot attached every faculty answers `keeper`, a bot asking for all eight gets only the
   directional four, an expired lease is the keeper's again, and the override takes a
@@ -288,13 +365,17 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time;
   is its own module for the reason this document exists: `m59-broker.mjs` cannot be imported
   without taking the fleet lock and starting rejoin timers) and
   `node tools/m59-describe-test.mjs` (52) and
-  `node tools/m59-recordjam-test.mjs` (36 — **turning a live traffic jam into a fixture**:
+  `node tools/m59-recordjam-test.mjs` (43 — **turning a live traffic jam into a fixture**:
   that `m59-recordjam.mjs` reads a region col,row like every square here, collapses a run of
   samples to what stood still and what wiggled (a trace of position CHANGES with when each
   was first seen), counts a player once however many observers saw it while keeping two
   same-named rats apart by id, redacts our names to `player A…` and other people's to
   `stranger A…` unless `--names`, and measures the floor under the region off the real BSP —
-  against the Sewers of Barloque, the rat picket line it was written for) and
+  against the Sewers of Barloque, the rat picket line it was written for; and that **every
+  jam fixture on disk stays redacted**: each player in `tools/fixtures/*.json` is a role and
+  never a name, because a file that was clean when written is the one nobody re-checks —
+  `spidertrap1.json` is pinned with its subject's square, vitals and load and the black
+  spider three squares west of it) and
   `node tools/m59-fightback-test.mjs` (36 — **the fight-back edict**, an operator's order
   that is off by default: that the watchdog half counts blows only with something in reach,
   asks for a fight at ten seconds and not nine, pulls the handbrake once per pass, and stays

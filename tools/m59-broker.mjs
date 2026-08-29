@@ -71,6 +71,8 @@ import * as transits from './m59-transits.mjs';
 import * as descriptions from './m59-describe.mjs';
 import { Session, Recorder, Pacer, readAbilitiesOnce, loadMonsterLevels, monsterKarmaByName, monsterLevelByName, arrivalReport, orderExits } from './m59-session.mjs';
 import { resolveFleet, rosterGameEndpoint } from './m59-fleetpath.mjs';
+import { resolveAgentName } from './m59-agent-name.mjs';
+import { policyDiff, formatPolicyDiff, hasSpotChange, coerceSpotPair } from './m59-policydiff.mjs';
 import { loadoutFor, reconcile as reconcileLoadout, plannedAbilities } from './m59-loadout.mjs';
 import { resolveItemNames, weighItem } from './m59-items.mjs';
 import { factionAssignment, factionJoinConfirmed, factionJoinSpec,
@@ -540,6 +542,12 @@ const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
 
 const LEAVE_VIA_CLEARANCE = Number(process.env.M59_LEAVE_VIA_CLEARANCE ?? 0);
 const EDGE_NUDGE_WITHIN = Number(process.env.M59_EDGE_NUDGE_WITHIN || 16);
+// THE MOST A SINGLE PURCHASE MAY ASK FOR. The shelf is not the limit — an offer's `amount`
+// is the quantity the counter suggests, not stock, and the apothecaries do not run out —
+// but one exchange carries at most this many, so a bigger order is split into chunks.
+// Sending one oversized line does not error; it goes out and buys nothing, which is the
+// same silence a malformed id list produces and just as hard to read from outside.
+const SHOP_MAX_PER_BUY = Number(process.env.M59_SHOP_MAX_PER_BUY || 50);
 const EDGE_NUDGE_MAX_STEPS = Number(process.env.M59_EDGE_NUDGE_MAX_STEPS || 6);
 
 // ---------------------------------------------------------------- pacing
@@ -1183,6 +1191,11 @@ async function keeperPolicy(agent, index, { policy, mode } = {}) {
   const port = keeperPort(agent, index);
   const body = { ...(policy || {}) };
   if (mode) body.mode = mode;
+  // WHO WROTE IT. The keeper's `policy updated` line was the only observability a spot
+  // policy change had, and it named no writer — so twenty-one of them in one process could
+  // not answer "which broker reverted my push", which is the whole question. A third
+  // reserved key beside `agent` and `mode`; the keeper strips it rather than applying it.
+  body.by = `broker pid ${process.pid} fleet ${FLEET ?? 'default'}`;
   try {
     const res = await fetch(`http://127.0.0.1:${port}/policy`, {
       method: 'POST',
@@ -1301,6 +1314,10 @@ class KeeperProxy {
     if (!this._state) return null;
     const s = this._state;
     if (this._client && this._client._stateAt === this._stateAt) return this._client;
+    // The literal below is a plain object, so `this` inside its methods is the CLIENT.
+    // Both names are needed: `proxy` to reach the keeper, `act` to reach it the one way.
+    const proxy = this;
+    const act = (name, args) => keeperAction(proxy.name, proxy._index, name, args);
     const client = {
       get state() { return s.in_game ? 'game' : 'none'; },
       get me() { return s.character ? { name: s.character } : null; },
@@ -1352,6 +1369,70 @@ class KeeperProxy {
       requestInventory: () => null,
       requestSpells: () => null,
       requestSkills: () => null,
+
+      // ------------------------------------------------------------ the mutation half
+      //
+      // THIS OBJECT WAS READ-ONLY, AND EIGHT MCP TOOLS DIED ON THAT. `need()` hands this
+      // client to every tool that acts on something, and it implemented the reading side
+      // only — so `fight`, `attack`, `rest`, `escape_underworld`, `cast`, `shop`, `act`
+      // and `faction_status` all threw a TypeError before anything reached the wire:
+      //
+      //     TypeError: c.roomContents is not a function     (fight, escape_underworld)
+      //     TypeError: c.attack is not a function           (attack)
+      //     TypeError: c.cast is not a function             (cast)
+      //     TypeError: c.buy is not a function              (shop)
+      //     TypeError: c.apply is not a function            (act eat)
+      //     TypeError: c.stand is not a function            (rest)
+      //     TypeError: c.look is not a function             (faction_status)
+      //
+      // Measured over ~4 hours of supervised play on one keeper-driven character: no
+      // usable mutation path at all. Combat, resting, casting, shopping and item use were
+      // unavailable, and the character survived only on its keeper's own autopilot.
+      //
+      // Every one of these goes over `/action`, which is the same route the movement tools
+      // have always used — the broker still never touches the wire. They return the
+      // keeper's own result rather than the real client's `undefined`, which is strictly
+      // more than the callers had; the ones that go on to read the server's reply get it
+      // from `waitFor` above.
+      //
+      // The stale-snapshot caveat that applies to `route` applies here too, and is
+      // narrower than it looks: `pacer.submit` forces a fresh snapshot before it runs its
+      // callback, and every paced call site therefore acts on vitals that are current.
+      attack: (id) => act('attack', { target: id }),
+      cast: (spellId, targets = []) => {
+        // THE KEEPER TAKES A SPELL NAME AND THE CALLERS HOLD AN OBJECT ID, because the id
+        // is what BP_REQ_CAST wants and the name is what a person types. Resolved here off
+        // the snapshot's own spell list rather than sent as a bare number, so the keeper
+        // never has to guess which namespace it was handed.
+        const sp = (s.spells ?? []).find(x => x.id === spellId);
+        return act('cast', { spell: sp?.name ?? String(spellId), spell_id: spellId,
+                             targets: Array.isArray(targets) ? targets : [targets] });
+      },
+      // AND NO `buy`/`buyItems` HERE, DELIBERATELY — THAT ONE STAYS ON THE SESSION.
+      //
+      // Everything above forwards a packet and reports what the keeper said, which is
+      // honest. A purchase is the one verb where that is not enough, because the answer is
+      // not on the wire at all: a merchant that refuses says so in a SENTENCE TO THE ROOM
+      // and the packet succeeds either way. Measured — a buy of 4 herbs by a character with
+      // no shillings came back `bought: [{id:521, amount:4}]` and moved nothing. A
+      // client-shaped `buy` invites exactly that reading, so shopping goes through
+      // `shopList`/`shopBuy` on the PROXY instead, which reports `got` — what the server
+      // actually handed over — and the `shop` and `buy` tools branch on `proxied` to reach
+      // them. `m59-shop-test.mjs` pins the absence; this comment is why it is an absence
+      // and not an oversight.
+      // EAT IS NOT USE. Food is APPLIED to the eater (food.kod:56), so routing this
+      // through `use` would send a packet that does nothing and reports no error.
+      apply: (id, onto) => act('apply', { id, on: onto }),
+      use: (id) => act('use', { id }),
+      unuse: (id) => act('unuse', { id }),
+      get: (id) => act('pickup', { id }),
+      drop: (ids) => act('drop', { items: Array.isArray(ids) ? ids : [ids] }),
+      activate: (id) => act('activate', { id }),
+      stand: () => act('stand', {}),
+      rest: () => act('rest', {}),
+      look: (id) => act('look', { id }),
+      face: (degrees) => act('face', { degrees }),
+      roomContents: () => act('room_contents', {}),
       stats: () => null,
       // ABSENCE OF EVIDENCE, IN THE SHAPE EVERY CALLER READS. This resolved `null`, and
       // eighty-odd call sites in this file do `const { events } = await c.waitFor(...)` or
@@ -1361,7 +1442,41 @@ class KeeperProxy {
       // out loud instead of inventing a reply: `timedOut` true, no events, and a field
       // naming the reason. A caller that needs real events must ask the keeper — see
       // `tradeStep` and `roomContents` below for what that looks like.
-      waitFor: async () => ({ events: [], seq: null, timedOut: true, no_event_stream: true }),
+      // AND NOW IT ASKS, INSTEAD OF REPORTING THAT IT CANNOT.
+      //
+      // The comment above was right about the mechanism and, like `pacer.submit` before
+      // it, wrong about the conclusion. The stream is on the keeper's socket and stays
+      // there; what crosses the process boundary is a WINDOW onto it — `/action
+      // {name:"events"}` — anchored on the `ev_seq` this snapshot carries.
+      //
+      // Why it mattered: this game answers almost nothing with an error. A merchant
+      // refusal is a sentence spoken to the room; a malformed drop moves nothing and says
+      // so in prose. So "send the packet" is never the whole of a tool, and with this
+      // returning `no_event_stream` every caller that read the reply — attack, cast, shop,
+      // act, look, the faction self-look — either threw or concluded that nothing had
+      // happened. Eighty-odd call sites do `const { events } = await c.waitFor(...)`.
+      //
+      // `since` defaults to the snapshot's mark, which may be a second or two old. That is
+      // the safe direction: a caller filtering by kind would rather see one stale event
+      // than miss the reply it is waiting for. `no_event_stream` still rides back when the
+      // keeper is too old to answer, so a caller can tell "nothing was said" from "nobody
+      // could hear".
+      waitFor: async ({ since, kinds = null, timeoutMs = 4000 } = {}) => {
+        const r = await keeperAction(proxy.name, proxy._index, 'events', {
+          since: since ?? s.ev_seq ?? undefined,
+          kinds: kinds == null ? null : (Array.isArray(kinds) ? kinds : [kinds]),
+          timeout_ms: timeoutMs,
+        }).catch(e => ({ error: e.message }));
+        if (!r || r.error || !Array.isArray(r.events))
+          return { events: [], seq: null, timedOut: true, no_event_stream: true,
+                   why: r?.error ?? 'this keeper does not serve an event window' };
+        return { events: r.events, seq: r.seq ?? null, timedOut: !!r.timedOut };
+      },
+      // WHERE THE STREAM HAD GOT TO WHEN THIS SNAPSHOT WAS TAKEN. Callers read this before
+      // a mutation and pass it back as `since`; null on a keeper too old to publish it,
+      // which `waitFor` above turns into "from now" rather than into "from the beginning".
+      evSeq: s.ev_seq ?? null,
+      eventsSince: () => [],
       stat: () => null,
       statsById: new Map(),
       spells: (s.spells ?? []).map(p => ({
@@ -1403,9 +1518,18 @@ class KeeperProxy {
       // anybody noticed the walker had not moved at all.
       //
       // The keeper publishes it in /state; this is that, in the shape the callers read.
+      // `id` IS THE SERVER'S, NOT A PLACEHOLDER, WHEREVER THE KEEPER SENDS ONE.
+      //
+      // This was -1 on both lines, which was harmless for exactly as long as this client
+      // could not act: -1 is a number the server has never heard of, and the two things
+      // that aim at SELF are eating (`apply(food, selfId)`, food.kod:56 — the only way past
+      // the vigor-80 rest cap) and the faction self-look. The moment the mutation half
+      // above existed, both would have been sent to nothing and reported no error, because
+      // nothing in this game reports an error. Falls back to -1 for a keeper too old to
+      // publish it, which is where it was before and no worse.
       self: s.you ? { col: s.you.col, row: s.you.row, x: s.you.x, y: s.you.y,
-                      id: -1, flags: 0, facing: s.you.facing ?? null } : null,
-      selfId: s.you ? -1 : null,
+                      id: s.you.id ?? -1, flags: 0, facing: s.you.facing ?? null } : null,
+      selfId: s.you ? (s.you.id ?? -1) : null,
       // AND THE ROOM THEY ARE STANDING IN, because giving `self` a value without this
       // CRASHED THE BROKER on resume. Every caller that reads `c.self` goes on to read
       // `c.room.objects` a line later — `threat()` does exactly that — and the emulated
@@ -1418,6 +1542,22 @@ class KeeperProxy {
       // Twenty-one characters failed to resume. A half-built emulation is worse than an
       // obviously empty one, because the empty one fails at the first read and this failed
       // at the second.
+      // TURNING A WORD INTO AN ID, which is how every tool that takes a name gets to one.
+      //
+      // `resolveTarget` calls `c.find(name)` and this had no `find` at all, so `shop`,
+      // and anything else naming its target, died with `c.find is not a function` on every
+      // keeper-backed character — which is all of them. Measured 2026-08-29: two characters
+      // were walked across the map to a shop that could not be opened when they got there.
+      //
+      // Safe to answer from the picture: this is a pure read over the room objects the
+      // keeper already publishes, and it matches the real client's version exactly —
+      // substring, case-insensitive, over the room's own names. The WIRE half of shopping
+      // is not here; see shopList/shopBuy below.
+      find(needle) {
+        const n = String(needle).toLowerCase();
+        return [...this.room.objects.values()]
+          .filter(o => String(o.nameRsc ?? o.name ?? '').toLowerCase().includes(n));
+      },
       room: {
         // Never substitute the save-stable RID for Meridian's live room object id.
         // They are different namespaces and the latter changes across server saves.
@@ -1644,6 +1784,51 @@ class KeeperProxy {
   }
   async cancelMovement(token) {
     return keeperAction(this.name, this._index, 'cancel', {});
+  }
+  // THE TWO HALVES OF SHOPPING THAT MUST TOUCH THE WIRE, forwarded to the process that owns
+  // it. `buy` and `buyItems` are mutations and the emulated client is a snapshot, so faking
+  // them here would be inventing a purchase that never left the building. See the `shop`
+  // case in m59-keeper-process.mjs; the purse/weight/bulk arithmetic stays in the tool.
+  async shopList(sellerId, opts = {}) {
+    return keeperAction(this.name, this._index, 'shop',
+      { op: 'list', seller_id: Number(sellerId), ...opts });
+  }
+  async shopBuy(sellerId, items, opts = {}) {
+    return keeperAction(this.name, this._index, 'shop',
+      { op: 'buy', seller_id: Number(sellerId), items, ...opts });
+  }
+  // The bank counter, same seam and same reason: balance/deposit/withdraw are wire calls.
+  async bankOp(op, amount, opts = {}) {
+    return keeperAction(this.name, this._index, 'bank', { op, amount, ...opts });
+  }
+  // THE BOOKKEEPING HALF, WHICH IS NOT A WIRE CALL AND SO BELONGS HERE. Session has both of
+  // these and the proxy had neither, so `bank` would have thrown `s.bankKnown is not a
+  // function` one line past the `c.balance` failure. They read and write the shared bank
+  // book on disk, keyed by character — no socket, nothing to proxy.
+  //
+  // The withdrawal is why the record matters at all: the server answers one with the AMOUNT
+  // HANDED OVER and never states the new balance (Lm_bnkr_did_withdraw, monster.kod:144),
+  // so the only way to know what is left is to subtract and say that it was arithmetic.
+  noteBanker(ev) {
+    const who = this._state?.character ?? null;
+    if (!who || !ev?.text) return;
+    try {
+      bankbook.record(who, ev.text, { at: ev.at ?? Date.now(),
+                                      room: this._state?.room?.name ?? null });
+    } catch { /* a bank book that will not write must not break a withdrawal */ }
+  }
+  bankKnown() {
+    const who = this._state?.character ?? null;
+    if (!who) return null;
+    try {
+      const rows = bankbook.balancesFor(who);
+      if (!rows.length) return null;
+      const latest = rows[0];
+      return { balance: latest.balance, account: latest.account, at: latest.at,
+               observed: latest.observed,
+               ...(rows.length > 1
+                 ? { accounts: Object.fromEntries(rows.map(r => [r.account, r.balance])) } : {}) };
+    } catch { return null; }
   }
 
   // RTS orders are jobs in the process that owns the Meridian socket. A JavaScript
@@ -2187,6 +2372,23 @@ function saveFleetState() {
         if (prev !== nxt) {
           console.error(`[state] ${agent} autopilot.mode ${prev} -> ${nxt} (saveFleetState)`);
         }
+        // AND EVERY POLICY FIELD, FOR THE SAME REASON AND AT THE SAME COST.
+        //
+        // The mode line above exists because a silent revert was "the undiagnosable part".
+        // That argument was never carried to the rest of the policy, so a spot policy that
+        // went `true/true` -> `false/false` between two writes left NO line anywhere in
+        // this log — and those are the flags deaths #24, #25 and #26 were root-caused to.
+        // A watchlist would have been the same mistake one field later, so this diffs
+        // everything and merely SORTS the survival pair to the front.
+        //
+        // Only when both sides have an autopilot: a resume carries entries forward from
+        // disk that this process has not loaded, and reporting those as "policy unset"
+        // would be twenty-one lines of noise about nothing having happened.
+        if (now[agent]?.autopilot && entry.autopilot) {
+          const rows = policyDiff(now[agent].autopilot.policy, entry.autopilot.policy);
+          if (rows.length)
+            console.error(`[state] ${agent} policy ${formatPolicyDiff(rows)} (saveFleetState)`);
+        }
       }
       const kept = [];
       for (const [agent, entry] of Object.entries(now)) {
@@ -2207,6 +2409,14 @@ function saveFleetState() {
   } catch (e) { console.error(`[state] could not save: ${e.message}`); }
 }
 
+// THE CALLER, WHICH IS THE ONLY THING A REVERT AND A PUSH DIFFER BY IN A LOG.
+//
+// `rememberAutopilot` has printed this for `mode` since the tick->survive revert went
+// undiagnosed; it is here so the spot-policy write can print the identical thing rather
+// than a second copy of the magic slice numbers.
+const callerTrace = (label) =>
+  new Error(label).stack.split('\n').slice(2, 8).join('\n');
+
 function rememberJoin(agent, credentials) {
   fleetState.set(agent, { ...(fleetState.get(agent) || {}), credentials });
   saveFleetState();
@@ -2220,8 +2430,24 @@ function rememberAutopilot(agent, config) {
   const prevMode = e.autopilot?.mode ?? null;
   if (prevMode !== config.mode) {
     console.error(`[autopilot] ${agent} mode ${prevMode} -> ${config.mode} (rememberAutopilot) args.mode=${config.mode}\n` +
-      new Error('mode-change trace').stack.split('\n').slice(2, 8).join('\n'));
+      callerTrace('mode-change trace'));
   }
+  // THE PAIRING INVARIANT, APPLIED BEFORE THE WRITE RATHER THAN REPORTED AFTER IT.
+  // `requireSafeWall` without `useSafeSpots` asks the keeper to refuse a fight for the
+  // want of a wall it has been told not to look for. See coerceSpotPair.
+  for (const c of coerceSpotPair(config.policy))
+    console.error(`[autopilot] ${agent} policy ${c.key} ${c.from} -> ${c.to} (coerced: ${c.why})`);
+  // AND THE SAME TRACE THE MODE WRITE GETS, FOR THE PAIR THAT HAS KILLED SOMEBODY.
+  //
+  // The question a spot-policy revert raises is never "did it change" — the keeper log
+  // already said that, flatly, twenty-one times in one process — but WHICH LINE CHANGED
+  // IT. A push and a revert print identically without the caller. So every field gets one
+  // compact line here, and the two spot flags additionally get the stack, because they are
+  // the ones still being argued about after three deaths.
+  const changed = policyDiff(e.autopilot?.policy, config.policy);
+  if (changed.length)
+    console.error(`[autopilot] ${agent} policy ${formatPolicyDiff(changed)} (rememberAutopilot)` +
+      (hasSpotChange(changed) ? '\n' + callerTrace('spot-policy trace') : ''));
   // Preserve useGOAP — it's set in the fleet file but not in the in-memory policy.
   if (e.autopilot?.policy?.useGOAP && !config.policy?.useGOAP) config.policy.useGOAP = true;
   e.autopilot = config;
@@ -3417,21 +3643,37 @@ function startAbilitySweep() {
 // Of several exits that all lead to the same place, try the reachable ones first
 // and the nearest of those first. `reachable` is undefined for kinds the geometry
 
-const session = name => {
+const session = (name, { create = false } = {}) => {
   // A MISSING AGENT IS NOT AN AGENT. This created a Session for whatever it was handed,
   // so any tool called without one registered a phantom keyed `undefined` — never in
   // game, never doing anything, and counted. The fleet board then reported 22 agents
   // against a roster of 21 and "19/22 keepers running", which is exactly the kind of
   // quiet miscount that makes a healthy fleet look broken and a broken one look fine.
   // JSON.stringify drops the undefined agent field, so the row arrives headless too.
-  if (name == null || name === '') throw new Error('no agent named — every fleet tool takes an `agent`');
-  if (!sessions.has(name)) {
-    if (agentIndices.has(name)) {
-      sessions.set(name, makeKeeperProxy(name, agentIndices.get(name)));
-    } else {
-      sessions.set(name, new Session(name));
-    }
-  }
+  //
+  // AND A NAME THAT IS PRESENT BUT WRONG IS THE SAME BUG WITH A LOUDER SYMPTOM. That
+  // guard only ever covered "no name"; a name nobody answers to — a CHARACTER name where
+  // an agent name goes is the usual one, because the fleet page prints both — fell
+  // straight through it and minted a bare Session that can never be in game, because
+  // nothing will ever try to join a name the roster does not know. Every later call
+  // against it threw "not in game — call join first", which sends the reader to the
+  // connection and the fault was the name; the phantom then outlived every 45s sweep
+  // (the sweep iterates the ROSTER) and shifted `sessions.size` and every in-game tally
+  // for the life of the process. One typo, one degraded fleet board, until a restart.
+  //
+  // `create` is the narrow exception: `join` and `create_character` exist to introduce a
+  // name this broker has never seen. The decision itself is in m59-agent-name.mjs so it
+  // can be asked a question without starting a broker.
+  const r = resolveAgentName(name, {
+    held: sessions.has(name),
+    keeperBacked: agentIndices.has(name),
+    inRoster: fleetState.has(name),
+    create,
+    roster: fleetState,
+  });
+  if (r.action === 'refuse') throw new Error(r.error);
+  if (r.action === 'keeper') sessions.set(name, makeKeeperProxy(name, agentIndices.get(name)));
+  else if (r.action === 'bare') sessions.set(name, new Session(name));
   return sessions.get(name);
 };
 
@@ -4043,6 +4285,27 @@ async function readFactionStatus(s, { refresh = false } = {}) {
   const stale = FACTION_MAX_AGE_MS > 0 && (age === null || age > FACTION_MAX_AGE_MS);
   if (cached && cached.faction !== 'unknown' && !refresh && !stale) return { ...cached, cached: true,
     age_ms: age, max_health: c.vitals().health?.max ?? null };
+  // A KEEPER-BACKED CHARACTER'S CLIENT CANNOT SELF-LOOK. `KeeperProxy.need()` returns a mock
+  // client with no `look` and no `selfId`, so the `c.look(c.selfId)` refresh below threw
+  // "c.look is not a function" on every read whose faction was not already settled from the
+  // pack — which DUM's per-tick fleet faction scan turned into a flood of caught errors, one
+  // per character per tick, each collapsing to "faction unknown". The inventory reconciliation
+  // above still works (signets are pack items), so fall back to it rather than the look the
+  // proxy cannot do. A live self-look refresh for keeper-backed characters would need a keeper
+  // action that returns the player look event; this degrades quietly until there is one.
+  // THE GUARD IS ABOUT THE ID NOW, NOT ABOUT THE METHOD. `c.look` exists on a keeper-backed
+  // client since the mutation half landed, so testing for the function would send a look and
+  // read an empty answer; what actually decides whether a self-look can work is whether we
+  // know the character's own object id. A keeper too old to publish it still degrades to the
+  // pack read, exactly as this has always done.
+  if (typeof c.look !== 'function' || !(c.selfId > 0)) {
+    return cached
+      ? { ...cached, cached: true, stale, age_ms: age, max_health: c.vitals().health?.max ?? null,
+          note: 'keeper-backed: faction read from the pack; no live self-look refresh here' }
+      : { character, faction: 'unknown', soldier: false, observed_at: null, source: null,
+          cached: false, max_health: c.vitals().health?.max ?? null,
+          note: 'keeper-backed with no faction items in the pack; no live self-look refresh here' };
+  }
   const before = c.evSeq;
   await s.pacer.submit('look', () => c.look(c.selfId));
   const reply = await c.waitFor({ since: before, kinds: ['look'], timeoutMs: 4000 });
@@ -4110,7 +4373,9 @@ const TOOLS = [
       required: ['agent'],
     },
     run: async (a) => {
-      const s = session(a.agent);
+      // `create: true` — this is one of the two tools whose JOB is to introduce a name the
+      // broker has never seen, so it is exempt from the unknown-agent refusal in session().
+      const s = session(a.agent, { create: true });
       // A CHARACTER EXISTS ON ONE SERVER, SO REJOINING IT MUST GO BACK TO THAT SERVER.
       //
       // Session.join defaults host/port to M59_HOST/M59_PORT, which for this checkout is
@@ -6941,11 +7206,30 @@ const TOOLS = [
     run: async (a) => {
       const s = session(a.agent), c = s.need();
       const t = resolveTarget(s, a.seller);
-      await s.pacer.submit('buy', () => c.buy(t.id));
-      const { events, timedOut } = await c.waitFor({ kinds: ['shop', 'message'], timeoutMs: 4000 });
-      const shop = events.find(e => e.kind === 'shop');
+      // OPENING THE SHOP IS A WIRE EXCHANGE, AND ON A KEEPER-BACKED CHARACTER THE WIRE IS
+      // NOT HERE. `c` is then a snapshot rebuilt from /state, so `c.buy` does not exist and
+      // faking it would invent a purchase that never left the building. The keeper runs the
+      // exchange and hands back the same {sellerId, items}; everything below — the purse,
+      // weight and bulk arithmetic — is unchanged and stays in this process.
+      const proxied = s instanceof KeeperProxy ? s : null;
+      let shop, timedOut = false, said = '';
+      if (proxied) {
+        const r = await proxied.shopList(t.id);
+        if (r?.error) return { seller: t.id, items: [], note: `keeper refused: ${r.error}` };
+        timedOut = !!r?.timed_out; said = r?.said ?? '';
+        // The keeper answers {seller_id, items} when the shop opened and an empty `items`
+        // when it did not. An empty shop and an unopened one are the same thing to a buyer.
+        shop = Array.isArray(r?.items) && r.items.length
+          ? { sellerId: r.seller_id, items: r.items } : null;
+      } else {
+        await s.pacer.submit('buy', () => c.buy(t.id));
+        const w = await c.waitFor({ kinds: ['shop', 'message'], timeoutMs: 4000 });
+        timedOut = !!w.timedOut;
+        said = (w.events ?? []).map(e => e.text).filter(Boolean).join('; ');
+        shop = (w.events ?? []).find(e => e.kind === 'shop');
+      }
       if (!shop) return { seller: t.id, items: [],
-                          note: timedOut ? 'no reply' : events.map(e => e.text).filter(Boolean).join('; ') };
+                          note: timedOut ? 'no reply' : said };
       if (!a.buy_ids?.length) return { seller: shop.sellerId, items: shop.items };
       // A BUY NEEDS A QUANTITY, AND A BARE ID DOES NOT CARRY ONE.
       //
@@ -6982,6 +7266,17 @@ const TOOLS = [
         const amt = Math.max(1, Number(typeof e === 'object' && e ? e.amount : 1) || 1);
         if (Number.isFinite(id)) merged.set(id, (merged.get(id) || 0) + amt);
       }
+      // `amount` ON AN OFFER IS A SUGGESTED QUANTITY, NOT STOCK. Every apothecary in the
+      // world lists "Herbs x4" and none of them runs out: 4 is the quantity the counter
+      // offers by default, and the shelf behind it is effectively bottomless. Read as stock
+      // it says the fleet can never buy more than four herbs from anyone, which is how a
+      // resupply run was called impossible on 2026-08-29 — the number was believed over the
+      // fleet's own loot log, which showed characters carrying seventy at a time.
+      //
+      // What IS real is a per-transaction ceiling: the server takes at most
+      // SHOP_MAX_PER_BUY in one exchange, so a larger order is split into chunks rather
+      // than sent as one oversized line that goes out and quietly does nothing. Same shape
+      // as `max_stack` on the sell side, and for the same reason.
       const offer = new Map((shop.items || []).map(i => [Number(i.id), i]));
       const cap = skills.carryCapacity(c);
       // THE PURSE IS A STACK IN THE PACK, NOT A FIELD ON THE CLIENT. `c.money` does not
@@ -7032,13 +7327,51 @@ const TOOLS = [
       if (!wanted.length)
         return { seller: shop.sellerId, bought: [], clamped, purse: purseKnown ? purse : null,
                  note: 'nothing was bought — every line was cut to zero by purse, weight or bulk' };
-      const before = c.evSeq;
-      await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, wanted));
-      const after = await c.waitFor({ since: before, timeoutMs: 4000 });
-      return { seller: shop.sellerId, bought: wanted,
+      // ONE EXCHANGE CARRIES AT MOST SHOP_MAX_PER_BUY. Split every line that asks for more
+      // and send the chunks in order, because an oversized line is not refused — it goes out
+      // and buys nothing, silently, exactly like a malformed id list.
+      const rounds = [];
+      for (const line of wanted) {
+        let left = line.amount;
+        while (left > 0) {
+          const take = Math.min(left, SHOP_MAX_PER_BUY);
+          rounds.push({ id: line.id, amount: take });
+          left -= take;
+        }
+      }
+      const got = [], messages = [];
+      let refusedAfter = null;
+      for (const [n, line] of rounds.entries()) {
+        let arrived = [], said = '';
+        if (proxied) {
+          const r = await proxied.shopBuy(shop.sellerId, [line]);
+          if (r?.error) { refusedAfter = `keeper refused: ${r.error}`; break; }
+          arrived = r.got ?? []; said = r.said ?? '';
+        } else {
+          const before = c.evSeq;
+          await s.pacer.submit('buy', () => c.buyItems(shop.sellerId, [line]));
+          const after = await c.waitFor({ since: before, timeoutMs: 4000 });
+          arrived = (after.events ?? []).filter(e => e.kind === 'got').flatMap(e => e.items ?? []);
+          said = (after.events ?? []).map(e => e.text).filter(Boolean).join('; ');
+        }
+        if (said) messages.push(said);
+        got.push(...arrived);
+        // STOP ON THE FIRST CHUNK THAT BRINGS NOTHING. Whatever ended it — the purse, a
+        // full pack, a merchant that has stopped answering — will end the next one too, and
+        // hammering a counter that has already said no is how a town trip runs for ever.
+        if (!arrived.length) {
+          refusedAfter = `chunk ${n + 1} of ${rounds.length} brought nothing`;
+          break;
+        }
+      }
+      return { seller: shop.sellerId, asked: wanted, got, bought: got,
+               chunks: rounds.length,
                ...(clamped.length ? { clamped } : {}),
-               messages: after.events.filter(e => e.text).map(e => e.text),
-               got: after.events.filter(e => e.kind === 'got').flatMap(e => e.items) };
+               ...(messages.length ? { messages } : {}),
+               ...(got.length ? {} : { note: messages.length
+                 ? 'nothing arrived — the merchant said so'
+                 : 'nothing arrived and nothing was said; check the purse first' }),
+               ...(refusedAfter && got.length ? { stopped_early: refusedAfter } : {}) };
     },
   },
   {
@@ -7536,9 +7869,18 @@ const TOOLS = [
         description: 'name fragments best first when choosing which weapons fit under max_weapons' },
       ignore_loadout: { type: 'boolean',
         description: 'sell against the generic rules, ignoring this character\'s own list' },
+      max_stack: { type: ['number', 'null'],
+        description: 'largest count a single offer may contain; a bigger stack is sold in chunks. ' +
+          'The Barloque jeweler refuses a stack over 25 (bqmerch.kod). null means no cap.' },
     }, required: ['agent', 'merchant'] },
     run: async (a) => {
       const s = session(a.agent);
+      // keeper-backed: sell runs in the keeper process (its client has the trade packets; the
+      // broker's Session-only sellOne is not on the proxy). Merchant is resolved in the keeper's room.
+      if (s instanceof KeeperProxy)
+        return keeperAction(a.agent, s._index, 'sell_all', { merchant: a.merchant, keep: a.keep || [],
+          min_price: num(a.min_price, 1), max_stack: a.max_stack == null ? null : Number(a.max_stack),
+          max_weapons: a.max_weapons == null ? null : Number(a.max_weapons) });
       const t = resolveTarget(s, a.merchant);
       // BY CHARACTER NAME. `t1` is this checkout's word for a roster slot; the loadout
       // belongs to the character and follows it across rosters.
@@ -8622,6 +8964,13 @@ const TOOLS = [
       if (a.break_out_via_logoff !== undefined) p.policy.breakOutViaLogoff = !!a.break_out_via_logoff;
       if (p.mode === 'farm' && !p.policy.hunt)
         return { started: false, reason: 'farm mode needs something to hunt — pass hunt with a creature name' };
+      // THE TWO SPOT FLAGS ARE SET BY INDEPENDENT GUARDS ABOVE, so `require_safe_wall:true`
+      // with spots off is representable — and it asks the keeper to refuse a fight for the
+      // want of a wall it has been told not to look for. Coerced here, before the policy is
+      // persisted OR pushed, so the roster and the keeper cannot disagree about it.
+      const coerced = coerceSpotPair(p.policy);
+      for (const c of coerced)
+        console.error(`[autopilot] ${a.agent} policy ${c.key} ${c.from} -> ${c.to} (coerced: ${c.why})`);
       // Persist the instruction, not the running object: on the far side of a
       // restart the keeper is rebuilt from these fields alone.
       rememberAutopilot(a.agent, { mode: p.mode, policy: { ...p.policy } });
@@ -8675,6 +9024,10 @@ const TOOLS = [
       // needs to know whether an order landed is the one reading this.
       const keeper_push = await pushPolicyToKeeper(a.agent, p);
       const out = retired ? { ...started, retired } : { ...started };
+      // REPORTED, NEVER SILENT. An argument that was accepted and then changed is the shape
+      // of the bug this block exists to close; a caller that asked for `require_safe_wall`
+      // without spots has to be told what it actually got.
+      if (coerced.length) out.coerced = coerced;
       return keeper_push ? { ...out, keeper_push } : out;
     },
   },
@@ -9797,14 +10150,31 @@ const TOOLS = [
       const s = session(a.agent), c = s.need();
       if (a.action !== 'balance' && !(num(a.amount, 0) > 0))
         throw new Error(`${a.action} needs a positive amount`);
-      const before = c.evSeq;
       const amount = Math.floor(num(a.amount, 0));
-      const fn = { balance: () => c.balance(),
-                   deposit: () => c.deposit(amount),
-                   withdraw: () => c.withdraw(amount) }[a.action];
-      await s.pacer.submit('bank', fn);
-      const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
-      const said = events.filter(e => e.text).map(e => String(e.text));
+      // THE COUNTER IS A WIRE EXCHANGE, AND ON A KEEPER-BACKED CHARACTER THE WIRE IS NOT
+      // HERE. `c` is a /state snapshot with no balance/deposit/withdraw, so this threw
+      // `c.balance is not a function` for every character in the fleet — discovered at the
+      // First Royal Bank of Tos after walking one across the map to reach it. The keeper
+      // runs the exchange; the bookkeeping below is unchanged.
+      const proxied = s instanceof KeeperProxy ? s : null;
+      let said;
+      if (proxied) {
+        const r = await proxied.bankOp(a.action, amount);
+        if (r?.error) throw new Error(`keeper refused: ${r.error}`);
+        said = (r.said ?? []).map(String);
+        // The keeper reads the same event stream Session.noteBanker writes from, so the
+        // stored record still has to see these sentences to keep its arithmetic honest.
+        // noteBanker reads ev.text and ev.at — a bare string silently records nothing.
+        for (const line of said) s.noteBanker?.({ kind: 'message', text: line, at: Date.now() });
+      } else {
+        const before = c.evSeq;
+        const fn = { balance: () => c.balance(),
+                     deposit: () => c.deposit(amount),
+                     withdraw: () => c.withdraw(amount) }[a.action];
+        await s.pacer.submit('bank', fn);
+        const { events } = await c.waitFor({ since: before, timeoutMs: 4000 });
+        said = events.filter(e => e.text).map(e => String(e.text));
+      }
       // WHAT THE BANKER SAID IS ALREADY BEING WRITTEN DOWN by Session.noteBanker, off
       // the same event stream, so this does not parse it a second time — it reads back
       // what was stored. That matters for the withdrawal: the server answers a
@@ -11082,7 +11452,9 @@ const TOOLS = [
       if (a.action === 'plan') return plan;
       if (!plan.ok) return { done: false, plan, note: 'the plan is invalid; nothing was sent' };
 
-      const s = session(a.agent);
+      // The other half of session()'s `create` exemption: making a character is exactly
+      // the case where the agent name is supposed to be new.
+      const s = session(a.agent, { create: true });
 
       // CREDENTIALS-FIRST PATH: caller already arranged first-time state via the
       // admin socket (zeroing piLastLoginTime and piLast_Restart_time). Set credentials
@@ -12303,8 +12675,17 @@ const TOOLS = [
         const ap = autopilotIfAny(name);
         const st = (s instanceof KeeperProxy) ? s.status() : (ap ? ap.status() : null);
         if (!c || s.client?.state !== 'game') {
+          // `in_roster` IS THE DIFFERENCE BETWEEN A DROPPED CHARACTER AND A NAME NOBODY
+          // OWNS, and every reader of this board was told they were the same thing. The
+          // 45s rejoin sweep iterates the ROSTER, so it can only ever bring back a row
+          // that has one — and `m59-service.mjs status` printed "the broker rejoins them
+          // on its own; watch the log" over rows it could never reach. session() no
+          // longer mints those, but a broker started before that fix still holds them,
+          // and a row should say which kind it is rather than leaving it to be inferred.
           rows.push({ agent: name, character: c?.me?.name ?? null, in_game: false,
-                      stalled: 'not in game' });
+                      in_roster: fleetState.has(name),
+                      stalled: fleetState.has(name) ? 'not in game'
+                        : 'not in game, and not in the roster either — nothing will rejoin this' });
           continue;
         }
         const v = c.vitals();
@@ -12312,6 +12693,8 @@ const TOOLS = [
         rows.push({
           agent: name,
           character: c.me?.name ?? null,
+          // See the not-in-game row above: whether the rejoin sweep can see this one.
+          in_roster: fleetState.has(name),
           room: c.rsc.get(c.roomNameRsc) ?? null,
           // The NUMBER as well as the name, because names are not unique — twenty-two
           // of them name more than one room, so anything that wants to look a room up

@@ -113,7 +113,34 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 // that owns the body answers `/state?fresh=1` with `you` every time, and it is one hop
 // closer as well. Discovered once by probing, because the port is assigned at spawn.
 let KEEPER_PORT = null;
+// THE BAND IS RECORDED, NOT GUESSED. This scanned 8911-8950, which is where keepers used to
+// live; they are on `substrate/keeper-bands.json` now -- prod 9011, shadow 9111 -- so the
+// sweep found nothing and the tool reported "could not find a keeper for shadow01" about a
+// keeper that was up and healthy on 9111. A hard-coded port range is a copy of a fact that
+// moved, and this one moved without it.
+//
+// The file is consulted first and the old range still swept after, so a checkout without the
+// file keeps working rather than losing the tool.
+function keeperBandFor(fleet) {
+  try {
+    const bands = JSON.parse(readFileSync(join(REPO, 'substrate', 'keeper-bands.json'), 'utf8'));
+    const base = Number(bands?.[String(fleet)]);
+    if (Number.isFinite(base)) return [base, base + 63];
+  } catch { /* no file: fall through to the sweep */ }
+  return null;
+}
 async function findKeeper() {
+  const band = keeperBandFor(FLEET);
+  if (band) {
+    for (let p = band[0]; p <= band[1]; p++) {
+      try {
+        const r = await fetch(`http://127.0.0.1:${p}/health`, { signal: AbortSignal.timeout(700) });
+        if (!r.ok) continue;
+        const j = await r.json();
+        if (j?.agent === AGENT) return p;
+      } catch {}
+    }
+  }
   for (let p = 8911; p <= 8950; p++) {
     try {
       const r = await fetch(`http://127.0.0.1:${p}/health`, { signal: AbortSignal.timeout(700) });
