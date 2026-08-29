@@ -3480,5 +3480,31 @@ console.log('AN EDGE THE MOVER CANNOT WALK IS REMEMBERED PAST THE WALK THAT FOUN
      (memory3.get(50)?.size ?? 0) === 0, JSON.stringify([...(memory3.get(50) ?? [])]));
 }
 
+
+console.log('\nEVERY NAME `step` READS IS IN SCOPE WHERE IT READS IT');
+{
+  // `laneAim` was declared inside `if (fall && before) { … }` and read a hundred lines later
+  // in the enclosing scope, so every fall that reached the aim threw `laneAim is not defined`.
+  // A ReferenceError in the mover is not a refused step -- the keeper's whole pass dies and
+  // the character stands still. It reached PRODUCTION as `pass failed  why: laneAim is not
+  // defined` and killed a character.
+  //
+  // `node --check` passes: the code is syntactically perfect. The dependency guard above only
+  // knows MODULE-scope names, so a local in the wrong block satisfies it too. What catches it
+  // is asking whether the declaration is positioned to cover the read.
+  const src = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
+  const lines = src.split('\n');
+  const declIdx = lines.findIndex(l => /^\s*let laneAim = null;/.test(l));
+  const readIdx = lines.findIndex(l => /\?\s*\(laneAim$/.test(l) || /\(laneAim\b/.test(l) && !/let laneAim/.test(l));
+  ok('laneAim is declared', declIdx >= 0);
+  ok('and read later in the file', readIdx > declIdx, `decl ${declIdx + 1}, read ${readIdx + 1}`);
+  const indentOf = l => l.length - l.trimStart().length;
+  ok('and its declaration is no deeper than the line that reads it',
+     indentOf(lines[declIdx]) <= indentOf(lines[readIdx]),
+     `decl indent ${indentOf(lines[declIdx])}, read indent ${indentOf(lines[readIdx])}`);
+  ok('specifically, it sits OUTSIDE the `if (fall && before)` block that used to hold it',
+     declIdx < lines.findIndex(l => l.trim() === 'if (fall && before) {'));
+}
+
 console.log(`\n${pass} passed, ${fail} failed${skipped ? `, ${skipped} skipped` : ''}`);
 process.exitCode = fail ? 1 : 0;

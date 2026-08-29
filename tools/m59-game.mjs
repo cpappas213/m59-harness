@@ -3942,6 +3942,18 @@ class Session {
     // that callers expect to return in milliseconds; `followRail` still owns sitting down
     // on the ledge. What this must guarantee is only that a body which cannot run never
     // LEAVES the ledge, because the gulley it lands in has no exit.
+    // DECLARED OUT HERE, BECAUSE THE AIM IS READ OUT HERE.
+    //
+    // This was `let laneAim` INSIDE the block below, and the fall's aim is chosen a hundred
+    // lines further down in the enclosing scope -- so every fall that reached the aim threw
+    // `laneAim is not defined`. A ReferenceError in the mover is not a refused step: the pass
+    // dies, the keeper's whole tick dies with it, and the character stands there. Seen in
+    // PRODUCTION as `pass failed  why: laneAim is not defined`, and it killed somebody.
+    //
+    // `node --check` cannot see this -- the code is syntactically perfect -- and the dependency
+    // guard in m59-collision-test only knows about MODULE-scope names, so a local declared in
+    // the wrong block passes both. The test below pins the position rather than the spelling.
+    let laneAim = null;   // set by laneClearing; the fall aims here when it exists
     if (fall && before) {
       const vig = (() => { try { return c.vitals?.()?.vigor?.value ?? null; } catch { return null; } })();
       const isDeclared = declaredJumpNeedsRun(this.world?.room?.num, before, { row, col });
@@ -4114,7 +4126,6 @@ class Session {
       // 1.5 squares is not a new number: it is `DECLARED_CLEAR`, from the 68-jump study
       // already in this file. Bounded hard — this is a primitive, callers expect it back
       // quickly, and a doorway held by something that never moves must still end the walk.
-      let laneAim = null;   // set by laneClearing; the fall aims here when it exists
       const JUMP_WAITS = Number(process.env.M59_JUMP_WAITS || 3);
       const JUMP_WAIT_MS = Number(process.env.M59_JUMP_WAIT_MS || 1200);
       let waited = 0, gapNow = lineGap;
