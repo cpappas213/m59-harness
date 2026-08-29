@@ -475,6 +475,26 @@ export class World {
             // the MOVER's (roo's `fineNav`), asked for where a body is actually walked;
             // asking for it while deciding what is reachable invents roads.
             for (const next of geo.neighbors(at.row, at.col, { collision })) {
+              // OFFERING A DOOR IS NOT CROSSING ONE, AND CLIP STEPS BELONG TO THE SECOND.
+              //
+              // `moverStepLands` allows a destination the coarse grid calls SOLID whenever
+              // fine floor exists there (see CLIP_STEPS). That permission is deliberate and
+              // stays: turning it off globally cut the Cragged Mountains' walkable body from
+              // 2450 squares to 672, because that room is largely ground the coarse grid
+              // cannot express. The mover keeps it.
+              //
+              // But this flood is not walking anywhere. It decides which exits are OFFERED,
+              // and an optimistic answer here does not cost a step, it costs a journey: in
+              // Ukgoth from the gutter at 61,27 the clip-allowed flood reaches 4,237 squares
+              // and the Castle Victoria door at 1,27; refuse the clips and it reaches 338 and
+              // does not. So the router planned a single hop 599 -> 2 at a door on top of a
+              // cliff, sent the body to walk at it, and seven of thirteen deaths in one run
+              // were in that room. The way out is a ROUTE, through 589 and round.
+              //
+              // Only the destination is filtered, and only on the strict pass -- the coarse
+              // pass below is already the permissive one and is what still offers a door when
+              // this refuses everything.
+              if (collision && !geo.walkable(next.row, next.col)) continue;
               const key = `${next.row},${next.col}`;
               if (seen.has(key)) continue;
               seen.add(key);
