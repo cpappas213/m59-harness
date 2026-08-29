@@ -237,7 +237,15 @@ async function launch(r) {
   // measures the hold. See the same argument in m59-solo-run.mjs.
   try {
     const ids = await dm.resolve([r.character]);
-    const max = r.max_health ?? r.maxHealth ?? null;
+    // THE MAX IS IN THE HEALTH STRING, NOT IN A FIELD. A fleet row carries
+    // `health: "53/53"` and `max_health: undefined` -- which the report below already knows
+    // and this did not, so `max` was null, the guard failed, and the heal was SILENTLY
+    // SKIPPED on every leg since it was written. Characters started each run at whatever
+    // health the last one left them at, and a `recoverUntilWhole` hold from a death was
+    // still up, which by the note above makes travel refuse instantly. Every run-to-run
+    // comparison made tonight rests on a reset that never happened.
+    const max = Number(r.max_health ?? r.maxHealth
+                       ?? String(r.health ?? '').split('/')[1]) || null;
     if (ids?.[r.character] != null && max) {
       const cmds = [...dm.healthCmds(ids[r.character], max)];
       if (typeof dm.manaCmds === 'function') cmds.push(...dm.manaCmds(ids[r.character], 50));
