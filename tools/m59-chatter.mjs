@@ -209,6 +209,22 @@ export const DEFAULT_CHATTER_POLICY = {
   // `challenge`. See arenaCall — the guards are what make this safe to default on, and
   // this switch exists for turning it off during a test that wants the silence.
   arenaChallenge: true,
+  // WHETHER A KEEPER ATTACHES ONE OF THESE AT ALL. FALSE, AND PROD DEPENDS ON IT.
+  //
+  // The broker attaches a chatter to every character it joins in-process, and has since the
+  // commit whose comment says so. Keeper-backed characters -- which is every character in
+  // both live fleets -- went down the other branch and were never given one, so `fleet` has
+  // reported `listening: false` twenty-one times and been RIGHT. The fleet has been mute for
+  // as long as it has been keeper-backed.
+  //
+  // Fixing that (see the attach in m59-keeper-process.mjs) would, on its own, put twenty-one
+  // prod characters into conversation with real players on a shared server, tonight, as a
+  // side effect of a bug fix. That is not a change to make by accident. So a keeper attaches
+  // only when its fleet has asked, and prod has not asked: it has no chatter file and stays
+  // exactly as silent as it is today.
+  //
+  // The broker's in-process path passes its own explicit policy and is unaffected either way.
+  listen: false,
   // SAY WHAT IS ACTUALLY GOING ON, IN DETAIL, TO ANYBODY WHO ASKS.
   //
   // OFF BY DEFAULT AND IT MUST STAY THAT WAY ON A SHARED SERVER. The ordinary `activity`

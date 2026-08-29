@@ -33,6 +33,7 @@ import { rtsJobReport, rtsSafeSpellRule, rtsSpellTargetAllowed } from './m59-rts
 import { OF } from './m59-parse.mjs';
 import * as skills from './m59-skills.mjs';
 import * as party from './m59-party.mjs';
+import { chatterFor, fleetChatter } from './m59-chatter.mjs';
 import {
   configureSpotClaimStore, rememberFileSpotPartner, spotClaimNamespace,
 } from './m59-spotclaims.mjs';
@@ -145,6 +146,10 @@ const session = new Session(agent);
 session.pacer; // exists from constructor
 
 let autopilot = null;
+// The deterministic responder, held so `/state` can report whether this character can
+// actually hear -- see the attach in join(). Keeper stderr is discarded by the spawner
+// (`stdio: 'ignore'`), so a log line is not evidence of anything and the state is.
+let chatter = null;
 let inGame = false;
 let startedAt = Date.now();
 
@@ -283,6 +288,63 @@ async function join() {
     });
     inGame = true;
     console.error(`[keeper] ${agent} joined as ${session.client?.me?.name ?? character}`);
+
+    // LISTEN. THIS IS WHERE THE SOCKET IS, AND FOR A YEAR IT WAS NOWHERE.
+    //
+    // `m59-broker.mjs` attaches a Chatter on join and its comment explains why: "the
+    // conversational machinery was all present and none of it was switched on... `fleet`
+    // dutifully reported `listening: false` for all twenty-five and it read as a field
+    // rather than a fault." That fix is real and it is on the IN-PROCESS path -- the
+    // fallback. Every keeper-backed character, which is every character in both live
+    // fleets, goes down the other branch and was never given one.
+    //
+    // So the whole deterministic responder has been dead since the fleet moved to keeper
+    // processes: the same symptom, `listening: false` twenty-one times, in a different
+    // place. It has to be here because the keeper owns the socket and therefore `onSaid`;
+    // the broker holds a KeeperProxy whose client is a picture, not a wire.
+    //
+    // The hooks are the ones this process can answer honestly. The keeper knows its own
+    // autopilot and its own roster, so peers, status, the debug report and the freeze are
+    // all local facts. It does NOT know which client a human is sitting at -- that is the
+    // broker's `pilotedSpeaker`, bound to a live local pid -- so `isOperator` and
+    // `operatorInstruction` are simply not offered, and the chatter treats their absence
+    // as "this is a stranger", which is the safe reading.
+    // OPT IN, PER FLEET. See DEFAULT_CHATTER_POLICY.listen: attaching for everybody would
+    // put prod into conversation with real players as a side effect of fixing a bug.
+    const wantChat = fleetChatter(fleetName);
+    if (!wantChat.listen) {
+      console.error(`[keeper] ${agent} stays silent — fleet "${fleetName}" has not asked to listen`);
+    } else try {
+      chatter = chatterFor(session, {
+        policy: { ack: true, smallTalk: true, faceSpeaker: true, escalate: true, ...wantChat },
+        hooks: {
+          // Two auto-responders greeting each other do so for ever and the server does
+          // not rate limit speech. The roster is the keeper's own -- see the 2026-08-27
+          // correction about a keeper process calling its whole fleet strangers.
+          // The id is an object in the room; `isFleetmate` wants a NAME, so it is resolved
+          // through this keeper's own client. A speaker we cannot name is not a peer, which
+          // errs toward answering a stranger rather than ignoring a fleetmate -- the wrong
+          // way round would be two bots talking to each other for ever.
+          isPeer: (id) => {
+            try {
+              const c = session.client;
+              const o = c?.room?.objects?.get?.(id);
+              const nm = o ? c.rsc?.get?.(o.nameRsc) : null;
+              return nm ? party.isFleetmate(nm) : false;
+            } catch { return false; }
+          },
+          autopilotStatus: () => { try { return autopilot?.status?.() ?? null; } catch { return null; } },
+          debugReport: () => { try { return autopilot?.debug ? autopilot.debugLines() : null; }
+                               catch { return null; } },
+          keeperFrozen: () => !!(autopilot?.frozenUntil && Date.now() < autopilot.frozenUntil),
+        },
+      });
+      chatter.reattach();
+      console.error(`[keeper] ${agent} is listening` +
+        (wantChat.debugAnswers ? ' (debug answers on)' : ''));
+    } catch (e) {
+      console.error(`[keeper] ${agent} could not listen: ${e.message}`);
+    }
 
     // Start the autopilot: GOAP (default) or tick driver
     if (mode === 'tick') {
@@ -620,6 +682,12 @@ function state() {
     // `goap` above stays as the compact movement/render shape; this is the operational
     // status shape.  Keeping both named prevents a reader from mistaking one for the other.
     autopilot_status: autopilotStatus,
+    // CAN THIS CHARACTER HEAR. The broker's `fleet` reported `listening: false` for every
+    // keeper-backed character and it was TRUE -- the chatter was only ever attached on the
+    // in-process fallback path. Reported from here now, because here is where the socket is.
+    listening: !!chatter?.attached,
+    chatter: chatter ? { debug_answers: !!chatter.policy?.debugAnswers,
+                         small_talk: !!chatter.policy?.smallTalk } : null,
     uptime_s: Math.floor((Date.now() - startedAt) / 1000),
     // WHERE THIS CHARACTER'S TIME WENT, WHICH LEFT THE BUILDING WITH THE KEEPER.
     //
