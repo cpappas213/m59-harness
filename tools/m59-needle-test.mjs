@@ -837,5 +837,36 @@ console.log('\nAND THE ROUTE OUT NEEDS THE JUMP — THERE IS NO WALK AROUND IT')
 
 }
 
+
+console.log('\nAN ORDINARY FALL GETS THE SAME HELP AS A DECLARED JUMP');
+{
+  const SRC = readFileSync(new URL('./m59-game.mjs', import.meta.url), 'utf8');
+  const MOV = readFileSync(new URL('./m59-movement.mjs', import.meta.url), 'utf8');
+
+  // 1,103 fall attempts in one room in nine minutes, every one an `undeclared_fall`, every
+  // blocker one of our own bots -- and lane 0, wait 0, threaded 0, vigor-refusal 0, because
+  // the whole block was gated on a DECLARED jump. Ordinary falls had no handling and no stop.
+  const lane = SRC.indexOf('const lane = laneClearing();');
+  const gate = SRC.indexOf('      if (isDeclared) {');
+  const reaim = SRC.indexOf('const threaded = this.clearestLanding(');
+  ok('the lane search exists', lane > 0);
+  ok('and it is OUTSIDE the declared-jump gate, so an ordinary fall reaches it',
+     /THE LANE IS FOR EVERY FALL, NOT ONLY A DECLARED ONE/.test(SRC));
+  ok('the WAIT stays declared-only — three seconds on every fall is not affordable',
+     gate > 0 && gate < lane);
+  ok('and so does clearestLanding, which moves the destination and measured 1/10',
+     /if \(isDeclared && Number\.isFinite\(gapNow\.gap\)/.test(SRC) && reaim > lane);
+
+  // AND IT STOPS. Without a terminal reason the walker replans and tries again for ever.
+  ok('a blocked ordinary fall refuses with a named reason',
+     /reason: 'fall_blocked_by_body'/.test(SRC));
+  ok('and that reason is TERMINAL, so the caller stops instead of replanning',
+     /'fall_blocked_by_body',/.test(MOV)
+     && MOV.indexOf("'fall_blocked_by_body',") > MOV.indexOf('TERMINAL_MOVEMENT_REASONS'));
+  ok('the refusal is only raised after the lane has been tried', SRC.indexOf("reason: 'fall_blocked_by_body'") > lane);
+  ok('it is recorded, so "nothing happened" can be told from "it was refused"',
+     /trigger: 'blocked_no_lane'/.test(SRC));
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

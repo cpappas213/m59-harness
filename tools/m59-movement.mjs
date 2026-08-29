@@ -33,6 +33,15 @@ export const TERMINAL_MOVEMENT_REASONS = Object.freeze([
   // it must NOT do is feed the replan loop: the character is standing somewhere it can
   // stand, and the honest answer is that this road is shut right now.
   'jump_needs_run',
+  // A FALL WITH A BODY ON ITS LINE AND NO LANE PAST IT. Terminal for the same reason as
+  // `jump_needs_run`: the drop is the only legal edge down that face, so another heading is
+  // the same attempt again. Raised only AFTER the lane search has failed, so by the time a
+  // caller sees it both sides of the blocker have been tried.
+  //
+  // What its absence cost: 1,103 fall attempts in one room in nine minutes, twelve characters
+  // standing on each other's lines, every one retrying until the run ended. Nothing handled
+  // them and nothing stopped them either.
+  'fall_blocked_by_body',
 ]);
 
 const TERMINAL = new Set(TERMINAL_MOVEMENT_REASONS);

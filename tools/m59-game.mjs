@@ -4141,6 +4141,20 @@ class Session {
         // So once the line has failed to clear, look for another aim — and `clearestLanding`
         // now only offers aims whose ARC finishes on the same shelf, so this cannot repeat
         // the 1/10 mistake of choosing a landing the body cannot reach.
+      }
+      // THE LANE IS FOR EVERY FALL, NOT ONLY A DECLARED ONE.
+      //
+      // Everything above sat behind `isDeclared`, and the traffic does not. Twelve characters
+      // staged into the Cragged Mountains produced 1,103 fall attempts in nine minutes -- every
+      // one an `undeclared_fall`, every blocker one of our own bots standing on the line
+      // (`linegap 1.00 (Llll)`, `linegap 0.00 (Hhhh)`) -- and not one reached a wait, a lane
+      // or a re-aim, because none of that runs for an ordinary fall. They retried until the
+      // run ended.
+      //
+      // The lane costs one pass over the blockers and no waiting, so there is no reason it was
+      // ever the privilege of a declared jump. The WAIT stays declared-only (three seconds on
+      // every ordinary fall is not affordable) and so does `clearestLanding`, which moves the
+      // destination and is the one that measured 1/10.
         // A LANE FIRST, AND ONLY THEN A DIFFERENT LANDING. Shifting the line sideways keeps
         // the declared take-off and landing, so reach is unchanged by construction -- which is
         // why the 1/10 result below does not apply to it. Changing WHERE you land is the thing
@@ -4158,7 +4172,7 @@ class Session {
             gapNow = { gap: lane.gap, who: [] };
           }
         }
-        if (Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD) {
+        if (isDeclared && Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD) {
           const threaded = this.clearestLanding(before, { row, col }, this.world?.geometry);
           if (threaded && (threaded.row !== row || threaded.col !== col)) {
             recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
@@ -4170,6 +4184,24 @@ class Session {
             gapNow = measureLineGap();
           }
         }
+      // AN ORDINARY FALL THE LANE COULD NOT CLEAR IS A REFUSAL, NOT A RETRY.
+      //
+      // A declared jump has somewhere else to go from here -- it waits, and it re-aims. An
+      // ordinary fall has neither, and without this it returned an unremarkable failure that
+      // the walker replanned and tried again, at about twelve attempts a second per character.
+      // `fall_blocked_by_body` is terminal, so the caller stops and the road is reported shut
+      // rather than being hammered. Both sides of the blocker have already been tried by the
+      // time this is reached.
+      if (!isDeclared && Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD) {
+        recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
+                       tactic: 'fall', trigger: 'blocked_no_lane', worked: false, ms: 0,
+                       hp_lost: 0, attempted: false,
+                       note: `${before.row},${before.col} -> ${row},${col} line ${Number(gapNow.gap).toFixed(1)} `
+                             + `(${gapNow.who.join(', ')}); no lane clears it` });
+        return { moved: false, left_room: false, position: before,
+                 reason: 'fall_blocked_by_body',
+                 note: `something is on the line of this fall and neither side of it clears; `
+                       + `waiting is a declared jump's remedy, not an ordinary fall's` };
       }
       // WHAT THIS ROW IS, AND WHY IT IS NOT A FAILURE.
       //
