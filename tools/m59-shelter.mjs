@@ -130,7 +130,14 @@ export function shelterRuns({ fleet = FLEET(), thisEpochOnly = true } = {}) {
   // `sameEpoch` answers true, false, or NULL for "cannot say" — and a row we cannot place is
   // kept rather than dropped, because silently discarding evidence is worse than including it
   // with a caveat.
-  return runs.filter(r => sameEpoch('movement', r.epoch) !== false);
+  // ARGUMENTS THE RIGHT WAY ROUND. This read `sameEpoch('movement', r.epoch)`, which passes
+  // the domain as the row and the row as the domain: `epochId('1596f75e578d+ac40f318')` is
+  // not a known domain, so it answered null, "cannot say" is kept rather than dropped, and
+  // the filter never once filtered. Every run since the ledger was written has been averaged
+  // into every later epoch's summary -- which is the exact thing the #movement tag exists to
+  // stop, in the file that argues for it. Caught by reading a post-rebake summary that still
+  // showed the pre-rebake rows.
+  return runs.filter(r => sameEpoch(r.epoch ?? null, 'movement') !== false);
 }
 
 /** Pair the two rows back up, so a run is one object again. */

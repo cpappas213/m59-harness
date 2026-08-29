@@ -23,7 +23,7 @@
 //   (C) distance per second around the time of death: was it still making progress
 //
 // And one rule change: seek shelter below 100% health rather than below 95%.
-import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -279,6 +279,52 @@ console.log('\nTHE LEDGER ITSELF');
 
   ok('the file is per fleet, so two fleets do not pool their roads',
      shelterFile('a') !== shelterFile('b'));
+}
+
+
+console.log('\n(H) THE EPOCH FILTER HAS TO ACTUALLY FILTER');
+{
+  // `shelterRuns` defaults to this-epoch-only, and called `sameEpoch('movement', r.epoch)` --
+  // the arguments the wrong way round, so the domain went in as the row and the row as the
+  // domain. An unknown domain answers null, "cannot say" is KEPT rather than dropped, and the
+  // filter never removed a single row. Every run recorded before a `#movement` commit was
+  // still averaged into every summary after it, which is the one thing the epoch tag exists
+  // to stop. Caught by eye, reading a post-rebake summary that still showed the pre-rebake
+  // rows; this is the test that should have caught it instead.
+  const src = readFileSync(new URL('./m59-shelter.mjs', import.meta.url), 'utf8');
+  ok('the row goes in first and the domain second, as sameEpoch declares them',
+     /sameEpoch\(r\.epoch \?\? null, 'movement'\)/.test(src));
+  ok('and never the other way round in the filter itself',
+     !/filter\([^)]*sameEpoch\('movement'/.test(src));
+
+  const { epochId } = await import('./m59-epoch.mjs');
+  const mine = epochId('movement');
+
+  const before = shelterRuns().length;
+  recordShelterRun({ run: 'Epoch-1', kind: 'chose', character: 'Eeee', room: 901,
+                     room_name: 'Ours', health: 20, health_pct: 0.5, squares: 3 });
+  const ours = shelterRuns().filter(r => r.room === 901);
+  ok('a recorded run carries this checkout\'s epoch',
+     ours.length === 1 && (mine == null || ours[0].epoch === mine), String(ours[0]?.epoch));
+
+  // WRITTEN STRAIGHT TO THE FILE, because `recordShelterRun` stamps the epoch itself and
+  // will not take one from a caller — which is right (an epoch you can pass in is an epoch
+  // you can forge) and means a foreign row has to be planted rather than recorded.
+  const now = shelterRuns().length;
+  const f = shelterFile();
+  const book = JSON.parse(readFileSync(f, 'utf8'));
+  book.runs.push({ run: 'Epoch-2', kind: 'chose', character: 'Eeee', room: 902,
+                   room_name: 'Theirs', health: 20, health_pct: 0.5, squares: 3,
+                   at: Date.now(), epoch: '0000000000aa' });
+  writeFileSync(f, JSON.stringify(book));
+  const after = shelterRuns();
+  ok('a run from another epoch is not counted in this one',
+     after.length === now && !after.some(r => r.room === 902),
+     `${now} -> ${after.length}`);
+  ok('but it is still on disk, so the previous epoch is not destroyed',
+     shelterRuns({ thisEpochOnly: false }).some(r => r.room === 902));
+  ok('and the filter only ever grew by the row we added', now === before + 1,
+     `${before} -> ${now}`);
 }
 
 rmSync(DIR, { recursive: true, force: true });
