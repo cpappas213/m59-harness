@@ -523,6 +523,7 @@ console.log('\nASKED WHAT IT IS DOING, A TEST-SERVER CHARACTER ACTUALLY SAYS');
   ok('the verbose answer is OFF in the committed defaults, because prod shares a server',
      DEFAULT_CHATTER_POLICY.debugAnswers === false);
 
+  const { readFileSync } = await import('node:fs');
   const lines = activityReport({
     room: "Lake of Jala's Song", roomNum: 568, health: 0.42, mana: 18, fighting: false,
     autopilot: { activity: 'inert — travelling to Yonder Inn of Jasper', mode: 'survive',
@@ -530,15 +531,20 @@ console.log('\nASKED WHAT IT IS DOING, A TEST-SERVER CHARACTER ACTUALLY SAYS');
                  job: { last_action: 'walk to Yonder Inn of Jasper', took_s: 2217,
                         failed: 'not in game' } },
   });
-  ok('it answers with lines, so a game client can wrap them', Array.isArray(lines));
-  const all = lines.join(' | ');
-  ok('it says what it is doing', /Doing: inert — travelling/.test(all), all);
+  ok('a rule may still answer in lines', Array.isArray(lines));
+  // But what goes out is ONE send, so the test measures the thing that is actually said.
+  const all = lines.join(' · ');
+  ok('it says what it is doing', /doing: inert — travelling/.test(all), all);
   ok('and where, with the room NUMBER, because two rooms share a name',
-     /Where: Lake of Jala's Song \(room 568\)/.test(all));
-  ok('and the numbers that decide what it does next', /health 42%.*vigor 78/.test(all));
-  ok('and the job, including that it failed', /Job: walk to Yonder Inn of Jasper, 2217s — FAILED/.test(all));
-  ok('and WHO is holding it, which is three different states told apart',
-     /Held: .*inert.*committed to a journey/.test(all));
+     /at: Lake of Jala's Song #568/.test(all));
+  ok('and the numbers that decide what it does next', /hp 42% vig 78/.test(all));
+  ok('and the job, including that it failed', /job: walk to Yonder Inn of Jasper 2217s FAILED/.test(all));
+  ok('and WHO is holding it, which is four different states told apart',
+     /held: inert,committed:a journey/.test(all));
+  // ONE SEND, 220 CHARACTERS. This case is the worst one measured -- a long room name and a
+  // failed job -- and it fits with five to spare. If a line is added and this fails, the
+  // answer is a shorter line, not a longer cap: the cap is the server's.
+  ok('and the whole thing fits in a single message', all.length <= 220, `${all.length} chars`);
 
   // A debugging aid that throws while being asked what is wrong is worse than useless.
   ok('an empty context does not throw', Array.isArray(activityReport({})));
@@ -546,12 +552,17 @@ console.log('\nASKED WHAT IT IS DOING, A TEST-SERVER CHARACTER ACTUALLY SAYS');
   ok('a missing field is omitted, never printed as null',
      !/null|undefined/.test(activityReport({}).join(' ')), activityReport({}).join(' | '));
 
+  const CH = readFileSync(new URL('./m59-chatter.mjs', import.meta.url), 'utf8');
+  ok('a multi-line reply goes out as ONE send, not one message per line',
+     /const spoken = await this\.send\(lines\.join\(' · '\), channel\);/.test(CH));
+  ok('and nothing loops over the lines sending them separately',
+     !/for \(const line of lines\) spoken = await this\.send/.test(CH));
+
   // PER FLEET, because it is a decision about a server.
   ok('a fleet with no file gets the committed defaults, not an empty policy',
      JSON.stringify(fleetChatter('no-such-fleet')) === '{}');
   ok('and an unnamed fleet asks for nothing', JSON.stringify(fleetChatter('-')) === '{}');
 
-  const { readFileSync } = await import('node:fs');
   const SRC = readFileSync(new URL('./m59-chatter.mjs', import.meta.url), 'utf8');
   ok('only keys the policy defines are applied', /if \(k in DEFAULT_CHATTER_POLICY\) out\[k\] = v;/.test(SRC));
   ok('and an unrecognised one is REPORTED rather than dropped in silence',

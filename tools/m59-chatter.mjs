@@ -261,47 +261,56 @@ export const DEFAULT_CHATTER_POLICY = {
  * It never speaks unless `debugAnswers` is on — see DEFAULT_CHATTER_POLICY for why that is
  * a per-fleet decision and not a global one.
  */
+// MOST IMPORTANT FIRST, AND THAT ORDERING IS THE TRUNCATION STRATEGY.
+//
+// The whole report goes out as ONE send and `sanitizeOutbound` caps that at 220 characters,
+// trimming at a word boundary with an ellipsis. The worst case measured here is 215 -- a
+// stuck traveller with a long room name and a failed job -- so it fits, but not by much, and
+// a longer room name would spill. That is survivable ONLY because the lines are ordered by
+// how much they are worth: what it is doing, then where, then its vitals, then the job, and
+// `mode` last because it is the line a reader skips. Truncation therefore costs the least
+// useful sentence, never the answer to the question that was asked. Keep it that way when
+// adding a line, and keep new lines short.
 export function activityReport(ctx) {
   const a = ctx.autopilot ?? null;
   const out = [];
-  const pct = v => (v == null ? null : `${Math.round(v * 100)}%`);
 
   // WHAT, first, because it is the question that was asked.
   const doing = a?.activity ?? a?.doing ?? a?.lastDoing ?? null;
-  out.push(doing ? `Doing: ${doing}` : (ctx.fighting ? `Doing: fighting` : `Doing: nothing in particular`));
+  out.push(`doing: ${doing || (ctx.fighting ? 'fighting' : 'nothing in particular')}`);
 
-  // WHERE, with the room number, because a name is ambiguous — two rooms share "Cragged
-  // Mountains" and the number is what any tool here would want back.
-  out.push(`Where: ${ctx.room ?? 'unknown'}${ctx.roomNum ? ` (room ${ctx.roomNum})` : ''}`);
+  // WHERE, with the room NUMBER, because a name is ambiguous -- two rooms are called "The
+  // Cragged Mountains" and the number is what any tool here would want back.
+  if (ctx.room || ctx.roomNum) out.push(`at: ${ctx.room ?? '?'}${ctx.roomNum ? ` #${ctx.roomNum}` : ''}`);
 
-  // HOW WELL, which is the number that decides everything else the keeper does.
-  const bits = [];
-  if (ctx.health != null) bits.push(`health ${pct(ctx.health)}`);
-  if (a?.vigor?.value != null) bits.push(`vigor ${a.vigor.value}`);
-  else if (a?.vigor != null && typeof a.vigor === 'number') bits.push(`vigor ${a.vigor}`);
-  if (ctx.mana) bits.push(`mana ${ctx.mana}`);
-  if (bits.length) out.push(`State: ${bits.join(', ')}`);
+  // HOW WELL, which is the number every other decision is made against.
+  const v = a?.vigor?.value ?? (typeof a?.vigor === 'number' ? a.vigor : null);
+  const st = [];
+  if (ctx.health != null) st.push(`hp ${Math.round(ctx.health * 100)}%`);
+  if (v != null) st.push(`vig ${v}`);
+  if (ctx.mana) st.push(`mana ${ctx.mana}`);
+  if (st.length) out.push(st.join(' '));
 
-  // WHERE IT IS TRYING TO GET TO. The commonest question after "what are you doing" is
-  // "why are you standing there", and a journey is the usual answer.
+  // WHAT IT IS PART-WAY THROUGH. "Why are you standing there" is the commonest follow-up and
+  // a half-finished job is usually the answer; whether it FAILED is the half that matters.
+  // Clipped, because the whole report has to fit one 220-character send -- see the join.
   const job = a?.job ?? null;
-  if (job?.last_action) {
-    const took = job.took_s != null ? `, ${job.took_s}s` : '';
-    out.push(`Job: ${job.last_action}${took}${job.failed ? ` — FAILED: ${String(job.failed).slice(0, 90)}` : ''}`);
-  }
-  if (a?.travelling_to || a?.destination) out.push(`Heading for: ${a.travelling_to ?? a.destination}`);
+  if (job?.last_action)
+    out.push(`job: ${String(job.last_action).slice(0, 44)}`
+             + `${job.took_s != null ? ` ${job.took_s}s` : ''}`
+             + `${job.failed ? ` FAILED:${String(job.failed).slice(0, 30)}` : ''}`);
+  if (a?.travelling_to || a?.destination) out.push(`to: ${a.travelling_to ?? a.destination}`);
 
-  // WHO IS HOLDING IT. `inert`, `committed` and `piloted` are three different reasons a
-  // character does not respond to the board, and telling them apart by hand has cost hours.
+  // WHO IS HOLDING IT. Four different reasons a character ignores the board, routinely
+  // confused by hand, and each one has a different next step.
   const held = [];
-  if (a?.inert) held.push('inert (an errand or a journey holds me)');
-  if (a?.committed) held.push(`committed to ${a.committed}`);
-  if (a?.piloted) held.push('piloted by a human client');
+  if (a?.inert) held.push('inert');
+  if (a?.committed) held.push(`committed:${a.committed}`);
+  if (a?.piloted) held.push('piloted');
   if (a?.parked) held.push('parked');
-  if (held.length) out.push(`Held: ${held.join('; ')}`);
+  if (held.length) out.push(`held: ${held.join(',')}`);
 
-  // AND THE MODE, last, because it is the least surprising line and the easiest to skip.
-  if (a?.mode) out.push(`Mode: ${a.mode}${a.hunt ? `, hunting ${a.hunt}` : ''}${a.running === false ? ' (stopped)' : ''}`);
+  if (a?.mode) out.push(`mode: ${a.mode}${a.hunt ? `/${a.hunt}` : ''}`);
   return out;
 }
 
@@ -641,11 +650,22 @@ export class Chatter {
     // path rather than sending the word "null" to a stranger.
     const prepared = hit && budget.ok && channel.kind ? hit.reply(ctx) : null;
     if (prepared) {
-      // An array is several lines, sent one at a time. The server truncates a long say,
-      // and for the debug answer the tail is the part worth having.
+      // ONE MESSAGE, NOT ONE PER LINE.
+      //
+      // A rule may still return an array -- it is the natural way to write a report -- but
+      // what goes out is a single send. Six separate messages arrive in a client as six
+      // interleaved lines with everybody else's chatter between them, and on a busy server
+      // the answer is unreadable by the time it has finished arriving. It also spends six
+      // sends' worth of mana and offers six chances to be cut off mid-sentence.
+      //
+      // The separator is a middle dot: it survives Latin-1, does not appear in the game's
+      // own prose, and reads as a break rather than as punctuation belonging to either side.
+      //
+      // `sanitizeOutbound` caps a reply at 220 characters and trims at a word boundary, so a
+      // report has to FIT rather than rely on arriving in pieces -- see activityReport, which
+      // is written tight for exactly this reason.
       const lines = [].concat(prepared).filter(Boolean);
-      let spoken = null;
-      for (const line of lines) spoken = await this.send(line, channel);
+      const spoken = await this.send(lines.join(' · '), channel);
       this.inbox.noteReply(item.speaker);
       this.inbox.resolve(id, 'answered', { tier: 0, reply: spoken, note: `small talk: ${hit.intent}` });
       this.did.answered++;
