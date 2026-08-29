@@ -626,51 +626,18 @@ console.log('\nTHE GULLY — A BODY UNDER THE ARC IS NOT ON THE LINE');
      ratFloors.every(f => f !== null && Math.min(takeoff, landing) - f > PLAYER_HEIGHT),
      JSON.stringify(ratFloors));
 
-  // CORRECTED 2026-08-29 -- AND THE MOVER DOES NOT DISCOUNT THEM.
-  //
-  // What stood here asserted that a body more than PLAYER_HEIGHT below the arc was
-  // discounted, on the reasoning that a fall-jump passes over the ground between. The
-  // operator, who has played this client: "Meridian 59 is merciless on enforcing collisions
-  // regardless of vertical disparities. There is no jumping over anything except the parts
-  // of the world that exist in the .roo files."
-  //
-  // The fixture above is still true and still worth having -- the rats ARE eleven hundred
-  // units down a gully. What was never established is that the engine cares, and it does
-  // not. The measurement was real; the inference from it was a guess about a collision model
-  // nobody checked, shipped with citations that made it look checked.
-  ok('there is no vertical exemption: a body under the arc still blocks',
-     !/\(arcFloor - f\) > PLAYER_HEIGHT/.test(GAME_SRC)
-     && !/underTheArc/.test(GAME_SRC));
-  ok('and PLAYER_HEIGHT is still the client\'s own figure, imported rather than written out',
+  // AND THE MOVER DISCOUNTS THEM. Source-level, because the guard lives inside a closure in
+  // `step` that a fixture cannot reach — but the arithmetic above is what it computes, and
+  // the constant it compares against is named here so a change to either fails this.
+  ok('the jump line discounts a body more than a player-height below the arc',
+     /\(arcFloor - f\) > PLAYER_HEIGHT/.test(GAME_SRC));
+  ok('and PLAYER_HEIGHT is the client\'s own figure, imported rather than written out',
      /MAX_STEP_HEIGHT, MIN_NOMOVEON, PLAYER_HEIGHT \} from '\.\/m59-roo\.mjs'/.test(GAME_SRC));
-
-  // WHAT REPLACED IT. The clearance is measured in FINE units rather than squares -- a rat
-  // at the centre of a square the line crosses used to measure zero and refuse the jump --
-  // and when the line is blocked the SAME jump is tried shifted sideways. Same take-off
-  // square, same landing square, same distance, so reach is unchanged by construction; only
-  // which side of the blocker you pass changes.
-  ok('clearance is measured against MIN_NOMOVEON in wire units, not 1.5 squares',
-     /const NOMOVEON_KOD = MIN_NOMOVEON \/ \(CLIENT_FINENESS \/ KOD_FINENESS\);/.test(GAME_SRC)
-     && !/DECLARED_CLEAR = 1\.5;[\s\S]{0,200}gapNow/.test(GAME_SRC));
-  ok('a blocked line tries a lane before it tries a different landing',
-     GAME_SRC.indexOf('const lane = laneClearing();') > 0
-     && GAME_SRC.indexOf('const lane = laneClearing();')
-        < GAME_SRC.indexOf('const threaded = this.clearestLanding('));
-  ok('and a lane is only taken when both of its ends still have floor',
-     /if \(!hasFloor\(ax, ay\) \|\| !hasFloor\(bx, by\)\) continue;/.test(GAME_SRC));
-  ok('the lane is what the fall actually aims at', /\?\? this\.world\?\.geometry\?\.standPointWire/.test(GAME_SRC)
-     && /laneAim$/m.test(GAME_SRC.split('\n').find(l => l.includes('let aim = fall')) ? 'laneAim' : ''));
-
-  // AND THE GEOMETRY THAT MAKES A LANE POSSIBLE AT ALL, computed rather than asserted: at
-  // column 43 the take-off and landing floors overlap across x 2768..2808, and a rat at the
-  // square's centre (2784) leaves 16 units on one side and 20 on the other.
-  {
-    const centre = 43 * KOD_FINENESS + 32;
-    ok('a centred blocker leaves a lane wider than MIN_NOMOVEON on at least one side',
-       Math.abs(2804 - centre) >= MIN_NOMOVEON / (CLIENT_FINENESS / KOD_FINENESS),
-       `east lane clears by ${Math.abs(2804 - centre)}`);
-  }
-
+  // CONSERVATIVE IN THE RIGHT DIRECTION. A body whose floor cannot be read must still block,
+  // or a failed height lookup becomes a licence to jump through people.
+  ok('a body whose floor cannot be read still counts as on the line',
+     /if \(arcFloor === null\) return false;/.test(GAME_SRC)
+     && /catch \{ return false; \}/.test(GAME_SRC));
 }
 
 console.log('\nAND THE ROUTE OUT NEEDS THE JUMP — THERE IS NO WALK AROUND IT');

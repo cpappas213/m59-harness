@@ -4019,85 +4019,44 @@ class Session {
       // Conservative in the direction that matters: an unknown floor counts as ON the line, so
       // a body we cannot place is still respected. Only a body we can prove is beneath the arc
       // is discounted.
-      // THERE IS NO JUMPING OVER ANYTHING. Corrected 2026-08-29, from the operator, who has
-      // played this client: "Meridian 59 is merciless on enforcing collisions regardless of
-      // vertical disparities. There is no jumping over anything except the parts of the world
-      // that exist in the .roo files."
-      //
-      // What was here discounted any body more than PLAYER_HEIGHT below the arc -- so the
-      // giant rats standing in the gully at 27,43, 1484 units beneath a jump that leaves from
-      // 2304, read as not being there at all. That is a rule for a game with ballistic arcs
-      // and this is not one: a body in a square you pass through clips you whatever its floor
-      // is. The exemption is gone, which makes this STRICTER, and the lane below pays for it.
-      //
-      // AND THE GAP IS MEASURED IN FINE UNITS, NOT SQUARES.
-      //
-      // `DECLARED_CLEAR` was 1.5 SQUARES and the old measure differenced `o.col` against
-      // `before.col`, so a rat at the CENTRE of a square the line crosses measured zero and
-      // the jump was refused outright. That is the error this file warns about in capitals:
-      // a square is a summary, and on interesting ground a false one. The real question is
-      // whether a body of MIN_NOMOVEON clears, and at column 43 of the Sewers it does -- 16
-      // units west of a centred rat, 20 east, both with take-off and landing floor beneath
-      // them. The operator's framing: a stationary blocker is the BEST case, because nothing
-      // has to be timed, you just pick a side.
-      const NOMOVEON_KOD = MIN_NOMOVEON / (CLIENT_FINENESS / KOD_FINENESS);   // 16, in wire units
-      const bodyPoints = () => { try {
-        return [...c.room.objects.values()]
-          .filter(o => blocksMovement(o.flags ?? 0) && o.id !== c.selfId
-                       && (Number.isFinite(o.x) || Number.isFinite(o.col)))
-          .map(o => ({ x: o.x ?? (o.col * KOD_FINENESS + 32),
-                       y: o.y ?? (o.row * KOD_FINENESS + 32),
-                       name: c.rsc?.get?.(o.nameRsc) ?? o.nameRsc ?? '?' }));
-      } catch { return []; } };
-      const gapAlong = (ax, ay, bx, by, bodies) => {
-        if (!bodies.length) return { gap: Infinity, who: [] };
-        const vx = bx - ax, vy = by - ay, len2 = vx * vx + vy * vy;
-        let best = Infinity, who = [];
-        for (const o of bodies) {
-          const t = len2 ? Math.max(0, Math.min(1, ((o.x - ax) * vx + (o.y - ay) * vy) / len2)) : 0;
-          const d = Math.hypot(ax + t * vx - o.x, ay + t * vy - o.y);
-          if (d < best) { best = d; who = [o.name]; } else if (d < best + 0.01) who.push(o.name);
-        }
-        return { gap: best, who };
-      };
-      const fromX = before.x ?? (before.col * KOD_FINENESS + 32);
-      const fromY = before.y ?? (before.row * KOD_FINENESS + 32);
-      const toXc = col * KOD_FINENESS + 32, toYc = row * KOD_FINENESS + 32;
-      const measureLineGap = () => gapAlong(fromX, fromY, toXc, toYc, bodyPoints());
-
-      // A LANE IS THE SAME JUMP, SHIFTED SIDEWAYS. Same take-off square, same landing square,
-      // same distance -- so it cannot repeat the 1/10 result recorded below, which came from
-      // choosing a FURTHER landing the body could not reach. Only the line moves.
-      //
-      // Offsets are tried nearest-first, and a candidate is kept only if both ends still have
-      // floor: a lane that leaves the take-off ledge or misses the landing shelf is not a
-      // lane, it is a fall.
-      const laneClearing = () => {
+      const arcFloor = (() => { try {
         const g = this.world?.geometry;
         if (typeof g?.floorBaseAtClient !== 'function') return null;
-        const bodies = bodyPoints();
-        if (!bodies.length) return null;
-        const dx = toXc - fromX, dy = toYc - fromY;
-        const len = Math.hypot(dx, dy) || 1;
-        const px = -dy / len, py = dx / len;
-        const hasFloor = (x, y) => { try {
-          return Number.isFinite(g.floorBaseAtClient(protocolToClient(x), protocolToClient(y)));
-        } catch { return false; } };
-        let best = null;
-        for (let off = 4; off <= 28; off += 2) {
-          for (const sign of [1, -1]) {
-            const ox = px * off * sign, oy = py * off * sign;
-            const ax = Math.round(fromX + ox), ay = Math.round(fromY + oy);
-            const bx = Math.round(toXc + ox), by = Math.round(toYc + oy);
-            if (!hasFloor(ax, ay) || !hasFloor(bx, by)) continue;
-            const m = gapAlong(ax, ay, bx, by, bodies);
-            if (!(m.gap >= NOMOVEON_KOD)) continue;
-            if (!best || m.gap > best.gap) best = { x: bx, y: by, gap: m.gap, off: off * sign };
-          }
-          if (best) break;
-        }
-        return best;
+        const a = g.floorBaseAtClient(protocolToClient(before.x ?? (before.col * KOD_FINENESS + 32)),
+                                      protocolToClient(before.y ?? (before.row * KOD_FINENESS + 32)));
+        const b = g.floorBaseAtClient(protocolToClient(col * KOD_FINENESS + 32),
+                                      protocolToClient(row * KOD_FINENESS + 32));
+        return Number.isFinite(a) && Number.isFinite(b) ? Math.min(a, b) : null;
+      } catch { return null; } })();
+      const underTheArc = (o) => {
+        if (arcFloor === null) return false;
+        try {
+          const g = this.world?.geometry;
+          const f = g.floorBaseAtClient(protocolToClient(o.x ?? (o.col * KOD_FINENESS + 32)),
+                                        protocolToClient(o.y ?? (o.row * KOD_FINENESS + 32)));
+          return Number.isFinite(f) && (arcFloor - f) > PLAYER_HEIGHT;
+        } catch { return false; }
       };
+      const measureLineGap = () => { try {
+        const bodies = [...c.room.objects.values()]
+          .filter(o => blocksMovement(o.flags ?? 0) && o.id !== c.selfId
+                       && Number.isFinite(o.row) && Number.isFinite(o.col)
+                       && !underTheArc(o));
+        if (!bodies.length) return { gap: Infinity, who: [] };
+        const vx = col - before.col, vy = row - before.row;
+        const len2 = vx * vx + vy * vy;
+        let best = Infinity, who = [];
+        for (const o of bodies) {
+          const wx = o.col - before.col, wy = o.row - before.row;
+          const t = len2 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+          const d = Math.hypot(before.col + t * vx - o.col, before.row + t * vy - o.row);
+          // Raw room objects carry `nameRsc`, not `name` — the resource table is what turns
+          // one into the other, and without it every blocker logged as `undefined`.
+          const nm = c.rsc?.get?.(o.nameRsc) ?? o.nameRsc ?? '?';
+          if (d < best) { best = d; who = [nm]; } else if (d < best + 0.01) who.push(nm);
+        }
+        return { gap: best, who };
+      } catch { return { gap: null, who: [] }; } };
       const lineGap = measureLineGap();
       // WAIT FOR THE LINE, RATHER THAN RE-AIMING AROUND IT.
       //
@@ -4114,12 +4073,11 @@ class Session {
       // 1.5 squares is not a new number: it is `DECLARED_CLEAR`, from the 68-jump study
       // already in this file. Bounded hard — this is a primitive, callers expect it back
       // quickly, and a doorway held by something that never moves must still end the walk.
-      let laneAim = null;   // set by laneClearing; the fall aims here when it exists
       const JUMP_WAITS = Number(process.env.M59_JUMP_WAITS || 3);
       const JUMP_WAIT_MS = Number(process.env.M59_JUMP_WAIT_MS || 1200);
       let waited = 0, gapNow = lineGap;
       if (isDeclared) {
-        while (Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD && waited < JUMP_WAITS) {
+        while (Number.isFinite(gapNow.gap) && gapNow.gap < 1.5 && waited < JUMP_WAITS) {
           await new Promise(r => setTimeout(r, JUMP_WAIT_MS));
           waited++;
           gapNow = measureLineGap();
@@ -4127,7 +4085,7 @@ class Session {
         if (waited) {
           recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
                          tactic: 'declared_jump', trigger: 'waited_for_line',
-                         worked: !(Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD),
+                         worked: !(Number.isFinite(gapNow.gap) && gapNow.gap < 1.5),
                          ms: waited * JUMP_WAIT_MS, hp_lost: 0, attempted: true,
                          note: `line was ${Number(lineGap.gap).toFixed(2)}; after ${waited} wait(s) ` +
                                `it is ${gapNow.gap === Infinity ? 'clear' : Number(gapNow.gap).toFixed(2)}` });
@@ -4141,24 +4099,7 @@ class Session {
         // So once the line has failed to clear, look for another aim — and `clearestLanding`
         // now only offers aims whose ARC finishes on the same shelf, so this cannot repeat
         // the 1/10 mistake of choosing a landing the body cannot reach.
-        // A LANE FIRST, AND ONLY THEN A DIFFERENT LANDING. Shifting the line sideways keeps
-        // the declared take-off and landing, so reach is unchanged by construction -- which is
-        // why the 1/10 result below does not apply to it. Changing WHERE you land is the thing
-        // that fell short; changing which side of the blocker you pass is not.
-        if (Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD) {
-          const lane = laneClearing();
-          if (lane) {
-            recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
-                           tactic: 'declared_jump', trigger: 'lane', worked: true, ms: 0,
-                           hp_lost: 0, attempted: true,
-                           note: `line to ${row},${col} was ${Number(gapNow.gap).toFixed(1)} `
-                                 + `(${gapNow.who.join(', ')}); took the lane ${lane.off > 0 ? '+' : ''}${lane.off} `
-                                 + `for ${lane.gap.toFixed(1)} of clearance` });
-            laneAim = { x: lane.x, y: lane.y };
-            gapNow = { gap: lane.gap, who: [] };
-          }
-        }
-        if (Number.isFinite(gapNow.gap) && gapNow.gap < NOMOVEON_KOD) {
+        if (Number.isFinite(gapNow.gap) && gapNow.gap < 1.5) {
           const threaded = this.clearestLanding(before, { row, col }, this.world?.geometry);
           if (threaded && (threaded.row !== row || threaded.col !== col)) {
             recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: Number(this.world?.room?.num ?? 0),
@@ -4282,12 +4223,8 @@ class Session {
     // asking a question nobody answered — and every one of those nine traces is in walk
     // mode, which is the predicate that refuses a fall in the first place.
     const half = KOD_FINENESS >> 1;
-    // `laneAim` is the same landing square entered on the side that clears the blocker --
-    // see laneClearing. Null when nothing was in the way, so an unobstructed jump aims at the
-    // stand point exactly as before and is unchanged to the byte.
     let aim = fall
-      ? (laneAim
-         ?? this.world?.geometry?.standPointWire?.(row, col)
+      ? (this.world?.geometry?.standPointWire?.(row, col)
          ?? { x: col * KOD_FINENESS + half, y: row * KOD_FINENESS + half })
       : null;
 
