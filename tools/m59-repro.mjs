@@ -116,6 +116,105 @@ export const CASES = {
     },
   },
 
+  'flatlands-needle': {
+    title: 'the narrow gaps in row 29 that are the only way through the Flatlands',
+    blocking: 'any leg that crosses 584 north to south, which is most of the Jasper roads',
+    why:
+      "Room 584 is 43x39 and its northern and southern halves are joined along ONE row: 29. " +
+      "Closing that row drops the reachable body from 961 squares to 715 and puts the " +
+      "southern anchor out of reach, so there is no way round it. The row is pierced in " +
+      "three places -- cols 2-4, 9-10 and 28-29 -- and the widest gap is three squares. The " +
+      "eastern one, cols 28-29, is the two-wide gap on the line between the northern anchor " +
+      "and the southern one, which is the crossing the roads actually use. Same shape as the " +
+      "sewer pipe and worse: a narrow gap in open country with monsters in it, where the " +
+      "walker's sidestep has one square to aim at and the queue forms in the open.",
+    measured: {
+      at: '2026-08-29 (geometry), operator-reported (behaviour)',
+      epoch: 'd80ceac (#movement a player in the way is a queue, not a wall)',
+      geometry: 'row 29 is the ONLY row joining the halves: the north-anchor flood reaches ' +
+                '961 squares and the south anchor; with row 29 closed it reaches 715 and cannot',
+      widths: 'row 29 is open at cols 2,3,4 / 9,10 / 28,29 -- three gaps, widest three ' +
+              'squares. Rows 26-28 are 11-13 wide, rows 30-32 are 5-6, row 33 is 3',
+      behaviour: 'REPORTED BY THE OPERATOR, NOT RE-MEASURED HERE: bots watched failing to ' +
+                 'get past and being eaten by spiders while stuck. Run this to get a number.',
+    },
+    hint: 'the same answer as crowded-pipe, if there is one: reserve the neck, or stagger',
+    // The premise is that the neck is the ONLY way through and is two wide. Both are checked,
+    // because if a later bake opens a second passage the case is not fixed, it is obsolete.
+    offline({ geometryFor }) {
+      const geo = geometryFor(584);
+      if (!geo) return { checked: false, why: 'no room 584 geometry on disk' };
+      const R = 43, C = 39, key = (r, c) => r * 1000 + c;
+      const D = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+      const step = (a, b, c, d) => { try { return geo.moverStepLands(a, b, c, d) === true; } catch { return false; } };
+      const flood = block => {
+        if (!geo.standPoint(1, 35)) return new Set();
+        const seen = new Set([key(1, 35)]); const q = [[1, 35]];
+        while (q.length) {
+          const [r, c] = q.shift();
+          for (const [dr, dc] of D) {
+            const nr = r + dr, nc = c + dc;
+            if (nr < 1 || nc < 1 || nr > R || nc > C || seen.has(key(nr, nc))) continue;
+            if (block && block(nr)) continue;
+            if (!geo.standPoint(nr, nc) || !step(r, c, nr, nc)) continue;
+            seen.add(key(nr, nc)); q.push([nr, nc]);
+          }
+        }
+        return seen;
+      };
+      const open = flood(null), closed = flood(r => r === 29);
+      // THE GAPS, NOT THE ROW. Counting every standable square in row 29 gives 7 and reads
+      // as a wide passage; they are three separate gaps with wall between them, and what a
+      // queue has to file through is the widest single gap. The first version of this check
+      // counted the row and reported its own case out of date.
+      const cols = [];
+      for (let c = 1; c <= C; c++) if (open.has(key(29, c))) cols.push(c);
+      const gaps = [];
+      for (const c of cols) {
+        const last = gaps[gaps.length - 1];
+        if (last && c === last[last.length - 1] + 1) last.push(c); else gaps.push([c]);
+      }
+      const widest = gaps.reduce((m, g) => Math.max(m, g.length), 0);
+      const soleRoute = open.has(key(42, 36)) && !closed.has(key(42, 36));
+      return { checked: true, ok: soleRoute && widest <= 3,
+               detail: 'row 29 carries ' + gaps.length + ' gap(s) [' +
+                       gaps.map(g => g.join('-')).join('] [') + '], widest ' + widest +
+                       ' square(s); closing the row ' + (soleRoute ? 'DOES' : 'does not') +
+                       ' cut the south anchor off (' + open.size + ' -> ' + closed.size + ' squares)' };
+    },
+    async run({ bots, tries, maxS }) {
+      const { roomObject } = await import('./m59-dm.mjs');
+      const room = await roomObject(584);
+      if (room == null) return { ok: false, why: 'room 584 is not on this server' };
+      const { sharedRoomGeometry } = await import('./m59-roo.mjs');
+      const { loadMap } = await import('./m59-map.mjs');
+      const { attachStepMasks } = await import('./m59-routes.mjs');
+      const map = loadMap(); attachStepMasks(map);
+      const geo = sharedRoomGeometry(map.rooms['584']);
+      // NORTH-HALF STARTS ONLY, or the run does not test the neck at all: a start already
+      // south of row 29 walks to 585 without ever meeting it. Drawn deterministically from
+      // the same spread `startsIn` uses, so two runs are comparable.
+      const starts = startsIn(geo, tries * 6).filter(s => s.row <= 28).slice(0, tries);
+      if (!starts.length) return { ok: false, why: 'no north-half starts found in 584' };
+      const names = await namesOf();
+      const use = bots ?? ['shadow01', 'shadow09', 'shadow11', 'shadow12', 'shadow05', 'shadow06'];
+      const runs = await Promise.all(starts.map((s, k) =>
+        tryHop(use[k % use.length], room, s, 585,
+               { name: names.get(use[k % use.length]), maxMs: maxS * 1000 })));
+      const scored = runs.filter(r => !r.skipped);
+      const okd = scored.filter(r => r.ok);
+      return {
+        ok: scored.length > 0 && okd.length === scored.length,
+        crossed: scored.length + ' north start(s), ' + okd.length + ' reached 585',
+        median_s: okd.length
+          ? Math.round(okd.map(r => r.ms).sort((a, b) => a - b)[okd.length >> 1] / 1000) : null,
+        failures: scored.filter(r => !r.ok).map(r =>
+          (r.start ? r.start.row + ',' + r.start.col : 'start unknown') +
+          ' (' + String(r.why).slice(0, 40) + ')'),
+      };
+    },
+  },
+
   'gully-escape': {
     title: 'escaping the sewer gully costs about a third of the health of whoever does it',
     blocking: 'not the route -- the gully IS escapable now -- but surviving the trip out',
