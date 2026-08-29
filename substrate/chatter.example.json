@@ -1,0 +1,18 @@
+{
+  "_what": "Copy to substrate/chatter-<fleet>.json to change how that fleet's characters answer when spoken to. Merged over DEFAULT_CHATTER_POLICY in tools/m59-chatter.mjs; absent means the committed defaults, never an empty policy. An unrecognised key is reported and ignored, never silently applied.",
+
+  "_debugAnswers": "Answer 'whatcha doing' with the objective, room, health, job and who is holding the character, instead of one vague sentence. OFF by default. Right for a local test server, wrong for a shared one — it narrates the fleet's operations to whoever is standing nearby. m59-shadow.mjs turns it on for the shadow fleet.",
+  "debugAnswers": false,
+
+  "_ack": "Acknowledge at all. Off leaves the character silent but still filling its inbox.",
+  "ack": true,
+
+  "_smallTalk": "Answer the fixed small-talk table — greetings, who are you, where are you, are you a bot. No model is involved either way.",
+  "smallTalk": true,
+
+  "_faceSpeaker": "Turn to face whoever spoke, when they are in the room.",
+  "faceSpeaker": true,
+
+  "_escalate": "Hand unmatched speech to the model tier. Off makes the deterministic table the whole system.",
+  "escalate": true
+}

@@ -514,5 +514,69 @@ section('registry');
   ok('unwrapping something unwrapped is a no-op', unwrapSpeech('safe spot here').said === 'safe spot here');
 }
 
+
+console.log('\nASKED WHAT IT IS DOING, A TEST-SERVER CHARACTER ACTUALLY SAYS');
+{
+  const { activityReport, fleetChatter, DEFAULT_CHATTER_POLICY } =
+    await import('./m59-chatter.mjs');
+
+  ok('the verbose answer is OFF in the committed defaults, because prod shares a server',
+     DEFAULT_CHATTER_POLICY.debugAnswers === false);
+
+  const lines = activityReport({
+    room: "Lake of Jala's Song", roomNum: 568, health: 0.42, mana: 18, fighting: false,
+    autopilot: { activity: 'inert — travelling to Yonder Inn of Jasper', mode: 'survive',
+                 vigor: 78, inert: true, committed: 'a journey',
+                 job: { last_action: 'walk to Yonder Inn of Jasper', took_s: 2217,
+                        failed: 'not in game' } },
+  });
+  ok('it answers with lines, so a game client can wrap them', Array.isArray(lines));
+  const all = lines.join(' | ');
+  ok('it says what it is doing', /Doing: inert — travelling/.test(all), all);
+  ok('and where, with the room NUMBER, because two rooms share a name',
+     /Where: Lake of Jala's Song \(room 568\)/.test(all));
+  ok('and the numbers that decide what it does next', /health 42%.*vigor 78/.test(all));
+  ok('and the job, including that it failed', /Job: walk to Yonder Inn of Jasper, 2217s — FAILED/.test(all));
+  ok('and WHO is holding it, which is three different states told apart',
+     /Held: .*inert.*committed to a journey/.test(all));
+
+  // A debugging aid that throws while being asked what is wrong is worse than useless.
+  ok('an empty context does not throw', Array.isArray(activityReport({})));
+  ok('and says something rather than nothing', activityReport({}).length > 0);
+  ok('a missing field is omitted, never printed as null',
+     !/null|undefined/.test(activityReport({}).join(' ')), activityReport({}).join(' | '));
+
+  // PER FLEET, because it is a decision about a server.
+  ok('a fleet with no file gets the committed defaults, not an empty policy',
+     JSON.stringify(fleetChatter('no-such-fleet')) === '{}');
+  ok('and an unnamed fleet asks for nothing', JSON.stringify(fleetChatter('-')) === '{}');
+
+  const { readFileSync } = await import('node:fs');
+  const SRC = readFileSync(new URL('./m59-chatter.mjs', import.meta.url), 'utf8');
+  ok('only keys the policy defines are applied', /if \(k in DEFAULT_CHATTER_POLICY\) out\[k\] = v;/.test(SRC));
+  ok('and an unrecognised one is REPORTED rather than dropped in silence',
+     /has no such setting for — ignored/.test(SRC));
+  ok('a file that will not parse says so and keeps the defaults',
+     /will not parse .*using the committed defaults/.test(SRC));
+
+  // m59-shadow.mjs is GITIGNORED — it holds the shape of a real roster — so a fresh clone
+  // does not have it and must not fail here. Where it exists, it has to carry the setting
+  // through a rebuild; where it does not, there is nothing to assert about.
+  let SHADOW = null;
+  try { SHADOW = readFileSync(new URL('./m59-shadow.mjs', import.meta.url), 'utf8'); } catch {}
+  if (SHADOW) {
+    ok('rebuilding the shadow fleet writes the setting back, so it survives a rebuild',
+       /function rememberChatter\(\)/.test(SHADOW) && /const ch = rememberChatter\(\);/.test(SHADOW));
+    ok('and it never overwrites an operator who turned it off',
+       /if \(existsSync\(CHATTER\)\) return \{ wrote: false, why: 'already set' \};/.test(SHADOW));
+  } else {
+    ok('m59-shadow.mjs is absent (gitignored), so the rebuild path is not asserted here', true);
+  }
+
+  const BROKER = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
+  ok('the broker merges the fleet\'s settings over the defaults when a character starts listening',
+     /\.\.\.fleetChatter\(FLEET\)/.test(BROKER));
+}
+
 console.log(`\n${failed ? 'FAILED' : 'ok'} — ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

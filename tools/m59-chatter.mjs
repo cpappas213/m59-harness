@@ -24,6 +24,9 @@
 // because a human who knows they are talking to a bot is markedly harder to socially
 // engineer through it, and because the alternative is having the fleet lie to people.
 
+import { readFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { inboxFor, AUTO_REPLY_CHANNELS, sanitizeOutbound } from './m59-inbox.mjs';
 import { isLoopbackHost } from './m59-dm.mjs';
 
@@ -85,6 +88,9 @@ export const SMALL_TALK = [
     intent: 'activity',
     re: /\bwhat (are|r) (you|u) (doing|up to)\b|\bwyd\b|\bwhatcha doing\b/i,
     reply: (ctx) => {
+      // THE TEST-SERVER ANSWER: everything the keeper will say, as lines. An array sends one
+      // message per line, which is how the `debug` intent already answers.
+      if (ctx.debugAnswers) return activityReport(ctx);
       if (ctx.fighting) return `Fighting something right now — talk in a moment.`;
       if (ctx.autopilot?.mode === 'farm') return `Hunting${ctx.autopilot.hunt ? ` ${ctx.autopilot.hunt}` : ''} around ${ctx.room ?? 'here'}.`;
       if (ctx.autopilot?.mode === 'survive') return `Just keeping myself alive in ${ctx.room ?? 'here'}.`;
@@ -203,6 +209,19 @@ export const DEFAULT_CHATTER_POLICY = {
   // `challenge`. See arenaCall — the guards are what make this safe to default on, and
   // this switch exists for turning it off during a test that wants the silence.
   arenaChallenge: true,
+  // SAY WHAT IS ACTUALLY GOING ON, IN DETAIL, TO ANYBODY WHO ASKS.
+  //
+  // OFF BY DEFAULT AND IT MUST STAY THAT WAY ON A SHARED SERVER. The ordinary `activity`
+  // answer is one vague sentence on purpose -- "Hunting around the Sewers" -- because prod
+  // plays alongside real people, and a character that recites its objective, its health,
+  // its route and its keeper's internal state to any stranger who types "wyd" is narrating
+  // the fleet's operations to whoever is standing nearby.
+  //
+  // On a test server it is the opposite: the whole point is to walk up to a bot and ask it
+  // what it thinks it is doing. So it is a PER-FLEET setting read from
+  // `substrate/chatter-<fleet>.json` -- see fleetChatter -- and the shadow fleet turns it
+  // on. Prod is not changed by this commit and does not read a file that is not there.
+  debugAnswers: false,
   // Hand unmatched speech to the model tier. Off makes this the whole system: the
   // character answers six things and records the rest without ever calling a model.
   escalate: true,
@@ -210,6 +229,111 @@ export const DEFAULT_CHATTER_POLICY = {
   idleMs: 700,
   journal: 200,
 };
+
+
+/**
+ * WHAT THIS CHARACTER THINKS IT IS DOING, IN FULL, FOR A TEST SERVER.
+ *
+ * Returned as an ARRAY so the pump sends one line per message — the same shape the `debug`
+ * intent uses, and the reason it is readable in a game client that wraps at the window edge.
+ *
+ * Everything here is read defensively off the keeper's own status: this is a debugging aid,
+ * and a debugging aid that throws while being asked what is wrong is worse than useless.
+ * Missing fields are omitted rather than printed as "null", because a line that says
+ * `objective: null` reads as a fault and is usually just a character with nothing to do.
+ *
+ * It never speaks unless `debugAnswers` is on — see DEFAULT_CHATTER_POLICY for why that is
+ * a per-fleet decision and not a global one.
+ */
+export function activityReport(ctx) {
+  const a = ctx.autopilot ?? null;
+  const out = [];
+  const pct = v => (v == null ? null : `${Math.round(v * 100)}%`);
+
+  // WHAT, first, because it is the question that was asked.
+  const doing = a?.activity ?? a?.doing ?? a?.lastDoing ?? null;
+  out.push(doing ? `Doing: ${doing}` : (ctx.fighting ? `Doing: fighting` : `Doing: nothing in particular`));
+
+  // WHERE, with the room number, because a name is ambiguous — two rooms share "Cragged
+  // Mountains" and the number is what any tool here would want back.
+  out.push(`Where: ${ctx.room ?? 'unknown'}${ctx.roomNum ? ` (room ${ctx.roomNum})` : ''}`);
+
+  // HOW WELL, which is the number that decides everything else the keeper does.
+  const bits = [];
+  if (ctx.health != null) bits.push(`health ${pct(ctx.health)}`);
+  if (a?.vigor?.value != null) bits.push(`vigor ${a.vigor.value}`);
+  else if (a?.vigor != null && typeof a.vigor === 'number') bits.push(`vigor ${a.vigor}`);
+  if (ctx.mana) bits.push(`mana ${ctx.mana}`);
+  if (bits.length) out.push(`State: ${bits.join(', ')}`);
+
+  // WHERE IT IS TRYING TO GET TO. The commonest question after "what are you doing" is
+  // "why are you standing there", and a journey is the usual answer.
+  const job = a?.job ?? null;
+  if (job?.last_action) {
+    const took = job.took_s != null ? `, ${job.took_s}s` : '';
+    out.push(`Job: ${job.last_action}${took}${job.failed ? ` — FAILED: ${String(job.failed).slice(0, 90)}` : ''}`);
+  }
+  if (a?.travelling_to || a?.destination) out.push(`Heading for: ${a.travelling_to ?? a.destination}`);
+
+  // WHO IS HOLDING IT. `inert`, `committed` and `piloted` are three different reasons a
+  // character does not respond to the board, and telling them apart by hand has cost hours.
+  const held = [];
+  if (a?.inert) held.push('inert (an errand or a journey holds me)');
+  if (a?.committed) held.push(`committed to ${a.committed}`);
+  if (a?.piloted) held.push('piloted by a human client');
+  if (a?.parked) held.push('parked');
+  if (held.length) out.push(`Held: ${held.join('; ')}`);
+
+  // AND THE MODE, last, because it is the least surprising line and the easiest to skip.
+  if (a?.mode) out.push(`Mode: ${a.mode}${a.hunt ? `, hunting ${a.hunt}` : ''}${a.running === false ? ' (stopped)' : ''}`);
+  return out;
+}
+
+/**
+ * The chatter settings this fleet keeps, or `{}`.
+ *
+ * A FLEET'S ORDERS ARE NOT A GLOBAL DEFAULT — the same argument CLAUDE.md makes about
+ * loadouts and tuning. Whether a character narrates its internals to strangers depends on
+ * which server it is standing on, so it is stored per fleet, beside the other per-fleet
+ * files (`grudges-<fleet>.json`, `shelter-runs-<fleet>.json`), gitignored, and absent by
+ * default. A missing file means the committed defaults, never an empty policy.
+ *
+ * A file that will not parse is REPORTED and then ignored, rather than silently becoming
+ * `{}` — a setting that does nothing is how `purpose` stayed out of a schema for a year.
+ */
+export function fleetChatter(fleet) {
+  const name = String(fleet ?? '').trim();
+  if (!name || name === '-') return {};
+  try {
+    const f = join(SUBSTRATE, `chatter-${name}.json`);
+    if (!existsSync(f)) return {};
+    const j = JSON.parse(readFileSync(f, 'utf8'));
+    if (!j || typeof j !== 'object' || Array.isArray(j)) return {};
+    // ONLY KEYS THE POLICY ACTUALLY DEFINES, AND SAY SO ABOUT THE REST.
+    //
+    // The house rule, and it is in CLAUDE.md: an unrecognised key is reported, never
+    // applied and never silently dropped, because a setting that quietly does nothing is
+    // how `purpose` stayed out of a schema for a year with every keeper's audit off. Keys
+    // beginning `_` are the documentation convention used by every example file here and
+    // are skipped without comment.
+    const out = {}, unknown = [];
+    for (const [k, v] of Object.entries(j)) {
+      if (k.startsWith('_')) continue;
+      if (k in DEFAULT_CHATTER_POLICY) out[k] = v;
+      else unknown.push(k);
+    }
+    if (unknown.length)
+      console.error(`[chat] chatter-${name}.json sets ${unknown.join(', ')}, which the chatter ` +
+                    `has no such setting for — ignored, and the committed default stands`);
+    return out;
+  } catch (e) {
+    console.error(`[chat] chatter-${name}.json will not parse (${e.message}) — using the committed defaults`);
+    return {};
+  }
+}
+
+// Beside the other per-fleet files. `fleetChatter` reads from here.
+const SUBSTRATE = join(dirname(fileURLToPath(import.meta.url)), '..', 'substrate');
 
 export class Chatter {
   // `hooks` is how the broker tells this object about the world outside its own session:
@@ -329,6 +453,9 @@ export class Chatter {
       // character. arenaCall gates on this.
       host: this.s.credentials?.host ?? null,
       speakerName: item.speaker_name,
+      // See DEFAULT_CHATTER_POLICY.debugAnswers. The verbose replies read this from the
+      // context rather than the policy, so a rule stays a pure function of what it is given.
+      debugAnswers: !!this.policy.debugAnswers,
       speakerInRoom: view ? view.objects.some(o => o.id === item.speaker) : false,
       speakerObject: view?.objects.find(o => o.id === item.speaker) ?? null,
       health,

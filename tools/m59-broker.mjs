@@ -89,7 +89,7 @@ import { autopilotFor, dropAutopilot, allAutopilots, autopilotIfAny, MODES, STRA
          POSTMORTEM_DIR, setPilotLookup,
          TRAVEL_GUARD_KEYS,
          applyFightAboveVigor } from './m59-autopilot.mjs';
-import { dropChatter, chatterIfAny, chatterFor } from './m59-chatter.mjs';
+import { dropChatter, chatterIfAny, chatterFor, fleetChatter } from './m59-chatter.mjs';
 import * as parties from './m59-party.mjs';
 import * as exitgap from './m59-exitgap.mjs';
 import { attachStepMasks, activeRoutes, anchorFor, bakedPath } from './m59-routes.mjs';
@@ -2273,7 +2273,13 @@ function listen(name, s) {
     const ch = chatterFor(s, {
       // Only the fields DEFAULT_CHATTER_POLICY actually defines — passing invented
       // ones would be silently ignored and would read as configuration that exists.
-      policy: { ack: true, smallTalk: true, faceSpeaker: true, escalate: true },
+      // AND WHATEVER THIS FLEET ASKS FOR ON TOP. `fleetChatter` reads
+      // `substrate/chatter-<fleet>.json`, which is absent on a fresh clone and on prod, so
+      // the four defaults below are what every character gets unless a fleet says otherwise.
+      // The shadow fleet uses it to turn on `debugAnswers`: on a test server the point is to
+      // walk up to a bot and ask what it thinks it is doing; on a shared server it is not.
+      policy: { ack: true, smallTalk: true, faceSpeaker: true, escalate: true,
+                ...fleetChatter(FLEET) },
       hooks: {
         isPeer: (id) => [...sessions.values()]
           .some(o => o !== s && o.client?.selfId === id),
