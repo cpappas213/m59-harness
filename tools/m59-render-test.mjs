@@ -37,6 +37,13 @@ const FAMILIARS = {
   target: null,
 };
 const MAP_ROOM_52 = { num: 52, name: 'Familiars', rows: 11, cols: 11 };
+const ROOM_WIRE_52 = {
+  resolved_room_num: 52, room_resource_id: 22001, room_security_u32: 0xf1234567,
+};
+const BOUND_FAMILIARS = { ...FAMILIARS, room_wire: ROOM_WIRE_52 };
+const BOUND_MAP_ROOM_52 = {
+  ...MAP_ROOM_52, roomRsc: 22001, rooFile: 'familiars.roo',
+};
 
 // ---------------------------------------------------------------- the position exists
 
@@ -60,6 +67,20 @@ is(unmapped.room.size, { rows: 48, cols: 50 },
   'with no map room there is no better answer than the default');
 ok(/keeper default/.test(unmapped.room.size_source),
   'but a defaulted size must never look like a measured one');
+
+const boundProjection = renderProjection(BOUND_FAMILIARS, BOUND_MAP_ROOM_52);
+is(boundProjection.room_wire, ROOM_WIRE_52,
+  'an exact room view/map join carries the complete closed BP_PLAYER provenance');
+is(boundProjection.room.resource, 'familiars.roo',
+  'the local filename is attached only to that exact resource-id-selected map row');
+const wrongBoundMap = renderProjection(BOUND_FAMILIARS,
+  { ...BOUND_MAP_ROOM_52, roomRsc: 22002, rooFile: 'wrong.roo' });
+is(wrongBoundMap.room_wire, undefined,
+  'a different map resource id cannot inherit the live tuple');
+is(wrongBoundMap.room.resource, undefined,
+  'and its filename is withheld rather than paired with unrelated server provenance');
+ok(/withheld/.test(wrongBoundMap.room_binding_note),
+  'the failed live-to-map join is explicit');
 
 // ---------------------------------------------------------------- affordances, not buckets
 
@@ -157,6 +178,28 @@ is(Array.isArray(composed.exits), true,
   'exits is ALWAYS an array — arrivalReport reads `v.exits.length` with no guard');
 is(composed.scenery.total, 0, 'and scenery.total is always a number for the same reason');
 ok(/room view/.test(composed.source), 'the composed answer says both halves were used');
+
+const BOUND_STATE = { ...STATE, room_wire: ROOM_WIRE_52 };
+const boundComposed = keeperView(BOUND_STATE, BOUND_FAMILIARS,
+  num => (num === 52 ? BOUND_MAP_ROOM_52 : null));
+is(boundComposed.room_wire, ROOM_WIRE_52,
+  'state and room-view tuples are published only after exact reconciliation');
+is(boundComposed.room.resource, 'familiars.roo',
+  'the reconciled look carries the filename from the matching map row');
+is(boundComposed.room_binding_note, undefined,
+  'a complete exact binding needs no warning');
+
+const changedSecurity = keeperView(
+  { ...BOUND_STATE, room_wire: { ...ROOM_WIRE_52, room_security_u32: 0xf1234568 } },
+  BOUND_FAMILIARS, num => (num === 52 ? BOUND_MAP_ROOM_52 : null));
+is(changedSecurity.you.col, 4,
+  'a provenance mismatch does not break the still-valid legacy room view');
+is(changedSecurity.room_wire, undefined,
+  'but a tuple sampled from only one cache is never published');
+is(changedSecurity.room.resource, undefined,
+  'the bound local filename is withheld with the mismatched tuple');
+ok(/different room_wire/.test(changedSecurity.room_binding_note),
+  'the exact-cache disagreement is reported rather than silently resolved');
 
 // EVERY FIELD arrivalReport TOUCHES, exercised the way it touches them. This is the
 // regression that killed twenty-one of twenty-one travels: an async view() made `v.objects`

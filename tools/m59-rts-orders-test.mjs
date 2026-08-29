@@ -146,13 +146,12 @@ assert.equal(calls.length, 2, 'a rejected actor-specific batch dispatches nothin
 
 const playerReader = { ...reader, controlState: async () => state({ t1: look(true, true) }) };
 const beforePlayerAttack = calls.length;
-const playerAttack = await dispatchAttackOrder(playerReader, {
+await assert.rejects(() => dispatchAttackOrder(playerReader, {
   type: 'attack', generation, order_id: 'player-target-1',
   orders: [{ agent: 't1', room: 200, target_id: 900, lease_token: leaseToken }],
-}, { now });
-assert.equal(playerAttack.accepted, true);
-assert.equal(calls[beforePlayerAttack].args.target, 900,
-  'player targets pass through when the writable commander is armed');
+}, { now }), /PvE-only/);
+assert.equal(calls.length, beforePlayerAttack,
+  'a player target is refused before any broker dispatch');
 
 const partialReader = { ...reader, order: async (name, args) => {
   if (args.agent === 't2') throw new Error('target moved during broker recheck');
@@ -400,20 +399,24 @@ await dispatchContextOrder(contextReader, {
 assert.equal(calls[beforeContext].args.spell, 'blink');
 assert.equal(Object.hasOwn(calls[beforeContext].args, 'target'), false);
 const beforeUnrestrictedCast = calls.length;
-await dispatchContextOrder(contextReader, {
+await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-quake',
   orders: [{ agent: 't1', room: 200, spell: 'earthquake' }],
-}, { now, sceneStore });
-await dispatchContextOrder(contextReader, {
+}, { now, sceneStore }), /not classified as safe/);
+await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-target',
   orders: [{ agent: 't1', room: 200, spell: 'resist magic', target_id: 501 }],
-}, { now, sceneStore });
+}, { now, sceneStore }), /not classified as safe/);
+await assert.rejects(() => dispatchContextOrder(contextReader, {
+  type: 'context', action: 'cast', generation, order_id: 'context-cast-player',
+  orders: [{ agent: 't1', room: 200, spell: 'resist magic', target_id: 1200 }],
+}, { now, sceneStore }), /not classified as safe/);
 await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-arity',
   orders: [{ agent: 't1', room: 200, spell: 'create weapon', target_id: 900 }],
 }, { now, sceneStore }), /accepts no target/);
-assert.equal(calls.length, beforeUnrestrictedCast + 2,
-  'known offensive and targeted spells dispatch while invalid wire arity does not');
+assert.equal(calls.length, beforeUnrestrictedCast,
+  'unsafe, targeted, player-targeted, and invalid-arity casts dispatch nothing');
 await assert.rejects(() => dispatchContextOrder(contextReader, {
   type: 'context', action: 'cast', generation, order_id: 'context-cast-unkn',
   orders: [{ agent: 't1', room: 200, spell: 'not a spell' }],
@@ -679,8 +682,8 @@ try {
   const contractBody = await contract.json();
   assert.deepEqual(contractBody.rts_cast_policy, {
     exact_known_spells: true,
-    target_spells: true,
-    player_targets: true,
+    target_spells: false,
+    player_targets: false,
   });
   assert.deepEqual(contractBody.action_catalogue.context, [
     'stand', 'rest_here', 'recover_here', 'grab_nearby', 'take', 'cast',

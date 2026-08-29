@@ -29,7 +29,7 @@ import { attachStepMasks } from './m59-routes.mjs';
 import * as watchdog from './m59-watchdog.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
 import { resolveFleet } from './m59-fleetpath.mjs';
-import { rtsJobReport } from './m59-rts-safety.mjs';
+import { rtsJobReport, rtsSafeSpellRule, rtsSpellTargetAllowed } from './m59-rts-safety.mjs';
 import { OF } from './m59-parse.mjs';
 import * as skills from './m59-skills.mjs';
 import * as party from './m59-party.mjs';
@@ -403,7 +403,9 @@ async function join() {
 function state() {
   const c = session.client;
   const me = c?.me;
-  const room = session.world?.room;
+  const roomBinding = session.world?.roomBinding ?? null;
+  const room = roomBinding?.room ?? session.world?.room;
+  const roomWire = roomBinding?.room_wire ?? null;
   const v = c?.vitals?.() || {};
   // THE AUTHORITATIVE KEEPER STATUS CROSSES THE PROCESS BOUNDARY AS ONE OBJECT.
   //
@@ -443,6 +445,10 @@ function state() {
     // renumbered by server saves and is the generation guard used by RTS packets.
     room: room ? { name: c?.rsc?.get?.(room.nameRsc) ?? room.name, num: room.num,
                    object_id: c?.room?.id ?? null } : null,
+    // Exact BP_PLAYER provenance. Null means the complete resource pair did not
+    // select one configured map row; never substitute the runtime object id or a
+    // checksum/resource read from that map.
+    room_wire: roomWire,
     hp: v.health ? { value: v.health.value, max: v.health.max } : null,
     vigor: v.vigor ? { value: v.vigor.value, max: v.vigor.max } : null,
     mana: v.mana ? { value: v.mana.value, max: v.mana.max } : null,
@@ -550,9 +556,11 @@ function state() {
       name: c.rsc?.get?.(s.nameRsc) ?? '',
     })).filter(s => s.name),
     spells: (c?.spells ?? []).map(s => ({
+      id: s.id,
       name: c.rsc?.get?.(s.nameRsc) ?? '',
       school: s.school,
       mana: s.mana,
+      targets: s.numTargets,
     })).filter(s => s.name),
     // STUCK, AS A FACT THE FLEET BOARD CAN READ.
     //
@@ -886,6 +894,10 @@ const server = createServer(async (req, res) => {
               json({ error: `attack target ${target} is absent or not attackable` }, 409);
               return;
             }
+            if (liveTarget.flags & OF.PLAYER) {
+              json({ error: `RTS attack target ${target} is a player; commander attacks are PvE-only` }, 409);
+              return;
+            }
             const controlToken = String(args.control_token ?? '');
             const leaseToken = String(args.lease_token ?? '');
             const swings = Math.max(1, Math.min(20, Math.trunc(Number(args.swings ?? 20))));
@@ -901,15 +913,29 @@ const server = createServer(async (req, res) => {
                     log.push({ swing, result: 'target is no longer here or attackable' });
                     break;
                   }
+                  if (current.flags & OF.PLAYER)
+                    throw new Error(`RTS attack refused: target ${target} is now a player`);
                   await session.faceToward(current, {
                     beforePacket: packet => requireKeeperRtsAuthority(args, packet),
                   });
                   const since = c.evSeq;
                   await session.pacer.submit('attack', () => {
-                    requireKeeperRtsAuthority(args, 'attack');
+                    const packetClient = requireKeeperRtsAuthority(args, 'attack');
                     if (keeperRtsCancelled(controlToken))
                       throw new Error('RTS attack cancelled before mutation');
-                    return c.attack(target);
+                    const packetTarget = packetClient.room?.objects?.get?.(target);
+                    if (!packetTarget || !(packetTarget.flags & OF.ATTACKABLE) ||
+                        (packetTarget.flags & OF.PLAYER))
+                      throw new Error(`RTS attack refused: target ${target} is absent, changed, or not PvE-attackable`);
+                    if (swings > 1) {
+                      const health = packetClient.vitals()?.health;
+                      const maximum = health?.max ?? health?.scale_max;
+                      const fraction = Number.isFinite(health?.value) &&
+                        Number.isFinite(maximum) && maximum > 0 ? health.value / maximum : null;
+                      if (!(fraction > 0.35))
+                        throw new Error('RTS attack refused: multi-swing health must remain above 35%');
+                    }
+                    return packetClient.attack(target);
                   }, 1050);
                   const observed = await c.waitFor({ since, timeoutMs: 2500 })
                     .catch(() => ({ events: [] }));
@@ -940,6 +966,8 @@ const server = createServer(async (req, res) => {
               : Array.isArray(args.targets) ? args.targets.map(Number) : [];
             const spellName = String(args.spell ?? '').trim();
             let item = null, itemName = null, spell = null;
+            let spellRule = null, spellIdentity = null, spellTargetIdentity = null;
+            let spellHasTarget = false;
 
             if (action === 'rest_here' || action === 'recover_here') {
               const geometry = session.world?.geometry;
@@ -982,9 +1010,43 @@ const server = createServer(async (req, res) => {
             } else if (action === 'cast') {
               spell = (c.spells ?? []).find(value =>
                 String(c.rsc?.get?.(value.nameRsc) ?? '').toLowerCase() === spellName.toLowerCase()) ?? null;
-              if (!spell || !spellName) {
+              const observedSpellName = spell ? c.rsc?.get?.(spell.nameRsc) ?? '' : '';
+              if (!spell || !spellName || !Number.isSafeInteger(spell.id)) {
                 json({ error: `spell not found: ${spellName}` }, 409);
                 return;
+              }
+              spellRule = rtsSafeSpellRule(observedSpellName, Number(spell.numTargets));
+              if (!spellRule) {
+                json({ error: `${observedSpellName} is not classified as safe for RTS casting` }, 409);
+                return;
+              }
+              spellHasTarget = args.target !== undefined && args.target !== null;
+              if (spellHasTarget && (!Number.isSafeInteger(target) || target < 1)) {
+                json({ error: 'cast target must be a positive object id' }, 400);
+                return;
+              }
+              const targetObject = !spellHasTarget ? null
+                : target === c.selfId ? c.self : c.room?.objects?.get?.(target);
+              const targetIsPlayer = target === c.selfId ? true
+                : Number.isInteger(targetObject?.flags) ? !!(targetObject.flags & OF.PLAYER) : null;
+              if (!rtsSpellTargetAllowed(spellRule, {
+                targetId: spellHasTarget ? target : null,
+                selfId: Number.isSafeInteger(c.selfId) ? c.selfId : null,
+                targetIsPlayer,
+              })) {
+                json({ error: spellRule.target_mode === 'none'
+                  ? `${observedSpellName} accepts no target`
+                  : 'RTS context casting may not target players or unknown object kinds' }, 409);
+                return;
+              }
+              spellIdentity = {
+                id: spell.id, nameRsc: spell.nameRsc, name: observedSpellName,
+                targets: Number(spell.numTargets), targetMode: spellRule.target_mode,
+              };
+              if (targetObject) {
+                spellTargetIdentity = {
+                  id: targetObject.id, nameRsc: targetObject.nameRsc,
+                };
               }
             }
 
@@ -1088,8 +1150,30 @@ const server = createServer(async (req, res) => {
                 return { item: itemId, name: itemName };
               }
               await session.pacer.submit('cast', () => {
-                guard('cast');
-                return c.cast(spell.id, Number.isSafeInteger(target) ? [target] : []);
+                const live = guard('cast');
+                const currentSpell = (live.spells ?? []).find(value => value.id === spellIdentity.id);
+                const currentName = currentSpell ? live.rsc?.get?.(currentSpell.nameRsc) ?? '' : '';
+                const currentRule = currentSpell && currentSpell.nameRsc === spellIdentity.nameRsc &&
+                    currentName === spellIdentity.name &&
+                    Number(currentSpell.numTargets) === spellIdentity.targets
+                  ? rtsSafeSpellRule(currentName, Number(currentSpell.numTargets)) : null;
+                if (!currentRule || currentRule.target_mode !== spellIdentity.targetMode)
+                  throw new Error(`RTS cast refused: exact spell ${spellIdentity.name} is absent, changed, or unsafe`);
+                const currentTarget = !spellHasTarget ? null
+                  : target === live.selfId ? live.self : live.room?.objects?.get?.(target);
+                if (spellTargetIdentity && (!currentTarget ||
+                    currentTarget.id !== spellTargetIdentity.id ||
+                    currentTarget.nameRsc !== spellTargetIdentity.nameRsc))
+                  throw new Error(`RTS cast refused: exact target ${target} is absent or changed`);
+                const targetIsPlayer = target === live.selfId ? true
+                  : Number.isInteger(currentTarget?.flags) ? !!(currentTarget.flags & OF.PLAYER) : null;
+                if (!rtsSpellTargetAllowed(currentRule, {
+                  targetId: spellHasTarget ? target : null,
+                  selfId: Number.isSafeInteger(live.selfId) ? live.selfId : null,
+                  targetIsPlayer,
+                }))
+                  throw new Error('RTS cast refused: live target policy is not PvE-safe');
+                return live.cast(currentSpell.id, spellHasTarget ? [target] : []);
               });
               return { spell: spellName, ...(Number.isSafeInteger(target) ? { target } : {}) };
             }, { controlToken, leaseToken });
@@ -1724,6 +1808,9 @@ const server = createServer(async (req, res) => {
       const c = session.client;
       const me = c?.self;
       const room = c?.room;
+      const roomBinding = session.world?.roomBinding ?? null;
+      const worldRoom = roomBinding?.room ?? session.world?.room ?? null;
+      const roomWire = roomBinding?.room_wire ?? null;
       if (!room?.objects) return json({ error: 'no room data', in_game: inGame });
       const objects = [];
       for (const o of room.objects.values()) {
@@ -1766,7 +1853,11 @@ const server = createServer(async (req, res) => {
         // different room than the one the server had, so every validated step landed
         // somewhere unexpected and the walk re-planned in a loop. session.world.room.num
         // is the same source the /health endpoint uses (1011 for Raza Inn).
-        room_num: session.world?.room?.num ?? c?.room?.id ?? null,
+        room_num: worldRoom?.num ?? c?.room?.id ?? null,
+        // Recomputed from the same synchronous client cache as this room view.
+        // keeperView reconciles it with the independently cached /state tuple
+        // before publishing bound provenance.
+        room_wire: roomWire,
         // The decider's current target, for the 3D viewer.
         target: (() => {
           const tid = session._tickDecide?.state?.()?.targetId ?? null;

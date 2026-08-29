@@ -9,7 +9,18 @@ import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { RTS_NATIVE_VERSION, RTS_SCHEMA, buildRtsSnapshot, toNativeSnapshot } from './m59-rts-contract.mjs';
+import {
+  RTS_V8_NATIVE_VERSION, RTS_V8_SCHEMA, buildRtsSnapshotV8, toNativeSnapshotV8,
+} from './m59-rts-contract-v8.mjs';
+import {
+  AtlasMapGeneration, DEFAULT_ATLAS_TOPOLOGY_LIMITS,
+} from './m59-atlas-topology.mjs';
 import { RoomSceneStore, toNativeRoomScene } from './m59-rts-scene.mjs';
+import {
+  RTS_SCENE_BINDING_SCHEMA, RTS_SCENE_V3_NATIVE_VERSION, RTS_SCENE_V3_SCHEMA,
+  RoomSceneV3Store, toNativeRoomSceneV3,
+} from './m59-rts-scene-v3.mjs';
+import { rtsSafeSpellRule, rtsSpellTargetAllowed } from './m59-rts-safety.mjs';
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1', '[::1]']);
 export const BROKER_RTS_READ_SCHEMA = 'm59-broker-rts-read/v1';
@@ -446,33 +457,7 @@ export class BrokerReader {
     if (requested.length > 40) throw new Error('RTS snapshots are limited to 40 agents');
     const aggregate = await this.aggregateState(requested);
     if (aggregate) {
-      const agents = aggregate.agents;
-      return buildRtsSnapshot({
-        health: aggregate.health,
-        fleetPayload: aggregate.fleet,
-        looks: new Map(agents.map(agent => [agent,
-          aggregate.looks[agent] ?? { error: 'aggregate read omitted cached perception' }])),
-        equipment: new Map(agents.map(agent => [agent,
-          aggregate.equipment[agent] ?? { error: 'aggregate read omitted cached equipment' }])),
-        spells: new Map(agents.map(agent => [agent,
-          aggregate.spells?.[agent] ?? []])),
-        inventory: new Map(agents.map(agent => [agent,
-          aggregate.inventory?.[agent] ?? []])),
-        // Broker support alone is not permission. Native availability is the
-        // conjunction of that capability and this gateway's explicitly armed,
-        // bearer-protected, exact-roster/exact-server write boundary.
-        commander: {
-          ...(aggregate.commander || {}),
-          enabled: aggregate.commander?.enabled === true &&
-            this.ordersEnabled && this.controlStatus.armed,
-        },
-        control: new Map(agents.map(agent => [agent,
-          aggregate.control?.[agent] ?? { lease_state: 'unavailable' }])),
-        commerce: new Map(agents.map(agent => [agent,
-          aggregate.commerce?.[agent] ?? { error: 'aggregate read omitted cached commerce state' }])),
-        observedAt: aggregate.observed_at,
-        sequence: aggregate.sequence,
-      });
+      return buildRtsSnapshot(this.snapshotInputFromAggregate(aggregate));
     }
 
     const [health, fleetPayload] = await Promise.all([this.health(), this.fleetState()]);
@@ -505,6 +490,66 @@ export class BrokerReader {
       commerce: new Map(),
       observedAt: now.toISOString(),
       sequence: `${now.getTime()}-${health.pid}`,
+    });
+  }
+
+  snapshotInputFromAggregate(aggregate) {
+    const agents = aggregate.agents;
+    return {
+      health: aggregate.health,
+      fleetPayload: aggregate.fleet,
+      looks: new Map(agents.map(agent => [agent,
+        aggregate.looks[agent] ?? { error: 'aggregate read omitted cached perception' }])),
+      equipment: new Map(agents.map(agent => [agent,
+        aggregate.equipment[agent] ?? { error: 'aggregate read omitted cached equipment' }])),
+      spells: new Map(agents.map(agent => [agent,
+        aggregate.spells?.[agent] ?? []])),
+      inventory: new Map(agents.map(agent => [agent,
+        aggregate.inventory?.[agent] ?? []])),
+      // Broker support alone is not permission. Native availability is the
+      // conjunction of that capability and this gateway's explicitly armed,
+      // bearer-protected, exact-roster/exact-server write boundary.
+      commander: {
+        ...(aggregate.commander || {}),
+        enabled: aggregate.commander?.enabled === true &&
+          this.ordersEnabled && this.controlStatus.armed,
+      },
+      control: new Map(agents.map(agent => [agent,
+        aggregate.control?.[agent] ?? { lease_state: 'unavailable' }])),
+      commerce: new Map(agents.map(agent => [agent,
+        aggregate.commerce?.[agent] ?? { error: 'aggregate read omitted cached commerce state' }])),
+      observedAt: aggregate.observed_at,
+      sequence: aggregate.sequence,
+    };
+  }
+
+  // Bound snapshots have no legacy MCP fallback: only the broker's one cached,
+  // atomic aggregate can carry the BP_PLAYER tuple on the same generation as the
+  // observed position.  A missing upgraded broker is an explicit unavailable v8,
+  // never a locally reconstructed room identity.
+  async snapshotV8(requestedAgents = [], generation) {
+    if (!Array.isArray(requestedAgents) || requestedAgents.length > 40)
+      throw Object.assign(new Error('RTS snapshots are limited to 40 agents'), { status: 400 });
+    const requested = requestedAgents.map(cleanAgent);
+    if (requested.some(agent => !agent))
+      throw Object.assign(new Error('v8 snapshot agent names must be simple identifiers'), { status: 400 });
+    if (new Set(requested).size !== requested.length)
+      throw Object.assign(new Error('v8 snapshot agent names must be unique'), { status: 400 });
+    const aggregate = await this.aggregateState(requested);
+    if (!aggregate)
+      throw Object.assign(new Error('M59RTS/8 requires the broker aggregate endpoint'), { status: 503 });
+    const returned = Array.isArray(aggregate.agents) ? aggregate.agents.map(cleanAgent) : [];
+    if (!returned.length || returned.some(agent => !agent) ||
+        new Set(returned).size !== returned.length)
+      throw Object.assign(new Error('bound aggregate returned an invalid or duplicate agent set'),
+        { status: 409 });
+    if (requested.length && (requested.length !== returned.length ||
+        requested.some(agent => !returned.includes(agent))))
+      throw Object.assign(new Error('bound aggregate agent set does not exactly match the request'),
+        { status: 409 });
+    return buildRtsSnapshotV8({
+      generation,
+      ...this.snapshotInputFromAggregate(aggregate),
     });
   }
 }
@@ -904,6 +949,9 @@ export async function dispatchAttackOrder(reader, body, { now = Date.now() } = {
       .find(entity => Number(entity?.id) === order.target);
     if (!target || !Array.isArray(target.can) || !target.can.includes('attack'))
       throw orderError(409, `${order.agent} no longer perceives target ${order.target} as attackable`);
+    if (target.is_player !== false)
+      throw orderError(409, `${order.agent} RTS attacks are PvE-only; target ${order.target} ` +
+        'is a player or lacks an exact non-player classification');
   }
 
   const dispatch = await settledDispatch(reader, 'attack_intent', normalized, order => ({
@@ -1188,15 +1236,26 @@ export async function dispatchContextOrder(reader, body, { now = Date.now(), sce
       const targets = Number(spell.targets);
       if (!Number.isSafeInteger(targets) || targets < 0)
         throw orderError(409, `${order.agent}'s cached target count for ${spell.name} is unavailable`);
+      const rule = rtsSafeSpellRule(spell.name, targets);
+      if (!rule)
+        throw orderError(409, `${spell.name} is not classified as safe for RTS casting`);
       const target = order.target === null ? null
         : objects.find(entity => Number(entity?.id) === order.target) || null;
       const selfId = Number(look.you?.object_id);
-      if (targets === 0 && order.target !== null)
-        throw orderError(409, `${spell.name} accepts no target`);
-      if (targets > 0 && order.target === null)
-        throw orderError(409, `${spell.name} requires a target`);
       if (order.target !== null && order.target !== selfId && !target)
         throw orderError(409, `${order.agent} no longer perceives spell target ${order.target}`);
+      const targetIsPlayer = order.target === selfId ? true
+        : target?.is_player === true ? true : target?.is_player === false ? false : null;
+      if (!rtsSpellTargetAllowed(rule, {
+        targetId: order.target, selfId: Number.isSafeInteger(selfId) ? selfId : null,
+        targetIsPlayer,
+      })) {
+        if (rule.target_mode === 'none')
+          throw orderError(409, `${spell.name} accepts no target`);
+        if (rule.target_mode === 'self')
+          throw orderError(409, `${spell.name} may target only ${order.agent}'s controlled character`);
+        throw orderError(409, `${spell.name} may not target a player or unknown object kind`);
+      }
       // Send the server-observed spelling, never a free-form or partial client label.
       order.spell = spell.name;
     }
@@ -1342,12 +1401,12 @@ function writeSse(res, event, value) {
   res.write(`event: ${event}\ndata: ${JSON.stringify(value)}\n\n`);
 }
 
-function nativeFrame(snapshot) {
-  const payload = toNativeSnapshot(snapshot);
+function nativeFrame(snapshot, serializer = toNativeSnapshot) {
+  const payload = serializer(snapshot);
   return `M59FRAME\t1\t${Buffer.byteLength(payload)}\n${payload}`;
 }
 
-function nativeChannel(socket) {
+function nativeChannel(socket, serializer = toNativeSnapshot, { closeOnError = false } = {}) {
   let blocked = false;
   let pending = null;
   const flush = () => {
@@ -1366,8 +1425,15 @@ function nativeChannel(socket) {
     // requires before allowing a 50ms reconciliation cadence.
     latestGeneration: true,
     send(event, value) {
-      if (event !== 'snapshot' || socket.destroyed) return;
-      const frame = nativeFrame(value);
+      if (socket.destroyed) return;
+      if (event === 'gateway-error' && closeOnError) {
+        pending = null;
+        const message = String(value?.message || 'bound snapshot generation failed').slice(0, 1024);
+        socket.end(`M59ERROR\t1\t${encodeURIComponent(message)}\n`);
+        return;
+      }
+      if (event !== 'snapshot') return;
+      const frame = nativeFrame(value, serializer);
       // Rendering old world states is worse than dropping them. A slow client
       // gets the newest complete generation once its kernel buffer drains.
       if (blocked) pending = frame;
@@ -1380,8 +1446,11 @@ function nativeChannel(socket) {
 }
 
 export class RealtimeHub {
-  constructor({ reader, reconcileMs = 250 } = {}) {
+  constructor({ reader, reconcileMs = 250, boundSnapshot = null,
+                boundGeneration = null } = {}) {
     this.reader = reader;
+    this.boundSnapshot = typeof boundSnapshot === 'function' ? boundSnapshot : null;
+    this.boundGeneration = this.boundSnapshot ? boundGeneration : null;
     this.reconcileMs = Math.max(50, Number(reconcileMs) || 250);
     this.subscribers = new Set();
     this.loops = new Map();
@@ -1434,11 +1503,34 @@ export class RealtimeHub {
     return false;
   }
 
-  publish(event, value, agent = null) {
+  publish(event, value, agent = null, profile = null) {
     for (const subscriber of this.subscribers) {
       if (agent && !subscriber.agents.has(agent)) continue;
+      if (profile !== null && subscriber.profile !== profile) continue;
       subscriber.channel.send(event, value);
     }
+  }
+
+  publishCohort(event, value, cohort) {
+    for (const subscriber of this.subscribers) {
+      if (subscriber.cohort !== cohort) continue;
+      subscriber.channel.send(event, value);
+    }
+  }
+
+  cohort(profile, agents) {
+    return `${profile}\t${[...new Set(agents)].sort().join(',')}`;
+  }
+
+  async snapshotForProfile(profile, agents) {
+    if (profile === 1) return this.reader.snapshot(agents);
+    if (profile === 2) {
+      if (!this.boundSnapshot)
+        throw Object.assign(new Error('M59SUB version 2 is unavailable without a frozen map generation'),
+          { status: 503 });
+      return this.boundSnapshot(agents);
+    }
+    throw new Error(`unsupported native snapshot profile ${profile}`);
   }
 
   ensureLoop(agent) {
@@ -1489,13 +1581,19 @@ export class RealtimeHub {
           }
         }
       } catch (error) {
-        this.publish('gateway-error', {
+        const legacyFailure = {
           schema: RTS_SCHEMA,
           type: 'gateway-error',
           agent: state.agent,
           message: error.message,
           observed_at: new Date().toISOString(),
-        }, state.agent);
+        };
+        // `/v1/events` is an existing unversioned SSE contract: retain its
+        // historical gateway-error event. A profile-2 native channel treats
+        // gateway-error as a terminal bound-generation failure, so an optional
+        // event-cursor read failure gets a distinct non-terminal signal there.
+        this.publish('gateway-error', legacyFailure, state.agent, 1);
+        this.publish('event-error', { ...legacyFailure, type: 'event-error' }, state.agent, 2);
         await new Promise(resolve => setTimeout(resolve, 500));
       }
     }
@@ -1532,19 +1630,35 @@ export class RealtimeHub {
       if (reason === 'event') this.reconcileAgain = true;
       return;
     }
-    const agents = [...new Set([...this.subscribers].flatMap(subscriber => [...subscriber.agents]))];
-    if (!agents.length) return;
+    const cohorts = new Map();
+    for (const subscriber of this.subscribers) {
+      if (!cohorts.has(subscriber.cohort)) {
+        cohorts.set(subscriber.cohort, {
+          profile: subscriber.profile,
+          agents: [...subscriber.agents].sort(),
+        });
+      }
+    }
+    if (![...cohorts.values()].some(value => value.agents.length)) return;
     this.reconciling = true;
     try {
-      const snapshot = await this.reader.snapshot(agents);
-      this.publish('snapshot', snapshot);
-    } catch (error) {
-      this.publish('gateway-error', {
-        schema: RTS_SCHEMA,
-        type: 'gateway-error',
-        message: error.message,
-        observed_at: new Date().toISOString(),
-      });
+      // Profiles are independent contracts. A strict v8 generation may fail because
+      // one room tuple is incomplete while a simultaneous legacy subscriber can still
+      // consume v7; never turn that into an all-profile outage or a downgrade.
+      for (const [cohort, { profile, agents }] of cohorts) {
+        if (!agents.length) continue;
+        try {
+          const snapshot = await this.snapshotForProfile(profile, agents);
+          this.publishCohort('snapshot', snapshot, cohort);
+        } catch (error) {
+          this.publishCohort('gateway-error', {
+            schema: RTS_SCHEMA,
+            type: 'gateway-error',
+            message: error.message,
+            observed_at: new Date().toISOString(),
+          }, cohort);
+        }
+      }
     } finally {
       this.reconciling = false;
       if (this.reconcileAgain) {
@@ -1554,8 +1668,14 @@ export class RealtimeHub {
     }
   }
 
-  subscribeChannel(channel, agents) {
-    const subscriber = { channel, agents: new Set(agents) };
+  subscribeChannel(channel, agents, profile = 1) {
+    if (profile !== 1 && profile !== 2) throw new Error(`unsupported subscription profile ${profile}`);
+    const subscriber = {
+      channel,
+      agents: new Set(agents),
+      profile,
+      cohort: this.cohort(profile, agents),
+    };
     this.subscribers.add(subscriber);
     for (const agent of agents) this.ensureLoop(agent);
     // Subscriber capabilities can change the safe floor (native-only 50ms versus
@@ -1574,7 +1694,7 @@ export class RealtimeHub {
     return this.subscribeChannel({
       send: (event, value) => writeSse(res, event, value),
       close: () => res.end(),
-    }, agents);
+    }, agents, 1);
   }
 
   close() {
@@ -1588,8 +1708,23 @@ export class RealtimeHub {
 }
 
 export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sceneStore = null,
+                                      atlasGeneration = null, boundSceneStore = null,
                                       orderDedupe = null }) {
-  hub ||= new RealtimeHub({ reader, reconcileMs });
+  if (boundSceneStore && !atlasGeneration)
+    throw new Error('bound scene store requires the exact advertised atlas generation');
+  if (boundSceneStore && boundSceneStore.generation !== atlasGeneration)
+    throw new Error('bound scene store and advertised atlas must share one frozen generation');
+  if (hub && atlasGeneration &&
+      (hub.boundGeneration !== atlasGeneration || typeof hub.boundSnapshot !== 'function'))
+    throw new Error('injected realtime hub is not bound to the advertised atlas generation');
+  hub ||= new RealtimeHub({
+    reader,
+    reconcileMs,
+    boundSnapshot: atlasGeneration
+      ? agents => reader.snapshotV8(agents, atlasGeneration)
+      : null,
+    boundGeneration: atlasGeneration,
+  });
   orderDedupe ||= new OrderDedupe();
   const server = http.createServer(async (req, res) => {
     if (!isLocalRequest(req)) return sendJson(res, 403, { error: 'RTS gateway is loopback-only' });
@@ -1648,8 +1783,15 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
                     game_server: health.game_server ?? null },
           broker_read_path: reader.fastPathStatus,
           reconciliation: hub.timing(),
+          static_map: atlasGeneration ? {
+            ready: true,
+            schema: atlasGeneration.summary.schema,
+            map_build_identity: atlasGeneration.map_build_identity,
+            artifact_sha256: atlasGeneration.summary.sha256,
+            scene_v3: boundSceneStore?.status ?? { ready: false },
+          } : { ready: false },
           writes: reader.controlStatus.armed,
-          pvp: reader.controlStatus.armed,
+          pvp: false,
           control: {
             configured: reader.ordersEnabled,
             enabled: reader.controlStatus.armed,
@@ -1688,7 +1830,7 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
                                         'commerce-prepare-commit',
                                         'exact-two-sided-player-trade'] : [])],
           writes,
-          pvp: writes,
+          pvp: false,
           action_catalogue: {
             typed_only: true,
             batches: ['attack', 'move', 'context', 'cancel'],
@@ -1709,11 +1851,84 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
           },
           rts_cast_policy: {
             exact_known_spells: true,
-            target_spells: true,
-            player_targets: true,
+            target_spells: false,
+            player_targets: false,
           },
+          scene_contracts: atlasGeneration && boundSceneStore ? {
+            available: boundSceneStore.status?.ready === true,
+            snapshot: {
+              json_schema: RTS_V8_SCHEMA,
+              native_version: RTS_V8_NATIVE_VERSION,
+              json_endpoint: '/v1/snapshot.v8?agent={agent}',
+              native_endpoint: '/v1/snapshot.v8.tsv?agent={agent}',
+              native_media_type:
+                `application/x-m59-rts-snapshot; version=${RTS_V8_NATIVE_VERSION}; charset=utf-8`,
+              native_subscription: 'M59SUB<TAB>2<TAB>{agents}',
+            },
+            scene: {
+              json_schema: RTS_SCENE_V3_SCHEMA,
+              native_version: RTS_SCENE_V3_NATIVE_VERSION,
+              json_endpoint: '/v1/scene.v3?room={room}',
+              native_endpoint: '/v1/scene.v3.tsv?room={room}',
+              native_media_type:
+                `application/x-m59-rts-room; version=${RTS_SCENE_V3_NATIVE_VERSION}; charset=utf-8`,
+            },
+            binding_schema: RTS_SCENE_BINDING_SCHEMA,
+            atlas: {
+              schema: atlasGeneration.summary.schema,
+              endpoint_template: '/v1/atlas.v1.tsv?sha256={atlas_artifact_sha256}',
+              media_type: 'application/x-m59-atlas-topology; version=1; charset=utf-8',
+              maximum_bytes: DEFAULT_ATLAS_TOPOLOGY_LIMITS.max_output_bytes,
+            },
+            map_build_identity: atlasGeneration.map_build_identity,
+            status: boundSceneStore.status,
+          } : { available: false },
           control_server: reader.controlServer,
         });
+      }
+      if (url.pathname === '/v1/atlas.v1.tsv') {
+        if (!atlasGeneration)
+          return sendJson(res, 503, { error: 'frozen atlas map generation is unavailable' });
+        // The raw query is intentionally canonical, not merely semantically parsed:
+        // repeated/extra keys and percent-spelled hash bytes are different requests and
+        // cannot select content under a misleading content-addressed URL.
+        const match = /^\?sha256=([0-9a-f]{64})$/.exec(url.search);
+        if (!match)
+          return sendJson(res, 400, { error: 'atlas request requires exactly one canonical lowercase sha256' });
+        const artifact = atlasGeneration.artifactForSha256(match[1]);
+        if (artifact === null)
+          return sendJson(res, 404, { error: 'requested atlas artifact is not the frozen map generation' });
+        res.writeHead(200, {
+          'content-type': 'application/x-m59-atlas-topology; version=1; charset=utf-8',
+          'content-length': Buffer.byteLength(artifact),
+          'cache-control': 'no-store',
+          'x-content-type-options': 'nosniff',
+        });
+        return res.end(artifact);
+      }
+      if (url.pathname === '/v1/scene.v3' || url.pathname === '/v1/scene.v3.tsv') {
+        if (!boundSceneStore)
+          return sendJson(res, 503, { error: 'bound room scene store is unavailable' });
+        const query = /^\?room=([1-9][0-9]{0,9})$/.exec(url.search);
+        const room = query ? Number(query[1]) : null;
+        if (!Number.isSafeInteger(room) || room < 1 || room > 0x7fffffff)
+          return sendJson(res, 400, { error: 'scene v3 requires one canonical positive room number' });
+        const result = boundSceneStore.getResult(room);
+        if (!result.ok)
+          return sendJson(res, result.status, { error: result.message, code: result.code,
+                                                schema: RTS_SCENE_V3_SCHEMA });
+        if (url.pathname.endsWith('.tsv')) {
+          const native = toNativeRoomSceneV3(result.scene);
+          res.writeHead(200, {
+            'content-type':
+              `application/x-m59-rts-room; version=${RTS_SCENE_V3_NATIVE_VERSION}; charset=utf-8`,
+            'content-length': Buffer.byteLength(native),
+            'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
+          });
+          return res.end(native);
+        }
+        return sendJson(res, 200, result.scene);
       }
       if (url.pathname === '/v1/scene' || url.pathname === '/v1/scene.tsv') {
         if (!sceneStore) throw new Error('room scene store is not configured');
@@ -1722,6 +1937,8 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
         if (!scene) return sendJson(res, 404, { error: `no ROO scene for room ${room}` });
         if (url.pathname.endsWith('.tsv')) {
           const native = toNativeRoomScene(scene);
+          // Compatibility: this historical v2 payload was published with media version=1.
+          // Bound scene v3 gets its own endpoint and must not inherit this label.
           res.writeHead(200, {
             'content-type': 'application/x-m59-rts-room; version=1; charset=utf-8',
             'content-length': Buffer.byteLength(native),
@@ -1754,6 +1971,34 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
         });
         return;
       }
+      if (url.pathname === '/v1/snapshot.v8' || url.pathname === '/v1/snapshot.v8.tsv') {
+        if (!atlasGeneration)
+          return sendJson(res, 503, { error: 'frozen atlas map generation is unavailable' });
+        const queryKeys = [...url.searchParams.keys()];
+        if (queryKeys.some(key => key !== 'agent' && key !== 'agents') ||
+            url.searchParams.getAll('agents').length > 1)
+          return sendJson(res, 400, { error: 'v8 snapshot accepts only agent or one agents query' });
+        const agents = [...url.searchParams.getAll('agent')];
+        if (url.searchParams.has('agents'))
+          agents.push(...String(url.searchParams.get('agents')).split(','));
+        if (agents.length > 40 || agents.some(agent => !cleanAgent(agent)) ||
+            new Set(agents).size !== agents.length)
+          return sendJson(res, 400, {
+            error: 'v8 snapshot requires at most 40 unique simple agent names',
+          });
+        const snapshot = await reader.snapshotV8(agents, atlasGeneration);
+        if (url.pathname.endsWith('.tsv')) {
+          const native = toNativeSnapshotV8(snapshot);
+          res.writeHead(200, {
+            'content-type': `application/x-m59-rts-snapshot; version=${RTS_V8_NATIVE_VERSION}; charset=utf-8`,
+            'content-length': Buffer.byteLength(native),
+            'cache-control': 'no-store',
+            'x-content-type-options': 'nosniff',
+          });
+          return res.end(native);
+        }
+        return sendJson(res, 200, snapshot);
+      }
       if (url.pathname === '/v1/snapshot' || url.pathname === '/v1/snapshot.tsv') {
         const agents = [...url.searchParams.getAll('agent'),
           ...(url.searchParams.get('agents') || '').split(',')].filter(Boolean);
@@ -1772,7 +2017,7 @@ export function createGatewayServer({ reader, reconcileMs = 250, hub = null, sce
       }
       return sendJson(res, 404, { error: 'not found' });
     } catch (error) {
-      return sendJson(res, 503, { error: error.message, schema: RTS_SCHEMA });
+      return sendJson(res, error.status || 503, { error: error.message, schema: RTS_SCHEMA });
     }
   });
   server.on('close', () => hub.close());
@@ -1802,21 +2047,32 @@ export function createNativeStreamServer({ reader, hub }) {
       socket.removeListener('data', onData);
       const line = request.slice(0, newline).replace(/\r$/, '');
       const fields = line.split('\t');
-      if (fields.length !== 3 || fields[0] !== 'M59SUB' || fields[1] !== '1') {
-        return fail('expected M59SUB version 1 handshake');
+      if (fields.length !== 3 || fields[0] !== 'M59SUB' || !['1', '2'].includes(fields[1])) {
+        return fail('expected M59SUB version 1 or 2 handshake');
       }
+      const profile = Number(fields[1]);
       const rawRequested = fields[2] ? fields[2].split(',') : [];
       const requested = rawRequested.map(cleanAgent);
       if (requested.some(agent => !agent)) return fail('agent names must be simple identifiers');
       if (requested.length > 40) return fail('native subscriptions are limited to 40 agents');
-      reader.snapshot(requested).then(snapshot => {
+      if (new Set(requested).size !== requested.length)
+        return fail('native subscription agent names must be unique');
+      hub.snapshotForProfile(profile, requested).then(snapshot => {
         if (socket.destroyed) return;
-        const agents = snapshot.agents.map(agent => agent.agent);
+        const agents = Array.isArray(snapshot?.agents)
+          ? snapshot.agents.map(agent => cleanAgent(agent?.agent)) : [];
+        if (agents.some(agent => !agent) || new Set(agents).size !== agents.length)
+          return fail('snapshot returned an invalid or duplicate agent set');
+        if (profile === 2 && requested.length &&
+            (agents.length !== requested.length || requested.some(agent => !agents.includes(agent))))
+          return fail('bound snapshot agent set does not exactly match the subscription');
         if (!agents.length) return fail('subscription contains no broker fleet agents');
         socket.setTimeout(0);
-        const channel = nativeChannel(socket);
+        const channel = nativeChannel(socket,
+          profile === 2 ? toNativeSnapshotV8 : toNativeSnapshot,
+          { closeOnError: profile === 2 });
         channel.send('snapshot', snapshot);
-        const unsubscribe = hub.subscribeChannel(channel, agents);
+        const unsubscribe = hub.subscribeChannel(channel, agents, profile);
         socket.once('close', unsubscribe);
         socket.once('error', unsubscribe);
       }).catch(error => fail(error.message));
@@ -1863,10 +2119,21 @@ async function main() {
   const port = Number(option(argv, '--port', process.env.M59_RTS_PORT || 8910));
   const nativePort = Number(option(argv, '--native-port', process.env.M59_RTS_NATIVE_PORT || port + 1));
   const reconcileMs = Number(option(argv, '--reconcile-ms', process.env.M59_RTS_RECONCILE_MS || 250));
-  const hub = new RealtimeHub({ reader, reconcileMs });
   const mapPath = option(argv, '--map', fileURLToPath(new URL('../substrate/m59-map.json', import.meta.url)));
-  const sceneStore = RoomSceneStore.fromFile(mapPath);
-  const server = createGatewayServer({ reader, reconcileMs, hub, sceneStore });
+  const atlasGeneration = AtlasMapGeneration.fromFile(mapPath, {
+    max_output_bytes: DEFAULT_ATLAS_TOPOLOGY_LIMITS.max_output_bytes,
+  });
+  const sceneStore = new RoomSceneStore(atlasGeneration.legacySceneMap());
+  const boundSceneStore = new RoomSceneV3Store(atlasGeneration);
+  const hub = new RealtimeHub({
+    reader,
+    reconcileMs,
+    boundSnapshot: agents => reader.snapshotV8(agents, atlasGeneration),
+    boundGeneration: atlasGeneration,
+  });
+  const server = createGatewayServer({
+    reader, reconcileMs, hub, sceneStore, atlasGeneration, boundSceneStore,
+  });
   const nativeServer = createNativeStreamServer({ reader, hub });
   server.listen(port, '127.0.0.1', () => {
     console.error(`m59 RTS gateway on http://127.0.0.1:${port} — ${RTS_SCHEMA}, ` +

@@ -7,7 +7,7 @@ import { readFileSync } from 'node:fs';
 import net from 'node:net';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { rtsSafeSpellRule } from './m59-rts-safety.mjs';
+import { rtsSafeSpellRule, rtsSpellTargetAllowed } from './m59-rts-safety.mjs';
 import { standToAct } from './m59-skills.mjs';
 
 assert.ok(rtsSafeSpellRule('create food', 0));
@@ -19,6 +19,15 @@ assert.equal(rtsSafeSpellRule('resist magic', 1), null,
   'target spells remain fail-closed until separately audited');
 assert.equal(rtsSafeSpellRule('create weapon', 1), null,
   'an allowlisted name with a changed wire arity fails closed');
+assert.equal(rtsSpellTargetAllowed({ target_mode: 'pve' }, {
+  targetId: 900, selfId: 501, targetIsPlayer: true,
+}), false, 'a PvE spell rule refuses a server-classified player');
+assert.equal(rtsSpellTargetAllowed({ target_mode: 'pve' }, {
+  targetId: 900, selfId: 501, targetIsPlayer: null,
+}), false, 'a PvE spell rule refuses an unknown object kind');
+assert.equal(rtsSpellTargetAllowed({ target_mode: 'pve' }, {
+  targetId: 900, selfId: 501, targetIsPlayer: false,
+}), true, 'a PvE spell rule accepts only an exact non-player classification');
 
 let standPackets = 0;
 await assert.rejects(() => standToAct({
@@ -44,8 +53,8 @@ async function freePort() {
   return port;
 }
 
-async function waitForHealth(url, child) {
-  const deadline = Date.now() + 10000;
+async function waitForHealth(url, child, diagnostics = () => '') {
+  const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     if (child.exitCode !== null) throw new Error(`empty broker exited with ${child.exitCode}`);
     try {
@@ -54,7 +63,7 @@ async function waitForHealth(url, child) {
     } catch {}
     await new Promise(resolve => setTimeout(resolve, 50));
   }
-  throw new Error('empty broker did not become healthy');
+  throw new Error(`empty broker did not become healthy${diagnostics()}`);
 }
 
 const port = await freePort();
@@ -67,10 +76,13 @@ const child = spawn(process.execPath,
     env: { ...process.env, M59_RTS_READ_TOKEN: 'fixture-read-token' },
   });
 let stderr = '';
+let stdout = '';
 child.stderr.on('data', chunk => { stderr = (stderr + chunk).slice(-4000); });
+child.stdout.on('data', chunk => { stdout = (stdout + chunk).slice(-4000); });
 
 try {
-  const health = await waitForHealth(url, child);
+  const health = await waitForHealth(url, child,
+    () => `:\nstdout:\n${stdout}\nstderr:\n${stderr}`);
   assert.equal(health.fleet, 'rts-fastpath-empty-fixture');
   assert.deepEqual(health.sessions, []);
   assert.equal(health.game_server, null);
@@ -175,6 +187,15 @@ try {
     'aggregate carries cached purse/catalog/trade telemetry');
   assert.doesNotMatch(aggregateSource, /lease_token|quote_token|control_token/,
     'aggregate never publishes capability tokens');
+  const castPolicyStart = source.indexOf('function safeRtsCastSelection');
+  const castPolicyEnd = source.indexOf('function resolveTarget', castPolicyStart);
+  assert.ok(castPolicyStart >= 0 && castPolicyEnd > castPolicyStart,
+    'shared broker cast-selection policy is present');
+  const castPolicySource = source.slice(castPolicyStart, castPolicyEnd);
+  assert.match(castPolicySource, /rtsSafeSpellRule[(]known[.]name, count[)]/,
+    'broker repeats the shared safe-spell check before either dispatch path');
+  assert.match(castPolicySource, /not classified as safe for RTS casting/,
+    'broker explicitly refuses Earthquake and every other unclassified spell');
   const contextStart = source.indexOf("name: 'context_intent'");
   const contextEnd = source.indexOf("name: 'cancel_action'", contextStart);
   assert.ok(contextStart >= 0 && contextEnd > contextStart,
@@ -186,10 +207,13 @@ try {
     'gateway-derived grab ids retain broker unsafe-item screening');
   assert.match(contextSource, /outside pickup range/,
     'broker independently enforces the seven-square grab radius');
-  assert.match(contextSource, /rtsSafeSpellRule[(]known[.]name, count[)]/,
-    'broker repeats the shared safe-spell check at the final action boundary');
-  assert.match(contextSource, /not classified as safe for RTS casting/,
-    'broker explicitly refuses Earthquake and every other unclassified spell');
+  assert.ok(contextSource.indexOf("const acceptedCast = action === 'cast'") <
+    contextSource.indexOf('if (s instanceof KeeperProxy)'),
+  'broker applies the shared safe-spell rule before crossing into a keeper process');
+  assert.match(keeperProcess, /rtsSafeSpellRule[(]observedSpellName, Number[(]spell[.]numTargets[)][)]/,
+    'keeper independently classifies the live spell name and arity');
+  assert.match(keeperProcess, /rtsSpellTargetAllowed[(]currentRule,[\s\S]*?live[.]cast/s,
+    'keeper repeats target policy inside the final cast pacer callback');
   assert.match(contextSource, /expected_item_name/,
     'exact inventory actions recheck the gateway-observed item identity');
   assert.match(contextSource, /weaponScore\(inventoryName\).*armourKind\(inventoryName\)/s,
@@ -208,12 +232,14 @@ try {
   const attackIntentStart = source.indexOf("name: 'attack_intent'");
   const attackIntentEnd = source.indexOf("name: 'move_intent'", attackIntentStart);
   const attackIntentSource = source.slice(attackIntentStart, attackIntentEnd);
-  assert.doesNotMatch(attackIntentSource, /stop_below|fraction > 0[.]35/,
-    'commander attacks are not silently narrowed by a broker health-floor policy');
+  assert.match(attackIntentSource, /swings > 1 [?] [{] stop_below: 0[.]35 [}] : [{}]/,
+    'multi-swing RTS attacks carry a fixed 35% health disengage floor');
+  assert.match(attackIntentSource, /fraction > 0[.]35/,
+    'multi-swing health is rechecked from the final pacer callback');
   assert.match(attackIntentSource, /sameRtsIdentity.*OF[.]ATTACKABLE/s,
     'the final attack callback rechecks exact target identity and attackability');
-  assert.doesNotMatch(attackIntentSource, /current[.]flags & OF[.]PLAYER|may not target players/,
-    'an armed commander is allowed to target players');
+  assert.match(attackIntentSource, /current[.]flags & OF[.]PLAYER/,
+    'the final attack callback repeats the broker PvE-only rule');
   assert.match(attackIntentSource, /s instanceof KeeperProxy[\s\S]*?rtsIntent[(]'attack'/,
     'keeper-backed attacks execute as typed jobs beside the live Meridian socket');
 

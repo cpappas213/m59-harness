@@ -43,6 +43,7 @@ import { describeObject, affordances, OF, blocksMovement, prepareActTarget } fro
 import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
          doorSettleMs, remainingDoorSettle } from './m59-world.mjs';
 import { keeperView } from './m59-render-projection.mjs';
+import { brokerRtsGenerationClock } from './m59-rts-generation.mjs';
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
   from './m59-map.mjs';
 // UNION OF BOTH SIDES. Ours added loadRoo/buildAllRoomGeometry for the keeper split;
@@ -1363,7 +1364,10 @@ class KeeperProxy {
       waitFor: async () => ({ events: [], seq: null, timedOut: true, no_event_stream: true }),
       stat: () => null,
       statsById: new Map(),
-      spells: (s.spells ?? []).map(p => ({ nameRsc: p.name, school: p.school, mana: p.mana })),
+      spells: (s.spells ?? []).map(p => ({
+        id: p.id, nameRsc: p.name, school: p.school, mana: p.mana,
+        numTargets: p.targets,
+      })),
       skills: (s.skills ?? []).map(p => ({ nameRsc: p.name })),
       // STRUCTURED IF THE KEEPER SENT IT, PARSED FROM PROSE IF NOT.
       //
@@ -3949,6 +3953,45 @@ function sameRtsIdentity(c, value, identity) {
     value.nameRsc === identity.name_rsc && (c.rsc.get(value.nameRsc) || '') === identity.name;
 }
 
+function safeRtsCastSelection(c, a) {
+  const wanted = typeof a.spell === 'string' ? a.spell.trim() : '';
+  if (!wanted || wanted.length > 120 || /[\x00-\x1f\x7f]/.test(wanted))
+    throw new Error('cast requires an exact spell name');
+  const known = (Array.isArray(c.spells) ? c.spells : [])
+    .map(value => ({ value, name: c.rsc.get(value.nameRsc) }))
+    .find(value => typeof value.name === 'string' &&
+      value.name.toLowerCase() === wanted.toLowerCase());
+  if (!known)
+    throw new Error(`stale cast intent: ${a.agent} does not know the exact spell "${wanted}"`);
+  const count = Number(known.value.numTargets);
+  const rule = rtsSafeSpellRule(known.name, count);
+  if (!rule)
+    throw new Error(`${known.name} is not classified as safe for RTS casting`);
+  const hasTarget = a.target !== undefined && a.target !== null;
+  let target = null, targetObject = null;
+  if (hasTarget) {
+    target = Number(a.target);
+    if (!Number.isSafeInteger(target) || target < 1)
+      throw new Error('cast target must be a positive object id');
+    targetObject = target === c.selfId ? c.self : c.room.objects.get(target);
+  }
+  const targetIsPlayer = target === c.selfId ? true
+    : Number.isInteger(targetObject?.flags) ? !!(targetObject.flags & OF.PLAYER) : null;
+  if (!rtsSpellTargetAllowed(rule, {
+    targetId: hasTarget ? target : null,
+    selfId: Number.isSafeInteger(c.selfId) ? c.selfId : null,
+    targetIsPlayer,
+  })) {
+    if (rule.target_mode === 'none') throw new Error(`${known.name} accepts no target`);
+    if (rule.target_mode === 'self')
+      throw new Error(`${known.name} may target only ${a.agent}'s own controlled character`);
+    if (!targetObject)
+      throw new Error(`stale cast intent: target ${target} is no longer perceived`);
+    throw new Error('RTS context casting may not target players or unknown object kinds');
+  }
+  return { known, count, rule, target, targetObject };
+}
+
 function resolveTarget(s, arg) {
   const c = s.need();
   if (arg === undefined || arg === null) throw new Error('need a target id or name');
@@ -5718,9 +5761,10 @@ const TOOLS = [
     description:
       'Start an exact-id attack as a background session job and return immediately. This is the ' +
       'RTS control seam: it validates that the id is attackable in the stated room before accepting, ' +
-      'then rechecks endpoint, keeper, room, exact target, and cancellation inside every turn/attack ' +
-      'pacer callback. Object ids are generation-local; a room mismatch is rejected before any packet ' +
-      'is sent. Player targets are allowed when View Only is off. Use cancel_action to stop between swings.',
+      'then rechecks endpoint, keeper, room, exact non-player target, cancellation, and the multi-swing ' +
+      'health floor inside every turn/attack pacer callback. Object ids are generation-local; a room ' +
+      'mismatch is rejected before any packet is sent. Multi-swing RTS attacks stop at 35% health. ' +
+      'Use cancel_action to stop between swings.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       room: { type: 'number' },
@@ -5742,6 +5786,11 @@ const TOOLS = [
       const object = c.room.objects.get(target.id);
       if (!object || !(object.flags & OF.ATTACKABLE))
         throw new Error('stale attack intent: target is absent or no longer attackable');
+      // This seam is deliberately PvE-only. The broker is the final process before
+      // both in-process and keeper-owned game packets, so a gateway/UI classification
+      // is never sufficient authority to target another player.
+      if (object.flags & OF.PLAYER)
+        throw new Error('RTS attack intents may not target players');
       const swings = Math.max(1, Math.min(Math.trunc(num(a.swings, 20)), 20));
       if (s instanceof KeeperProxy) {
         const started = await s.rtsIntent('attack', {
@@ -5764,14 +5813,26 @@ const TOOLS = [
           const current = c.room.objects.get(target.id);
           if (!sameRtsIdentity(c, current, expectedTarget) || !(current.flags & OF.ATTACKABLE))
             throw new Error(`RTS ${packet} refused: exact target ${target.id} is absent, changed, or not attackable`);
+          if (current.flags & OF.PLAYER)
+            throw new Error(`RTS ${packet} refused: target ${target.id} is now a player`);
+          if (swings > 1) {
+            const health = c.vitals()?.health;
+            const maximum = health?.max ?? health?.scale_max;
+            const fraction = Number.isFinite(health?.value) && Number.isFinite(maximum) && maximum > 0
+              ? health.value / maximum : null;
+            if (!(fraction > 0.35))
+              throw new Error(`RTS ${packet} refused: multi-swing health must remain above 35%`);
+          }
         },
       });
       const job = s.startJob('attack', `attack ${target.id} in room ${actualRoom}`,
         () => callTool('attack', { agent: a.agent, target: target.id, swings,
+                                   ...(swings > 1 ? { stop_below: 0.35 } : {}),
                                    [RTS_MUTATION_GUARD]: guard }),
         { controlToken: token, leaseToken: a.lease_token });
       return { accepted: true, agent: a.agent, room: actualRoom, target: target.id,
-               swings, control_token: token, lease_token: a.lease_token,
+               swings, ...(swings > 1 ? { stop_below: 0.35 } : {}),
+               control_token: token, lease_token: a.lease_token,
                started_at: job.startedAt };
     },
   },
@@ -5905,17 +5966,21 @@ const TOOLS = [
       const room = Number(a.room);
       const roomBinding = requireRtsRoom(s, room, 'context-intent');
       const actualRoom = roomBinding.room_num;
+      // The keeper path branches before the direct-session action projection below.
+      // Classify a cast here so an unsafe name/arity/target can never cross that
+      // process boundary merely because the live socket belongs to a keeper.
+      const acceptedCast = action === 'cast' ? safeRtsCastSelection(c, a) : null;
 
       if (s instanceof KeeperProxy) {
         const started = await s.rtsIntent('context', {
           room: actualRoom, room_object_id: roomBinding.room_object_id, action,
           ...(a.col === undefined ? {} : { col: a.col }),
           ...(a.row === undefined ? {} : { row: a.row }),
-          ...(a.target === undefined ? {} : { target: a.target }),
+          ...(a.target === undefined ? {} : { target: acceptedCast?.target ?? a.target }),
           ...(a.item === undefined ? {} : { item: a.item }),
           ...(a.expected_item_name === undefined ? {} : { expected_item_name: a.expected_item_name }),
           ...(a.targets === undefined ? {} : { targets: a.targets }),
-          ...(a.spell === undefined ? {} : { spell: a.spell }),
+          ...(a.spell === undefined ? {} : { spell: acceptedCast?.known.name ?? a.spell }),
           control_token: token, lease_token: a.lease_token,
           commander_owner: authority.lease.record.owner,
           server_host: a.server_host, server_port: a.server_port,
@@ -6002,46 +6067,12 @@ const TOOLS = [
         if (action === 'item_unuse' && !using?.has(item))
           throw new Error(`item_unuse refused: ${inventoryName || item} is not currently equipped`);
       } else if (action === 'cast') {
-        const wanted = typeof a.spell === 'string' ? a.spell.trim() : '';
-        if (!wanted || wanted.length > 120 || /[\x00-\x1f\x7f]/.test(wanted))
-          throw new Error('cast requires an exact spell name');
-        const known = (Array.isArray(c.spells) ? c.spells : [])
-          .map(value => ({ value, name: c.rsc.get(value.nameRsc) }))
-          .find(value => typeof value.name === 'string' &&
-            value.name.toLowerCase() === wanted.toLowerCase());
-        if (!known)
-          throw new Error(`stale cast intent: ${a.agent} does not know the exact spell "${wanted}"`);
-        const count = Number(known.value.numTargets);
-        const rule = rtsSafeSpellRule(known.name, count);
-        if (!rule)
-          throw new Error(`${known.name} is not classified as safe for RTS casting`);
+        const { known, count, rule, target: acceptedTarget, targetObject } = acceptedCast;
         spellIdentity = {
           ...rtsIdentity(c, known.value), targets: count,
         };
         spellRule = rule;
-        const hasTarget = a.target !== undefined && a.target !== null;
-        let targetObject = null;
-        if (hasTarget) {
-          target = Number(a.target);
-          if (!Number.isSafeInteger(target) || target < 1)
-            throw new Error('cast target must be a positive object id');
-          targetObject = target === c.selfId ? c.self : c.room.objects.get(target);
-        }
-        const targetIsPlayer = target === c.selfId ? true
-          : Number.isInteger(targetObject?.flags) ? !!(targetObject.flags & OF.PLAYER) : null;
-        if (!rtsSpellTargetAllowed(rule, {
-          targetId: hasTarget ? target : null,
-          selfId: Number.isSafeInteger(c.selfId) ? c.selfId : null,
-          targetIsPlayer,
-        })) {
-          if (rule.target_mode === 'none')
-            throw new Error(`${known.name} accepts no target`);
-          if (rule.target_mode === 'self')
-            throw new Error(`${known.name} may target only ${a.agent}'s own controlled character`);
-          if (!targetObject)
-            throw new Error(`stale cast intent: target ${target} is no longer perceived`);
-          throw new Error('RTS context casting may not target players or unknown object kinds');
-        }
+        target = acceptedTarget;
         if (targetObject) targetIdentity = rtsIdentity(c, targetObject);
         spell = known.name;
       }
@@ -13446,11 +13477,12 @@ async function brokerRtsRead(url) {
     }
   }
 
+  const generation = brokerRtsGenerationClock.next(capturedAt, process.pid);
   return {
     schema: RTS_READ_SCHEMA,
     read_only: true,
-    observed_at: new Date(capturedAt).toISOString(),
-    sequence: `${capturedAt}-${process.pid}`,
+    observed_at: generation.observed_at,
+    sequence: generation.sequence,
     // Keep the same identity shape as /health so command adapters can validate a
     // single aggregate generation without a second race-prone lookup.
     health: brokerHealth(),
@@ -14206,7 +14238,9 @@ function serveDashboard(port) {
         const geoObj = mapRoom ? geoFor(mapRoom) : null;
         if (geoObj) {
           const spots = safeSpots(geoObj, { limit: 20 });
-          safeSpotsOut = spots.map(sp => ({ x: sp.col - 1, z: sp.row - 1, score: sp.score }));
+          // No `score`: safe walls are not graded any more (see safeSpots). The 3D view
+          // draws every one of them the same, which is what they are.
+          safeSpotsOut = spots.map(sp => ({ x: sp.col - 1, z: sp.row - 1 }));
         }
       } catch {}
       // Facing direction and GOAP target for the 3D view.

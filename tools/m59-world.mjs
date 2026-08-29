@@ -26,6 +26,7 @@ import { affordances, OF, isTeleporter, KOD_FINENESS } from './m59-parse.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { observedCrossings } from './m59-crossings.mjs';
 import { activeRoutes, anchorFor, sameRegion, anchorReach } from './m59-routes.mjs';
+import { resolveRoomWire } from './m59-room-wire.mjs';
 
 // Marks used on the minimap. Chosen so the picture stays readable in a terminal and
 // so the important things are the ones that stand out: you, then players, then
@@ -251,9 +252,10 @@ export class World {
 
   // Which room are we in, as a room NUMBER? The protocol never says. BP_PLAYER
   // carries the room's name resource and room resource (User.ToCliPlayer sends
-  // GetRoomResource and GetName), and both are unique per room across the whole
-  // world, so either identifies it. Object ids would too, but only until the next
-  // `save game` renumbers them — so they are the fallback, not the key.
+  // GetRoomResource and GetName). This legacy tactical lookup accepts either;
+  // room resources do collide for guest/newbie and rentable rooms, so bound
+  // provenance below requires the complete pair and a unique map row. Object ids
+  // work only until the next `save game` renumbers them, hence the last fallback.
   get room() {
     if (!this.map) return null;
     const c = this.c;
@@ -272,6 +274,18 @@ export class World {
     }
     return null;
   }
+
+  // Bound provenance is deliberately stricter than the legacy room lookup above.
+  // Tactical/display callers keep its historical fallbacks, while a renderer gets
+  // a wire tuple only when the complete BP_PLAYER resource pair selects one row.
+  get roomBinding() {
+    const roomWire = resolveRoomWire(this.c, this.map);
+    if (!roomWire) return null;
+    const room = this.map.rooms[String(roomWire.resolved_room_num)];
+    return room ? { room, room_wire: roomWire } : null;
+  }
+
+  get roomWire() { return this.roomBinding?.room_wire ?? null; }
 
   get geometry() {
     const room = this.room;
@@ -924,7 +938,11 @@ export class World {
   // and changes can therefore be projected at packet speed. `snapshot()` remains the
   // tactical query for deciding whether and how an order can be executed.
   perception() {
-    const c = this.c, room = this.room, geo = this.geometry, me = this.self;
+    const c = this.c, binding = this.roomBinding;
+    const room = binding?.room ?? this.room;
+    const roomWire = binding?.room_wire ?? null;
+    const geo = room?.roo ? sharedRoomGeometry(room) : null;
+    const me = this.self;
     return {
       room: room
         ? { num: room.num, name: room.name, size: { rows: room.rows, cols: room.cols },
@@ -944,6 +962,7 @@ export class World {
       exits: [],
       projection: 'render',
       topology_note: 'exits and reachability belong to the tactical look/room scene, not the render hot path',
+      ...(roomWire ? { room_wire: roomWire } : {}),
     };
   }
 

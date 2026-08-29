@@ -244,8 +244,8 @@ for (const [tool, next] of [["name: 'attack_intent',", "name: 'move_intent',"],
                             ["name: 'move_intent',", "name: 'context_intent',"],
                             ["name: 'context_intent',", "name: 'cancel_action',"]]) {
   const body = section(tool, next);
-  assert.match(body, /run: \(a, caller\) =>/, `${tool} does not receive its caller`);
-  assert.match(body, /requireControlSession\(s, caller,/, `${tool} does not check its caller`);
+  assert.match(body, /run: (?:async )?\(a, caller\) =>/, `${tool} does not receive its caller`);
+  assert.match(body, /requireControlSession\(\s*s, caller,/, `${tool} does not check its caller`);
 }
 // And the endpoint check itself no longer decides locality — it binds to one server.
 assert.doesNotMatch(broker, /requireLocalControlEndpoint\(/,

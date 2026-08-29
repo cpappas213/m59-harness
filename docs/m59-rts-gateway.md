@@ -124,15 +124,27 @@ Routes:
 - `GET /v1/snapshot?agent=t1&agent=t2` returns `m59-rts/v1` JSON.
 - `GET /v1/snapshot.tsv?agent=t1&agent=t2` returns the dependency-free native
   line format (currently native version 7).
+- `GET /v1/snapshot.v8?agent=t1&agent=t2` and
+  `GET /v1/snapshot.v8.tsv?agent=t1&agent=t2` return the topology-bindable
+  JSON/native profile. V8 requires one complete server-derived room tuple for
+  every requested agent and never falls back to v7.
 - `GET /v1/scene.tsv?room=200` returns the static ROO walkability planes and
   drawable wall segments for a room. Clients fetch this only on room change.
+- `GET /v1/scene.v3?room=200` and `GET /v1/scene.v3.tsv?room=200` return a
+  scene bound to the one frozen startup map generation. A missing or conflicting
+  binding fails instead of returning the legacy v2 scene.
+- `GET /v1/atlas.v1.tsv?sha256=<64-lowercase-hex>` returns only the exact
+  content-addressed `M59ATLAS/1` artifact compiled and frozen at startup. There
+  is no unqualified current-artifact request.
 - `GET /v1/events?agent=t1&agent=t2` opens a server-sent event stream. It sends
   one full snapshot first, then immediate broker events from an independent
   long poll per character plus cached room reconciliation at the configured safe
   cadence.
 - TCP `127.0.0.1:8911` is the persistent native stream. Send
   `M59SUB<TAB>1<TAB>t1,t2<LF>` and receive length-framed
-  `M59FRAME<TAB>1<TAB>bytes<LF>` snapshots.
+  `M59FRAME<TAB>1<TAB>bytes<LF>` v7 snapshots. Send subscription profile 2 to
+  receive complete v8 payloads. Profile 2 never emits a v7 payload; its failure
+  does not suppress concurrent profile-1 reconciliation.
 - `POST /v1/orders` accepts lease-bound attack, room move, typed context, and
   protective cancel batches.
 - `POST /v1/commander/{acquire,heartbeat,release,status}` manages the short
@@ -228,6 +240,21 @@ Versions 6 and 7 add records only: the field counts and meanings of every v1-v6
 record are unchanged. Consumers retain their earlier decoders, add
 `ITEM`/`ACTION` handling for v6, and add the commander/commerce records when the
 `M59RTS` header advertises 7.
+
+Native v8 is a separate bound profile. It changes the header to `M59RTS 8` and
+adds exactly one `ROOM_WIRE` immediately after each `AGENT`:
+
+```text
+ROOM_WIRE agent resolved_room_num room_resource_id room_security_u32
+```
+
+The two unsigned fields preserve the current `BP_PLAYER` values. The stable room
+number is resolved only when the complete `(roomRsc, roomNameRsc)` pair selects
+one frozen map row; runtime object IDs and first-match resource fallbacks are not
+binding evidence. Static filename and dimensions come from that selected row,
+but the gateway never fills a missing wire value from the map. Scene v3 then
+joins the same tuple to the exact static atlas hashes and room token. See
+[`m59-rts-bound-topology.md`](m59-rts-bound-topology.md).
 
 Native stream frames are complete generations, not mutations. Event cursor
 activity causes an immediate cached generation in addition to periodic

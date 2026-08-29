@@ -30,6 +30,7 @@
 
 import { affordances } from './m59-parse.mjs';
 import { dirName } from './m59-world.mjs';
+import { canonicalRoomWire, sameRoomWire } from './m59-room-wire.mjs';
 
 // `rv` is the keeper's /room-view body. `mapRoom` is `worldMap.rooms[rv.room_num]` or null.
 export function renderProjection(rv, mapRoom = null) {
@@ -45,6 +46,17 @@ export function renderProjection(rv, mapRoom = null) {
   }
 
   const measured = mapRoom && mapRoom.rows && mapRoom.cols;
+  const candidateWire = canonicalRoomWire(rv.room_wire);
+  // A filename is a local map fact, never part of BP_PLAYER. Attach it only
+  // after the live resource tuple selects this exact map row; an unbound legacy
+  // projection keeps its previous room shape.
+  const boundMapRoom = !!candidateWire &&
+    rv.room_num === candidateWire.resolved_room_num &&
+    mapRoom?.num === candidateWire.resolved_room_num &&
+    mapRoom?.roomRsc === candidateWire.room_resource_id &&
+    typeof mapRoom?.rooFile === 'string' && mapRoom.rooFile.length > 0 &&
+    Number.isInteger(mapRoom?.rows) && mapRoom.rows > 0 &&
+    Number.isInteger(mapRoom?.cols) && mapRoom.cols > 0;
   const size = measured
     ? { rows: mapRoom.rows, cols: mapRoom.cols }
     : { rows: rv.rows ?? null, cols: rv.cols ?? null };
@@ -82,6 +94,7 @@ export function renderProjection(rv, mapRoom = null) {
       name: rv.room_name ?? null,
       size,
       size_source: measured ? 'world map .roo' : 'keeper default — the server does not report room size',
+      ...(boundMapRoom ? { resource: mapRoom.rooFile } : {}),
     },
     you: me
       ? {
@@ -101,6 +114,11 @@ export function renderProjection(rv, mapRoom = null) {
     topology_note: 'exits and reachability belong to the tactical look, which lives in the ' +
       'keeper process — move with walk_to/go_through rather than inferring an exit from this',
     target: rv.target ?? null,
+    ...(boundMapRoom ? { room_wire: candidateWire } : {}),
+    ...(rv.room_wire != null && !boundMapRoom
+      ? { room_binding_note: 'room_wire did not select this exact configured map row; ' +
+          'bound provenance and room resource withheld' }
+      : {}),
   };
 }
 
@@ -125,6 +143,8 @@ export function keeperView(state, roomView, mapRoomFor = () => null) {
   const s = state ?? {};
   const stateRoom = s.room ? { num: s.room.num, name: s.room.name } : null;
   const rv = roomView && !roomView.error ? roomView : null;
+  const stateWire = canonicalRoomWire(s.room_wire);
+  const roomViewWire = canonicalRoomWire(rv?.room_wire);
 
   // TWO CLOCKS, RECONCILED RATHER THAN MERGED. Right after a hop the state can already name
   // the new room while the room view still describes the old one. A position from a room the
@@ -135,11 +155,45 @@ export function keeperView(state, roomView, mapRoomFor = () => null) {
   const projection = agrees
     ? renderProjection(rv, mapRoomFor(rv.room_num ?? stateRoom.num))
     : null;
+  const projectionWire = canonicalRoomWire(projection?.room_wire);
+  const boundAgrees = !!stateWire && !!roomViewWire && !!projectionWire &&
+    sameRoomWire(stateWire, roomViewWire) && sameRoomWire(stateWire, projectionWire) &&
+    stateRoom?.num === stateWire.resolved_room_num &&
+    rv?.room_num === stateWire.resolved_room_num;
+
+  // Never let a tuple from only one cache escape through either spread below.
+  // Likewise, a resource filename is part of the complete bound look and is
+  // withheld when the independently sampled state and room view do not agree.
+  const { room_wire: _stateWire, ...stateOut } = s;
+  const { room_wire: _projectionWire, room_binding_note: projectionBindingNote,
+          ...projectionOut } = projection ?? {};
+  const projectionRoom = projection?.room
+    ? (boundAgrees ? projection.room : (() => {
+        const { resource: _resource, ...legacyRoom } = projection.room;
+        return legacyRoom;
+      })())
+    : null;
+
+  let roomBindingNote = null;
+  if (!boundAgrees) {
+    if (stateWire && roomViewWire && !sameRoomWire(stateWire, roomViewWire))
+      roomBindingNote = 'keeper state and room view carry different room_wire tuples; bound provenance withheld';
+    else if (!stateWire && !roomViewWire)
+      roomBindingNote = 'keeper state and room view do not carry complete room_wire provenance';
+    else if (!stateWire)
+      roomBindingNote = 'keeper state does not carry complete room_wire provenance';
+    else if (!roomViewWire)
+      roomBindingNote = 'keeper room view does not carry complete room_wire provenance';
+    else if (projectionBindingNote)
+      roomBindingNote = projectionBindingNote;
+    else
+      roomBindingNote = 'room_wire does not agree with the room clocks; bound provenance withheld';
+  }
 
   return {
-    ...s,
-    ...(projection ?? {}),
-    room: projection?.room ?? stateRoom,
+    ...stateOut,
+    ...(projection ? projectionOut : {}),
+    room: projectionRoom ?? stateRoom,
     you: projection?.you ?? null,
     // The shape `arrivalReport` reads, and the shape a real `World.snapshot()` returns.
     vitals: { health: s.hp ?? null, mana: s.mana ?? null, vigor: s.vigor ?? null },
@@ -151,8 +205,9 @@ export function keeperView(state, roomView, mapRoomFor = () => null) {
     as_of_ms: s.as_of_ms ?? null,
     ...(rv && !agrees
       ? { stale_render: `the keeper's room view is for room ${rv.room_num ?? '?'} and this ` +
-                        `character is in ${stateRoom?.num ?? '?'} — positions withheld` }
+                         `character is in ${stateRoom?.num ?? '?'} — positions withheld` }
       : {}),
+    ...(boundAgrees ? { room_wire: stateWire } : { room_binding_note: roomBindingNote }),
     source: projection
       ? "keeper snapshot, plus the keeper's own room view"
       : 'keeper snapshot — /room-view on the keeper has the room contents',

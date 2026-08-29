@@ -222,4 +222,63 @@ const malformedReader = new BrokerReader({
 });
 await assert.rejects(() => malformedReader.snapshot(['t1']), /invalid or non-read-only/);
 
+const boundLook = {
+  ...look(501, 10),
+  room: { num: 200, name: 'Marion', resource: 'marion.roo',
+    size: { rows: 88, cols: 93 } },
+  room_wire: {
+    resolved_room_num: 200,
+    room_resource_id: 22001,
+    room_security_u32: 4294967294,
+  },
+};
+const boundGeneration = {
+  map_build_identity: `M59ATLAS/1:${'11'.repeat(32)}:${'22'.repeat(32)}:${'33'.repeat(32)}`,
+  getRoomBinding: room => room === 200
+    ? { room_num: 200, room_resource_id: 22001, roo_file: 'marion.roo', rows: 88, cols: 93 }
+    : null,
+};
+const boundAggregate = {
+  ...aggregate,
+  agents: ['t1'],
+  fleet: { ...fleet, agents: 1, fleet: [fleet.fleet[0]] },
+  health: { ...aggregate.health, sessions: ['t1'] },
+  looks: { t1: boundLook },
+  equipment: { t1: aggregate.equipment.t1 },
+  spells: { t1: aggregate.spells.t1 },
+  inventory: { t1: aggregate.inventory.t1 },
+  control: { t1: aggregate.control.t1 },
+  commerce: { t1: aggregate.commerce.t1 },
+};
+const boundReader = new BrokerReader({
+  fetchImpl: async () => jsonResponse(200, boundAggregate),
+});
+const boundSnapshot = await boundReader.snapshotV8(['t1'], boundGeneration);
+assert.equal(boundSnapshot.schema, 'm59-rts/v2');
+await assert.rejects(() => boundReader.snapshotV8(['not!valid'], boundGeneration),
+  /simple identifiers/);
+
+const overbroadBoundReader = new BrokerReader({
+  fetchImpl: async () => jsonResponse(200, {
+    ...boundAggregate,
+    agents: ['t1', 't2'],
+    fleet,
+    health: aggregate.health,
+    looks: { t1: boundLook, t2: { ...boundLook, you: { ...boundLook.you, object_id: 502 } } },
+    equipment: aggregate.equipment,
+    spells: aggregate.spells,
+    inventory: aggregate.inventory,
+    control: aggregate.control,
+    commerce: aggregate.commerce,
+  }),
+});
+await assert.rejects(() => overbroadBoundReader.snapshotV8(['t1'], boundGeneration),
+  /does not exactly match/);
+
+const duplicateBoundReader = new BrokerReader({
+  fetchImpl: async () => jsonResponse(200, { ...boundAggregate, agents: ['t1', 't1'] }),
+});
+await assert.rejects(() => duplicateBoundReader.snapshotV8(['t1'], boundGeneration),
+  /invalid or duplicate agent set/);
+
 console.log('m59 RTS broker aggregate fast-path and fail-closed safety passed');

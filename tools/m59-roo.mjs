@@ -3882,6 +3882,37 @@ export function parseRoo(buf, file = '') {
 
 const cache = new Map();
 
+export const MAX_ROO_FILE_BYTES = 64 * 1024 * 1024;
+
+export function readRooFileBounded(file, maximum = MAX_ROO_FILE_BYTES) {
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > MAX_ROO_FILE_BYTES)
+    throw new Error(`ROO read ceiling must be in 1..${MAX_ROO_FILE_BYTES} bytes`);
+  const descriptor = fs.openSync(file, 'r');
+  try {
+    const before = fs.fstatSync(descriptor);
+    if (!before.isFile()) throw new Error(`${file} is not a regular ROO file`);
+    if (before.size < 1 || before.size > maximum)
+      throw new Error(`${file} exceeds the ${maximum}-byte ROO ceiling`);
+    const bytes = Buffer.allocUnsafe(before.size);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = fs.readSync(descriptor, bytes, offset, bytes.length - offset, offset);
+      if (count <= 0) throw new Error(`${file} ended during its bounded ROO read`);
+      offset += count;
+    }
+    const probe = Buffer.allocUnsafe(1);
+    if (fs.readSync(descriptor, probe, 0, 1, bytes.length) !== 0)
+      throw new Error(`${file} grew during its bounded ROO read`);
+    const after = fs.fstatSync(descriptor);
+    if (after.size !== before.size || after.mtimeMs !== before.mtimeMs ||
+        after.ctimeMs !== before.ctimeMs || after.dev !== before.dev || after.ino !== before.ino)
+      throw new Error(`${file} changed during its bounded ROO read`);
+    return bytes;
+  } finally {
+    fs.closeSync(descriptor);
+  }
+}
+
 export function loadRoo(nameOrPath, dirs = DEFAULT_ROO_DIRS, { strict = false } = {}) {
   if (!strict && cache.has(nameOrPath)) return cache.get(nameOrPath);
   const candidates = [];
@@ -3898,7 +3929,7 @@ export function loadRoo(nameOrPath, dirs = DEFAULT_ROO_DIRS, { strict = false } 
   }
   for (const c of candidates) {
     try {
-      const g = parseRoo(fs.readFileSync(c), c);
+      const g = parseRoo(readRooFileBounded(c), c);
       if (strict && !g.collisionReady)
         throw new Error('client BSP collision section did not parse completely');
       if (!strict) cache.set(nameOrPath, g);

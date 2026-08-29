@@ -6,7 +6,7 @@ const client = {
   selfId: 501,
   roomNameRsc: 700,
   roomRsc: 701,
-  room: { id: 800, objects: new Map([
+  room: { id: 800, security: 0xf1234567, objects: new Map([
     [501, { id: 501, nameRsc: 900, col: 10, row: 11, x: 672, y: 736,
       angle: 1024, degrees: 90, appearanceRevision: 12, flags: 0, rarity: 4,
       light: { flags: 1, intensity: 24, color: 65535 },
@@ -45,6 +45,11 @@ const before = JSON.stringify(client.room.objects.get(600));
 const view = new World(client, map).perception();
 assert.equal(view.projection, 'render');
 assert.equal(view.room.num, 200);
+assert.deepEqual(view.room_wire, {
+  resolved_room_num: 200,
+  room_resource_id: 701,
+  room_security_u32: 0xf1234567,
+}, 'direct in-process perception preserves the exact BP_PLAYER room tuple');
 assert.equal(view.you.col, 10);
 assert.equal(view.you.x, 672);
 assert.equal(view.you.y, 736);
@@ -74,4 +79,4 @@ assert.equal(new World(client, map).objects()[0].appearance, undefined,
   'tactical looks should not pay for render-only appearance data');
 assert.deepEqual(view.exits, []);
 assert.equal(JSON.stringify(client.room.objects.get(600)), before, 'render projection must not mutate protocol state');
-console.log('m59 world render perception: 29 assertions passed, exact appearance and no pathfinding');
+console.log('m59 world render perception: 30 assertions passed, exact appearance and no pathfinding');
