@@ -119,6 +119,53 @@ export const SMALL_TALK = [
     re: /^(thanks|thank you|ty|thx|cheers|nice one)\b/i,
     reply: () => `Any time.`,
   },
+  // TAKE ME THERE. LAST IN THE TABLE, AND THAT POSITION IS LOAD-BEARING.
+  //
+  // It was written FIRST, on the reasoning that a bare "599" is not small talk. True, and
+  // not the point: this regex is deliberately loose -- anything that could be a room name --
+  // so at the top it also matched "debug", "what's wrong" and "why are you stuck". A rule
+  // that DECLINES falls through to the ack-and-escalate path rather than to the next rule,
+  // so one greedy rule at the top silently shadows every rule below it.
+  //
+  // Last, every rule with a real pattern gets first refusal and only an unclaimed sentence
+  // reaches this -- which is exactly the set a bare room name is in.
+  //
+  // The rule does the PARSING and the ambiguity answer, which are pure and testable. The
+  // move itself is a hook the keeper supplies, because only that process has the admin
+  // socket -- and only it can refuse a server that is not loopback. No hook, no teleport,
+  // and the sentence falls through to the ordinary path.
+  {
+    intent: 'operator-teleport',
+    // Anything that could NAME a room, and nothing that is plainly a request. Three shapes:
+    // a bare number; a bare phrase of at most six words (room names are short -- 'Jasper',
+    // 'The Flatlands'); or a verb-led sentence of any length ('take me to Main gate to the
+    // city of Tos'). The six-word cap is what keeps 'give me 100 gold and meet me in Tos'
+    // out: it is nine words and leads with no verb this rule knows, so the sentence stays
+    // unclaimed and escalates as it always did. `resolveRooms` is still the real filter.
+    re: /^\s*(?:(?:go|goto|tp|teleport|take me|send me|put me|move me|warp)\s+(?:to\s+)?\S.*|(?:to\s+)?[A-Za-z0-9][A-Za-z0-9'.\-]*(?:\s+[A-Za-z0-9'.\-]+){0,5})\s*\?*\s*$/i,
+    reply: (ctx) => {
+      if (!ctx.operatorTeleport || !ctx.isNamedOperator || !ctx.resolveRooms) return null;
+      const said = String(ctx.said ?? '').trim()
+        .replace(/^(?:go|goto|tp|teleport|take me|send me|put me|move me|warp)\b/i, '')
+        .replace(/^\s*to\s+/i, '').replace(/\?+$/, '').trim();
+      if (!said) return null;
+      const found = ctx.resolveRooms(said);
+      if (!found || found.error) return null;                 // not a room; let the table run
+      if (!found.matches?.length) return null;
+      if (found.matches.length > 1) {
+        // AMBIGUOUS IS AN ANSWER, NOT A FAILURE. Name them so the next message can be exact,
+        // and cap the list because the reply is one 220-character send.
+        const names = found.matches.slice(0, 6).map(m => `${m.name} (${m.num})`).join(', ');
+        const more = found.matches.length > 6 ? `, +${found.matches.length - 6} more` : '';
+        return `Which "${said}": ${names}${more}?`;
+      }
+      const m = found.matches[0];
+      // The move is fired by the hook and reported by it; a hook that cannot move says why.
+      const r = ctx.teleportOperator?.(m.num);
+      if (r && r.queued === false) return `Can't send you to ${m.name} (${m.num}): ${r.why}`;
+      return `Sending you to ${m.name} (${m.num}).`;
+    },
+  },
 ];
 
 export function matchSmallTalk(text) {
@@ -209,6 +256,24 @@ export const DEFAULT_CHATTER_POLICY = {
   // `challenge`. See arenaCall — the guards are what make this safe to default on, and
   // this switch exists for turning it off during a test that wants the silence.
   arenaChallenge: true,
+  // TAKE THE OPERATOR WHERE THEY ASK. LOOPBACK ONLY, AND OFF BY DEFAULT.
+  //
+  // On the test server the slow part of investigating anything is getting a body to the
+  // place it happened -- find the room number, remember the DM tool's flags, type it. A bot
+  // standing next to you already has the local admin socket, so telling it "584" or
+  // "The Flatlands" should just work.
+  //
+  // THREE THINGS MAKE THIS SAFE TO EXIST AT ALL, and none of them is this switch:
+  //   * `m59-dm.mjs` REFUSES a game server that is not loopback -- the maintenance port is
+  //     unauthenticated, and pointing it at prod is not a configuration choice. The keeper
+  //     checks the same thing before it asks.
+  //   * only the named operator character is obeyed. A stranger typing "599" is answered by
+  //     the ordinary small-talk path, or not at all.
+  //   * it moves the SPEAKER, never the bot and never a third party. The worst outcome of a
+  //     mistake is that the operator is standing somewhere unexpected.
+  operatorTeleport: false,
+  // Who counts as the operator for the rule above. A name, matched case-insensitively.
+  operatorName: 'TESTER',
   // WHETHER A KEEPER ATTACHES ONE OF THESE AT ALL. FALSE, AND PROD DEPENDS ON IT.
   //
   // The broker attaches a chatter to every character it joins in-process, and has since the
@@ -481,6 +546,20 @@ export class Chatter {
       // See DEFAULT_CHATTER_POLICY.debugAnswers. The verbose replies read this from the
       // context rather than the policy, so a rule stays a pure function of what it is given.
       debugAnswers: !!this.policy.debugAnswers,
+      // THE OPERATOR TELEPORT — see the rule at the top of the table. `said` is the raw
+      // sentence because that rule has to re-read it; every other rule works off its own
+      // regex. `isNamedOperator` is a NAME match, which is weaker than the pid-bound
+      // `isOperator` the debug rule uses — deliberately, because the pid test lives in the
+      // broker and this rule has to work from a keeper. It is safe here for a different
+      // reason: the whole capability is loopback-only and moves nobody but the speaker.
+      said: item.text ?? '',
+      operatorTeleport: !!this.policy.operatorTeleport,
+      isNamedOperator: String(item.speaker_name ?? '').trim().toLowerCase()
+                       === String(this.policy.operatorName ?? '').trim().toLowerCase()
+                       && !!String(this.policy.operatorName ?? '').trim(),
+      resolveRooms: (q) => { try { return this.hooks.resolveRooms?.(q) ?? null; } catch { return null; } },
+      teleportOperator: (num) => { try { return this.hooks.teleportOperator?.(num, item.speaker_name) ?? null; }
+                                   catch (e) { return { queued: false, why: e.message }; } },
       speakerInRoom: view ? view.objects.some(o => o.id === item.speaker) : false,
       speakerObject: view?.objects.find(o => o.id === item.speaker) ?? null,
       health,

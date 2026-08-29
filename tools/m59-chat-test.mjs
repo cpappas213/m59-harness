@@ -589,5 +589,64 @@ console.log('\nASKED WHAT IT IS DOING, A TEST-SERVER CHARACTER ACTUALLY SAYS');
      /\.\.\.fleetChatter\(FLEET\)/.test(BROKER));
 }
 
+
+console.log('\nTELLING A BOT A ROOM NAME TAKES THE OPERATOR THERE');
+{
+  const { SMALL_TALK, DEFAULT_CHATTER_POLICY } = await import('./m59-chatter.mjs');
+  const rule = SMALL_TALK.find(r => r.intent === 'operator-teleport');
+  ok('the rule exists', !!rule);
+  // LAST, not first. The regex is deliberately loose, and a rule that declines falls
+  // through to ack rather than to the next rule -- so at the top it shadowed `debug`,
+  // "what's wrong" and "why are you stuck". Last, only an unclaimed sentence reaches it.
+  ok('and it is LAST, so it cannot shadow a rule with a real pattern',
+     SMALL_TALK[SMALL_TALK.length - 1]?.intent === 'operator-teleport');
+  ok('it is off in the committed defaults', DEFAULT_CHATTER_POLICY.operatorTeleport === false);
+  ok('and the operator is a name, not "anyone"', DEFAULT_CHATTER_POLICY.operatorName === 'TESTER');
+
+  const base = {
+    operatorTeleport: true, isNamedOperator: true,
+    resolveRooms: (q) => {
+      if (/^584$|flatlands/i.test(q)) return { matches: [{ num: 584, name: 'The Flatlands' }] };
+      if (/jasper/i.test(q)) return { matches: [
+        { num: 350, name: 'East Jasper' }, { num: 382, name: 'West Jasper' },
+        { num: 377, name: 'The Sewers of Jasper' }] };
+      return { matches: [] };
+    },
+    teleportOperator: () => ({ queued: true }),
+  };
+  const say = (said, over = {}) => rule.reply({ ...base, said, ...over });
+
+  ok('a bare room number sends you there', /Sending you to The Flatlands \(584\)/.test(say('584')), say('584'));
+  ok('so does the name', /Sending you to The Flatlands/.test(say('The Flatlands')));
+  ok('and a verb in front is stripped', /Sending you to The Flatlands/.test(say('take me to 584')));
+  ok('and a question mark', /Sending you to The Flatlands/.test(say('584?')));
+
+  // AMBIGUOUS IS AN ANSWER, NOT A FAILURE.
+  const amb = say('Jasper');
+  ok('an ambiguous name comes back as the list', /^Which "Jasper": /.test(amb), amb);
+  ok('and names every match with its number',
+     /East Jasper \(350\)/.test(amb) && /West Jasper \(382\)/.test(amb)
+     && /The Sewers of Jasper \(377\)/.test(amb));
+
+  // THE THREE REFUSALS, each of which must fall through rather than answer.
+  ok('a stranger gets nothing from this rule', say('584', { isNamedOperator: false }) === null);
+  ok('nor does anyone when the fleet has not turned it on',
+     say('584', { operatorTeleport: false }) === null);
+  ok('and with no hook there is no teleport', say('584', { resolveRooms: null }) === null);
+  ok('a sentence that is not a room falls through to the rest of the table',
+     say('how are you') === null);
+  ok('a hook that refuses is reported rather than claimed',
+     /Can't send you to The Flatlands \(584\): not loopback/
+       .test(say('584', { teleportOperator: () => ({ queued: false, why: 'not loopback' }) })));
+
+  const { readFileSync: rfs } = await import('node:fs');
+  const K = rfs(new URL('./m59-keeper-process.mjs', import.meta.url), 'utf8');
+  ok('the keeper refuses a game server that is not loopback, whatever the policy says',
+     /if \(!isLoopbackHost\(credHost\)\)/.test(K));
+  ok('and it moves the SPEAKER, never the bot', /relocate\(\[who\], num,/.test(K));
+  ok('ambiguity comes back as data, not as a thrown error',
+     /if \(Array\.isArray\(e\.ambiguous\)\) return \{ matches: e\.ambiguous \};/.test(K));
+}
+
 console.log(`\n${failed ? 'FAILED' : 'ok'} — ${passed} passed, ${failed} failed`);
 process.exit(failed ? 1 : 0);

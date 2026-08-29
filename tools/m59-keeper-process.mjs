@@ -24,7 +24,9 @@ import { TickLoop } from './m59-tick.mjs';
 import { makeDecider, DEFAULT_GOALS, intend, INTENTS } from './m59-decide.mjs';
 import { Router, routeIntent } from './m59-route.mjs';
 import { protocolToClient, clientToProtocol, buildAllRoomGeometry } from './m59-roo.mjs';
-import { loadMap, buildReverseEdges } from './m59-map.mjs';
+import { loadMap, buildReverseEdges, resolveRoom } from './m59-map.mjs';
+// The operator teleport, and the loopback check that is the reason it may exist at all.
+import { relocate, isLoopbackHost } from './m59-dm.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 import * as watchdog from './m59-watchdog.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
@@ -337,6 +339,48 @@ async function join() {
           debugReport: () => { try { return autopilot?.debug ? autopilot.debugLines() : null; }
                                catch { return null; } },
           keeperFrozen: () => !!(autopilot?.frozenUntil && Date.now() < autopilot.frozenUntil),
+
+          // WHICH ROOMS COULD THAT BE. `resolveRoom` already answers a number, an exact
+          // name, or a single partial, and THROWS with `err.ambiguous` listing the rest --
+          // which is exactly the shape the rule wants, so the throw is turned back into
+          // data rather than being treated as a failure.
+          resolveRooms: (q) => {
+            try {
+              const map = loadMap();
+              try {
+                const num = resolveRoom(map, q);
+                if (num == null) return { matches: [] };
+                return { matches: [{ num, name: map.rooms[String(num)]?.name ?? String(num) }] };
+              } catch (e) {
+                if (Array.isArray(e.ambiguous)) return { matches: e.ambiguous };
+                return { error: e.message };
+              }
+            } catch (e) { return { error: e.message }; }
+          },
+
+          // AND TAKE THEM THERE. The two refusals are the whole safety argument and both are
+          // checked here, before anything is sent:
+          //
+          //   * LOOPBACK ONLY. The maintenance port is unauthenticated, and `m59-dm.mjs`
+          //     refuses a non-loopback host for that reason. This checks the same fact about
+          //     the game server this keeper is logged in to, so the capability cannot exist
+          //     on prod even if a chatter file turned the policy on by mistake.
+          //   * IT MOVES THE SPEAKER. Never this character, never a third party -- the name
+          //     comes from the speech event, and the worst outcome of any confusion is that
+          //     the operator is standing somewhere they did not expect.
+          //
+          // Fired and not awaited: the reply should arrive with the move, not after a
+          // round-trip to the admin socket, and a failure is logged rather than spoken twice.
+          teleportOperator: (num, who) => {
+            if (!isLoopbackHost(credHost))
+              return { queued: false, why: `${credHost} is not loopback` };
+            if (!who) return { queued: false, why: 'I could not tell who asked' };
+            relocate([who], num, {}, { env: process.env })
+              .then(r => console.error(`[keeper] ${agent} sent ${who} to room ${num}: ` +
+                                       `${r?.ok === false ? r.why : 'ok'}`))
+              .catch(e => console.error(`[keeper] ${agent} could not send ${who} to ${num}: ${e.message}`));
+            return { queued: true };
+          },
         },
       });
       chatter.reattach();
