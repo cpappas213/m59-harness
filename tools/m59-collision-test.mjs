@@ -1369,6 +1369,11 @@ const walkTo = compileSessionMethod(brokerSource,
     // Fourteen is generous enough to go round a building and far short of the sixty-odd
     // squares of oscillation measured crossing The Streets of Tos.
     WALK_STALL_STEPS: 24,
+    // THE REAL 6. `walkTo` reads it to decide how many patient laps a PLAYER standing in the
+    // way is worth before the walker treats that square as taken -- a monster still gets one.
+    // Stubbing it would test a queue nobody stands in, and the behaviour it guards is that a
+    // one-square corridor is not poisoned by a body merely passing through it.
+    QUEUE_PATIENCE: 6,
     // THE REAL FLAGS, not a stub. `walkTo` asks whether the body in its way is a PLAYER —
     // a player is also dodging and needs the object-id tie-break, a monster gets the fixed
     // clockwise-first order — and a fixture that invented its own bit would build a room
@@ -1657,6 +1662,35 @@ console.log('\nterminal movement propagation and edge packet authority');
     ok('walkTo propagates a terminal step without replanning',
        result.reason === 'room_geometry_mismatch' && stepCalls === 1 && result.replans === 0,
        JSON.stringify({ result, stepCalls }));
+
+    // A PLAYER IN THE WAY IS A QUEUE; A MONSTER IN THE WAY IS AN OBSTACLE.
+    //
+    // Both look identical to `step` -- `object_blocked`, no movement -- and the walker used
+    // to treat them identically: one patient lap, then a sidestep, then mark the square taken
+    // and replan around it. In a corridor ONE SQUARE WIDE there is no side to step to and no
+    // way around, so that verdict ends the walk. Room 108's sewer pipe is exactly that shape
+    // and is the only approach to the jump the 108 -> 110 leg needs: one bot crossed it 4/4
+    // and six bots at once crossed it 0/6, each having written off the corridor because
+    // another character was walking through it.
+    //
+    // ASSERTED ON THE SOURCE, NOT ON A SIMULATED WALK. The first version of this drove a fake
+    // walk and counted `step` calls, and it reported the player and monster cases as
+    // identical -- the fixture never reached the escalation at all, so it was pinning the
+    // fake rather than the walker. What has to be true is narrow and local: the number of
+    // patient laps is a function of who is standing there, `underFire` still overrides it,
+    // and a monster is unchanged at one.
+    const walkToSrc = sessionMethod(brokerSource, 'async walkTo(col, row, {', 'walkTo');
+    const patienceLine = /const patience = \(blockerIsPlayer && !underFire\) \? QUEUE_PATIENCE : 1;/
+      .test(walkToSrc);
+    const gateUsesIt = /stalledTimes >= patience/.test(walkToSrc);
+    const monsterUnchanged = /: 1;/.test(walkToSrc);
+    ok('how long the walker queues depends on whether a PLAYER is in the way',
+       patienceLine && gateUsesIt && monsterUnchanged,
+       JSON.stringify({ patienceLine, gateUsesIt, monsterUnchanged }));
+    ok('and being hit still overrides the queue, so patience is never taken under fire',
+       /if \(underFire \|\| \(stalledOn === /.test(walkToSrc),
+       'the escalation must stay short-circuited by underFire');
+
 
     let pathCalls = 0, resyncCalls = 0;
     const unknown = {

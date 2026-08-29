@@ -190,6 +190,15 @@ const RUN_SPEED  = Number(process.env.M59_RUN_SPEED || 36);
 // our reading of vigor and the server's.
 const RUN_VIGOR_FLOOR = 12;
 
+// HOW MANY PATIENT LAPS A PLAYER IN THE WAY IS WORTH BEFORE THE WALKER ROUTES AROUND IT.
+//
+// Each lap is the jittered 500-1000ms wait in `walkTo`, so six is three to six seconds of
+// queuing -- long enough for a character walking a corridor to clear the square ahead, short
+// enough that a genuinely parked body still gets routed around inside one walk. A monster
+// gets one lap, as before: monsters wander but engaged ones do not, and patience next to
+// something that is hitting you is how a character stands on one square and is eaten.
+const QUEUE_PATIENCE = 6;
+
 /**
  * DOES THIS DECLARED JUMP NEED A RUN — asked of the table, not of the geometry.
  *
@@ -6234,7 +6243,32 @@ class Session {
 
         // Monsters wander. One retry costs a second and often clears it, which is
         // cheaper and less disruptive than routing the long way round.
-        if (underFire || (stalledOn === `${next.row},${next.col}` && stalledTimes >= 1)) {
+        // PATIENCE IS FOR PLAYERS. A MONSTER IS AN OBSTACLE; A PLAYER IS A QUEUE.
+        //
+        // One patient lap, then mark the square occupied and replan -- which is right for a rat
+        // and wrong for the commonest blocker on a travelled road, which is another character
+        // walking the same road. A player is going SOMEWHERE. It vacates on its own, and the
+        // only thing needed is to not give up in the second before it does.
+        //
+        // AND IN A ONE-SQUARE CORRIDOR GIVING UP IS UNRECOVERABLE. The escalation is a sidestep,
+        // there is no side, so the square goes into `occupied` for the rest of the walk and A*
+        // is asked for a route through a pipe with a hole punched in it. Room 108's sewer pipe
+        // (row 35, col 47) is exactly one square wide and is the only way to the jump take-off:
+        // one bot crosses 108 -> 110 four times out of four, and six bots at once crossed it
+        // none out of six, each having poisoned the corridor for itself against bodies that
+        // were merely passing through.
+        //
+        // So a player blocker buys laps instead of a verdict. The wait below is already jittered,
+        // so the queue does not move in lockstep, and `underFire` still overrides everything --
+        // a body that is HITTING us is not queuing, and waiting on it is how characters die on
+        // one square. Monsters are unchanged at one lap.
+        //
+        // Escalation is not abandoned, only deferred: after this many laps the sidestep, the
+        // retreat and the replan all run exactly as before.
+        const blockerIsPlayer = !!(c.room?.objects && [...c.room.objects.values()].some(o =>
+          o.id !== c.selfId && o.col === next.col && o.row === next.row && (o.flags & OF.PLAYER)));
+        const patience = (blockerIsPlayer && !underFire) ? QUEUE_PATIENCE : 1;
+        if (underFire || (stalledOn === `${next.row},${next.col}` && stalledTimes >= patience)) {
           // GO ROUND IT RATHER THAN ROUND THE ROOM. Marking the square occupied and
           // replanning is correct and expensive: A* re-solves the whole route, and in a
           // corridor the only answer it can find is the long way, which is how a
@@ -6254,8 +6288,6 @@ class Session {
           // dodging and needs the id tie-break; a monster is not, and gets the fixed
           // clockwise-first order. Read off the room rather than assumed: `blockedBy` only
           // records the square.
-          const blockerIsPlayer = !!(c.room?.objects && [...c.room.objects.values()].some(o =>
-            o.id !== c.selfId && o.col === next.col && o.row === next.row && (o.flags & OF.PLAYER)));
           const side = this.sidestepAround(was, next,
             { blockedEdges, occupied, geo, prefer: Number(c.self?.id ?? 0), blockerIsPlayer });
           if (side && !sidestepped.has(`${next.row},${next.col}`)) {

@@ -166,6 +166,12 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
   }
 
   const tries = Number(flag('tries', 3));
+  // HOW LONG A HOP MAY TAKE, BECAUSE THE CAP AND A REFUSAL LOOK THE SAME IN THE REPORT.
+  // 108 -> 110 crosses in a median of 162s against a 180s default, so one bot passes 4/4 and
+  // six bots -- which is the interesting case, a one-square pipe with a crowd in it -- come
+  // back "timed out" whether they were blocked for ever or merely slow. A boundary this
+  // close to the cap cannot be measured without moving it.
+  const maxMs = Number(flag('max-s', 180)) * 1000;
   const bots = (flag('bots', 'Alpha,Bravo,Charlie,Delta,Echo')).split(',').map(s => s.trim());
 
   // ASK THE BROKER WHO ITS CHARACTERS ARE. The alternative is `NAME_OF`, which knows five
@@ -213,7 +219,7 @@ if (process.argv[1]?.endsWith('m59-hoptest.mjs')) {
     // which is a fact about the fleet rather than a flaw in the test.
     const attempts = await Promise.all(starts.map((s, k) => {
       const a = agentFor(bots[k % bots.length]);
-      return tryHop(a, roomObj, s, to, { name: nameOf.get(a) ?? null });
+      return tryHop(a, roomObj, s, to, { name: nameOf.get(a) ?? null, maxMs });
     }));
 
     // Skipped attempts are not tries. See the note on `skipped` above: a bot that was
