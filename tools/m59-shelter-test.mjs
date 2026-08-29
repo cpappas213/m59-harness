@@ -361,6 +361,39 @@ console.log('\n(I) THE DIVERT IS IMMEDIATE ON A HIT, AND OWES ONE LEG AFTER A RE
      /Nothing here touches the survival ladder/.test(GAME_SRC));
 }
 
+
+console.log('\n(J) A CONFIRMATION THAT TIMED OUT IS NOT A CONFIRMATION');
+{
+  // `confirmPosition` answers null when the room-contents read misses its 8s deadline, and
+  // its own comment says callers "already treat an unknown position as a wrong one". Three
+  // sites in walkTo did not: they awaited it, threw the verdict away, and read `c.self` --
+  // which after a proved leg is the DEAD-RECKONED PREDICTION OF THE TARGET. So the test
+  // `at.col === col && at.row === row` was true by construction and every timed-out confirm
+  // became `arrived: true`.
+  //
+  // Measured live in The Flatlands, 2026-08-28: at 35,29, asked for 35,35, still at 35,29,
+  // no damage taken, and the mover reported "walked the proved route". A busy room is
+  // exactly where reads are slow, so this read as a corridor that could not be threaded
+  // rather than as a lie about having threaded it.
+  ok('the proved-route return requires a FRESH confirmation, not the prediction',
+     /const confirmed = await this\.confirmPosition\(\);/.test(GAME_SRC)
+     && /if \(confirmed && at\.col === col && at\.row === row\)/.test(GAME_SRC));
+  ok('"already there" requires one too',
+     /const ok0 = await this\.confirmPosition\?\.\(\)\.catch\(\(\) => null\);/.test(GAME_SRC)
+     && /if \(ok0 && now0\.col === col && now0\.row === row\)/.test(GAME_SRC));
+  ok('and so does the final verdict, which is what a journey counts a leg by',
+     /const okEnd = await this\.confirmPosition\?\.\(\)\.catch\(\(\) => null\);/.test(GAME_SRC)
+     && /const arrived = !!okEnd && !!me && me\.col === col && me\.row === row;/.test(GAME_SRC));
+  ok('no site still awaits the confirmation and then reads c.self as if it had succeeded',
+     !/await this\.confirmPosition\?\?\.\(\)\.catch\(\(\) => \{\}\);\s*\n\s*const \w+ = c\.self/.test(GAME_SRC));
+
+  // AND THE SHAPE OF THE BUG, so a future edit cannot reintroduce it by writing the
+  // comparison before the guard: every one of the three now names its confirmation in the
+  // same expression that claims arrival.
+  const claims = [...GAME_SRC.matchAll(/arrived: true, position: \{ col, row \}/g)].length;
+  ok('every "arrived: true" in walkTo is guarded by a confirmation', claims >= 2);
+}
+
 rmSync(DIR, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -1211,8 +1211,15 @@ ok('the client object rule and the walk over it both compiled',
 // a wrong prediction and a DM relocate the client has not seen yet.
 {
   const src = brokerSource;
-  ok('walkTo confirms its position before deciding it arrived',
-     /await this\.confirmPosition\?\.\(\)\.catch\(\(\) => \{\}\);[\s\S]{0,40}const me = c\.self/.test(src));
+  // CORRECTED. This asserted that walkTo confirmed and then read `c.self` -- which is the
+  // BUG, pinned. `confirmPosition` answers null on a timed-out read, and after a proved leg
+  // `c.self` is the dead-reckoned prediction of the target, so ignoring the verdict made
+  // `arrived` true by construction. Live in The Flatlands: at 35,29, asked for 35,35, still
+  // at 35,29, and the mover reported "walked the proved route". What has to be true is that
+  // the CONFIRMATION, not the prediction, decides.
+  ok('walkTo requires a fresh confirmation before deciding it arrived',
+     /const okEnd = await this\.confirmPosition\?\.\(\)\.catch\(\(\) => null\);/.test(src)
+     && /const arrived = !!okEnd && !!me && me\.col === col && me\.row === row;/.test(src));
   ok('and confirms before answering "already there"',
      /if \(me0\.col === col && me0\.row === row\) \{[\s\S]{0,900}await this\.confirmPosition\?\.\(\)/.test(src));
   ok('and a stale belief falls through to a real walk rather than reporting success',

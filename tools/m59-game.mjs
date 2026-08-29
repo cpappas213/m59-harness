@@ -5011,9 +5011,12 @@ class Session {
       // call is a TypeError rather than a missing confirmation. `confirmPosition` IS on the
       // real prototype — this is not a call to a name that never existed, which is the other
       // failure this repository has had today and a different thing entirely.
-      await this.confirmPosition?.().catch(() => {});
-      const now0 = c.self ?? me0;
-      if (now0.col === col && now0.row === row)
+      // Same rule as the proved-route return below: an unconfirmed position cannot certify
+      // that we are already somewhere. This site was added to CATCH a false arrival and
+      // repeated the cause -- it awaited the confirmation and then read the prediction.
+      const ok0 = await this.confirmPosition?.().catch(() => null);
+      const now0 = ok0 ?? c.self ?? me0;
+      if (ok0 && now0.col === col && now0.row === row)
         return { arrived: true, position: { col, row }, steps: 0, note: 'already there' };
       // The belief was stale. Carry on and walk it properly from where we actually are.
       me0.col = now0.col; me0.row = now0.row; me0.x = now0.x; me0.y = now0.y;
@@ -5383,9 +5386,25 @@ class Session {
           // ONE READ AFTER THE RUN, NOT ONE PER LEG. The prediction is what the proof
           // licenses; this is the single confirmation that the world agrees, and it is the
           // same trade `step` makes across a whole hop rather than per square.
-          await this.confirmPosition();
-          const at = c.self ?? await this.selfOrResync();
-          if (at && at.col === col && at.row === row)
+          // A CONFIRMATION THAT TIMED OUT IS NOT A CONFIRMATION, AND THIS IS WHERE THAT
+          // COST THE MOST.
+          //
+          // `confirmPosition` answers null when the room-contents read does not land inside
+          // its 8s deadline -- its own comment says callers "already treat an unknown
+          // position as a wrong one", and this caller did not: it threw the verdict away and
+          // read `c.self`, which after a proved leg is the DEAD-RECKONED PREDICTION of the
+          // target. So `at.col === col && at.row === row` was true by construction, and every
+          // timed-out confirm became `arrived: true, note: 'walked the proved route'` on a
+          // walk that moved nobody.
+          //
+          // Measured on the shadow fleet in The Flatlands, 2026-08-28: 35,29 -> asked for
+          // 35,35 -> still 35,29, no damage taken, and the mover reported success. A room
+          // busy enough to delay a read -- spiders, ants, other characters -- is exactly the
+          // room where this fires, which is why it looked like a corridor that could not be
+          // threaded rather than a lie about having threaded it.
+          const confirmed = await this.confirmPosition();
+          const at = confirmed ?? c.self ?? await this.selfOrResync();
+          if (confirmed && at.col === col && at.row === row)
             return { arrived: true, position: { col, row }, steps: pivotLegs, replans: 0,
                      pivots: pivotLegs, note: 'walked the proved route' };
           // Not there: re-plan from wherever the proved part left us and carry on below.
@@ -6311,9 +6330,12 @@ class Session {
     // `confirmPosition()` — one round trip per walk, not per step. A walk is seconds of work
     // and this is 1.2 to 5.6s at worst on a bad link; reporting a false arrival costs a leg,
     // and silently, which is far more expensive.
-    await this.confirmPosition?.().catch(() => {});
-    const me = c.self ?? await this.selfOrResync?.().catch(() => null) ?? null;
-    const arrived = !!me && me.col === col && me.row === row;
+    // AND THE FINAL VERDICT, WHICH HAS TO BE THE STRICTEST OF THE THREE. Unconfirmed is
+    // not arrived: the whole point of this read is that dead reckoning cannot be trusted to
+    // mark its own homework, and `arrived` here is what a journey counts a leg by.
+    const okEnd = await this.confirmPosition?.().catch(() => null);
+    const me = okEnd ?? c.self ?? await this.selfOrResync?.().catch(() => null) ?? null;
+    const arrived = !!okEnd && !!me && me.col === col && me.row === row;
     // MONSTER COLLISION DURING TRAVEL IS NAMED, EVERY TIME, INCLUDING ON SUCCESS.
     //
     // The failure this repairs was not that the walk stopped — it was that the reply
