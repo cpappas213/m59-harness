@@ -2,6 +2,37 @@
 
 Split out of [`CLAUDE.md`](../CLAUDE.md). All of these are safe to run any time; they open no socket and touch no roster.
 
+## The one that never fails, and why it is not a contradiction
+
+```bash
+node tools/m59-todo-test.mjs            # the known blockers; exits 0, always
+node tools/m59-todo-test.mjs --strict   # the same list as failures, for the day they come due
+node tools/m59-repro.mjs --list         # and the command that reproduces each one
+```
+
+**A known blocker has nowhere to live in a green suite.** Written as an ordinary test it goes
+red, and a suite with a permanent red in it stops being read — so the honest failures around
+it lose their audience. Left out entirely it becomes a sentence in a commit message that was
+true on the day and is now neither true nor false. That is exactly how the claim that room
+108's gully "cannot get out again" survived: right when it was written, wrong within the
+hour, and quoted for days after.
+
+So `m59-todo-test.mjs` prints each blocker with what it stops, what was measured, **when**,
+under **which movement epoch**, and the command that runs it again — and exits zero. It is
+safe in front of every other suite and will never be the reason somebody skips them.
+
+What it *does* assert is each case's **premise**, offline: not whether the blocker still
+blocks, which needs a fleet and minutes, but whether the thing the case is *about* is still
+there. `crowded-pipe` is about a corridor one square wide; if that corridor is ever three
+wide the case is not fixed, it is meaningless. A changed premise prints `PREMISE CHANGED` and
+is still not a failure — it is a summons to re-measure. (It earned its keep immediately: the
+first version asserted rows 35–42 and was wrong, because 35 and 43 are four-wide junctions
+and only 36–42 are single-file.)
+
+The registry lives in `m59-repro.mjs` and is imported by the test, so the list you read and
+the thing that reproduces it cannot drift apart. `m59-repro.mjs` is **not** an offline test —
+every case joins characters and relocates bodies, and it refuses a non-loopback host.
+
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (187 — pins, among
   the rest, that **the safe walls are the red squares in the debug client**: `safeWalls()` is
   one function for the picture and the keeper's choice, `safeSpots()` iterates it with no
