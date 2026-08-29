@@ -65,6 +65,11 @@ export const CASES = {
       crowded_after_queueing: '3/6 forward, 6/6 back, median 124s (same run shape)',
       note: 'the same three starts failed in both crowded runs -- 3,42 / 25,2 / 55,21 -- and ' +
             '3,42 crosses solo, so this is contention rather than geometry',
+      in_a_real_cycle: 'a 30-minute reverse world tour, 21 characters: 52 -> 110 went from ' +
+                       '0 completions and 15 unfinished, to 6 completions, 3 deaths and 7 ' +
+                       'unfinished. The whole ring went 31 legs by 14 characters -> 36 by 19, ' +
+                       'and 110 -> 2 was attempted for the first time (0 of 6 finished) ' +
+                       'because until then nobody had ever arrived in 110 to start it',
     },
     hint: 'a reservation on the corridor, or staggered departures, rather than more patience',
     // The offline half of the claim: the corridor really is one square wide, which is WHY
