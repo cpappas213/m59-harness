@@ -453,15 +453,27 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
       attackers_avoided: MAX_ATTACKERS - attackers,
       escapes,
       rim,
-      score: (MAX_ATTACKERS - attackers) + free_shots * 3 + cover * 0.5
-             + (disagree ? disagree.refused : 0)
-             - (ledge ? 50 : 0) - (escapes ? 0 : 60) - (rim ? 80 : 0)
-             - (our_ground === 0 ? 40 : 0),
       ledge,
     });
   }
-  out.sort((a, b) => b.score - a.score || a.can_reach_you - b.can_reach_you);
-
+  // NEAREST FIRST, AND NOTHING ELSE. THERE IS NO SUCH THING AS A MORE DEFENSIBLE WALL.
+  //
+  // This used to carry a `score` — attackers avoided, plus free shots, plus back cover,
+  // plus grid disagreement, minus penalties for ledges and rims — and everything that
+  // chose a wall sorted on it. It was a composite of five guesses presented as a number,
+  // and it decided where hurt characters walked.
+  //
+  // Measured, it was killing them. Over one 30-minute world tour: 80 runs for cover, 18
+  // arrivals. The room that worked picked a wall 3.4 squares away and got there 11 times
+  // in 20; the rooms that never once arrived picked walls 17.4, 18.0 and 24.4 squares
+  // away. A marginally better corner across the room beat a plain wall edge beside you,
+  // and a character at 58% health walked eighteen squares to reach it. One arrived at 4%.
+  //
+  // Membership is `safeWalls()` and it is binary: the two grids disagree about a square
+  // or they do not. Every square that passes is the same kind of thing, so the only
+  // honest question left is which one is closest. The descriptive fields below are kept —
+  // they are written into the book and the fleet page and they are facts about a square —
+  // but nothing ranks on them any more.
   const picked = [];
   for (const s of out) {
     if (mustReach) {
@@ -470,9 +482,52 @@ export function safeSpots(geo, { limit = 8, mustReach = null, los = 0,
       s.steps_away = p.steps;
     }
     picked.push(s);
-    if (picked.length >= limit) break;   // Infinity means "all of them" — see nearestSafeSpot
   }
-  return picked;
+  // Row/col breaks the tie so the answer is stable between passes; a wall that changes
+  // identity every time it is asked for is one nothing can learn about.
+  picked.sort((a, b) => (a.steps_away ?? Infinity) - (b.steps_away ?? Infinity)
+                     || a.row - b.row || a.col - b.col);
+  return limit === Infinity ? picked : picked.slice(0, limit);
+}
+
+/**
+ * The squares from which `to` can be walked back to — reverse reachability, one BFS.
+ *
+ * A SAFE SPOT YOU CANNOT COME BACK FROM IS A TRAP, NOT A SHELTER. The nearest wall by
+ * step count is sometimes over a one-way drop: the mover will happily walk a character
+ * off a ledge it cannot climb, the character rests, and then the journey it interrupted
+ * has no route left. Distance alone cannot see that, because the step down is cheap and
+ * it is the step back up that does not exist.
+ *
+ * Edges are followed BACKWARDS — `moverStepLands(neighbour, here)` asks whether the
+ * neighbour can step to us, not whether we can step to it — so what comes back is every
+ * square that can reach `to`, which is exactly the question.
+ *
+ * A geometry that cannot answer says so by returning null, and a throw inside the walk
+ * counts as passable: no opinion means carry on, the same rule the step mask follows,
+ * because a bake must never be the thing that makes a wall disappear.
+ */
+export function returnReachableTo(geo, to, { cap = 20000 } = {}) {
+  if (!geo || typeof geo.moverStepLands !== 'function') return null;
+  const r0 = Number(to?.row), c0 = Number(to?.col);
+  if (!Number.isInteger(r0) || !Number.isInteger(c0)) return null;
+  const seen = new Set([`${r0},${c0}`]);
+  const queue = [[r0, c0]];
+  for (let i = 0; i < queue.length && seen.size < cap; i++) {
+    const [r, c] = queue[i];
+    for (const [dr, dc] of RING) {
+      const nr = r + dr, nc = c + dc;
+      const k = `${nr},${nc}`;
+      if (seen.has(k)) continue;
+      if (typeof geo.inBounds === 'function' && !geo.inBounds(nr, nc)) continue;
+      let ok = true;
+      try { ok = geo.moverStepLands(nr, nc, r, c); } catch { ok = true; }
+      if (!ok) continue;
+      seen.add(k);
+      queue.push([nr, nc]);
+    }
+  }
+  return seen;
 }
 
 // The best spot near where we are standing now, rather than the best in the room —
@@ -816,6 +871,11 @@ export function nearestSafeSpot(geo, from, {
   // Every step of one path is in the same connected component by construction, so one flood
   // answers for all of them.
   const canWalkThere = reachable ?? reachableFrom(geo, from);
+  // THE OTHER DIRECTION, WHICH NOTHING USED TO ASK. `canWalkThere` is "can we get to it";
+  // this is "could we get back", and they are different sets wherever the world has a
+  // one-way step in it — a drop, a ledge, a grid edge that ejects you. One BFS, shared by
+  // every candidate. See returnReachableTo.
+  const canComeBack = returnReachableTo(geo, from);
   const known = book && room != null ? book.recall(room) : null;
   let best = null;
   let bestPredictedUnreachable = null;
@@ -823,6 +883,7 @@ export function nearestSafeSpot(geo, from, {
   let reachableByQuarry = 0;
   let eligible = 0;
   let unreachableToUs = 0;
+  let oneWay = 0;
   let partitionRejected = 0;
   for (const s of all) {
     const seen = known?.get(key(s.col, s.row)) || null;
@@ -838,6 +899,11 @@ export function nearestSafeSpot(geo, from, {
     // AND NOT ONE THE MOVER CANNOT GET TO AT ALL. The measured case is a shelter offered in
     // a disconnected component while a real wall sat one square from the character.
     if (canWalkThere && !canWalkThere.has(`${s.row},${s.col}`)) { unreachableToUs++; continue; }
+    // NOR ONE WE COULD NOT COME BACK FROM. Now that distance is the whole ranking, the
+    // nearest wall is sometimes over a one-way drop — the mover walks a character off a
+    // ledge it cannot climb, the character rests, and the journey that diverted has no
+    // route onward. Getting there was never the hard half of a rest stop.
+    if (canComeBack && !canComeBack.has(`${s.row},${s.col}`)) { oneWay++; continue; }
     // CHEAP TESTS FIRST. Distance and the defensibility cutoff are arithmetic on two
     // integers; quarryReach and reach are pathfinds. With the candidate list no longer
     // capped this ordering is the difference between one pass over the room and a
@@ -906,7 +972,12 @@ export function nearestSafeSpot(geo, from, {
     // A marked square outranks any amount of promising-looking wall, and outranks a
     // square that merely held — holding is our own measurement, marking is somebody's
     // judgement made from inside the game.
-    const proof = (seen?.verified ? 60 : 0) + (seen?.held ? 20 + Math.min(10, seen.held) : 0);
+    // `proof` — 60 points for a marked square, up to 30 for one that had held — used to be
+    // added to the ranking. It is gone with the rest of it: a wall that held is not a
+    // better wall, it is a wall that was stood on, and grading them is the thing being
+    // removed here. The book still discredits squares outright above, which is a fact
+    // about a square rather than a grade.
+    void seen;
     // Distance from the fight is a TIE-BREAK, not a filter.
     //
     // This was 1.2 a square, which is heavier than it sounds: at that weight a wall
@@ -916,12 +987,15 @@ export function nearestSafeSpot(geo, from, {
     // best doubtful one is tested live instead of being forbidden by the map.
     const fromFight = toward ? Math.max(Math.abs(s.col - toward.col), Math.abs(s.row - toward.row)) : 0;
     const targetDistance = toward ? Math.hypot(s.col - toward.col, s.row - toward.row) : 0;
-    // RANK ON THE THING THAT PREDICTS HOLDING. `score` is the disc composite; under the
-    // wall rule the back arc leads and the disc score stays as a weak tie-break, at
-    // roughly the ratio their correlations earn.
-    const defensibility = rule === 'disc' ? s.score
-      : s.back_cover * 3 + s.score * 0.25 + (s.back_cover >= CORNER ? CORNER_BONUS : 0);
-    const value = defensibility + proof - (p.steps ?? d) * 0.5 - fromFight * fromFightWeight;
+    // THE NEAREST ONE. See safeSpots: every square that qualifies is the same kind of
+    // thing, so distance is the whole of the ranking and `value` is just its negation.
+    //
+    // What used to be here was `defensibility + proof - steps * 0.5 - fromFight * 0.3`,
+    // where defensibility was a composite of back cover and a disc score and proof was
+    // worth up to 90 points. Against that, half a point per square meant distance could
+    // not win: a wall 30 squares away with 20 points of back cover beat a plain edge two
+    // squares away, every time, and the character walked it while bleeding.
+    const value = -(p.steps ?? d);
     const candidate = {
       ...s, steps_away: p.steps ?? d, value, from_fight: toward ? fromFight : null,
       target_distance: toward ? targetDistance : null,
@@ -956,6 +1030,10 @@ export function nearestSafeSpot(geo, from, {
   if (stats) {
     stats.considered = all.length;
     stats.eligible = eligible;
+    // Reported rather than silent: "there were walls but every one of them was a one-way
+    // trip" is a different room from "there were no walls", and a keeper that cannot tell
+    // them apart writes the wrong thing in the ledger.
+    stats.one_way = oneWay;
     stats.unreachable_by_quarry = unreachableByQuarry;
     stats.reachable_by_quarry = reachableByQuarry;
     stats.unreachable_to_us = unreachableToUs;

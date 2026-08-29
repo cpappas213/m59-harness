@@ -16,7 +16,7 @@ import './m59-test-ledger.mjs';        // FIRST — the keeper records casts; se
 import { unlinkSync, readFileSync } from 'node:fs';
 import { Autopilot, farmRoomDenials,
          shouldRelocateToAssignedRoom } from './m59-autopilot.mjs';
-import { SafeSpotBook , shelterAhead, gridDisagreementAt } from './m59-safespots.mjs';
+import { SafeSpotBook , shelterAhead, gridDisagreementAt, returnReachableTo } from './m59-safespots.mjs';
 import { returnToSpot } from './m59-skills.mjs';
 
 const BOOK = `${process.env.TEMP || '/tmp'}/m59-safespot-test-${process.pid}.json`;
@@ -1351,6 +1351,64 @@ console.log('A SHELTER HAS TO BE SOMEWHERE THE BODY CAN ACTUALLY WALK TO');
      /null means every candidate is allowed through/.test(src));
   ok('the refusal is counted, so "nothing was offered" can be explained afterwards',
      /unreachableToUs\+\+/.test(src));
+}
+
+
+// ============ A SAFE WALL IS A SAFE WALL: NEAREST, AND ONE YOU CAN LEAVE ============
+//
+// The composite `score` that used to order these — attackers avoided, free shots, back
+// cover, grid disagreement, minus ledge and rim penalties — was five guesses wearing one
+// number, and everything that chose a wall sorted on it. It sent hurt characters across
+// rooms: 80 runs for cover in one world tour, 18 arrivals, and the rooms that never once
+// arrived were picking walls 17 to 24 squares away while the room that worked picked one
+// at 3.4. These pin the replacement so it cannot come back.
+{
+  const src = readFileSync(new URL('./m59-safespots.mjs', import.meta.url), 'utf8');
+
+  ok('no square is graded any more — the composite score is gone from safeSpots',
+     !/^\s*score:\s*\(MAX_ATTACKERS/m.test(src));
+  ok('and nothing sorts on it',
+     !/sort\(\(a, b\) => b\.score - a\.score/.test(src));
+  ok('the ranking is distance, negated, and nothing else',
+     /const value = -\(p\.steps \?\? d\);/.test(src));
+  ok('so a wall that held is no longer worth points',
+     !/const proof = \(seen\?\.verified \? 60 : 0\)/.test(src));
+  ok('safeSpots orders by steps, with row/col only to keep the answer stable',
+     /picked\.sort\(\(a, b\) => \(a\.steps_away \?\? Infinity\) - \(b\.steps_away \?\? Infinity\)/.test(src));
+
+  // THE ONE-WAY DROP. Distance alone walks a character off a ledge it cannot climb back
+  // up; the rest succeeds and the journey it interrupted has nowhere to go.
+  ok('there is a reverse-reachability set, computed once per search',
+     /export function returnReachableTo/.test(src));
+  ok('and it follows edges BACKWARDS, which is what makes it the other question',
+     /geo\.moverStepLands\(nr, nc, r, c\)/.test(src));
+  ok('every candidate is gated on it', /canComeBack && !canComeBack\.has/.test(src));
+  ok('it fails open like the rest — no opinion means carry on',
+     /catch \{ ok = true; \}/.test(src));
+  ok('and the refusal is counted so an empty answer can be explained',
+     /oneWay\+\+/.test(src) && /stats\.one_way = oneWay/.test(src));
+}
+
+// AND THE REVERSE SET IS ACTUALLY DIRECTIONAL — asked of a mover with a one-way step in it.
+{
+  // A 1x4 corridor where 1,3 -> 1,2 is refused: you can walk east, never back west.
+  const geo = {
+    rows: 1, cols: 4,
+    inBounds: (r, c) => r === 1 && c >= 1 && c <= 4,
+    moverStepLands: (fr, fc, tr, tc) => {
+      if (tr !== 1 || fr !== 1) return false;
+      if (Math.abs(tc - fc) !== 1) return false;
+      if (fc === 3 && tc === 2) return false;      // the cliff: no way back
+      return true;
+    },
+  };
+  const back = returnReachableTo(geo, { row: 1, col: 1 });
+  ok('a square on the near side can come back', back.has('1,2'), [...back].join(' '));
+  ok('a square past the one-way step cannot', !back.has('1,3') && !back.has('1,4'),
+     [...back].join(' '));
+  ok('and the origin is trivially in the set', back.has('1,1'));
+  ok('a geometry with no mover answers null rather than refusing everything',
+     returnReachableTo({ rows: 1, cols: 1 }, { row: 1, col: 1 }) === null);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
