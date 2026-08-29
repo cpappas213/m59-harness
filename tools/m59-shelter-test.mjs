@@ -327,6 +327,40 @@ console.log('\n(H) THE EPOCH FILTER HAS TO ACTUALLY FILTER');
      `${before} -> ${now}`);
 }
 
+
+console.log('\n(I) THE DIVERT IS IMMEDIATE ON A HIT, AND OWES ONE LEG AFTER A REST');
+{
+  // The divert used to be read once per leg, and a proved leg coalesces up to twenty-three
+  // squares into one move. Measured over 138 diverts: 42% fired more than 25 points below
+  // their own threshold, median shortfall 20, worst 97 -- one character decided to run for
+  // cover at 3% against a threshold of 100%. Seven of eight deaths in that tour already had
+  // a divert in flight; two of them had chosen at 5% and 3%.
+  ok('the session stamps the moment health DROPS, which is the only place that can tell a hit from a heal',
+     /this\.damagedAt = now;/.test(GAME_SRC)
+     && /if \(before == null \|\| value >= before\) return;/.test(GAME_SRC));
+  ok('and it is initialised beside lastHealth so a fresh session is not "recently hit"',
+     /this\.damagedAt = 0;/.test(GAME_SRC));
+  ok('a recent hit ends leg coalescing, so the check runs at the pace the game moves at',
+     /Date\.now\(\) - this\.damagedAt < SHELTER_HIT_WINDOW_MS/.test(GAME_SRC));
+  ok('the window is a named constant rather than a number in the walker',
+     /const SHELTER_HIT_WINDOW_MS = \d+;/.test(GAME_SRC));
+  ok('and the clamp only applies while a shelter policy is in force, so an errand pays nothing',
+     /if \(shelter\?\.need && this\.damagedAt/.test(GAME_SRC));
+
+  // THE LIVE-LOCK GUARD. Immediacy without this is worse than the latency it replaces: rest
+  // to full, step off, take one hit, and the nearest wall is the one you are standing beside.
+  ok('a walk starts owing nothing, so the first leg of a crossing may still divert',
+     /let legsSinceShelter = Infinity;/.test(GAME_SRC));
+  ok('arriving at a refuge zeroes the debt', /legsSinceShelter = 0;/.test(GAME_SRC));
+  ok('every completed leg pays it down', /legsSinceShelter\+\+;/.test(GAME_SRC));
+  ok('and the divert will not fire while it is owed',
+     /if \(wants && legsSinceShelter >= 1\)/.test(GAME_SRC));
+  ok('a suppressed divert is RECORDED, because "owed a leg" and "nowhere to go" are different rooms',
+     /suppressed: 'one leg of progress owed since the last refuge'/.test(GAME_SRC));
+  ok('the guard does not touch the survival ladder, only the decision to sit down',
+     /Nothing here touches the survival ladder/.test(GAME_SRC));
+}
+
 rmSync(DIR, { recursive: true, force: true });
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

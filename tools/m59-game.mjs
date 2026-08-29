@@ -899,6 +899,12 @@ const BODY_CLEARANCE_KOD =
 // 5 kod a frame at a run — but a coarse simulation can, and at a stride of 8 three bodies
 // abreast in one square became passable. They are not. Four is under the frame step and a
 // divisor of the lattice.
+// HOW LONG A HIT KEEPS THE WALKER ON SHORT LEGS. Long enough to cover the gap between
+// blows from anything that is actually fighting us — the fleet's own hit book shows a
+// character under attack taking one every one to two seconds — and short enough that a
+// journey through a quiet room goes straight back to full-length legs. See walkPivots.
+const SHELTER_HIT_WINDOW_MS = 4000;
+
 const BODY_WALK_STRIDE = Number(process.env.M59_BODY_WALK_STRIDE || 4);
 const BODY_WALK_ARRIVE = Number(process.env.M59_BODY_WALK_ARRIVE || 8);
 
@@ -1187,6 +1193,7 @@ class Session {
     // m59-hits.mjs.
     this.hits = null;                   // the book, loaded lazily by character name
     this.lastHealth = null;             // to tell a hit from a heal
+    this.damagedAt = 0;                 // when the last of those was a DROP — see noteHealth
     this.lastCombatLine = null;         // { at, who } — best-effort attribution
     this.hitsSaveTimer = null;
     // HOW LONG EACH MAP TAKES TO CROSS. The other half of the same question and the more
@@ -1269,6 +1276,21 @@ class Session {
     const before = this.lastHealth;
     this.lastHealth = value;
     if (before == null || value >= before) return;      // a heal, or the first reading
+    // TOOK A HIT. STAMP IT, BECAUSE THE WALKER NEEDS TO KNOW *NOW* AND NOT AT THE END OF
+    // THE LEG IT IS IN THE MIDDLE OF.
+    //
+    // The shelter divert used to be read once per leg, and a proved leg coalesces up to
+    // twenty-three squares into a single move — several seconds of walking with nothing
+    // asked. Measured over 138 diverts on the shadow fleet: 42% fired more than 25 points
+    // below their own threshold, median shortfall 20 points, worst 97 — one character
+    // decided to run for cover at 3% health against a threshold of 100%. Two of the eight
+    // deaths in that tour chose a wall at 5% and 3%.
+    //
+    // This is the only place in the session that can tell damage from regeneration, so it
+    // is the only honest place to stamp it. Nothing is decided here: the walker reads the
+    // stamp and re-asks its own question, because what counts as "hurt enough" belongs to
+    // the keeper's policy and not to a packet handler.
+    this.damagedAt = now;
     const book = this.hitBook();
     if (!book) return;
     const me = this.client?.self;
@@ -3472,6 +3494,26 @@ class Session {
     const roomId = c.room.id;
     let legs = 0, singles = 0;
     let divertedTo = null, diverted = 0;
+    // ONE LEG OF ACTUAL PROGRESS BEFORE THE NEXT DIVERT, AND IT IS A LIVE-LOCK GUARD.
+    //
+    // Making the divert immediate on damage (see the hit clamp below) makes this necessary
+    // rather than merely tidy. A character that rests to full, steps off the wall, is hit
+    // once, and re-asks the question in the same second will pick the wall it is standing
+    // next to — it is by definition the nearest one — walk back onto it, rest, step off,
+    // and do it again for as long as anything in the room keeps swinging. The journey never
+    // advances and every lap reports success, which is this repository's oldest failure
+    // shape and the one hardest to see from outside.
+    //
+    // Infinity to start, so the FIRST leg of a fresh crossing may divert normally — the
+    // guard is about leaving shelter, not about setting out. Zeroed on arrival at a refuge,
+    // and one completed leg is the whole of the debt.
+    //
+    // The worst case this buys is a crossing made entirely of wall-to-wall hops with a rest
+    // at each, which is slow and finishes. The worst case it replaces is a character that
+    // never leaves one square. Nothing here touches the survival ladder: fleeing, the
+    // watchdog and the protected faculties run on their own one-second clock and are not
+    // suppressed by this — only the decision to go and sit somewhere is.
+    let legsSinceShelter = Infinity;
     const budget = maxMoves ?? (planSteps.length + 20);
     const half = KOD_FINENESS >> 1;
     const ptOf = st => geo.standPoint?.(st.row, st.col)
@@ -3498,10 +3540,23 @@ class Session {
 
       // THE FUEL STOP. Checked before each leg, which is where a route can still be changed
       // cheaply — the walker is between aims rather than mid-slide.
+      //
+      // AND AGAIN THE MOMENT A HIT LANDS, which is the half that was missing. See the
+      // clamp below: a leg is short while a hit is recent, so "before each leg" becomes
+      // "about once a second" exactly when it matters, and the divert stops being decided
+      // twenty points of health after the threshold it is supposed to defend.
       if (shelter?.spots?.length && !divertedTo && typeof shelter.need === 'function') {
         let wants = false;
         try { wants = !!shelter.need(); } catch { wants = false; }
-        if (wants) {
+        if (wants && legsSinceShelter < 1) {
+          // Just off a wall and already wanting another. Say so in the record rather than
+          // silently walking on: a suppressed divert and a divert that found nowhere to go
+          // look identical from the outside, and they are different rooms.
+          try { shelter.onDivert?.(null, { atStep: planSteps.length - remaining.length,
+                                           suppressed: 'one leg of progress owed since the last refuge' }); }
+          catch { /* a note that cannot be written does not stop the walk */ }
+        }
+        if (wants && legsSinceShelter >= 1) {
           // How far along we are: the plan minus what is left. `shelterAhead` refuses
           // anything behind that, because a character got hurt somewhere and walking back
           // through it to a wall it has already passed is a longer way to die.
@@ -3548,6 +3603,7 @@ class Session {
         // is where the flag has to be passed on.
         const r = await this.step(target.col, target.row, { fall: !!target.fall });
         singles++;
+        legsSinceShelter++;   // progress since the last refuge — see the live-lock guard
         if (r.left_room) return { done: false, legs, singles, left_room: true };
         if (isTerminalMovementReason(r.reason)) return { done: false, legs, singles, ...r };
         const now = c.self;
@@ -3571,9 +3627,52 @@ class Session {
               return { done: false, legs, singles, cancelled: true };
             if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
           }
-          remaining.shift(); divertedTo = null; continue;
+          remaining.shift(); divertedTo = null; legsSinceShelter = 0; continue;
         }
         return { done: false, legs, singles, why: 'an unproved step landed off plan' };
+      }
+
+      // A RECENT HIT ENDS THE COALESCING, AND THAT IS WHAT MAKES THE DIVERT IMMEDIATE.
+      //
+      // A proved leg is ONE move covering up to twenty-three squares, paced by its own
+      // length — several seconds during which the shelter question is not asked, because it
+      // is asked at the top of this loop and the loop is not coming round. That is the
+      // whole of the latency: 42% of diverts fired more than 25 points below their own
+      // threshold, and every one of the ten latest fired at `at_step 0`, i.e. only once the
+      // walk it was on had ended and a new one begun.
+      //
+      // So while a hit is recent the leg is one square. The check at the top then runs at
+      // the pace the game actually moves at — about once a second — and the character
+      // decides to run for cover while it still can. The proof is not thrown away: the same
+      // squares are walked, through the mover that can thread them, and full-length legs
+      // come back as soon as nothing has hit us for `SHELTER_HIT_WINDOW_MS`.
+      //
+      // Only when a shelter policy is in force, so an errand, a fight or a shopping trip
+      // pays nothing for this. Being hurt is not the trigger — being hurt is a state and
+      // could last a whole crossing; being HIT is an event, and it is the event that means
+      // the number the last check read is already out of date.
+      if (shelter?.need && this.damagedAt
+          && Date.now() - this.damagedAt < SHELTER_HIT_WINDOW_MS
+          && remaining.length > 1) {
+        const one = remaining[0];
+        const r = await this.step(one.col, one.row, { fall: !!one.fall });
+        singles++;
+        legsSinceShelter++;   // progress since the last refuge — see the live-lock guard
+        if (r.left_room) return { done: false, legs, singles, left_room: true };
+        if (isTerminalMovementReason(r.reason)) return { done: false, legs, singles, ...r };
+        if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
+        const now2 = c.self;
+        if (now2 && now2.col === one.col && now2.row === one.row) {
+          if (one.shelter && typeof shelter?.onArrive === 'function') {
+            try { await shelter.onArrive({ col: one.col, row: one.row }); }
+            catch { /* a rest that cannot happen must not strand the crossing */ }
+            if (this.movementWasCancelled(movementGeneration, controlToken))
+              return { done: false, legs, singles, cancelled: true };
+            if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
+          }
+          remaining.shift(); divertedTo = null; legsSinceShelter = 0;
+        }
+        continue;
       }
 
       // A PROVED LEG: one move, aimed at the pivot, paced by its own length.
@@ -3610,6 +3709,7 @@ class Session {
           if (r?.left_room || c.room.id !== roomId)
             return { done: false, legs, singles, left_room: true };
           singles++;
+          legsSinceShelter++;   // progress since the last refuge — see the live-lock guard
           if (c.self && c.self.col === nextSq.col && c.self.row === nextSq.row) remaining.shift();
           continue;
         }
@@ -3670,6 +3770,7 @@ class Session {
       }
       this._moveGapMs = owed;
       legs++;
+      legsSinceShelter++;   // progress since the last refuge — see the live-lock guard
       // PREDICTED, WHICH IS WHAT THE PROOF IS FOR. `slide: false` means the move either
       // lands on the pivot or is not sent at all, so there is nothing to read back — and
       // reading back is a 1.2-5.6s round trip that would cost more than the leg.
@@ -3718,7 +3819,7 @@ class Session {
         if (this.movementWasCancelled(movementGeneration, controlToken))
           return { done: false, legs, singles, cancelled: true };
         if (c.room.id !== roomId) return { done: false, legs, singles, left_room: true };
-        divertedTo = null;
+        divertedTo = null; legsSinceShelter = 0;
       }
     }
     return { done: remaining.length === 0, legs, singles,
