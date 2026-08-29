@@ -391,6 +391,26 @@ async function join() {
     }
 
     // Start the autopilot: GOAP (default) or tick driver
+    // THE STEP MASKS GO ON WHATEVER MODE THIS KEEPER IS IN.
+    //
+    // They were attached inside the `tick` warm-up below, and these keepers run `idle`/goap.
+    // So `geo.hasStepMask` was false for every live character, and `World.exits()` reads
+    // exactly that flag: `moverBySquare = geo.hasStepMask ? flood(true) : coarseBySquare`.
+    // With no mask the mover flood silently BECOMES the coarse flood, and the coarse grid
+    // has no falls and no heights -- it is symmetric, so it happily walks back up a cliff.
+    //
+    // Measured in Ukgoth from the gutter at 61,27: the mover flood reaches 319 squares and
+    // not the Castle Victoria door; the coarse flood reaches 4,673 and does. The router
+    // therefore planned a single hop 599 -> 2 at a door on top of a cliff the character
+    // cannot climb, which is how characters that miss the jump die down there rather than
+    // taking the long way round through 589.
+    //
+    // `attachStepMasks` is cheap and idempotent -- it is the reverse-edge and geometry build
+    // beside it that costs ~12s, and those stay where they were. The bake exists to be
+    // planned on; a keeper that never attaches it is planning on the map the bake replaced.
+    try { attachStepMasks(loadMap()); }
+    catch (e) { console.error(`[keeper] ${agent} could not attach step masks: ${e.message}`); }
+
     if (mode === 'tick') {
       // WARM THE MAP THIS KEEPER'S ROUTER WILL USE, before the Router loads it.
       // loadMap() is cached per process, so calling it here (and building on the SAME map
@@ -2671,6 +2691,66 @@ const server = createServer(async (req, res) => {
               result = { sent: true, sellerId, itemId, msgs, allEvents: (ev?.events ?? []).map(e => e.kind) };
             } catch (e) { result = { error: e.message }; }
             if (loop) loop._frozen = false;
+            break;
+          }
+          // SELL A PACK TO THE MERCHANT IN THIS ROOM. The broker's sell_all runs on its own
+          // Session (m59-game.mjs, which has sellOne); a keeper-backed character runs the keeper's
+          // Session, which does not — so the broker proxies sell_all here, where the CLIENT has the
+          // raw trade packets. Quote-based and safe: an item with no counteroffer or a price below
+          // min_price is cancelled and skipped, never handed over. Money and worn/wielded gear are
+          // never offered, and any name matching `keep` is protected. A merchant with a per-offer
+          // stack cap (the Barloque jeweler refuses a stack over 25, bqmerch.kod:113) is sold in
+          // chunks of max_stack.
+          case 'sell_all': {
+            const c = session.client;
+            if (!c) { result = { error: 'no client' }; break; }
+            const ref = args.merchant;
+            let merchant = null;
+            if (ref != null) {
+              if (typeof ref === 'number' || /^\d+$/.test(String(ref))) merchant = c.room?.objects?.get(Number(ref));
+              else if (typeof c.find === 'function') { const h = c.find(String(ref)); merchant = h && h[0]; }
+            }
+            if (!merchant) { result = { error: `no merchant matching "${ref}" in this room` }; break; }
+            const merchId = merchant.id;
+            const keepRe = (args.keep || []).map(k => String(k).toLowerCase());
+            const minPrice = Number(args.min_price ?? 1);
+            const maxStack = args.max_stack == null ? null : Number(args.max_stack);
+            const wornIds = new Set((typeof c.equipment === 'function' ? (c.equipment() || []) : []).map(o => o.id));
+            const nameOf = (o) => c.rsc?.get?.(o.nameRsc) || '';
+            const sellChunk = async (id, amount) => {
+              const before = c.evSeq;
+              await session.pacer.submit('trade', () => c.offer(merchId, [amount > 1 ? { id, amount } : id]));
+              const ev = await c.waitFor({ since: before, kinds: ['countered', 'trade-ended'], timeoutMs: 8000 }).catch(() => ({ events: [] }));
+              if (!ev.events.find(e => e.kind === 'countered')) { await session.pacer.submit('trade', () => c.cancelOffer()).catch(() => {}); return { sold: false }; }
+              const price = (c.trade?.theirs || []).reduce((n, i) => n + (i.amount || 1), 0);
+              if (price < minPrice) { await session.pacer.submit('trade', () => c.cancelOffer()).catch(() => {}); return { sold: false, price }; }
+              await session.pacer.submit('trade', () => c.acceptOffer());
+              await new Promise(r => setTimeout(r, 1200));
+              await session.pacer.submit('read', () => c.requestInventory()).catch(() => {});
+              await c.waitFor({ kinds: ['inventory'], timeoutMs: 4000 }).catch(() => {});
+              return { sold: true, price };
+            };
+            const loop = session._tickLoop; if (loop) loop._frozen = true;
+            const sold = [], refused = [];
+            const targets = [...new Set((c.inventory || []).map(nameOf).filter(Boolean))]
+              .filter(nm => !/shilling|\bcoins?\b/i.test(nm) && !keepRe.some(k => nm.toLowerCase().includes(k)));
+            try {
+              for (const nm of targets) {
+                let guard = 0;
+                while (guard++ < 25) {
+                  const it = (c.inventory || []).find(o => nameOf(o) === nm && !wornIds.has(o.id));
+                  if (!it) break;
+                  const stack = it.amount || 1;
+                  const amount = maxStack && stack > maxStack ? maxStack : stack;
+                  const r = await sellChunk(it.id, amount).catch(() => ({ sold: false }));
+                  if (!r.sold) { refused.push(nm + (r.price != null ? ` (${r.price} < ${minPrice})` : '')); break; }
+                  sold.push({ name: nm, amount, price: r.price });
+                  if (!maxStack || stack <= maxStack) break;   // whole stack sold, or single-shot when uncapped
+                }
+              }
+            } catch (e) { refused.push('loop error: ' + e.message); }
+            if (loop) loop._frozen = false;
+            result = { sold, refused, total_received: sold.reduce((n, s) => n + (s.price || 0), 0), count: sold.length };
             break;
           }
           case 'use':

@@ -489,9 +489,26 @@ export class World {
           .map(stage => by.get(`${stage.col},${stage.row}`))
           .filter(Boolean)
           .sort((a, b) => a.steps - b.steps)[0] ?? null;
+        // AND THE COARSE FALLBACK IS OFF WHERE THE ROOM HAS A ONE-WAY DROP IN IT.
+        //
+        // The same argument the `from_body` fallback below already makes, arriving by a
+        // different road. The coarse grid has no falls and no heights -- it is symmetric, so
+        // it will always claim you can walk back up a cliff you fell off. Measured in Ukgoth
+        // from the gutter at 61,27: the MOVER flood reaches 319 squares and NOT the Castle
+        // Victoria door at 1,27; the COARSE flood reaches 4,673 and does. So the fallback
+        // re-offered the exact crossing the mover had correctly refused, `exits()` published
+        // it, and the router planned a single direct hop 599 -> 2 at a door on top of a cliff
+        // the character cannot climb. Seven of thirteen deaths in one run were in this room.
+        //
+        // Where the model CAN express the question its answer stands. `roomHasDeclaredFallJump`
+        // marks a room where it cannot, and there the honest answer is that this exit is not
+        // offered from here: the way out is a ROUTE -- through 589 and round -- not a crossing
+        // of this room. 567 has no declared jump and keeps its fallback; 599 has two.
+        const oneWayDropHere = roomHasDeclaredFallJump(Number(room?.num ?? 0));
         for (const crossing of edgeCandidatesOf(room, e, null, { live: true })) {
           let bestStage = nearestIn(moverBySquare, crossing.stages);
           const onlyCoarse = !bestStage;
+          if (onlyCoarse && oneWayDropHere) continue;
           if (onlyCoarse) bestStage = nearestIn(coarseBySquare, crossing.stages);
           if (!bestStage) continue;
           const fineSteps = Math.ceil(Math.hypot(
