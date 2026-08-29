@@ -1293,12 +1293,18 @@ const ordinaryStep = compileSessionMethod(brokerSource,
     // the whole class of failure this dependency map exists to catch. It did catch it.
     traceMove: () => {},
     // AND THE JUMP LINE'S HEIGHT TEST, added 2026-08-28. `measureLineGap` used to work in
-    // squares alone, so a body eleven hundred units down a gully read as sitting on the arc
-    // and a fall-jump over it could never be taken. It now asks the geometry for the floor
-    // under the body and discounts anything more than PLAYER_HEIGHT below the lower end of
-    // the arc — which means `step` reaches two more module-scope names. The guard caught both;
-    // that is the second time today it has earned its place.
-    protocolToClient, PLAYER_HEIGHT,
+    // CORRECTED 2026-08-29. The paragraph that stood here described `underTheArc`, which
+    // discounted a body more than PLAYER_HEIGHT below the arc on the reasoning that a
+    // fall-jump passes over the ground between. The operator, who has played this client:
+    // "Meridian 59 is merciless on enforcing collisions regardless of vertical disparities.
+    // There is no jumping over anything except the parts of the world that exist in the
+    // .roo files." There are no ballistic arcs; a rat in a gully clips you.
+    //
+    // So the exemption is gone and the clearance is measured in FINE units instead of
+    // squares, which is what lets a jump pass a stationary blocker on one side rather than
+    // being refused by it. `step` therefore reaches these names, and the guard caught the
+    // two new ones the same way it caught the last pair.
+    protocolToClient, PLAYER_HEIGHT, CLIENT_FINENESS, MIN_NOMOVEON,
   });
 // THE AIM, LIFTED LIKE EVERYTHING ELSE. `step` calls `this.aimInto` to decide where in the
 // next square to walk, so a fixture without it is a fixture testing a different method —
