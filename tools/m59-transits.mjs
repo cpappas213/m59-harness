@@ -247,7 +247,17 @@ if (process.argv[1]?.endsWith('m59-transits.mjs')) {
     process.exit(0);
   }
 
-  const rooms = byRoom(books, { failuresOnly });
+  // `since` GOES HERE TOO, AND IT DID NOT. `byRoom` has taken a `since` since it was
+  // written and this call never passed it, so `--since` filtered the worst-crossings list
+  // and the footer while the per-room table -- the part anybody actually reads -- silently
+  // reported every crossing ever recorded. `--since 45m` printed a footer saying 242
+  // crossings directly above a table whose first row claimed 954, and the two numbers were
+  // answering different questions with the same word.
+  //
+  // That is the exact failure the header of this file argues against: the book holds months
+  // of crossings made by walkers that have since been fixed, and reporting the lot is how a
+  // before-and-after becomes an average of the code with every version of itself.
+  const rooms = byRoom(books, { failuresOnly, since });
   console.log(pad('room', 36) + pad('crossings', 11) + pad('failed', 8) +
               pad('median', 9) + pad('p90', 9) + pad('worst', 9) + 'squares/crossing');
   for (const r of rooms.slice(0, 25))
