@@ -358,6 +358,66 @@ is not where to look when a fleet stalls.
 
 `node tools/m59-routing-test.mjs` (38) pins all of it, offline.
 
+## Six-city routing matrix and wire proof
+
+`m59-city-matrix.mjs` is the live acceptance run for the routes between Meridian's six
+cities. It has **DM authority** and is for a disposable loopback server only. Start the
+broker through `m59-service.mjs`; do not launch `m59-broker.mjs` directly. A proof run must
+use `--in-process`, `M59_COLLISION_TRACE=1`, `M59_EXIT_FALLBACK=0`, and the default collision
+trace path (leave `M59_COLLISION_TRACE_FILE` unset). The ordinary per-character keeper mode
+has six independent sequence counters and therefore cannot produce one ordered fleet trace.
+
+A proof is one fresh capture. Stop the old broker before clearing the trace; deleting a
+live process's file does not reset its in-memory sequence counter. Then clear and start the
+disposable fleet through the supervisor, with the environment above set for the `start`:
+
+```bash
+node tools/m59-service.mjs stop --fleet routing-lab --http 8911 --dashboard 8912 --no-ui
+node tools/m59-collision-trace.mjs --clear
+node tools/m59-service.mjs start --in-process --fleet routing-lab --http 8911 --dashboard 8912 --no-ui
+```
+
+The runner refuses a fresh run if the trace already exists. It also independently refuses
+to begin unless `/health` proves the exact checkout, named fleet roster, single in-process
+driver, enabled default-path trace, six live agent-to-character and object-ID mappings,
+common local game endpoint, empty geometry drift, and the effective disabled fallback.
+Before any DM mutation—and again before every batch—it resolves all six names through the
+admin socket and requires those live object IDs to match the broker sessions.
+
+Generate the credential-free config shape, save the real participant mapping only under
+the ignored `substrate/traces/` directory, and run either sweep:
+
+```bash
+node tools/m59-city-matrix.mjs --example
+node tools/m59-city-matrix.mjs --config substrate/traces/city-matrix-config.json
+node tools/m59-city-matrix.mjs --config substrate/traces/city-matrix-config.json --mode serial
+```
+
+Parallel mode runs the exact 25 physically walkable directed pairs in five batches, one
+leg per pair. Serial mode preserves the stronger experiment: all six participants traverse
+all 25 pairs, for 150 legs. Ko'catan's five physically impossible outbound directions are
+recorded as expected exclusions, not failed routes. Every checkpoint is an atomic private
+file; `--resume` accepts only a clean contiguous prefix made with the same config and
+schedule and its existing trace. Every participant's exact staging square is rechecked
+after all sequential relocations and immediately before movement begins. Reports name
+characters and positions, so they stay under `substrate/traces/` and are never committed.
+
+The wire verifier is offline and opens no socket:
+
+```bash
+node tools/m59-collision-trace-verify.mjs
+```
+
+It combines the default collision capture, matrix report, and exact movement map; replays
+every sent coordinate against the BSP; proves off-map packets against declared exits; and
+scores every matrix interval. A proof-bearing capture must begin at sequence 1 and account
+for every row. Room continuity uses stable room numbers plus live/baked map security, never
+transient room object IDs. Exit fallback must be proved false by recorded broker health (or
+explicitly on every wire row); the old `--fallback-disabled` promise is deliberately
+rejected. Deliberately raw keeper/exit fallback sends are recorded as unsafe rather than
+silently omitted, which makes the verdict fail. Captures and verdicts are ignored private
+artifacts.
+
 **AND THE SAME FACT THAT MAKES A SQUARE SAFE MAKES IT A TRAP: THE WAY OUT OF A POCKET IS
 THE WAY IN, WALKED BACKWARDS.** A safe wall IS the coarse grid and the BSP disagreeing —
 that is the mechanism, measured — and the fleet seeks those squares out. Since the router

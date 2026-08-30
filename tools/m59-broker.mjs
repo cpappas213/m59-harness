@@ -55,7 +55,8 @@ import { recordCrossing } from './m59-crossings.mjs';
 import { Lru } from './m59-lru.mjs';
 import { recallTrack, strikeTrack, clearStrikes } from './m59-tracks.mjs';
 import { finePath, pullFine, pointOfSquare, boundsAround } from './m59-finepath.mjs';
-import { traceMove } from './m59-collision-trace.mjs';
+import { COLLISION_TRACE, TRACE_FILE as COLLISION_TRACE_FILE,
+         traceMove } from './m59-collision-trace.mjs';
 import { isMutableGeometry, mutableBecause } from './m59-mutable.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 import { loadMerchants } from './m59-merchants.mjs';
@@ -138,6 +139,11 @@ import './m59-navgeom.mjs';   // installs the height model + lenient fine path o
 
 const HOST = process.env.M59_HOST || '127.0.0.1';
 const PORT = Number(process.env.M59_PORT || 5959);
+// Commanded topology, not an inference from whatever happens to be live at one instant.
+// A matrix run relies on broker-local Session methods and explicitly refuses the proxy
+// arrangement; publishing the argv choice lets /health prove which driver was launched.
+const SESSION_DRIVER = process.argv.includes('--in-process')
+  ? 'in-process' : 'keeper-process';
 const factionStatuses = new FactionStatusCache();
 
 // The graveyard window, as arithmetic rather than observation. `readAnchor` returns null
@@ -2651,7 +2657,7 @@ async function resumeFleet() {
   console.error(`[state] resuming ${names.length - held.size} of ${names.length} session(s) from ${STATE_FILE}` +
                 (held.size ? `; leaving ${[...held.keys()].join(', ')}` : ''));
   let keeperIndex = 0;
-  const useKeepers = !process.argv.includes('--in-process');
+  const useKeepers = SESSION_DRIVER === 'keeper-process';
 
   // KEEPERS COME UP TOGETHER, BECAUSE NOTHING ABOUT THEM IS SHARED.
   //
@@ -13642,6 +13648,23 @@ function loopLag() {
            p99: ms(LOOP_LAG.percentile(99)), max: ms(LOOP_LAG.max) };
 }
 
+function liveSessionIdentity(readiness) {
+  const sessionCharacters = {};
+  const sessionObjectIds = {};
+  // Bind identity to the same readiness list /health publishes. A configured credential
+  // whose Session is still joining must not look like a live character, and no account or
+  // password field is inspected or exposed here.
+  for (const agent of readiness.sessions) {
+    const active = sessions.get(agent);
+    const client = active?.client ?? null;
+    const character = client?.me?.name ?? active?.character ?? null;
+    const objectId = client?.selfId ?? null;
+    if (typeof character === 'string' && character) sessionCharacters[agent] = character;
+    if (Number.isSafeInteger(objectId) && objectId > 0) sessionObjectIds[agent] = objectId;
+  }
+  return { session_characters: sessionCharacters, session_object_ids: sessionObjectIds };
+}
+
 function brokerHealth() {
   const readiness = sessionReadiness(sessions);
   return {
@@ -13651,8 +13674,23 @@ function brokerHealth() {
     fleet: FLEET || 'default',
     state: STATE_FILE,
     ...readiness,
+    session_driver: SESSION_DRIVER,
+    ...liveSessionIdentity(readiness),
     tools: TOOLS.length,
     commander: { ...commanderSettings(process.env, COMMANDER_FLEET), broker_pid: process.pid },
+    // A verifier must be able to distinguish a collision-safe capture from one made
+    // while the deliberately permissive exit fallback was enabled.  Report the
+    // process's effective setting; a command-line assertion made after the capture is
+    // not evidence about what the broker actually ran.
+    movement_policy: {
+      exit_fallback_enabled: process.env.M59_EXIT_FALLBACK === '1',
+    },
+    // Effective immutable tracer config. Health never stats or reads this path: importing
+    // the recorder's already-decided values proves what this process will do at a send.
+    collision_trace: {
+      enabled: COLLISION_TRACE,
+      file: COLLISION_TRACE_FILE,
+    },
     // Empty is the ordinary answer and is worth saying: "no rooms have drifted" and
     // "nobody has tried to move" are different, so this carries the count either way.
     geometry_drift: geometryDriftReport(),

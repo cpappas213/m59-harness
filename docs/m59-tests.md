@@ -519,6 +519,20 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
   is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
+  `node tools/m59-city-matrix-test.mjs` (110 — the loopback/DM safety boundary, exact
+  25-pair parallel schedule, 150-leg serial schedule, exact staging square, authoritative
+  in-process broker/DM identity, fresh trace lifecycle, protected report paths, and
+  clean-prefix resume contract. **Opens no socket and touches no roster**) and
+  `node tools/m59-collision-trace-verify-test.mjs` (44 — an entirely synthetic matrix,
+  JSONL capture, map and BSP pin the offline proof: nested runner reports, stable room
+  identity across object-id renumbering and reuse, exact off-map exits, collision replay,
+  complete sequence evidence, trace loss, callsite and pair coverage, broker-observed
+  fallback and single-writer policy, repo-rooted paths, and atomic private verdict output)
+  and
+  `node tools/m59-collision-trace-test.mjs` (49 — tracing is off by default, failed writes
+  recover in order with durable loss markers, the physical cap survives restart, trace
+  files are private, every actual send has a validated or explicitly unsafe wire row, and
+  broker health publishes the effective trace and exit-fallback settings) and
   `node tools/m59-collision-test.mjs` (319 — **the fail-closed contract for all
   movement**: compact collision metadata survives a bake, legacy maps cannot authorize
   a coordinate packet, the player cylinder catches wall bodies and corners, long strides

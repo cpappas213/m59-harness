@@ -27,7 +27,10 @@
 // this file is anything but off, so it cannot be left switched on by an edit — turning it
 // on is a thing you do in the ENVIRONMENT, for one run, and never in the source.
 
-import { appendFileSync, readFileSync, existsSync, unlinkSync, mkdirSync } from 'node:fs';
+import {
+  appendFileSync, closeSync, existsSync, fchmodSync, mkdirSync, openSync,
+  readFileSync, unlinkSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,6 +50,78 @@ export const TRACE_FILE = process.env.M59_COLLISION_TRACE_FILE
 // THE DEFAULT, AND THE ONLY THING THE TEST CARES ABOUT. Read once: this is consulted in a
 // hot loop, and re-reading process.env per move is itself a cost worth not paying.
 export const COLLISION_TRACE = process.env.M59_COLLISION_TRACE === '1';
+
+// THE ROW THE OFFLINE VERIFIER REPLAYS. Keep construction separate from writing so the
+// contract can be exercised without a socket or a trace file. `room.num` is the stable map
+// identity; `room.id` is deliberately retained only as diagnostic evidence because a save
+// renumbers live objects. The security pair binds that stable number to both the room
+// version announced by the server and the exact baked geometry used by the validator.
+export const WIRE_MOVE_SCHEMA = 'm59-wire-move/1';
+
+const wirePoint = point => ({ x: point?.x, y: point?.y });
+
+export function wireMoveRow({
+  agent, roomNum, roomId, liveSecurity, bakedSecurity,
+  from, requested, to, speed, slide = false, fall = false, offMap = false,
+  traceOptions = null, validation = null,
+} = {}) {
+  return {
+    schema: WIRE_MOVE_SCHEMA,
+    kind: 'wire_move',
+    agent,
+    room: {
+      num: roomNum,
+      id: roomId,
+      live_security: liveSecurity,
+      baked_security: bakedSecurity,
+    },
+    from: wirePoint(from),
+    requested: wirePoint(requested),
+    to: wirePoint(to),
+    speed,
+    mode: { off_map: offMap === true, slide: slide === true, fall: fall === true },
+    // An outward boundary packet has a stricter fixed replay contract instead of the
+    // ordinary dynamic options. Null makes that distinction explicit and machine-checkable.
+    trace_options: offMap === true ? null : traceOptions,
+    validation,
+    sent: true,
+  };
+}
+
+// A raw keeper/exit fallback is still a packet and therefore still belongs in the wire
+// proof.  It must never be able to borrow the validated builder's shape, though: the
+// offline verifier intentionally rejects either of these flags (and the reason) before it
+// considers geometry.  Keep the failed validation which led to the bypass as evidence,
+// but describe the packet itself as having had no sender-side validation.
+export function unsafeWireMoveRow({
+  unsafeReason = 'unvalidated_fallback', priorValidation = null, ...detail
+} = {}) {
+  const requested = wirePoint(detail.requested);
+  const target = wirePoint(detail.to);
+  return {
+    ...wireMoveRow({
+      ...detail,
+      validation: {
+        available: false,
+        moved: false,
+        arrived: false,
+        // Null is evidence that no answer exists, rather than a false claim that the
+        // bypassed packet was checked and found clear/non-sliding.
+        blocked: null,
+        slid: null,
+        offMap: detail.offMap === true,
+        requested,
+        target,
+        reason: unsafeReason,
+      },
+    }),
+    unsafe: true,
+    unvalidated: true,
+    fallback: true,
+    unsafe_reason: unsafeReason,
+    prior_validation: priorValidation,
+  };
+}
 
 // A bound, because an unbounded debug file on a machine that is also running the fleet is
 // a way to fill a disk while looking like nothing is happening.
@@ -155,11 +230,23 @@ function appendBatch(current = '') {
   const marker = lossLine();
   const batch = pending.join('') + marker + capLine + current;
   if (!batch) return true;
+  let fd = null;
   try {
     mkdirSync(dirname(TRACE_FILE), { recursive: true });
-    appendFileSync(TRACE_FILE, batch);
+    // O_APPEND binds permission repair and the write to the same opened file.  Passing a
+    // mode to appendFileSync alone only protects a newly created file; it leaves an old
+    // world-readable capture world-readable.  fchmod repairs that existing mode on POSIX
+    // before any more identity/position evidence is appended.  Windows ignores POSIX mode
+    // bits and relies on its ACLs, so do not pretend chmod is meaningful there.
+    fd = openSync(TRACE_FILE, 'a', 0o600);
+    if (process.platform !== 'win32') fchmodSync(fd, 0o600);
+    appendFileSync(fd, batch, 'utf8');
   } catch {
     return false;
+  } finally {
+    if (fd !== null) {
+      try { closeSync(fd); } catch { /* a diagnostic must never break movement */ }
+    }
   }
   pending = [];
   loss = null;
@@ -186,6 +273,21 @@ function markCap() {
     }) + '\n';
   }
   appendBatch();
+}
+
+// Production's validated send boundary calls this wrapper, not the row builder directly.
+// Check the immutable environment decision BEFORE constructing the row: with tracing off,
+// no JSON object is built and no filesystem state is observed or changed.
+export function traceWireMove(detail) {
+  if (!COLLISION_TRACE) return;
+  traceMove(wireMoveRow(detail));
+}
+
+// Check the immutable switch before even reading the detail object. Raw fallback sends are
+// rare, but tracing disabled must remain a genuinely cheap no-op at every packet boundary.
+export function traceUnsafeWireMove(detail) {
+  if (!COLLISION_TRACE) return;
+  traceMove(unsafeWireMoveRow(detail));
 }
 
 /**
