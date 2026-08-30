@@ -519,10 +519,13 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   symmetric — a wasted offer costs a round trip, a wrongly withheld item costs the sale and
   is invisible) and
   `node tools/m59-merchants-test.mjs` (77, dropping to 43 without `M59_ROOT`) and
-  `node tools/m59-city-matrix-test.mjs` (110 — the loopback/DM safety boundary, exact
+  `node tools/m59-city-matrix-test.mjs` (123 — the loopback/DM safety boundary, exact
   25-pair parallel schedule, 150-leg serial schedule, exact staging square, authoritative
-  in-process broker/DM identity, fresh trace lifecycle, protected report paths, and
-  clean-prefix resume contract. **Opens no socket and touches no roster**) and
+  in-process broker/DM identity, fresh trace lifecycle, protected report paths,
+  clean-prefix resume contract, that the run holds the fleet run lock before it writes or
+  asks anything and is refused naming the holder, and that every leg it sends is the walk
+  alone — `run_errands: false` — while `runLeg`'s other callers keep the broker's default.
+  **Opens no socket and touches no roster**) and
   `node tools/m59-collision-trace-verify-test.mjs` (44 — an entirely synthetic matrix,
   JSONL capture, map and BSP pin the offline proof: nested runner reports, stable room
   identity across object-id renumbering and reuse, exact off-map exits, collision replay,

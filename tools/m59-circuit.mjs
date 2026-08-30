@@ -183,7 +183,25 @@ export const isDead = p =>
  * KEEPER last moved somebody and climbs while an errand walks perfectly well; this watches
  * the character's own room and square, which is the question actually being asked.
  */
-export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick = null } = {}) {
+/**
+ * The `travel` arguments a leg sends, and nothing else.
+ *
+ * `run_errands` IS THE CALLER'S CHOICE, AND SILENCE IS THE BROKER'S DEFAULT. On a journey
+ * it defaults to true — a character sent across the world banks and stocks up on the way —
+ * which is right for the fleet and wrong for a timed measurement of the road: shadow02 spent a
+ * whole ten-minute leg in the First Royal Bank of Tos with a live objective in hand, and the
+ * leg was scored as a failure to cross when what it had done was go shopping
+ * (`m59-solo-run.mjs`). Left unset, the packet is exactly the one every caller always sent;
+ * a caller that says `runErrands: false` gets a leg that measures only the walk.
+ */
+export function travelArgs(agent, to, { runErrands = null } = {}) {
+  const args = { agent, to, background: true, max_hops: 30 };
+  if (runErrands !== null && runErrands !== undefined) args.run_errands = runErrands === true;
+  return args;
+}
+
+export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick = null,
+                                          runErrands = null } = {}) {
   const start = Date.now();
   const first = await probe(agent);
   let mark = first.seq, swings = 0, lowest = first.health ?? null, deaths = 0;
@@ -192,7 +210,7 @@ export async function runLeg(agent, to, { pollMs = 5000, maxMs = 900000, onTick 
   // blame this leg for the previous one's death.
   let wasDead = isDead(first);
 
-  const sent = await broker('travel', { agent, to, background: true, max_hops: 30 }, { timeoutMs: 60000 });
+  const sent = await broker('travel', travelArgs(agent, to, { runErrands }), { timeoutMs: 60000 });
   if (sent?._error) return { agent, to, from, arrived: false, ms: 0, why: 'travel refused: ' + sent._error };
 
   let lastRoom = first.room, lastSeen = Date.now(), rooms = [first.room];

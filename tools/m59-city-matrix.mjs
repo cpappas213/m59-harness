@@ -26,6 +26,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync 
 import http from 'node:http';
 import { dirname, extname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { takeRunLock } from './m59-runlock.mjs';
 
 export const SCHEMA = 'm59-city-matrix/1';
 export const MODES = Object.freeze(['parallel', 'serial']);
@@ -839,8 +840,14 @@ async function runLive(cli, config, schedule, report, dependencies, readHealth) 
     const started = Date.now();
     let result = null;
     let rejected = null;
-    try { result = await runLeg(assigned.agent, assigned.to, { maxMs: cli.maxLegMs }); }
-    catch (error) { rejected = error?.message ?? String(error); }
+    // NO ERRANDS ON A PROOF LEG. `travel` runs the outstanding errands by default — a
+    // character sent across the world banks and stocks up before it goes — and a fixture
+    // that detours to a vendor puts squares on the wire that are not the route under proof,
+    // and can spend the whole leg deadline in a shop. Every leg here asks for the walk only.
+    try {
+      result = await runLeg(assigned.agent, assigned.to,
+        { maxMs: cli.maxLegMs, runErrands: false });
+    } catch (error) { rejected = error?.message ?? String(error); }
     const finished = Date.now();
     return {
       ...assigned,
@@ -947,6 +954,35 @@ export async function main(argv = process.argv.slice(2)) {
   const schedule = buildSchedule(config.participants, cli.mode);
   const stateFile = expectedStateFile(config);
 
+  // ONE THING DRIVING THIS FLEET AT A TIME. The same claim `m59-solo-run.mjs` makes, for
+  // the same reason: a TaskStop'd shell, a broken pipe, a Ctrl-C through a wrapper — every
+  // one of them can kill the SHELL and leave this node process issuing DM relocations and
+  // travels for an hour, and a second run on the same six bodies reports every collision as
+  // "movement cancelled by a newer command", the sentence a genuine survival interrupt
+  // produces. Taken before the first thing this run writes and released on every way out;
+  // a lock whose owner cannot be corroborated is stale and is taken over rather than
+  // refused for ever.
+  const claim = takeRunLock(config.fleet, { label: 'city-matrix' });
+  if (!claim.ok) {
+    const h = claim.holder ?? {};
+    console.error(`city-matrix: REFUSING — fleet "${config.fleet}" is already being driven.`);
+    console.error(`             pid ${h.pid}, "${h.label ?? '?'}", since ` +
+                  `${h.at ? new Date(h.at).toISOString() : '?'}`);
+    console.error(`             ${h.argv ?? ''}`);
+    console.error('             Two runs on one fleet fight for the same bodies and both report');
+    console.error('             "movement cancelled by a newer command". Stop that one first:');
+    console.error(`               node tools/m59-solo-run.mjs --stop --fleet ${config.fleet}`);
+    return 3;
+  }
+  if (claim.tookOverFrom)
+    console.log(`(took over a stale lock: ${claim.tookOverFrom.why})`);
+  try { return await drive(cli, config, schedule, stateFile, traceFile); }
+  finally { claim.release(); }
+}
+
+// Everything past the lock. Split out so the claim above wraps the whole of it in one
+// `try/finally` rather than a release on each of several returns and throws.
+async function drive(cli, config, schedule, stateFile, traceFile) {
   // Pin every imported helper against stale M59_* values in the launching shell.
   Object.assign(process.env, {
     M59_FLEET: config.fleet,

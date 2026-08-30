@@ -34,6 +34,8 @@ import {
   validateCheckpoint,
   validateConfig,
 } from './m59-city-matrix.mjs';
+// Entry-point guarded like the runner, so importing it runs nothing and opens no socket.
+import { travelArgs } from './m59-circuit.mjs';
 
 const BROKER_SOURCE = readFileSync(new URL('./m59-broker.mjs', import.meta.url), 'utf8');
 const CITY_SOURCE = readFileSync(new URL('./m59-city-matrix.mjs', import.meta.url), 'utf8');
@@ -559,5 +561,50 @@ console.log('resume accepts only a clean, matching, contiguous passing prefix');
 }
 
 console.log('');
+console.log('');
+console.log('the live run holds the fleet run lock, and every leg is the walk alone');
+{
+  // A TaskStop'd shell leaves the node driver issuing commands for an hour; a second run on
+  // the same six bodies reports every collision as "movement cancelled by a newer command".
+  // The lock is m59-solo-run.mjs's, taken the same way, before the first thing written.
+  const CIRCUIT_SOURCE = readFileSync(new URL('./m59-circuit.mjs', import.meta.url), 'utf8');
+  const mainAt = CITY_SOURCE.indexOf('export async function main(');
+  const lockAt = CITY_SOURCE.indexOf("takeRunLock(config.fleet, { label: 'city-matrix' })", mainAt);
+  const firstWrite = CITY_SOURCE.indexOf('checkpoint(cli.output, report)', mainAt);
+  const liveStart = CITY_SOURCE.indexOf('await runLive(', mainAt);
+  const firstHealth = CITY_SOURCE.indexOf('getJsonLoopback(config.broker.port)', mainAt);
+  ok('the runner claims the fleet through m59-runlock.mjs',
+    /import \{ takeRunLock \} from '\.\/m59-runlock\.mjs'/.test(CITY_SOURCE));
+  ok('the lock is taken before the first checkpoint write',
+    mainAt >= 0 && lockAt > mainAt && firstWrite > lockAt);
+  ok('before the broker is asked anything', lockAt > 0 && firstHealth > lockAt);
+  ok('and before any DM mutation', lockAt > 0 && liveStart > lockAt);
+  const refusal = CITY_SOURCE.slice(lockAt, CITY_SOURCE.indexOf('return 3;', lockAt));
+  ok("a held lock is refused naming the holder's pid, label and argv, and how to stop it",
+    /h\.pid/.test(refusal) && /h\.label/.test(refusal) && /h\.argv/.test(refusal) &&
+      /m59-solo-run\.mjs --stop --fleet/.test(refusal), refusal);
+  ok('a refused claim runs nothing and writes nothing',
+    refusal.length > 0 && !/runLive|checkpoint\(|getJsonLoopback|drive\(/.test(refusal));
+  ok('the claim is released on every way out of the run',
+    /try \{ return await drive\([^)]*\); \}\s*finally \{ claim\.release\(\); \}/.test(CITY_SOURCE));
+  ok('every leg asks for the walk only, never the errands',
+    /runLeg\(assigned\.agent, assigned\.to,\s*\{ maxMs: cli\.maxLegMs, runErrands: false \}\)/
+      .test(CITY_SOURCE));
+
+  // The circuit side: silence is the broker's default and every other caller keeps it.
+  ok('runLeg leaves run_errands unset unless a caller decides',
+    JSON.stringify(travelArgs('lab1', 106)) ===
+      JSON.stringify({ agent: 'lab1', to: 106, background: true, max_hops: 30 }));
+  ok('undefined is silence too',
+    !('run_errands' in travelArgs('lab1', 106, { runErrands: undefined })));
+  ok('a proof leg sends run_errands: false',
+    travelArgs('lab1', 106, { runErrands: false }).run_errands === false);
+  ok('and only a literal true sends true',
+    travelArgs('lab1', 106, { runErrands: true }).run_errands === true &&
+      travelArgs('lab1', 106, { runErrands: 'yes' }).run_errands === false);
+  ok('runLeg puts exactly those arguments on the wire',
+    /broker\('travel', travelArgs\(agent, to, \{ runErrands \}\)/.test(CIRCUIT_SOURCE));
+}
+
 console.log(`${pass} passed, ${fail} failed`);
 if (fail) process.exitCode = 1;
