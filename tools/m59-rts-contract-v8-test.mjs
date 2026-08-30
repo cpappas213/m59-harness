@@ -26,8 +26,25 @@ const generation = {
   getRoomBinding: room => room === 200 ? binding : null,
 };
 
+const RENDER_APPEARANCE = {
+  icon_rsc: 950, icon_resource: 'bta.bgf', flags: 0, rarity: 4,
+  light: { flags: 1, intensity: 24, color: 65535 }, translation: 2, effect: 0,
+  animation: { type: 1, group: 3, period: null, group_low: null,
+    group_high: null, group_final: null },
+  overlays: [{ icon_rsc: 952, icon_resource: 'helm.bgf', hotspot: 3,
+    translation: 7, effect: 0, animation: { type: 1, group: 1, period: null,
+      group_low: null, group_high: null, group_final: null } }],
+  motion: { translation: 4, effect: 0,
+    animation: { type: 2, group: null, period: 500, group_low: 2,
+      group_high: 6, group_final: null },
+    overlays: [{ icon_rsc: 953, icon_resource: 'swordov.bgf', hotspot: -2,
+      translation: 0, effect: 1, animation: { type: 3, group: null, period: 200,
+        group_low: 4, group_high: 6, group_final: 1 } }] },
+};
+
 function look(agent, { security = 0xfffffffe, resource = 'marion.roo', rows = 2,
                        cols = 3, extraWire = null } = {}) {
+  const objectId = agent === 't1' ? 501 : 502;
   return {
     room: { num: 200, name: 'Marion', resource, size: { rows, cols } },
     room_wire: {
@@ -36,7 +53,9 @@ function look(agent, { security = 0xfffffffe, resource = 'marion.roo', rows = 2,
       room_security_u32: security,
       ...(extraWire ? { extra: extraWire } : {}),
     },
-    you: { object_id: agent === 't1' ? 501 : 502, col: 1, row: 1 },
+    you: { object_id: objectId, col: 1, row: 1, x: 96, y: 96,
+      angle: 1024, facing_degrees: 90, appearance_revision: 12,
+      appearance: RENDER_APPEARANCE },
     vitals: {},
     objects: [],
     exits: [],
@@ -98,7 +117,31 @@ for (const agent of ['t1', 't2']) {
   assert.equal(lines[at + 1], `ROOM_WIRE\t${agent}\t200\t4294967295\t4294967294`);
 }
 assert.equal(lines.filter(line => line.startsWith('ROOM_WIRE\t')).length, 2);
+const selfAppearance = lines.find(line => line.startsWith('APPEARANCE\t200\t501\t'));
+assert.deepEqual(selfAppearance?.split('\t'), [
+  'APPEARANCE', '200', '501', '12', '96', '96', '1024', '90',
+  '950', 'bta.bgf', '0', '4', '1', '24', '65535', '2', '0',
+  '1', '3', '', '', '', '', '4', '0', '2', '', '500', '2', '6', '',
+], 'v8 carries the exact already-defined v7 APPEARANCE record');
+const baseOverlay = lines.find(line => line.startsWith('OVERLAY\t200\t501\tbase\t0\t'));
+assert.deepEqual(baseOverlay?.split('\t'), [
+  'OVERLAY', '200', '501', 'base', '0', '952', 'helm.bgf', '3', '7', '0',
+  '1', '1', '', '', '', '',
+], 'v8 carries the ordered base overlay');
+const motionOverlay = lines.find(line => line.startsWith('OVERLAY\t200\t501\tmotion\t0\t'));
+assert.deepEqual(motionOverlay?.split('\t'), [
+  'OVERLAY', '200', '501', 'motion', '0', '953', 'swordov.bgf', '-2', '0', '1',
+  '3', '', '200', '4', '6', '1',
+], 'v8 carries the ordered motion overlay');
 assert.match(native, /\nEND\n$/);
+const v8WithoutBindings = native.split('\n')
+  .filter(line => !line.startsWith('ROOM_WIRE\t'))
+  .map((line, index) => index === 0
+    ? line.replace(`M59RTS\t${RTS_V8_NATIVE_VERSION}\t`, 'M59RTS\t7\t')
+    : line)
+  .join('\n');
+assert.equal(v8WithoutBindings, legacyBytes,
+  'v8 changes only the header and inserts ROOM_WIRE; every v7 byte remains stable');
 assert.equal(toNativeSnapshot(buildRtsSnapshot(source)), legacyBytes,
   'building v8 must not mutate or change the legacy v7 projection');
 

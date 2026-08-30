@@ -16,17 +16,44 @@ let checks = 0;
 const is = (a, b, why) => { checks++; assert.deepEqual(a, b, why); };
 const ok = (v, why) => { checks++; assert.ok(v, why); };
 
+const SELF_APPEARANCE = {
+  icon_rsc: 950, icon_resource: 'bta.bgf', flags: 0x0004, rarity: 4,
+  light: { flags: 1, intensity: 24, color: 65535 }, translation: 2, effect: 0,
+  animation: { type: 1, group: 3, period: null, group_low: null,
+    group_high: null, group_final: null },
+  overlays: [{ icon_rsc: 952, icon_resource: 'helm.bgf', hotspot: 3,
+    translation: 7, effect: 0, animation: { type: 1, group: 1, period: null,
+      group_low: null, group_high: null, group_final: null } }],
+  motion: { translation: 4, effect: 0,
+    animation: { type: 2, group: null, period: 500, group_low: 2,
+      group_high: 6, group_final: null },
+    overlays: [{ icon_rsc: 953, icon_resource: 'swordov.bgf', hotspot: -2,
+      translation: 0, effect: 1, animation: { type: 3, group: null, period: 200,
+        group_low: 4, group_high: 6, group_final: 1 } }] },
+};
+const ENTITY_APPEARANCE = {
+  icon_rsc: 951, icon_resource: 'rat.bgf', flags: 0x000c, rarity: 0,
+  light: { flags: 0, intensity: 0, color: 0 }, translation: 0, effect: 0,
+  animation: { type: 2, group: null, period: 1200, group_low: 1,
+    group_high: 6, group_final: null },
+  overlays: [], motion: null,
+};
+
 // The real /room-view body for Kermit in Familiars (room 52), trimmed to the objects that
 // make each rule visible: four fleet players, an NPC, a stool, and a stack of reagents.
 const FAMILIARS = {
   cols: 50, rows: 48,                      // the keeper's default, NOT the room's real size
   room_name: 'Familiars', room_num: 52,
-  self: { col: 4, row: 5, degrees: 90, object_id: 4463 },
+  self: { col: 4, row: 5, degrees: 90, object_id: 4463,
+    x: 288, y: 352, angle: 1024, facing_degrees: 90, appearance_revision: 12,
+    appearance: SELF_APPEARANCE },
   objects: [
     { id: 4463, col: 4, row: 5, name: 'Kermit', is_self: true, is_player: true,
       can_attack: false, flags: 0x0004, degrees: 90 },
     { id: 4471, col: 7, row: 7, name: 'Camilla', is_self: false, is_player: true,
-      can_attack: true, flags: 0x000c, degrees: 180 },
+      can_attack: true, flags: 0x000c, degrees: 180,
+      x: 480, y: 480, angle: 2048, facing_degrees: 180, appearance_revision: 21,
+      appearance: ENTITY_APPEARANCE },
     { id: 96, col: 8, row: 6, name: 'Paddock', is_self: false, is_player: false,
       can_attack: false, flags: 0x0400, degrees: null },
     { id: 109, col: 7, row: 6, name: 'bar stool', is_self: false, is_player: false,
@@ -53,6 +80,11 @@ is(view.you.row, 5, 'the character has a row');
 is(view.you.facing, 'south', '90 degrees is south in this game, not north');
 is(view.you.facing_degrees, 90, 'the raw bearing survives alongside the name');
 is(view.you.object_id, 4463, 'the renderer can match `you` to the object list by id');
+is(view.you.x, 288, 'self fine x survives the keeper boundary');
+is(view.you.y, 352, 'self fine y survives the keeper boundary');
+is(view.you.angle, 1024, 'self raw world-facing angle survives without reinterpretation');
+is(view.you.appearance_revision, 12, 'the one-shot animation trigger token survives');
+is(view.you.appearance, SELF_APPEARANCE, 'self base, motion, and ordered overlays survive exactly');
 is(view.projection, 'render', 'the projection names itself');
 
 // ---------------------------------------------------------------- room size is the map's
@@ -97,6 +129,12 @@ ok(byId[10163].can.includes('get'), 'reagents on the floor can be picked up');
 is(byId[10163].amount, 26, 'a quantity is carried, because a stack is not one item');
 is(byId[4471].is_player, true, 'players stay flagged as players');
 is(byId[96].is_player, false, 'an NPC merchant is not a player — OF.PLAYER is 0x0004');
+is(byId[4471].x, 480, 'entity fine x survives');
+is(byId[4471].y, 480, 'entity fine y survives');
+is(byId[4471].angle, 2048, 'entity raw angle survives');
+is(byId[4471].facing_degrees, 180, 'entity renderer-facing degrees survive');
+is(byId[4471].appearance_revision, 21, 'entity animation revision survives');
+is(byId[4471].appearance, ENTITY_APPEARANCE, 'entity appearance survives without a second parser');
 
 // ---------------------------------------------------------------- nearest first
 
@@ -167,6 +205,10 @@ const mapFor = num => (num === 52 ? MAP_ROOM_52 : null);
 const composed = keeperView(STATE, FAMILIARS, mapFor);
 is(composed.you.col, 4, 'the position survives the composition');
 is(composed.objects.length, 4, 'so do the room contents');
+is(composed.you.appearance, SELF_APPEARANCE,
+  'keeperView carries self appearance from the reconciled room-view clock');
+is(composed.objects.find(o => o.id === 4471)?.appearance, ENTITY_APPEARANCE,
+  'keeperView carries entity appearance from that same clock');
 is(composed.room.name, 'Familiars', 'and the room');
 is(composed.room.size, { rows: 11, cols: 11 }, "with the map's size, not the keeper default");
 is(composed.character, 'Kermit', 'the state underneath is not lost');
@@ -194,6 +236,8 @@ const changedSecurity = keeperView(
   BOUND_FAMILIARS, num => (num === 52 ? BOUND_MAP_ROOM_52 : null));
 is(changedSecurity.you.col, 4,
   'a provenance mismatch does not break the still-valid legacy room view');
+is(changedSecurity.you.appearance, SELF_APPEARANCE,
+  'legacy render state remains available while strict bound provenance is withheld');
 is(changedSecurity.room_wire, undefined,
   'but a tuple sampled from only one cache is never published');
 is(changedSecurity.room.resource, undefined,
@@ -218,7 +262,7 @@ is(composed.exits.length, 0, 'and the exit count reads as zero rather than throw
 // a `travel`, and the wrong answer here is not "no position" — it is a CONFIDENT position in
 // a room the character has left, handed to an arrival report.
 const moved = keeperView({ ...STATE, room: { name: 'Cor Noth', num: 150 } }, FAMILIARS, mapFor);
-is(moved.you, null, 'a position from the room we have left is withheld, not offered');
+is(moved.you, null, 'position and appearance from the room we have left are withheld together');
 is(moved.objects, [], 'and so are its contents');
 is(moved.room, { num: 150, name: 'Cor Noth' },
   'the room comes from the state, which is the half that knows we moved');

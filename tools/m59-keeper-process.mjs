@@ -34,6 +34,7 @@ import './m59-navgeom.mjs';   // installs the height model + lenient fine path o
 import { resolveFleet } from './m59-fleetpath.mjs';
 import { rtsJobReport, rtsSafeSpellRule, rtsSpellTargetAllowed } from './m59-rts-safety.mjs';
 import { OF } from './m59-parse.mjs';
+import { renderState } from './m59-world.mjs';
 import * as skills from './m59-skills.mjs';
 import * as party from './m59-party.mjs';
 import { chatterFor, fleetChatter } from './m59-chatter.mjs';
@@ -2105,6 +2106,7 @@ const server = createServer(async (req, res) => {
       for (const o of room.objects.values()) {
         objects.push({
           id: o.id, col: o.col, row: o.row,
+          ...renderState(c, o),
           name: c?.rsc?.get?.(o.nameRsc) ?? '',
           is_self: o.id === c?.selfId,
           // OF.PLAYER is 0x0004 (m59-parse.mjs). The old 0x01 check was part of
@@ -2130,7 +2132,8 @@ const server = createServer(async (req, res) => {
         cols: room.cols ?? 50,
         rows: room.rows ?? 48,
         self: me ? { col: me.col, row: me.row, degrees: me.degrees ?? null,
-                     object_id: c?.selfId ?? null } : null,
+                     object_id: c?.selfId ?? null,
+                     ...renderState(c, me) } : null,
         objects,
         room_name: c?.rsc?.get?.(c.roomNameRsc) ?? null,
         // The MAP room number (session.world.room.num), NOT the runtime room id

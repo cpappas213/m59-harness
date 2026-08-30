@@ -32,6 +32,27 @@ import { affordances } from './m59-parse.mjs';
 import { dirName } from './m59-world.mjs';
 import { canonicalRoomWire, sameRoomWire } from './m59-room-wire.mjs';
 
+const RENDER_INTEGER_FIELDS = Object.freeze(['x', 'y', 'angle', 'appearance_revision']);
+
+// This is a carry boundary, not a second appearance parser. The keeper has already
+// projected one synchronous protocol-cache object through World.renderState(), and the
+// strict RTS contract remains the one place that normalizes the nested appearance shape.
+// Preserve explicit nulls, but do not turn malformed or absent fields into renderer facts.
+function renderStateFromKeeper(value) {
+  const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  const out = {};
+  for (const field of RENDER_INTEGER_FIELDS) {
+    if (row[field] === null || Number.isInteger(row[field])) out[field] = row[field];
+  }
+  if (row.facing_degrees === null || Number.isFinite(row.facing_degrees))
+    out.facing_degrees = row.facing_degrees;
+  if (row.appearance === null ||
+      (row.appearance && typeof row.appearance === 'object' && !Array.isArray(row.appearance))) {
+    out.appearance = row.appearance;
+  }
+  return out;
+}
+
 // `rv` is the keeper's /room-view body. `mapRoom` is `worldMap.rooms[rv.room_num]` or null.
 export function renderProjection(rv, mapRoom = null) {
   // NO `room` AND NO `you` KEY AT ALL, rather than either of them set to null. The broker
@@ -81,6 +102,7 @@ export function renderProjection(rv, mapRoom = null) {
         facing: o.degrees != null ? dirName(o.degrees) : null,
         can,
         is_player: !!o.is_player,
+        ...renderStateFromKeeper(o),
         ...(flags == null ? { affordances_source: 'two booleans from an older keeper' } : {}),
       };
       if (o.amount) out.amount = o.amount;
@@ -102,6 +124,7 @@ export function renderProjection(rv, mapRoom = null) {
           col: me.col, row: me.row,
           facing: me.degrees != null ? dirName(me.degrees) : null,
           facing_degrees: me.degrees ?? null,
+          ...renderStateFromKeeper(me),
         }
       : { note: 'the keeper has not placed this character in its room yet — it has just arrived, or it is dead' },
     objects,

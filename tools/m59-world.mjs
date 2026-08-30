@@ -112,7 +112,7 @@ function renderLayer(c, value) {
   };
 }
 
-function renderState(c, value) {
+export function renderState(c, value) {
   const row = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
   const iconRsc = Number.isInteger(row.iconRsc) ? row.iconRsc : null;
   return {
