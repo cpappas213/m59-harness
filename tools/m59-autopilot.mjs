@@ -17265,11 +17265,15 @@ export class Autopilot {
 
     const v = c.vitals()?.health;
     const name = c.me?.name || 'a traveller';
+    // PLAIN HYPHENS, NOT DASHES. The wire is Latin-1 (pstr in m59-client.mjs), and
+    // Buffer.from(s, 'latin1') keeps the low byte of anything it cannot encode, so an
+    // em-dash (U+2014) went out as 0x14 -- a control character in the middle of the one
+    // sentence other players were asked to read.
     const plea = hurt
-      ? `${name} here at ${where} — I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
+      ? `${name} here at ${where} - I am down to ${v ? `${v.value} of ${v.max}` : 'almost no'} health ` +
         `and I have nothing to heal with. Resting brings health back slowly in these lands. ` +
         `If anyone can spare a flask or cast a heal on me I would be in your debt.`
-      : `${name} here — I was killed and lost everything. I am at ${where} with no weapon ` +
+      : `${name} here - I was killed and lost everything. I am at ${where} with no weapon ` +
         `or armour. If anyone can spare a blade or a few shillings I would be grateful, ` +
         `and I will pay it forward once I am on my feet.`;
     this.lastPleaAt = Date.now();

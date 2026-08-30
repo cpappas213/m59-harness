@@ -753,14 +753,17 @@ console.log('\n--- nobody calls for rescue from a pub ---');
   const w = world({ health: 3, max: 25 });
   const p = keeper(w);
   let broadcasts = 0;
+  let inventoryReads = 0;
+  let weaponAttempts = 0;
   w.c.me = { name: 'Tester' };
   w.c.roomNameRsc = 1;
-  w.c.requestInventory = () => {};
+  w.c.requestInventory = () => { inventoryReads++; };
   w.c.waitFor = async () => ({ events: [] });
   w.c.broadcast = async () => { broadcasts++; };
   w.c.say = async () => { broadcasts++; };
   w.s.pacer = { submit: async (_k, fn) => fn() };
   w.s.need = () => w.c;
+  p.makeWeapon = async () => { weaponAttempts++; return false; };
 
   p.sanctuary = () => true;                       // standing in an inn
   await p.askForHelp('badly hurt and out of flasks');
