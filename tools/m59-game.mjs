@@ -8603,8 +8603,136 @@ class Session {
   // Off by default, so every ordinary crossing keeps the anchor-first, spread-wide
   // behaviour that makes a wide wall reliable. See the block below for what it turns off
   // and the measurement that made it necessary.
+  /**
+   * THE PRIVATE STRATEGIES, LOADED ONCE PER PROCESS AND NEVER RE-READ.
+   *
+   * Cached deliberately: this is asked on a stuck walk, and a directory scan plus a set of
+   * dynamic imports on that path would add latency exactly where the character is already in
+   * trouble. A changed strategy therefore takes effect when the KEEPER restarts, which is the
+   * same rule as every other piece of code here (see CLAUDE.md on keeper restarts) and means
+   * an edit cannot half-apply to a fleet mid-journey.
+   *
+   * NEVER THROWS AND NEVER BLOCKS THE MOVER. A missing directory, a broken strategy, an
+   * import that fails -- all of them resolve to "no answer", which is the behaviour the fleet
+   * had before any of this existed.
+   */
+  async _askStrategies(hook, ctx) {
+    try {
+      if (Session._strategies === undefined) {
+        Session._strategies = null;
+        const mod = await import('./m59-strategies.mjs');
+        Session._strategies = await mod.load();
+        Session._firstAnswer = mod.firstAnswer;
+        const problems = Session._strategies?.problems ?? [];
+        if (problems.length)
+          console.error('[strategies] ' + problems.map(p => `${p.file}: ${p.why}`).join('; '));
+      }
+      if (!Session._strategies || !Session._firstAnswer) return null;
+      return await Session._firstAnswer(Session._strategies, hook, ctx,
+        { onError: e => console.error(`[strategies] ${e.strategy} threw: ${e.why}`) });
+    } catch { return null; }
+  }
+
+  /** Bodies in this room that block movement, as squares — the shape a strategy expects. */
+  _blockingBodies() {
+    try {
+      const c = this.need();
+      return [...(c.room?.objects?.values?.() ?? [])]
+        .filter(o => o.id !== c.selfId && blocksMovement(o.flags ?? 0))
+        .map(o => ({
+          row: o.row ?? (Number.isFinite(o.y) ? Math.floor(o.y / KOD_FINENESS) : null),
+          col: o.col ?? (Number.isFinite(o.x) ? Math.floor(o.x / KOD_FINENESS) : null),
+          kind: (o.flags & OF.PLAYER) ? 'player' : 'monster',
+          name: c.rsc?.get?.(o.nameRsc) ?? o.nameRsc ?? null,
+        }))
+        .filter(b => Number.isFinite(b.row) && Number.isFinite(b.col));
+    } catch { return []; }
+  }
+
+  /**
+   * This room's blink point, from the bake, or null.
+   *
+   * Read from substrate/m59-blink.json once. A room with no entry is a room where blink is
+   * not an option, and that has to reach the strategy as an ABSENCE rather than as a guess —
+   * room.kod:789 simply does not move you when the room declares no teleport pair, while
+   * blink.kod still prints its success line, so a guessed point would read as a working
+   * escape that never moved anybody.
+   */
+  _blinkPointHere() {
+    try {
+      const num = Number(this.world?.room?.num ?? 0);
+      if (!num) return null;
+      if (Session._blinkPoints === undefined) {
+        Session._blinkPoints = null;
+        const url = new URL('../substrate/m59-blink.json', import.meta.url);
+        const raw = readFileSync(url, 'utf8');
+        Session._blinkPoints = JSON.parse(raw)?.rooms ?? null;
+      }
+      const p = Session._blinkPoints?.[String(num)];
+      return p && Number.isFinite(p.row) && Number.isFinite(p.col)
+        ? { row: p.row, col: p.col } : null;
+    } catch { return null; }
+  }
+
+
+  /**
+   * CAST BLINK AND FIND OUT WHETHER IT MOVED US. The primitive; the decision is elsewhere.
+   *
+   * A CAST NEEDS CONCENTRATION and the tick driver sends move/turn at 10Hz, so any packet we
+   * send while the spell is charging kills it. The keeper's own `/action cast` solved this
+   * already -- freeze the loop, cast, wait for the server's `moved` event rather than a fixed
+   * hold -- and this is that logic, reachable from the mover. Blink is `viCast_time = 10000`,
+   * so the wait is seconds, not the ~1s an attack takes.
+   *
+   * THE SERVER'S SENTENCE IS NOT EVIDENCE. `blink.kod` prints "You find yourself realigned
+   * with your surroundings." whether or not the room declares a teleport point (room.kod:789
+   * moves you only `if GetTeleportRow <> $ AND GetTeleportCol <> $`), so a strategy that
+   * believed the message would report success in every room that has no blink point at all.
+   * What is believed here is the `moved` EVENT and the position read back after it.
+   */
+  async blinkOut({ expect = null, holdMs = 15000 } = {}) {
+    const c = this.client;
+    if (!c) return { cast: false, why: 'no client' };
+    const spell = (c.spells ?? []).find(sp => {
+      const n = c.rsc?.get?.(sp.nameRsc) ?? sp.name ?? '';
+      return String(n).toLowerCase() === 'blink';
+    });
+    if (!spell) return { cast: false, why: 'this character does not know blink' };
+    const loop = this._tickLoop;
+    const since = c.evSeq;
+    let waited = null;
+    try {
+      if (loop) loop._frozen = true;
+      c.cast(spell.id, []);
+      waited = await c.waitFor({ since, kinds: ['moved'], timeoutMs: holdMs });
+    } catch (e) {
+      return { cast: false, why: 'the cast threw: ' + e.message };
+    } finally {
+      // ALWAYS UNFROZEN. A loop left frozen is a character that never moves again, which is
+      // a far worse outcome than a failed cast, so this is a finally and not a happy-path
+      // line.
+      if (loop) loop._frozen = false;
+    }
+    const moved = (waited?.events ?? []).filter(e => e.kind === 'moved');
+    const at = c.self ? { row: c.self.row, col: c.self.col } : null;
+    const arrived = !!expect && !!at && at.row === expect.row && at.col === expect.col;
+    return { cast: true, relocated: moved.length > 0, timedOut: !!waited?.timedOut,
+             at, expect, arrived,
+             why: moved.length ? (arrived ? 'blinked to the room teleport point'
+                                          : 'moved, but not to the square expected')
+                               : 'no move event: the cast was interrupted, or this room ' +
+                                 'declares no teleport point' };
+  }
+
+
   async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken,
                                   exact = false } = {}) {
+    // WHEN THIS CROSSING BEGAN, because `stuck_ms` is the only thing standing between a
+    // strategy and firing on every boundary that refuses once. Nothing set it, so the value
+    // read below was always 0 and `min_stuck_ms` would have declined for ever -- a strategy
+    // switched on, loaded, asked, and silently never firing, which is the failure mode this
+    // repository has paid for before (`purpose` missing from a schema, every audit off).
+    this._crossingStartedAt = Date.now();
     const tried = [];
     // Captured before the first attempt, because a successful crossing changes the room out
     // from under us and the book has to be told which room the door was IN.
@@ -8948,6 +9076,54 @@ class Session {
       }
     }
     const last = tried[tried.length - 1];
+    // LAST, AND ONLY WITH SOMETHING PRIVATE LOADED. Every ordinary answer has now been
+    // tried: each candidate square, the queue behind a player, the fine lane past a body,
+    // the sidestep, the retreat. This is the moment the crossing is about to be reported
+    // shut, and it is the only honest place to ask a strategy whether it has one more idea.
+    //
+    // A CLONE HAS NO STRATEGIES AND THEREFORE NO CHANGE IN BEHAVIOUR. `m59-strategies.load`
+    // returns an empty set when substrate/strategies/ does not exist, `firstAnswer` returns
+    // null, and the return below runs exactly as it did before. Silence is the behaviour
+    // that was already there.
+    // DECLARED HERE, NOT BORROWED FROM BELOW. `offered` is defined further down as part of
+    // the gap report, and reaching forward to it threw `Cannot access 'offered' before
+    // initialization` -- the same shape as the `laneAim` crash that killed a character in
+    // prod, caught this time by the dependency suite rather than by a death.
+    const bestExit = ordered[0] ?? null;
+    const stuckAnswer = await this._askStrategies('whenStuck', {
+      room: this.world?.room ?? null,
+      geo: this.world?.geometry ?? null,
+      self: this.client?.self ?? null,
+      goal: bestExit?.stand_on ?? null,
+      route: tried.map(t => t.stand_on).filter(Boolean),
+      bodies: this._blockingBodies(),
+      blink: this._blinkPointHere(),
+      vitals: this.client?.vitals?.() ?? null,
+      stuck_ms: Date.now() - (this._crossingStartedAt ?? Date.now()),
+      underFire: !!this._underFireDuringCrossing,
+      agent: this.name ?? this.client?.me?.name ?? null,
+    }).catch(() => null);
+    if (stuckAnswer?.answer?.do === 'blink') {
+      const out = await this.blinkOut({ expect: stuckAnswer.answer.expect }).catch(() => null);
+      recordTactic({ character: this.client?.me?.name ?? this.name ?? null,
+                     room: Number(this.world?.room?.num ?? 0),
+                     tactic: 'blink_escape', trigger: stuckAnswer.strategy,
+                     worked: !!out?.arrived, ms: 0, hp_lost: 0, attempted: true,
+                     note: `${stuckAnswer.answer.why}; ${out?.why ?? 'no result'}` });
+      // E, AND IT IS THE STRATEGY'S OWN CALLBACK. The predicate recorded what it saw; only
+      // the caller knows what happened next, and 'the spell never fizzles' is not the same
+      // claim as 'the character is now unstuck'.
+      try { stuckAnswer.answer.settled?.(!!out?.arrived, out?.why ?? null, out?.at ?? null); }
+      catch { /* the record is evidence, not a dependency */ }
+      if (out?.arrived) {
+        // One more go at the SAME boundary from where we now stand. Not a recursion into
+        // leaveViaAny -- that would re-ask the strategy from the new position and could
+        // blink twice -- just the best candidate, once.
+        const again = bestExit ? await this.leaveVia(bestExit, { movementGeneration, controlToken })
+                              : null;
+        if (again?.left) return { ...again, used_exit: bestExit, after_blink: true, tried };
+      }
+    }
     // THE EVIDENCE FOR A GAP REPORT, carried out rather than filed here. What makes a
     // refusal actionable is not that it happened but WHAT THE MODEL BELIEVED — the best
     // square it could offer — so that it can be set against the square a character is

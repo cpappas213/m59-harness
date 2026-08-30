@@ -1645,6 +1645,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, world: { geometry }, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
       // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
       // returned a rail would test the rail instead. Returning null is also the honest state
@@ -1757,6 +1764,13 @@ console.log('\nterminal movement propagation and edge packet authority');
         client, world: { geometry }, movementGeneration: 0,
         need() { return this.client; },
         movementWasCancelled() { return false; },
+        // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+        // before it reports a boundary closed; these fixtures are about the boundary, and a
+        // fixture that reached the real loader would depend on whatever this machine has in
+        // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+        async _askStrategies() { return null; },
+        _blockingBodies() { return []; },
+        _blinkPointHere() { return null; },
         threatsHere() { return []; },
         // WALKTO CONFIRMS ITS POSITION NOW, both before an "already there" and before deciding
         // it arrived — `c.self` is a belief that `predictSelf` writes without a read-back, and
@@ -1828,6 +1842,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
       // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
       // returned a rail would test the rail instead. Returning null is also the honest state
@@ -2179,6 +2200,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       movementGeneration: 0, finePositionUnknown: false,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
       // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
       // returned a rail would test the rail instead. Returning null is also the honest state
@@ -2211,6 +2239,13 @@ console.log('\nterminal movement propagation and edge packet authority');
     const session = {
       movementGeneration: 0,
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       async leaveVia() {
         attempts++;
         return { left: false, reason: 'collision_geometry_unavailable' };
@@ -2242,6 +2277,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       client, world: { geometry }, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       // NO BAKED RAIL. `leaveVia` now tries a precomputed exit-to-exit crossing before its
       // ordinary walk (see railAcross), and these fixtures are about the walk — a stub that
       // returned a rail would test the rail instead. Returning null is also the honest state
@@ -2283,6 +2325,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       const session = {
         movementGeneration: 0, world: { room: { num: 598 } },
         movementWasCancelled() { return false; },
+        // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+        // before it reports a boundary closed; these fixtures are about the boundary, and a
+        // fixture that reached the real loader would depend on whatever this machine has in
+        // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+        async _askStrategies() { return null; },
+        _blockingBodies() { return []; },
+        _blinkPointHere() { return null; },
         async leaveVia() {
           attempts++;
           if (attempts >= 3) return { left: true };      // the door came open
@@ -2302,6 +2351,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       const session = {
         movementGeneration: 0, world: { room: { num: 598 } },
         movementWasCancelled() { return false; },
+        // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+        // before it reports a boundary closed; these fixtures are about the boundary, and a
+        // fixture that reached the real loader would depend on whatever this machine has in
+        // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+        async _askStrategies() { return null; },
+        _blockingBodies() { return []; },
+        _blinkPointHere() { return null; },
         async leaveVia() {
           attempts++;
           return { left: false, reason: 'collision_geometry_changed',
@@ -2334,6 +2390,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       movementGeneration: 0,
       world: { room: { num: 100 } },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       async leaveVia() {
         attempts++;
         // The move worked and the server moved us; the report did not catch up.
@@ -2370,6 +2433,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       const session = {
         movementGeneration: 0,
         movementWasCancelled() { return false; },
+        // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+        // before it reports a boundary closed; these fixtures are about the boundary, and a
+        // fixture that reached the real loader would depend on whatever this machine has in
+        // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+        async _askStrategies() { return null; },
+        _blockingBodies() { return []; },
+        _blinkPointHere() { return null; },
         async leaveVia() {
           attempts++;
           // clears on the fourth ask, which the old budget of 3 could never reach
@@ -2390,6 +2460,13 @@ console.log('\nterminal movement propagation and edge packet authority');
       const session = {
         movementGeneration: 0,
         movementWasCancelled() { return false; },
+        // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+        // before it reports a boundary closed; these fixtures are about the boundary, and a
+        // fixture that reached the real loader would depend on whatever this machine has in
+        // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+        async _askStrategies() { return null; },
+        _blockingBodies() { return []; },
+        _blinkPointHere() { return null; },
         async leaveVia() {
           attempts++;
           return { left: false, reason: 'object_blocked', monster_blocked: 1, damage_while_blocked: 3 };
@@ -2616,6 +2693,13 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
     movementGeneration: 0,
     need() { return this.client; },
     movementWasCancelled() { return false; },
+    // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+    // before it reports a boundary closed; these fixtures are about the boundary, and a
+    // fixture that reached the real loader would depend on whatever this machine has in
+    // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+    async _askStrategies() { return null; },
+    _blockingBodies() { return []; },
+    _blinkPointHere() { return null; },
     async stepFine() {
       fatalFineCalls++;
       return { moved: false, left_room: false, reason: 'collision_geometry_changed',
@@ -2640,6 +2724,13 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
     movementGeneration: 0,
     need() { return this.client; },
     movementWasCancelled() { return false; },
+    // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+    // before it reports a boundary closed; these fixtures are about the boundary, and a
+    // fixture that reached the real loader would depend on whatever this machine has in
+    // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+    async _askStrategies() { return null; },
+    _blockingBodies() { return []; },
+    _blinkPointHere() { return null; },
     async stepFine() {
       lateralCalls++;
       lateralClient.self = {
@@ -2670,6 +2761,13 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
     movementGeneration: 0,
     need() { return this.client; },
     movementWasCancelled() { return false; },
+    // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+    // before it reports a boundary closed; these fixtures are about the boundary, and a
+    // fixture that reached the real loader would depend on whatever this machine has in
+    // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+    async _askStrategies() { return null; },
+    _blockingBodies() { return []; },
+    _blinkPointHere() { return null; },
     async stepFine(x, y) {
       bodyCalls++;
       const direct = Math.abs(y - bodyClient.self.y) < 1;
@@ -2696,6 +2794,13 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
     movementGeneration: 0,
     need() { return this.client; },
     movementWasCancelled() { return false; },
+    // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+    // before it reports a boundary closed; these fixtures are about the boundary, and a
+    // fixture that reached the real loader would depend on whatever this machine has in
+    // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+    async _askStrategies() { return null; },
+    _blockingBodies() { return []; },
+    _blinkPointHere() { return null; },
     async stepFine(x, y) {
       skirtCalls++;
       const direct = Math.abs(y - skirtClient.self.y) < 1;
@@ -2724,6 +2829,13 @@ if (![validateFineTarget, queueValidatedMove, confirmPosition, stepFine, ordinar
       client, world: { geometry: wallGeo }, movementGeneration: 0,
       need() { return this.client; },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       cancelledMovement(x) { return { arrived: false, cancelled: true, ...x }; },
       async selfOrResync() { return this.client.self; },
       async stepFine(x, y) {
@@ -3122,6 +3234,13 @@ console.log('a door held shut by people is shut');
     const oneShut = {
       movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       async leaveVia(door) {
         asked.push(door.stand_on.col);
         return door.stand_on.col === doorA.stand_on.col ? heldByPeople : { left: true };
@@ -3138,6 +3257,13 @@ console.log('a door held shut by people is shut');
     const bothShut = {
       movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
       movementWasCancelled() { return false; },
+      // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+      // before it reports a boundary closed; these fixtures are about the boundary, and a
+      // fixture that reached the real loader would depend on whatever this machine has in
+      // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
       async leaveVia(door) { bothAsked.push(door.stand_on.col); return heldByPeople; },
       // THE CHEAT, MADE VISIBLE. `leaveViaAny` has an unvalidated last resort for the case
       // where our model refuses a square people demonstrably walk on. Wiring it to SUCCEED
@@ -3168,6 +3294,13 @@ console.log('a door held shut by people is shut');
       const geometryShut = {
         movementGeneration: 0, world: { room: { num: 50 } }, client: { room: { id: 1 } },
         movementWasCancelled() { return false; },
+        // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+        // before it reports a boundary closed; these fixtures are about the boundary, and a
+        // fixture that reached the real loader would depend on whatever this machine has in
+        // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+        async _askStrategies() { return null; },
+        _blockingBodies() { return []; },
+        _blinkPointHere() { return null; },
         async leaveVia() { return { left: false, reason: 'geometry_blocked' }; },
         async leaveViaUnvalidated() {
           geometryForced++;
@@ -3212,6 +3345,13 @@ if (typeof walkTo !== 'function' || typeof realSidestepAround !== 'function') {
     client, world: { geometry, room: { num: 50 } }, movementGeneration: 0,
     need() { return this.client; },
     movementWasCancelled() { return false; },
+    // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+    // before it reports a boundary closed; these fixtures are about the boundary, and a
+    // fixture that reached the real loader would depend on whatever this machine has in
+    // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+    async _askStrategies() { return null; },
+    _blockingBodies() { return []; },
+    _blinkPointHere() { return null; },
     threatsHere() { return []; },
     sidestepAround: realSidestepAround,
     // The fine lane is the tier BELOW the sidestep and these fixtures are about the walk,
@@ -3481,6 +3621,13 @@ console.log('AN EDGE THE MOVER CANNOT WALK IS REMEMBERED PAST THE WALK THAT FOUN
     movementGeneration: 0,
     need() { return this.client; },
     movementWasCancelled() { return false; },
+    // THE STRATEGY SEAM, STUBBED SHUT. `leaveViaAny` now asks the private strategies
+    // before it reports a boundary closed; these fixtures are about the boundary, and a
+    // fixture that reached the real loader would depend on whatever this machine has in
+    // substrate/strategies/. Its own suite is m59-strategies-test.mjs.
+    async _askStrategies() { return null; },
+    _blockingBodies() { return []; },
+    _blinkPointHere() { return null; },
     railAcross() { return null; },
     async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
     sidestepAround() { return null; },
