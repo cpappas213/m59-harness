@@ -27,16 +27,17 @@
 //
 // LOOPBACK ONLY, by m59-dm.mjs's own guard.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dm, resolve, roomObject, relocateCmd, isLoopbackHost, adminTarget } from './m59-dm.mjs';
 import { RoomGeometry } from './m59-roo.mjs';
 import { attachStepMasks } from './m59-routes.mjs';
 import { movementMapFile } from './m59-map-path.mjs';
 import { ROUTES, broker, agentFor } from './m59-circuit.mjs';
+import { evidenceDirFor } from './m59-fleetpath.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const BOOK = HERE + '/../substrate/hoptests.json';
+const BOOK = join(evidenceDirFor(), 'hoptests.json');
 const load = () => { try { return JSON.parse(readFileSync(BOOK, 'utf8')); } catch { return { runs: [] }; } };
 const save = b => { mkdirSync(dirname(BOOK), { recursive: true }); writeFileSync(BOOK, JSON.stringify(b, null, 1)); };
 

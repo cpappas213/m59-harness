@@ -18,7 +18,7 @@
 
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, statSync } from 'node:fs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -113,6 +113,61 @@ export function ledgerDirFor(name, env = process.env) {
   if (env.M59_LEDGER_DIR) return env.M59_LEDGER_DIR;
   return name ? join(REPO, 'substrate', 'history', name)
               : join(REPO, 'substrate', 'history');
+}
+
+// WHERE THE EVIDENCE IS WRITTEN, WHICH IS NOT NECESSARILY WHERE THE CODE IS.
+//
+// Every ledger in this repository resolved its own path as `HERE/../substrate/...` — one
+// line each, in six files, and correct for as long as there was one checkout. On
+// 2026-08-30 prod was pinned to a commit-locked worktree (C:/code/m59-lab/prod-deploy) so
+// that keepers stop respawning onto half-finished edits, which is a good change and broke
+// this: keepers spawn from `join(HERE, ...)`, so every ledger followed the CODE into the
+// deploy tree.
+//
+// Measured within the hour: the same characters had two transit files being written at
+// once — Clifford.json at 11:13 in the checkout and 11:36 in the deploy tree — and a
+// `m59-transits` report run from the checkout answered for shadow alone and said nothing
+// about it. That is the failure this repository keeps paying for: not a wrong number, a
+// number that is quietly about less than you think. `--since` filtering everything except
+// the table people read was the same shape, the same week.
+//
+// So the location is a decision, resolved in one place, and the DEFAULT IS EXACTLY WHAT IT
+// WAS — `<repo>/substrate` — so a checkout that has never heard of a pinned deploy behaves
+// identically and nothing migrates. A pinned tree sets M59_EVIDENCE_DIR back at the
+// canonical substrate and the evidence reconverges.
+//
+// It is deliberately NOT `ledgerDirFor`, which is per-FLEET and lives under
+// `substrate/history/<fleet>`. That split is about character names colliding between
+// servers; this one is about two trees of the same fleet. A tool wanting a per-fleet
+// ledger still wants `ledgerDirFor`; a tool wanting "the substrate that owns this
+// machine's evidence" wants this.
+// AND IT RESOLVES ITSELF, because a fix that needs the deploy to set a variable is a fix
+// that does nothing until somebody restarts prod — while the evidence forks in the meantime.
+//
+// A linked git worktree has a `.git` FILE, not a directory, holding
+// `gitdir: <main>/.git/worktrees/<name>`. Three dirnames up from that is the checkout the
+// worktree was cut from. So a pinned deploy writes its evidence HOME without being told,
+// and picks it up on the next keeper respawn rather than on a restart.
+//
+// Only when that substrate actually exists — a worktree cloned somewhere with no checkout
+// beside it keeps its own, which is the right answer for a stranger and for CI.
+function checkoutSubstrate() {
+  try {
+    const dotgit = join(REPO, '.git');
+    if (!existsSync(dotgit) || statSync(dotgit).isDirectory()) return null;   // the checkout
+    const m = /gitdir:\s*(.+)/.exec(readFileSync(dotgit, 'utf8'));
+    if (!m) return null;
+    const main = dirname(dirname(dirname(m[1].trim())));   // .../worktrees/<n> -> .git -> repo
+    const sub = join(main, 'substrate');
+    return existsSync(sub) ? sub : null;
+  } catch { return null; }
+}
+
+let resolved;
+export function evidenceDirFor(env = process.env) {
+  if (env.M59_EVIDENCE_DIR) return env.M59_EVIDENCE_DIR;
+  if (resolved === undefined) resolved = checkoutSubstrate();
+  return resolved ?? join(REPO, 'substrate');
 }
 
 export function strategyStatsDirFor(name, env = process.env) {

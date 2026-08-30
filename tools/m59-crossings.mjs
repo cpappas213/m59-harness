@@ -33,11 +33,12 @@ import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { movementMapFile } from './m59-map-path.mjs';
+import { evidenceDirFor } from './m59-fleetpath.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const WALKS_DIR = process.env.M59_WALKS_DIR || join(HERE, '..', 'substrate', 'walks');
+export const WALKS_DIR = process.env.M59_WALKS_DIR || join(evidenceDirFor(), 'walks');
 export const CROSSINGS_FILE = process.env.M59_CROSSINGS ||
-  join(HERE, '..', 'substrate', 'm59-crossings.json');
+  join(evidenceDirFor(), 'm59-crossings.json');
 
 // THE DOOR HAS NOT MOVED, SO STOP RE-DERIVING IT EVERY TIME.
 //

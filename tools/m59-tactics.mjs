@@ -32,7 +32,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fleetName } from './m59-fleetpath.mjs';
+import { fleetName, evidenceDirFor } from './m59-fleetpath.mjs';
 import { sameEpoch, epochId } from './m59-epoch.mjs';
 
 // WHICH FLEET, ASKED THE ONE WAY THIS REPOSITORY ASKS IT.
@@ -51,7 +51,7 @@ const FLEET = () => fleetName() || 'default';
 
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const TACTICS_DIR = process.env.M59_TACTICS_DIR || path.join(HERE, '..', 'substrate', 'tactics');
+export const TACTICS_DIR = process.env.M59_TACTICS_DIR || path.join(evidenceDirFor(), 'tactics');
 
 // THE CLOSED SET, so a new tactic shows up in the report the day it is added rather than
 // being averaged into "other". An unrecognised name is RECORDED, never dropped — the same

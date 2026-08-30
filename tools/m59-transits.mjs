@@ -34,9 +34,13 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { evidenceDirFor } from './m59-fleetpath.mjs';
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
-export const TRANSIT_DIR = process.env.M59_TRANSIT_DIR || here('../substrate/transits');
+// M59_TRANSIT_DIR still wins for anyone already setting it; the fallback is now the
+// resolved evidence root rather than this file's own directory. See evidenceDirFor.
+export const TRANSIT_DIR = process.env.M59_TRANSIT_DIR
+                        || join(evidenceDirFor(), 'transits');
 
 // A few hours of travel for a busy character. Crossings are far rarer than hits — one per
 // room entered rather than one per swing — so this is a deeper history for a smaller file.
