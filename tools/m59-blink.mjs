@@ -124,26 +124,74 @@ export function reachableAround(geo, from, bodies, { rows, cols }) {
  * IT IS CONSERVATIVE ABOUT THE LANE, ON PURPOSE. The flood treats an occupied square as
  * impassable, so it does not know that `lanePastBodies` can often thread a body at fine
  * resolution -- which means it can answer `true` for a jam the walker could still have
- * walked out of. That is the right way round for a last resort (the lane is tried many
- * seconds earlier and far more cheaply), but it does mean this must never be the FIRST
- * thing asked: on the recorded sewer jam it reports a character boxed into ONE square, and
- * a caller that believed it immediately would blink out of jams the lane clears for free.
+ * walked out of. On the recorded sewer jam it reports a character boxed into ONE square,
+ * and the lane threads that jam for free.
+ *
+ * SO THIS MUST NOT BECOME A CRUTCH FOR NOT WRITING GOOD PATHING AND MOVEMENT. Every jam
+ * this answers `true` for is a question about the mover, and blinking out of it retires the
+ * symptom while leaving the cause -- a fleet that blinks past everything it cannot walk past
+ * stops generating the evidence that would have fixed the walking. That is the reason for
+ * the observation record below, and for `min_stuck_ms` in the escape strategy: the cheap
+ * movement answers get their chance first, and what blink rescues is written down so the
+ * pathing work has a queue.
+ *
+ * It is NOT an argument for asking this late in principle. For a scenario that is genuinely
+ * impassable -- geometry no lane can thread, a corridor narrower than a body, a room whose
+ * only door is behind something that will not move -- the right behaviour is to recognise it
+ * and blink IMMEDIATELY rather than spend twenty seconds proving it again. Recognising those
+ * scenarios is the work; until it exists, the delay is a stand-in for the recognition.
  *
  * IT ANSWERS FOR THIS INSTANT ONLY. Bodies move; a `true` here is a fact about the room as
  * it was sampled and nothing more, which is why the caller re-reads rather than caching.
  */
-export function canBlinkOut({ geo, blink, from, goal, bodies, rows, cols }) {
-  if (!geo || !blink || !from || !goal) return { can: false, why: 'missing geometry, blink point, position or goal' };
-  if (!geo.standPoint?.(blink.row, blink.col)) return { can: false, why: 'the blink point is not standable' };
-  const here = reachableAround(geo, from, bodies, { rows, cols });
+export function canBlinkOut({ geo, blink, from, goal, bodies, rows, cols,
+                              room = null, route = null, observe = null }) {
   const key = (r, c) => r * 1000 + c;
+  // ONE EXIT, SO EVERY VERDICT IS OBSERVABLE. Written this way rather than as four returns
+  // because a record that only covers the interesting branch cannot answer "how often did it
+  // decline, and why" -- which is the question that tells us whether the strategy is worth
+  // its mana at all.
+  const say = (verdict, extra = {}) => {
+    const out = { ...verdict, ...extra };
+    if (typeof observe === 'function') {
+      // THE SEAM, AND NOTHING BEHIND IT SHIPS. This function writes no file and knows no
+      // directory: the observation record is one machine's evidence about one server, so the
+      // recorder lives in that machine's private strategies and is passed in. A harness
+      // cloned by somebody else gets the predicate and no bookkeeping.
+      //
+      // It is called INSIDE a try: a recorder that throws must not turn a movement decision
+      // into an exception on an already-stuck walk.
+      try {
+        observe({
+          room: room ?? null,
+          from: from ? { row: from.row, col: from.col } : null,
+          goal: goal ? { row: goal.row, col: goal.col } : null,
+          blink: blink ? { row: blink.row, col: blink.col } : null,
+          route: route ?? null,
+          bodies: (bodies ?? []).map(b => ({ row: b.row, col: b.col,
+                                             kind: b.kind ?? null, name: b.name ?? null })),
+          verdict: out,
+        });
+      } catch { /* the record is evidence, not a dependency */ }
+    }
+    return out;
+  };
+
+  if (!geo || !blink || !from || !goal)
+    return say({ can: false, why: 'missing geometry, blink point, position or goal' });
+  if (!geo.standPoint?.(blink.row, blink.col))
+    return say({ can: false, why: 'the blink point is not standable' });
+  const here = reachableAround(geo, from, bodies, { rows, cols });
   if (here.has(key(goal.row, goal.col)))
-    return { can: false, why: 'the goal is already reachable on foot; blink would gain nothing' };
+    return say({ can: false, why: 'the goal is already reachable on foot; blink would gain nothing' },
+                { from_here: here.size });
   const there = reachableAround(geo, blink, bodies, { rows, cols });
   if (!there.has(key(goal.row, goal.col)))
-    return { can: false, why: 'the blink point is on the same side of the traffic as we are' };
-  return { can: true, why: `blocked from here (${here.size} squares) and clear from the blink ` +
-                           `point (${there.size} squares)`, from_here: here.size, from_blink: there.size };
+    return say({ can: false, why: 'the blink point is on the same side of the traffic as we are' },
+                { from_here: here.size, from_blink: there.size });
+  return say({ can: true, why: `blocked from here (${here.size} squares) and clear from the blink ` +
+                               `point (${there.size} squares)` },
+             { from_here: here.size, from_blink: there.size });
 }
 
 export function collectBlinks(root = kodRoot()) {

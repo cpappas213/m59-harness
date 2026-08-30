@@ -136,5 +136,45 @@ if (!existsSync(FIX)) {
   }
 }
 
+// ---------------------------------------------------------------- the observe seam
+//
+// `canBlinkOut` takes an optional `observe`, and NOTHING BEHIND IT SHIPS: the recorder that
+// fills it is one machine's private strategy. What is committed is the seam, so the seam is
+// what gets tested -- that every verdict is observable (not only the interesting one), that
+// the sighting carries what a reproduction needs, and that a recorder which throws cannot
+// turn a movement decision into an exception on an already-stuck walk.
+console.log('\nthe canBlinkOut observation seam');
+{
+  const { canBlinkOut } = await import('./m59-blink.mjs');
+  const flat = { standPoint: () => ({ x: 0, y: 0 }), moverStepLands: () => true };
+  const seen = [];
+  const args = { geo: flat, blink: { row: 1, col: 1 }, from: { row: 5, col: 5 },
+                 goal: { row: 9, col: 9 },
+                 bodies: [{ row: 7, col: 7, kind: 'monster', name: 'giant rat' }],
+                 rows: 12, cols: 12, room: { num: 108 },
+                 route: [{ row: 6, col: 6 }, { row: 9, col: 9 }] };
+
+  const declined = canBlinkOut({ ...args, observe: o => seen.push(o) });
+  ok('a DECLINE is observed too, because the declines say whether it earns its mana',
+     seen.length === 1 && seen[0].verdict.can === declined.can, JSON.stringify(seen.length));
+  ok('and the sighting carries the map, the squares, the route and the bodies',
+     seen[0]?.room?.num === 108 && seen[0]?.from?.row === 5 && seen[0]?.goal?.col === 9 &&
+     seen[0]?.route?.length === 2 && seen[0]?.bodies?.[0]?.name === 'giant rat',
+     JSON.stringify(seen[0]));
+
+  let verdict = null, threw = false;
+  try {
+    verdict = canBlinkOut({ ...args, observe: () => { throw new Error('recorder broken'); } });
+  } catch { threw = true; }
+  ok('a recorder that throws does not take the movement decision down with it',
+     !threw && verdict !== null && typeof verdict.can === 'boolean',
+     JSON.stringify({ threw, verdict }));
+
+  const noObserver = canBlinkOut(args);
+  ok('and with no recorder at all it answers exactly the same',
+     noObserver.can === declined.can && noObserver.why === declined.why,
+     JSON.stringify({ noObserver, declined }));
+}
+
 console.log(`\n${pass} passed, ${fail} failed` + (skipped ? `, ${skipped} skipped` : ''));
 process.exit(fail ? 1 : 0);

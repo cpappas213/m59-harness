@@ -113,6 +113,14 @@ node_modules/
 # against this movement epoch, which is exactly the kind of number that must not be averaged
 # across builds; see docs/m59-evidence.md.
 /substrate/blink-timings/
+
+# Every time `canBlinkOut` was asked, what it saw and whether blinking actually helped:
+# the map, the squares being crossed, the route in hand, WHERE THE MONSTERS WERE, and the
+# outcome once the character had blinked. Bodies are recorded in fixture shape and players
+# are redacted to roles on the way in, so a jam worth reproducing can be lifted straight
+# into tools/fixtures/ and committed as a test case — which is the point of keeping it.
+# One server's characters, one machine's evidence; see substrate/strategies/.
+/substrate/blink-observations/
 /substrate/*.log
 /substrate/*.err
 # Collision geometry baked from the exact local server/client room resources.
