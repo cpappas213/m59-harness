@@ -23,7 +23,8 @@ import { World, spreadEdges, boundedSilentGo, boundedRegionEntry,
 import { loadMap, movementMapReadiness, resolveRoom, forgetInferredExit, findPath, buildReverseEdges }
          from './m59-map.mjs';
 import { CLIENT_FINENESS, elideLoops, protocolToClient, loadRoo, buildAllRoomGeometry, sharedRoomGeometry,
-         MAX_STEP_HEIGHT, MIN_NOMOVEON, PLAYER_HEIGHT } from './m59-roo.mjs';
+         MAX_STEP_HEIGHT, MIN_NOMOVEON, PLAYER_HEIGHT,
+         lanePastBodies } from './m59-roo.mjs';
 import { isTerminalMovementReason } from './m59-movement.mjs';
 // THE GATE THAT WAS NEVER WIRED IN. `traversable()` is the only thing that honours a
 // declaration's `requires: {running: true}`, and until now this module was imported by
@@ -5067,6 +5068,51 @@ class Session {
   // already knows — the mover's step relation, the edges it has been refused, and the
   // squares it has seen bodies on — so a sidestep cannot propose a traversal the ordinary
   // path would reject.
+  /**
+   * THE LANE PAST A BODY, FOR AN ORDINARY STEP -- the same move, shifted sideways.
+   *
+   * `sidestepAround` above is the walker's answer to something in the way and it thinks in
+   * SQUARES: try the one either side, then give the square up. In a corridor ONE SQUARE WIDE
+   * there is no side, so it returns null and the walk marks the square taken and replans --
+   * which in a corridor is the long way or no way.
+   *
+   * The pass is not a different square. It is a different fine `y` inside the same one.
+   * Measured on the recorded jam (tools/fixtures/sewers-108-row27.json, and see
+   * m59-lane-test.mjs): a rat on the centre line of a one-square corridor leaves half a unit
+   * of room on each side, and because the wire carries integers there is EXACTLY ONE aim
+   * point per side. Six rats stood one per square there for seventy seconds and three
+   * characters oscillated in the gaps without one of them getting past.
+   *
+   * IT IS AN AIM, NOT A PROMISE. `stepFine` still has to land it, and a refused lane costs
+   * one step. Tried ONCE per blocked square, because a lane that does not work will not work
+   * on the second ask either and the fall-through below is the real recovery.
+   */
+  laneAroundBody(was, blocked, geo, c) {
+    try {
+      if (typeof geo?.floorBaseAtClient !== 'function') return null;
+      const me = c?.self;
+      if (!me) return null;
+      const to = geo.standPointWire?.(blocked.row, blocked.col);
+      if (!to) return null;
+      const bodies = [...(c.room?.objects?.values?.() ?? [])]
+        .filter(o => o.id !== c.selfId && blocksMovement(o.flags ?? 0)
+                     && (Number.isFinite(o.x) || Number.isFinite(o.col)))
+        .map(o => ({ x: o.x ?? (o.col * KOD_FINENESS + 32),
+                     y: o.y ?? (o.row * KOD_FINENESS + 32),
+                     name: c.rsc?.get?.(o.nameRsc) ?? o.nameRsc ?? '?' }));
+      if (!bodies.length) return null;
+      const hasFloor = (x, y) => { try {
+        return Number.isFinite(geo.floorBaseAtClient(protocolToClient(x), protocolToClient(y)));
+      } catch { return false; } };
+      return lanePastBodies({
+        fromX: me.x ?? (me.col * KOD_FINENESS + 32),
+        fromY: me.y ?? (me.row * KOD_FINENESS + 32),
+        toX: to.x, toY: to.y, bodies, hasFloor,
+      });
+    } catch { return null; }
+  }
+
+
   sidestepAround(was, blocked, { blockedEdges, occupied, geo, prefer = 0,
                                  blockerIsPlayer = false }) {
     if (!was || !blocked || !geo) return null;
@@ -5710,6 +5756,7 @@ class Session {
     let retreatedFromBodies = false, bodyRetreats = 0;
     const blockedBy = new Set();       // squares a body was standing on
     const sidestepped = new Set();     // squares we have already tried to go round, once each
+    const lanedPast = new Set();      // squares we have already tried to thread past, once each
     // HOW OFTEN THE MOVER PUT US SOMEWHERE THE PLAN DID NOT ASK FOR. See the note where
     // this is incremented; past a handful it means the square-by-square plan is not the
     // thing being walked, and continuing to replan it is how a room takes three minutes.
@@ -6301,6 +6348,28 @@ class Session {
             pulled = null;
             stalledOn = null; stalledTimes = 0;
             continue;
+          }
+          // NO SIDE TO STEP TO IS NOT THE SAME AS NO WAY PAST. See laneAroundBody: in a
+          // one-square corridor the pass is a different fine y inside the SAME square, which
+          // nothing above can express. Tried once per blocked square, before the square is
+          // written off, and a refusal simply falls through to the recovery below.
+          if (!lanedPast.has(`${next.row},${next.col}`)) {
+            lanedPast.add(`${next.row},${next.col}`);
+            const lane = this.laneAroundBody(was, next, geo, c);
+            if (lane) {
+              const moved = await this.stepFine(lane.x, lane.y).catch(() => null);
+              recordTactic({ character: this.client?.me?.name ?? this.name ?? null,
+                             room: Number(this.world?.room?.num ?? 0),
+                             tactic: 'body_lane', trigger: 'no_side_to_step_to',
+                             worked: !!moved?.moved, ms: 0, hp_lost: 0, attempted: true,
+                             note: `threaded ${next.row},${next.col} at offset ${lane.off} ` +
+                                   `for ${lane.gap.toFixed(1)} of clearance` });
+              if (moved?.moved) {
+                pulled = null; stalledOn = null; stalledTimes = 0;
+                queue.unshift(next);
+                continue;
+              }
+            }
           }
           // NEITHER SIDE WORKED. BACK UP THE WAY WE CAME AND LET IT FOLLOW US.
           //

@@ -607,6 +607,78 @@ export const STEP_MASK_DIRS = DIRS;
 //      a mask that verifies while encoding the wrong doors is the thing this counter is
 //      for.
 export const STEP_MASK_VERSION = 6;
+
+/**
+ * HOW CLOSE DOES ANY BODY COME TO THIS LINE? In WIRE units, which is what the mover sends.
+ *
+ * Lifted out of `Session.step`'s fall branch so the lane past a body is computed in ONE
+ * place. It was a closure inside the `fall` case, which meant an ordinary walk could not
+ * reach it -- see `lanePastBodies`.
+ */
+export function gapAlongLine(ax, ay, bx, by, bodies) {
+  if (!bodies?.length) return { gap: Infinity, who: [] };
+  const vx = bx - ax, vy = by - ay, len2 = vx * vx + vy * vy;
+  let best = Infinity, who = [];
+  for (const o of bodies) {
+    const t = len2 ? Math.max(0, Math.min(1, ((o.x - ax) * vx + (o.y - ay) * vy) / len2)) : 0;
+    const d = Math.hypot(ax + t * vx - o.x, ay + t * vy - o.y);
+    if (d < best) { best = d; who = [o.name]; } else if (d < best + 0.01) who.push(o.name);
+  }
+  return { gap: best, who };
+}
+
+/**
+ * THE SAME MOVE, SHIFTED SIDEWAYS UNTIL IT CLEARS THE BODY IN IT.
+ *
+ * A BODY IN A ONE-SQUARE CORRIDOR IS NOT A WALL AND IS NOT A SQUARE. The walker's answer to
+ * something in the way is `sidestepAround`, which tries the squares either side -- and in a
+ * corridor one square wide there are none, so it falls through to marking the square taken
+ * and replanning, which in a corridor means the long way or no way at all.
+ *
+ * But the pass is not a different SQUARE. It is a different fine `y` inside the same one.
+ * Worked from the recorded jam in `tools/fixtures/sewers-108-row27.json` -- six giant rats
+ * one per square centre on row 27 of the Sewers, 64 wire units apart, that never moved in
+ * seventy seconds while three characters oscillated in the gaps and nobody got past:
+ *
+ *     corridor floor        y 1728 .. 1792     (64 wire units: exactly one square)
+ *     a body fits between   y 1743.5 .. 1776.5 (PLAYER_RADIUS 15.5 off each wall)
+ *     a rat sits at         y 1760, blocking within MIN_NOMOVEON = 16
+ *     so a pass needs       y <= 1744  or  y >= 1776
+ *
+ * The two windows are half a unit wide, and the wire carries integers, so there is EXACTLY
+ * ONE aim point on each side: 1744 and 1776. Aim anywhere else -- a square centre, a slid
+ * position, the next square along -- and the move is refused. That is the seventy seconds.
+ *
+ * Offsets are tried nearest-first and a lane is kept only if BOTH ends still have floor,
+ * because a lane that leaves the floor is not a lane, it is a fall.
+ *
+ * IT RETURNS AN AIM, NOT A PROMISE. `_traceMoverStep` still decides whether the step lands,
+ * and a lane it refuses costs one refused step and authorises nothing.
+ */
+export function lanePastBodies({ fromX, fromY, toX, toY, bodies, hasFloor,
+                                 minGap = MIN_NOMOVEON / (CLIENT_FINENESS / KOD_FINENESS),
+                                 minOffset = 4, maxOffset = 28, step = 1 }) {
+  if (!bodies?.length || typeof hasFloor !== 'function') return null;
+  const dx = toX - fromX, dy = toY - fromY;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len, py = dx / len;
+  let best = null;
+  for (let off = minOffset; off <= maxOffset; off += step) {
+    for (const sign of [1, -1]) {
+      const ox = px * off * sign, oy = py * off * sign;
+      const ax = Math.round(fromX + ox), ay = Math.round(fromY + oy);
+      const bx = Math.round(toX + ox), by = Math.round(toY + oy);
+      if (!hasFloor(ax, ay) || !hasFloor(bx, by)) continue;
+      const m = gapAlongLine(ax, ay, bx, by, bodies);
+      if (!(m.gap >= minGap)) continue;
+      if (!best || m.gap > best.gap)
+        best = { x: bx, y: by, fromX: ax, fromY: ay, gap: m.gap, off: off * sign };
+    }
+    if (best) break;
+  }
+  return best;
+}
+
 const STEP_MASK_BIT = new Map(DIRS.map((d, i) => [`${d.dr},${d.dc}`, 1 << i]));
 
 // Where the .roo files live. The server tree and the client tree are separate copies

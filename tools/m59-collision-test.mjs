@@ -1767,6 +1767,9 @@ console.log('\nterminal movement propagation and edge packet authority');
         async selfOrResync() { return this.client.self; },
         // No way round, so the walker must fall through to the occupancy path either way.
         sidestepAround() { return null; },
+        // The fine lane is the tier BELOW the sidestep and these fixtures are about the walk,
+        // not the threading; the lane has its own suite in m59-lane-test.mjs.
+        laneAroundBody() { return null; },
         async step() {
           if (falling) hp -= 3;                       // it is hitting us every lap
           return { moved: false, left_room: false, reason: 'object_blocked' };
@@ -2248,6 +2251,9 @@ console.log('\nterminal movement propagation and edge packet authority');
 
       threatsHere() { return []; },
       sidestepAround() { return null; },
+      // The fine lane is the tier BELOW the sidestep and these fixtures are about the walk,
+      // not the threading; the lane has its own suite in m59-lane-test.mjs.
+      laneAroundBody() { return null; },
       async step() { asks++; return { moved: false, left_room: false, reason: 'object_blocked' }; },
     };
     const out = await walkTo.call(session, 12, 12, { maxSteps: 6 });
@@ -3208,6 +3214,9 @@ if (typeof walkTo !== 'function' || typeof realSidestepAround !== 'function') {
     movementWasCancelled() { return false; },
     threatsHere() { return []; },
     sidestepAround: realSidestepAround,
+    // The fine lane is the tier BELOW the sidestep and these fixtures are about the walk,
+    // not the threading; the lane has its own suite in m59-lane-test.mjs.
+    laneAroundBody() { return null; },
     async retreatAlongBreadcrumbs() { return { steps: 0 }; },
     async step(col, row) {
       // The mover's own answer, and the only one it can give: something is standing there.
@@ -3475,6 +3484,9 @@ console.log('AN EDGE THE MOVER CANNOT WALK IS REMEMBERED PAST THE WALK THAT FOUN
     railAcross() { return null; },
     async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
     sidestepAround() { return null; },
+    // The fine lane is the tier BELOW the sidestep and these fixtures are about the walk,
+    // not the threading; the lane has its own suite in m59-lane-test.mjs.
+    laneAroundBody() { return null; },
     threatsHere() { return []; },
     async selfOrResync() { return this.client.self; },
     async step() { return { moved: false, left_room: false, reason }; },

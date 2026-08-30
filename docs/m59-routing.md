@@ -550,6 +550,51 @@ router degrades to coarse-grid planning, which is *more* permissive, not less: t
 suite's room 27 fixture starts offering the stranded 2500 boundary. Rebake before reading any
 routing result.
 
+## The bag of tricks for traffic, and the one that was missing
+
+When something is standing in the way, the walker has a ladder: wait a lap (six laps if it
+is a player -- see `QUEUE_PATIENCE`), then `sidestepAround` tries the squares either side,
+then under fire it backs up to make the body follow, then it marks the square taken and
+replans. A separate trick, `needle_backoff`, handles a *doorway* that publishes a single
+staging square.
+
+**Every rung of that ladder thinks in SQUARES, and that is why a one-square corridor was
+unsolvable.** There is no side square. So the walk fell through to writing the square off,
+and A* was asked for a route through a corridor with a hole punched in it.
+
+`tools/fixtures/sewers-108-row27.json` is seventy seconds of the failure, recorded: six
+giant rats one per square centre on row 27 of the Sewers, one square apart, that **never
+moved**, while three characters oscillated in the gaps and not one of them got past.
+
+The arithmetic says they should have. Taken from the recording, in wire units:
+
+| | |
+|---|---|
+| corridor floor | y 1728 .. 1792 — 64 units, exactly one square |
+| a body fits between the walls | y 1743.5 .. 1776.5 (`PLAYER_RADIUS` 15.5 off each) |
+| a rat sits at | y 1760, blocking within `MIN_NOMOVEON` = 16 |
+| so a pass needs | y ≤ 1744 **or** y ≥ 1776 |
+
+Each window is **half a unit wide**, and the wire carries integers — so there is **exactly
+one aim point on each side: 1744 and 1776**. The square's own centre is not one of them,
+and the square centre is what the walker aims at. That is the seventy seconds.
+
+**So the trick is: the pass is not a different square, it is a different fine `y` inside the
+same one.** `lanePastBodies` (in `m59-roo.mjs`, shared with the fall lane so there is one
+answer rather than two) shifts the step sideways, nearest offset first, keeping a lane only
+if both ends still have floor. `Session.laneAroundBody` applies it to an ordinary step, once
+per blocked square, *before* the square is written off; a refused lane costs one step and
+falls through to the old recovery. The tactic is recorded as `body_lane`.
+
+`node tools/m59-lane-test.mjs` pins all of it against the recording, including that the
+straight line through the rats is refused and that cols 39-41 really are one square wide on
+the baked map.
+
+**What it is not.** It does not help when the corridor is genuinely narrower than a body,
+and it is an aim rather than a promise — `_traceMoverStep` still decides whether the step
+lands. It also does nothing about a body that is *hitting* you: that is `underFire`, and the
+answer there is still to move, not to thread.
+
 ## Exits, reach and the safe wall
 
 - **EXITS ARE NOT DOORS, AND THEY ARE NOT 1:1.** Walking from room A to room B through
