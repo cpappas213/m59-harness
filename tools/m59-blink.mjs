@@ -74,6 +74,78 @@ export function blinkIn(text) {
   };
 }
 
+/**
+ * WHERE A BODY CAN GET TO WITH THE TRAFFIC WHERE IT IS -- squares, body-aware.
+ *
+ * The router plans on an EMPTY room, which is right: bodies move, and baking them in would
+ * make every route a photograph. But the question "would blinking help me right now" is
+ * exactly the question the empty-room answer cannot address, so this one takes the bodies.
+ *
+ * A square holding a blocking body is impassable, and so is a step whose line passes within
+ * MIN_NOMOVEON of one -- the fine lane (`lanePastBodies`) is the thing that beats that, and
+ * it is tried before any of this. What is left here is the case where threading failed.
+ */
+export function reachableAround(geo, from, bodies, { rows, cols }) {
+  const key = (r, c) => r * 1000 + c;
+  const taken = new Set((bodies ?? [])
+    .filter(b => Number.isFinite(b.row) && Number.isFinite(b.col))
+    .map(b => key(b.row, b.col)));
+  const D = [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const step = (a, b, c, d) => { try { return geo.moverStepLands(a, b, c, d) === true; } catch { return false; } };
+  const start = key(from.row, from.col);
+  if (taken.has(start)) taken.delete(start);          // we are standing here; we are not our own wall
+  const seen = new Set([start]); const q = [[from.row, from.col]];
+  while (q.length) {
+    const [r, c] = q.shift();
+    for (const [dr, dc] of D) {
+      const nr = r + dr, nc = c + dc;
+      if (nr < 1 || nc < 1 || nr > rows || nc > cols) continue;
+      if (seen.has(key(nr, nc)) || taken.has(key(nr, nc))) continue;
+      if (!geo.standPoint?.(nr, nc) || !step(r, c, nr, nc)) continue;
+      seen.add(key(nr, nc)); q.push([nr, nc]);
+    }
+  }
+  return seen;
+}
+
+/**
+ * WOULD BLINKING GET ME PAST THIS? The predicate the escape strategy is built on.
+ *
+ * True when the blink point is on the FAR side of the traffic: the goal is unreachable from
+ * where the body is standing with the bodies where they are, and reachable from the blink
+ * point with those same bodies where they are. Both halves matter --
+ *
+ *   - without the first, it fires when nothing is wrong and spends 15 mana and ten seconds
+ *     to arrive somewhere it could have walked;
+ *   - without the second, it fires into a blink point on the SAME side of the jam, which is
+ *     the ~half of the time the operator expects this to be useless. Here it is not merely
+ *     useless, it is a wasted cast and a character standing in the open for ten seconds.
+ *
+ * IT IS CONSERVATIVE ABOUT THE LANE, ON PURPOSE. The flood treats an occupied square as
+ * impassable, so it does not know that `lanePastBodies` can often thread a body at fine
+ * resolution -- which means it can answer `true` for a jam the walker could still have
+ * walked out of. That is the right way round for a last resort (the lane is tried many
+ * seconds earlier and far more cheaply), but it does mean this must never be the FIRST
+ * thing asked: on the recorded sewer jam it reports a character boxed into ONE square, and
+ * a caller that believed it immediately would blink out of jams the lane clears for free.
+ *
+ * IT ANSWERS FOR THIS INSTANT ONLY. Bodies move; a `true` here is a fact about the room as
+ * it was sampled and nothing more, which is why the caller re-reads rather than caching.
+ */
+export function canBlinkOut({ geo, blink, from, goal, bodies, rows, cols }) {
+  if (!geo || !blink || !from || !goal) return { can: false, why: 'missing geometry, blink point, position or goal' };
+  if (!geo.standPoint?.(blink.row, blink.col)) return { can: false, why: 'the blink point is not standable' };
+  const here = reachableAround(geo, from, bodies, { rows, cols });
+  const key = (r, c) => r * 1000 + c;
+  if (here.has(key(goal.row, goal.col)))
+    return { can: false, why: 'the goal is already reachable on foot; blink would gain nothing' };
+  const there = reachableAround(geo, blink, bodies, { rows, cols });
+  if (!there.has(key(goal.row, goal.col)))
+    return { can: false, why: 'the blink point is on the same side of the traffic as we are' };
+  return { can: true, why: `blocked from here (${here.size} squares) and clear from the blink ` +
+                           `point (${there.size} squares)`, from_here: here.size, from_blink: there.size };
+}
+
 export function collectBlinks(root = kodRoot()) {
   if (!root) return { points: {}, ambiguous: [], declared: 0, root: null };
   const points = {};

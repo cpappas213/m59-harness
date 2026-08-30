@@ -88,6 +88,31 @@ node_modules/
 # slow crossing rather than a dangerous map. One server's characters and their journeys.
 /substrate/transits/
 /substrate/strategy-stats/
+
+# TRAVEL STRATEGIES, AND THE CODE OF THEM, NOT ONLY THEIR SETTINGS.
+#
+# Everything else in this file hides a NUMBER and commits the shape. This hides the
+# STRATEGY, which is a step further, and it is deliberate: a travel strategy is executable
+# and it is an instruction to a character. `substrate/strategies/*.mjs` are loaded and RUN
+# by the keeper, so a file arriving from somebody else's afternoon is code this machine's
+# characters obey — the same argument as a playbook, with the stakes of an import.
+#
+# The blink strategies are the first: when a jam is unthreadable, cast blink and arrive at
+# the room's own teleport point; and the race, which blinks pre-emptively when the walk from
+# the blink point to the exit is shorter than the median crossing. Whether either is on, and
+# the timings each one is judged against, are this fleet's answers and not a fact about
+# Meridian 59.
+#
+# The SHAPE is committed beside the directory, never inside it, because the loader
+# enumerates every .mjs in there and an example in there is a strategy nobody asked for:
+# substrate/strategies.example.mjs.
+/substrate/strategies/
+
+# The measured cost of the blink race, per map, per exit — how long the walk from the blink
+# point to each common crossing actually takes. Measured on this server by these characters
+# against this movement epoch, which is exactly the kind of number that must not be averaged
+# across builds; see docs/m59-evidence.md.
+/substrate/blink-timings/
 /substrate/*.log
 /substrate/*.err
 # Collision geometry baked from the exact local server/client room resources.
