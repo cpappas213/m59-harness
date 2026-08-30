@@ -536,7 +536,7 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   recover in order with durable loss markers, the physical cap survives restart, trace
   files are private, every actual send has a validated or explicitly unsafe wire row, and
   broker health publishes the effective trace and exit-fallback settings) and
-  `node tools/m59-collision-test.mjs` (319 — **the fail-closed contract for all
+  `node tools/m59-collision-test.mjs` (333 — **the fail-closed contract for all
   movement**: compact collision metadata survives a bake, legacy maps cannot authorize
   a coordinate packet, the player cylinder catches wall bodies and corners, long strides
   cannot tunnel, stock endpoint-0 slope and water-depth rules are preserved, every
