@@ -360,12 +360,23 @@ is not where to look when a fleet stalls.
 
 ## Six-city routing matrix and wire proof
 
-`m59-city-matrix.mjs` is the live acceptance run for the routes between Meridian's six
-cities. It has **DM authority** and is for a disposable loopback server only. Start the
-broker through `m59-service.mjs`; do not launch `m59-broker.mjs` directly. A proof run must
-use `--in-process`, `M59_COLLISION_TRACE=1`, `M59_EXIT_FALLBACK=0`, and the default collision
-trace path (leave `M59_COLLISION_TRACE_FILE` unset). The ordinary per-character keeper mode
-has six independent sequence counters and therefore cannot produce one ordered fleet trace.
+`m59-city-matrix.mjs` is a **wire proof for the six-inn fixture**, not the six-city
+zero-death instrument. Six disposable characters at 10,000 health are placed by DM on a
+staging square inside each city's inn and sent along the 25 walkable directed pairs between
+those squares with `run_errands: false`; what a PASS proves is that every coordinate packet
+the mover sent validates against the BSP, that the exit fallback was never enabled, and that
+the capture is one complete ordered sequence `m59-collision-trace-verify.mjs` can replay.
+It cannot observe deaths, damage, rests, wall detours or the time a real crossing takes — a
+fixture at that health cannot die and a DM placement skips the approach — so whether a real
+character can cross Meridian and live is `m59-solo-run.mjs` (one at a time, real health,
+`--tour` for a circuit) and `m59-hoptest.mjs` (every doorway independently). It has **DM
+authority** and is for a disposable loopback server only; it holds the fleet run lock
+(`m59-runlock.mjs`) for the whole run. Start the broker through `m59-service.mjs`; do not
+launch `m59-broker.mjs` directly. A proof run must use `--in-process`,
+`M59_COLLISION_TRACE=1`, `M59_EXIT_FALLBACK=0`, and the default collision trace path (leave
+`M59_COLLISION_TRACE_FILE` unset). The ordinary per-character keeper-process driver — the one
+every real fleet runs — has six independent sequence counters and therefore cannot produce
+one ordered fleet trace, and the runner refuses it from `/health.session_driver`.
 
 A proof is one fresh capture. Stop the old broker before clearing the trace; deleting a
 live process's file does not reset its in-memory sequence counter. Then clear and start the

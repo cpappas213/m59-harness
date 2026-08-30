@@ -1,9 +1,42 @@
 #!/usr/bin/env node
-// EXERCISE EVERY PHYSICALLY WALKABLE DIRECTED PAIR OF MERIDIAN'S SIX CITIES.
+// A WIRE PROOF FOR THE SIX-INN FIXTURE ON AN IN-PROCESS BROKER. NOT THE SIX-CITY INSTRUMENT.
 //
 //   node tools/m59-city-matrix.mjs --config substrate/traces/city-matrix-config.json
 //   node tools/m59-city-matrix.mjs --config substrate/traces/city-matrix-config.json --mode serial
 //   node tools/m59-city-matrix.mjs --config substrate/traces/city-matrix-config.json --resume
+//
+// WHAT THIS IS. Six disposable characters at 10,000 health (`--fixture-health`; health and
+// max health both, refreshed by DM heal at every placement) are PLACED by DM authority on a
+// staging square inside each city's inn — Familiars in Tos, the Brownestone, Cibilo Creek,
+// the Limping Toad, the Yonder Inn, the Aerie Guest House, with the Raza Inn as the car park
+// for whoever is idle — and sent along the 25 physically walkable directed pairs between
+// those squares, on a broker started with `--in-process` and `M59_COLLISION_TRACE=1`. What
+// the run proves is the WIRE: that every coordinate packet the mover sent between those two
+// squares validates against the BSP the client enforces, that no exit fallback was ever
+// enabled, and that the capture is one ordered, complete sequence a verifier
+// (`m59-collision-trace-verify.mjs`) can replay offline. Arrival is asserted because a leg
+// that did not arrive has no complete sequence to verify, not because it measures anything.
+//
+// WHAT IT IS NOT. It is not the six-city zero-death instrument, and its PASS line does not
+// say a real character can cross Meridian and live. A fixture with 10,000 health cannot die
+// on any road here, a DM placement skips the approach to the door, every leg is sent with
+// `run_errands: false` so nothing banks or shops on the way, and the survival ladder has
+// nothing to react to at that health — so deaths, damage, rests, wall detours, stalls and the
+// time a real crossing takes are all outside what this run can observe. Those questions
+// belong to `m59-solo-run.mjs` (one character at a time, at real health, `--tour` for a
+// circuit that asks whether it is still useful afterwards) and `m59-hoptest.mjs` (every
+// doorway on an itinerary, independently, in seconds each); both keep the keeper armed and
+// count deaths.
+//
+// AND NO REAL FLEET CAN RUN IT. `assertHealthSnapshot` refuses a broker whose
+// `/health.session_driver` is not "in-process": the per-character keeper-process driver —
+// the one every fleet on this machine runs, because it is the one that survives a keeper
+// dying — has six independent sequence counters and cannot produce one ordered fleet
+// trace. This is a lab tool for a disposable loopback server with a six-slot roster of its
+// own, started as `docs/m59-routing.md` describes. The change that promoted this runner did
+// not rerun the live matrix against that fixture (its description says so); it enforces
+// every precondition before it mutates anything, which is a different claim from having
+// passed.
 //
 // The configuration is deliberately external. Agent handles and character names belong
 // to the disposable local fixture, not to this repository, and baking one lab's dated
@@ -19,7 +52,9 @@
 // broker must identify this checkout and the exact named roster, all of its sessions must
 // be the six configured participants, and every health sample must report that the
 // unvalidated exit fallback is OFF. A CLI promise is not evidence about an already-running
-// broker; `/health.movement_policy.exit_fallback_enabled` is.
+// broker; `/health.movement_policy.exit_fallback_enabled` is. It also holds the fleet run
+// lock (`m59-runlock.mjs`) for the whole run, so a driver whose shell died cannot go on
+// issuing relocations against a second run's bodies.
 
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
