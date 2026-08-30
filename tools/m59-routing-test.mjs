@@ -44,6 +44,7 @@
 // present and reports itself skipped otherwise, because a suite that silently tests
 // nothing is worse than one that says it did.
 
+import { fileURLToPath } from 'node:url';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RoomGeometry, protocolToward, STEP_MASK_DIRS, KOD_FINENESS, CLIENT_FINENESS,
@@ -53,6 +54,20 @@ import { loadMap, selectedEdgeAt, findPath } from './m59-map.mjs';
 import { World } from './m59-world.mjs';
 import { crossingBook, WALKS_DIR } from './m59-crossings.mjs';
 import { stepMaskCurrent, attachStepMasks } from './m59-routes.mjs';
+
+// WHERE THE MAP IS, RESOLVED FROM THIS FILE AND NOT FROM THE SHELL'S CURRENT DIRECTORY.
+//
+// This was `existsSync(join('substrate', 'm59-map.json'))` -- a RELATIVE path -- while
+// `loadMap()` beside it resolves absolutely. So the collision-backed blocks ran from the
+// repo root and SILENTLY SKIPPED from anywhere else: 131 passed / 0 skipped here, 110
+// passed / 5 skipped with the identical absolute test path run from one directory up.
+//
+// That is 21 assertions that vanish without a word, and they are not arbitrary ones -- the
+// room 27 fixture is precisely the one that catches a stale routing table (with masks
+// refused it starts FINDING a route it is supposed to refuse). A worktree or CI runner that
+// does not cd into the repo first gets a green suite that never asked the question, and
+// reports it as a baseline.
+const MAP_ON_DISK = fileURLToPath(new URL('../substrate/m59-map.json', import.meta.url));
 
 let passed = 0, failed = 0, skipped = 0;
 function ok(what, cond, detail = '') {
@@ -755,7 +770,7 @@ console.log('\nthe last step into the goal — strict first, exemption as a fall
 
 // The measured case, on the real bake — skipped rather than silently passed without one.
 {
-  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const realMap = existsSync(MAP_ON_DISK) ? await loadMap() : null;
   // The masks are what `path` plans on; without attaching them this asserts nothing.
   if (realMap) attachStepMasks(realMap, {});
   const raw556 = realMap?.rooms?.['556'] ?? realMap?.rooms?.[556];
@@ -792,7 +807,7 @@ console.log('\nthe last step into the goal — strict first, exemption as a fall
 // extra hops — and ZERO are lost.
 console.log('\ncrossing a room — planning over doors rather than over rooms');
 {
-  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const realMap = existsSync(MAP_ON_DISK) ? await loadMap() : null;
   const table = realMap ? (await import('./m59-routes.mjs')).routesFor(realMap.geometryManifestSha256) : null;
   const { anchorFor: aFor, sameRegion: sameReg } = await import('./m59-routes.mjs');
   const { findPath: fp } = await import('./m59-map.mjs');
@@ -862,7 +877,7 @@ console.log('\ncrossing a room — planning over doors rather than over rooms');
 // ground. `fallTargets` offers those landings; `enforceStepHeight` still refuses the climb.
 console.log('\none-way transits, and the jumps the square walk cannot express');
 {
-  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const realMap = existsSync(MAP_ON_DISK) ? await loadMap() : null;
   const { routesFor: rf, anchorFor: aFor, sameRegion: sameReg, anchorReach: reaches } =
     await import('./m59-routes.mjs');
   const table = realMap ? rf(realMap.geometryManifestSha256) : null;
@@ -910,7 +925,7 @@ console.log('\none-way transits, and the jumps the square walk cannot express');
 
 // A jump is downhill, over a real gap, and only where the walk cannot go.
 {
-  const realMap = existsSync(join('substrate', 'm59-map.json')) ? await loadMap() : null;
+  const realMap = existsSync(MAP_ON_DISK) ? await loadMap() : null;
   const raw = realMap?.rooms?.['578'] ?? realMap?.rooms?.[578];
   const g = raw ? RoomGeometry.fromJSON(raw.roo ?? raw) : null;
   if (!g?.collisionReady) {
@@ -1115,7 +1130,7 @@ console.log('\nthe executable first hop — hard through fallbacks, local to exp
 // mainland -> Ko'catan legs stop in the Icky Cave: west -> 2500 exists in m59-map.json but
 // has no collision-reachable live candidate from the room's body.
 {
-  const realMap = existsSync(join('substrate', 'm59-map.json')) ? loadMap() : null;
+  const realMap = existsSync(MAP_ON_DISK) ? loadMap() : null;
   const cave = realMap?.rooms?.['27'] ?? realMap?.rooms?.[27];
   if (!cave?.roo) {
     skip('room 27 refuses a route to 2001 when 2500 is not offered',
