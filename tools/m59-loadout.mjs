@@ -140,6 +140,12 @@ export const POLICY_KEYS = {
   fight_rounds:            { type: 'number',  as: 'fightRounds' },
   use_bt:                  { type: 'boolean', as: 'useBT' },
   conflict_response_hops:  { type: 'number',  as: 'conflict_response_hops' },
+  // WHETHER THIS CHARACTER MAY BEG IN PUBLIC. Off since 2026-08-27 (askForHelp in
+  // m59-autopilot.mjs): a fleet on a shared server does not broadcast for a flask. The
+  // same name the `autopilot` tool and tuning.json use, and here for the same reason as
+  // trip_announce below — a broadcast costs mana and is seen by everyone, and a runtime
+  // set is lost at the next broker restart while the file is not.
+  ask_for_help:            { type: 'boolean', as: 'askForHelp' },
   // WHETHER THIS CHARACTER NARRATES ITS OWN ARRIVALS, and on which channel.
   //
   // `M59_TRIP_ANNOUNCE` is the machine's default and is all-or-nothing: it lives on the

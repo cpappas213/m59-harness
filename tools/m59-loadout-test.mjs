@@ -875,6 +875,20 @@ console.log('\nthe policy block a loadout may carry');
   ok('no policy block at all normalises to an empty one, never to defaults',
      loadout.policy && Object.keys(loadout.policy).length === 0);
 }
+{
+  // WHETHER IT MAY BEG IN PUBLIC IS A STANDING PREFERENCE, so a loadout may set it, by the
+  // name the `autopilot` tool and tuning.json already use. Off by default since 2026-08-27
+  // (askForHelp in m59-autopilot.mjs); a loadout that says true is the opt-in that survives
+  // a broker restart, which a runtime set does not.
+  const { loadout, problems } = L.normalise({ character: 'Kermit', policy: { ask_for_help: true } });
+  ok('ask_for_help is a setting a loadout may make', loadout.policy.ask_for_help === true &&
+     problems.length === 0, JSON.stringify(problems));
+  ok('and it lands on the keeper as askForHelp, the key the gate reads',
+     L.POLICY_KEYS.ask_for_help?.type === 'boolean' && L.POLICY_KEYS.ask_for_help?.as === 'askForHelp');
+  const bad = L.normalise({ character: 'Kermit', policy: { ask_for_help: 'yes' } });
+  ok('and "yes" is not true', bad.loadout.policy.ask_for_help === undefined &&
+     bad.problems.some(p => /policy\.ask_for_help/.test(p)), JSON.stringify(bad.problems));
+}
 
 console.log('\nthe file wins when the file changes');
 {

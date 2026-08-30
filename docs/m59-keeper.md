@@ -317,13 +317,21 @@ hurt with no shelter or came back from the dead unarmed. Twenty-one characters e
 that on a shared server is a fleet begging in public, and on 2026-08-27 the operator saw it
 from the other side and ordered it stopped.
 
-Since then the plea is gated on `askForHelp: true` (`ask_for_help` on the `autopilot` tool
-and in `substrate/tuning.json`), default **off**. Everything the function does *before* the
-plea — re-equip from the pack, conjure a blade — still runs on the same five-minute cadence,
-because those fix the post-death case by themselves and cost nobody anything. The journal
-records `not asking for help — broadcasts are off` once per cadence rather than nothing, so
-"why did nobody ask" has an answer. `m59-safespot-test.mjs` pins both the default and the
-opt-in.
+Since then the plea is gated on `askForHelp: true` (`ask_for_help` on the `autopilot` tool,
+in `substrate/tuning.json`, and in a loadout's `policy` block — the one that survives a
+broker restart), default **off** and declared in the policy defaults so `status` shows it.
+Everything the function does *before* the plea — re-equip from the pack, conjure a blade —
+still runs on the same five-minute cadence, because those fix the post-death case by
+themselves and cost nobody anything. **The cadence is the point, not a leftover:** being
+hurt with no flask lasts many passes, and an inventory round-trip plus a 15-mana Create
+Weapon on every one of them is the recovery mechanics running once a second for as long as
+the character is hurt, which is what throttling only the speech (PR #33) would have bought.
+The journal records `not asking for help — broadcasts are off` once per cadence rather than
+nothing, so "why did nobody ask" has an answer, and the silent pass is still `noProgress`,
+so a character that cannot rearm does not look busy. The plea itself is plain hyphens: the
+wire is Latin-1 and an em-dash in it went out as byte 0x14. `m59-safespot-test.mjs` pins the
+default, the opt-in, the cadence, the stall accounting and the wire; `m59-loadout-test.mjs`
+pins the loadout key.
 
 ## A keeper's HTTP API had two `/action` handlers, and the second one had never run
 

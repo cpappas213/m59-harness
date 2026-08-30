@@ -759,8 +759,9 @@ console.log('\n--- nobody calls for rescue from a pub ---');
   w.c.roomNameRsc = 1;
   w.c.requestInventory = () => { inventoryReads++; };
   w.c.waitFor = async () => ({ events: [] });
-  w.c.broadcast = async () => { broadcasts++; };
-  w.c.say = async () => { broadcasts++; };
+  let lastPlea = null;
+  w.c.broadcast = async (text) => { broadcasts++; lastPlea = text; };
+  w.c.say = async (text) => { broadcasts++; lastPlea = text; };
   w.s.pacer = { submit: async (_k, fn) => fn() };
   w.s.need = () => w.c;
   p.makeWeapon = async () => { weaponAttempts++; return false; };
@@ -777,17 +778,56 @@ console.log('\n--- nobody calls for rescue from a pub ---');
   // server and ordered it stopped. The re-equip work before the plea still runs.
   p.sanctuary = () => false;                      // out in the world
   p.lastPleaAt = 0;
+  const idleBefore = p.idlePasses;
   await p.askForHelp('badly hurt and out of flasks').catch(() => {});
   ok('the same character in the field says nothing by default — the plea is opt-in', broadcasts === 0);
   ok('and the journal says the broadcasts are off, rather than nothing at all',
      p.journal.some(e => /broadcasts are off/.test(e.what)));
   ok('and it keeps the same five-minute cadence a plea would have, so re-equipping is not spammed',
      p.lastPleaAt > 0);
+  ok('and the default is visible in status rather than merely absent',
+     p.status().policy.askForHelp === false);
+
+  // THE SILENCE IS NOT INACTION, AND IT IS NOT PROGRESS EITHER. The pack was re-read and a
+  // blade was attempted before the gate — those cost nobody anything and fix the post-death
+  // case by themselves — and a pass that ends in silence is still a pass in which nothing
+  // worked, so the stall counter moves exactly as it did when the plea went out. A gate
+  // that skipped noProgress would make a character that cannot rearm look busy.
+  // (equipBest re-reads the pack on its own, so one call is more than one read; what is
+  // pinned is that the work ran, and below that it then did not.)
+  ok('the re-equip and conjure-a-blade attempts ran before the gate',
+     inventoryReads > 0 && weaponAttempts > 0, `reads ${inventoryReads} weapon ${weaponAttempts}`);
+  const readsAfterOne = inventoryReads, weaponAfterOne = weaponAttempts;
+  ok('and the silent pass counts as no progress, as a sent plea always did',
+     p.idlePasses === idleBefore + 1, `idle ${idleBefore} -> ${p.idlePasses}`);
+
+  // AND THE REARM WORK IS ON THE PLEA'S CADENCE, NOT ON EVERY PASS. Hurt with no flask lasts
+  // many passes, and an inventory round-trip plus a 15-mana Create Weapon on each of them is
+  // the "recovery mechanics" running once a second for as long as the character is hurt —
+  // which is what throttling only the speech would have bought. One stamp covers both, and
+  // that is why it is written on the silent branch too.
+  await p.askForHelp('badly hurt and out of flasks').catch(() => {});
+  ok('a second call inside the cadence does no protocol at all',
+     inventoryReads === readsAfterOne && weaponAttempts === weaponAfterOne && broadcasts === 0,
+     `reads ${readsAfterOne} -> ${inventoryReads}, weapon ${weaponAfterOne} -> ${weaponAttempts}`);
+  ok('and is not another idle pass either', p.idlePasses === idleBefore + 1);
 
   p.policy.askForHelp = true;                     // told to
   p.lastPleaAt = 0;
   await p.askForHelp('badly hurt and out of flasks').catch(() => {});
   ok('but the same character, told to, still asks', broadcasts > 0);
+
+  // THE WIRE IS LATIN-1 (pstr in m59-client.mjs). Buffer.from(s, 'latin1') keeps the low
+  // byte of anything it cannot encode, so an em-dash (U+2014) goes out as 0x14 — a control
+  // character in the middle of the one sentence other players are asked to read. Both pleas
+  // had one until #33.
+  const latin1 = s => typeof s === 'string' && [...s].every(ch => ch.charCodeAt(0) <= 0xff);
+  ok('and the plea survives the Latin-1 wire: nothing in it is above 0xFF',
+     latin1(lastPlea), JSON.stringify(lastPlea));
+  p.lastPleaAt = 0;
+  await p.askForHelp().catch(() => {});          // the post-death plea: unarmed, no reason
+  ok('so does the post-death plea', broadcasts === 2 && /killed and lost everything/.test(lastPlea) &&
+     latin1(lastPlea), JSON.stringify(lastPlea));
 }
 
 console.log('\n--- no dead zone between "too hurt to fight" and "hurt enough to rest" ---');

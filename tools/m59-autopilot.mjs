@@ -1487,6 +1487,13 @@ export class Autopilot {
       // Vigor to reach before picking a fight. Resting alone tops out at the rest
       // threshold (80 of 200); anything above it has to be eaten.
       fightAboveVigor: MIN_FIGHT_VIGOR,
+      // Whether to broadcast for a flask or a blade when badly hurt with nothing to heal
+      // with, or unarmed after a death. OFF since 2026-08-27: a fleet on a shared server
+      // does not beg in public. Declared here so `status` shows the default rather than
+      // nothing; askForHelp() gates on `=== true` either way, and the re-equip and
+      // conjure-a-blade attempts before the plea run regardless. Set with `ask_for_help`
+      // on the autopilot tool, in tuning.json, or in a loadout's policy block.
+      askForHelp: false,
       // Disconnect rather than die when a single exchange could finish us. Set false
       // to forbid it — but it is the most effective survival move available when we
       // have nowhere safe to stand, and the penalties the game attaches to logging
