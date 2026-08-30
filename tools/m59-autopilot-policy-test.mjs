@@ -9,7 +9,7 @@
 // floor collapses provisioning's band into a threshold and gives up the health
 // regeneration the food was bought for. shouldWaitForProvision is what stops a fed
 // character idling in an inn, and it is pinned in m59-combat-test.mjs.
-import { applyFightAboveVigor, STRATEGIES, reachableFightFloor } from './m59-autopilot.mjs';
+import { applyFightAboveVigor, STRATEGIES, reachableFightFloor, reagentShopFor } from './m59-autopilot.mjs';
 
 let failed = 0;
 const ok = (label, condition, detail = '') => {
@@ -65,8 +65,24 @@ ok('the resting cap scales with the vigor bar, not a hard-coded 200',
    reachableFightFloor(140, 100, 50) === 90,   // 0.4*100=40 + 50 = 90 -> min(140,90)=90
    `got ${reachableFightFloor(140, 100, 50)}`);
 
+// THE REAGENT SHOP IS ONE TOWN'S ANSWER. Unset keeps Joguer in Barloque; a positive room
+// number in the keeper env moves the herb run, and a name is only for the journal.
+ok('with nothing in the env the reagent shop is Joguer in 104',
+   reagentShopFor({}).room === 104 && /Joguer/.test(reagentShopFor({}).name),
+   JSON.stringify(reagentShopFor({})));
+ok('M59_REAGENT_SHOP_ROOM=53 moves the run to Tos and names the room when no name is given',
+   reagentShopFor({ M59_REAGENT_SHOP_ROOM: '53' }).room === 53
+     && reagentShopFor({ M59_REAGENT_SHOP_ROOM: '53' }).name === 'apothecary (room 53)'
+     && reagentShopFor({ M59_REAGENT_SHOP_ROOM: '53', M59_REAGENT_SHOP_NAME: 'Frisconar, Tos' }).name === 'Frisconar, Tos',
+   JSON.stringify(reagentShopFor({ M59_REAGENT_SHOP_ROOM: '53' })));
+ok('a value that is not a positive room number keeps Joguer rather than pointing at nowhere',
+   reagentShopFor({ M59_REAGENT_SHOP_ROOM: 'Tos' }).room === 104
+     && reagentShopFor({ M59_REAGENT_SHOP_ROOM: '0' }).room === 104
+     && reagentShopFor({ M59_REAGENT_SHOP_ROOM: '-5' }).room === 104,
+   'bad values must fall back');
+
 if (failed) {
   console.error(`\n${failed} failed`);
   process.exit(1);
 }
-console.log('\n14 passed');
+console.log('\n17 passed');

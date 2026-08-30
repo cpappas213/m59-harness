@@ -1119,7 +1119,18 @@ const FOOD_SHOP = { room: 103, name: 'The Bhrama & Falcon, Barloque' };
 // Joguer stands in 104, ONE ROOM from the bread shop, and sells both (m59-merchants.mjs
 // who-sells herb). Barloque has the bread, the apothecary and Roq within a few rooms of
 // each other, which is why every town leg in this file already points at that town.
-const REAGENT_SHOP = { room: 104, name: 'Joguer the apothecary, Barloque' };
+// ONE TOWN'S ANSWER, SO THE KEEPER ENV MAY NAME ANOTHER. A fleet on a Tos graveyard
+// shift was sent to Barloque for herbs across the lethal cross-country leg when Tos has its
+// own apothecary (Frisconar, RID_TOSAPOTH = 53, one hop from Familiars). The room is the
+// decision; the name is only what the journal prints. Unset, or anything that is not a
+// positive room number, keeps Joguer — the same shape as M59_HOST / M59_RATE.
+export function reagentShopFor(env = process.env) {
+  const room = Number(env.M59_REAGENT_SHOP_ROOM);
+  if (Number.isInteger(room) && room > 0)
+    return { room, name: env.M59_REAGENT_SHOP_NAME || `apothecary (room ${room})` };
+  return { room: 104, name: 'Joguer the apothecary, Barloque' };
+}
+const REAGENT_SHOP = reagentShopFor();
 
 // Independent purchase permissions owned by DUM strategies. `undefined` means the
 // historical behaviour (enabled), so an older roster or a standalone keeper does not
