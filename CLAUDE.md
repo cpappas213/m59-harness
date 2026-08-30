@@ -433,6 +433,7 @@ Keepers, deaths and the numbers on the board — [`docs/m59-keeper.md`](docs/m59
 - A keeper earning nothing looks exactly like a healthy one; that is what `yieldCheck` is for, and it was off for a year because `purpose` was missing from a schema.
 - A character can be spoken for, and the board has to say so — ask `isTakeable(committed)`, never `!committed`.
 - A broker that lost a keeper port guesses one and commands whoever is there; two fleets on a machine is the working limit.
+- A wedge broken by a cancel is re-issued by the next pass with the SAME inputs — 589 breaks in 93 minutes, then 18 minutes dying on one square. The arm now counts breaks at a place, `travel()` sidesteps before re-planning and gives up out loud at five, and a hurt body that cannot move swings instead.
 
 What to fight — [`docs/m59-combat.md`](docs/m59-combat.md):
 

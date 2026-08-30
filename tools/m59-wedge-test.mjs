@@ -1,0 +1,374 @@
+#!/usr/bin/env node
+// m59-wedge-test.mjs — A WEDGE BROKEN BY A CANCEL IS A WEDGE RE-ISSUED.
+//
+//   node tools/m59-wedge-test.mjs
+//
+// Offline. Opens no socket, joins nobody, needs no broker, writes no ledger.
+//
+// ======================== WHAT THIS PINS ========================
+//
+// The watchdog's second arm breaks a healthy wedge with `cancelMovement()`, "so the next
+// pass can decide with real numbers — this keeper does not decide anything itself". The
+// numbers were not real. They were IDENTICAL: same square, same room, same destination,
+// same policy. So the next pass issued the same walk, which wedged on the same condition,
+// and the arm broke it again. Measured on `acba925`, one character (issue #37):
+//
+//   93 minutes in room 575 assigned to 586 — 217 passes, 589 wedge-breaks, 28 placement
+//   failures all "movement cancelled by a newer command", zero rooms entered.
+//
+//   18.5 minutes on square 18,18 of room 586 — seven threats in the room, health 22 -> 3,
+//   `squares_per_second: 0` across 46 post-mortem frames, every decision-trail entry a
+//   variant of "moving to somewhere I can heal", and dead to a centipede mid-"travel".
+//   Every rung the ladder had was movement-shaped, and movement was what was not
+//   happening.
+//
+// So this pins three claims, one per suggested fix in the issue:
+//   1. THE BREAK CHANGES THE INPUTS. The arm records where it broke a wedge and how many
+//      times running it has broken one there (`noteWedgeBreak`), and `travel()` reads that
+//      before setting out (`answerWedge`): below the cap the body is sidestepped in a
+//      rotating direction first, so the plan starts from a square that has not wedged.
+//   2. THE LOOP IS BOUNDED. At WEDGE_REPEAT_CAP the pass gives the walk up out loud — one
+//      line, once — and refuses every walk from that place until the hold expires, at
+//      which point the count starts fresh rather than the refusal becoming permanent.
+//   3. WEDGED AND HURT WITH SOMETHING IN REACH TRADES IN PLACE, ahead of every rung that
+//      answers being hurt with distance.
+//
+// It drives the REAL methods — the module's `tick`, and the autopilot's `answerWedge`,
+// `wedgedInPlace` and `tradeInPlaceIfWedged` over a keeper stripped to what they touch —
+// and pins the call sites with source checks, because a rung that exists and is never
+// reached is the failure the second incident is made of.
+
+import { readFileSync } from 'node:fs';
+import * as wd from './m59-watchdog.mjs';
+import { Autopilot } from './m59-autopilot.mjs';
+
+let passed = 0, failed = 0;
+const ok = (what, cond, extra = '') => {
+  if (cond) { passed++; console.log('  ok   ' + what); }
+  else { failed++; console.log('  FAIL ' + what + (extra ? '  ' + extra : '')); }
+};
+
+const AUTOPILOT = readFileSync(new URL('./m59-autopilot.mjs', import.meta.url), 'utf8');
+const WATCHDOG = readFileSync(new URL('./m59-watchdog.mjs', import.meta.url), 'utf8');
+const CAP = wd.WEDGE_REPEAT_CAP;
+const R = wd.WATCHDOG_PINNED_SQUARES;
+
+// ------------------------------------------------------------------ 1. the record
+
+console.log('\nthe record — one wedge is one place, and it counts');
+{
+  const w = wd.freshState();
+  ok('a fresh state carries the field', 'wedgeBreak' in w && w.wedgeBreak === null);
+  const r1 = wd.noteWedgeBreak(w, { room: 586, col: 18, row: 18, doing: 'travelling', to: 586 }, 1000);
+  ok('the first break records one repeat at the place', r1.repeats === 1 && w.wedgeBreak === r1
+     && r1.room === 586 && r1.col === 18 && r1.row === 18 && r1.to === 586);
+  const r2 = wd.noteWedgeBreak(w, { room: 586, col: 18 + R, row: 18 - R, doing: 'zoning' }, 2000);
+  ok('a second break inside the pinned radius is the SAME wedge, counted', r2 === r1 && r1.repeats === 2);
+  ok('...keeping where it started and when, and taking the newest doing',
+     r1.col === 18 && r1.row === 18 && r1.first_at === 1000 && r1.at === 2000 && r1.doing === 'zoning');
+  ok('...and a break with no destination keeps the one already recorded', r1.to === 586);
+  const r3 = wd.noteWedgeBreak(w, { room: 586, col: 18 + R + 1, row: 18 }, 3000);
+  ok('one square past the radius is a new wedge, counted from one', r3 !== r1 && r3.repeats === 1 && r3.col === 18 + R + 1);
+  const r4 = wd.noteWedgeBreak(w, { room: 575, col: 18 + R + 1, row: 18 }, 4000);
+  ok('the same square in a different room is a different wedge', r4.repeats === 1 && r4.room === 575);
+  ok('sameWedgePlace refuses a missing room rather than matching on null',
+     !wd.sameWedgePlace({ room: null, col: 1, row: 1 }, { room: null, col: 1, row: 1 }));
+}
+
+console.log('\nthe advice — vary below the cap, give up at it, nothing from elsewhere');
+{
+  const w = wd.freshState();
+  ok('nothing recorded: no advice', wd.wedgeAdvice(w, { room: 1, col: 1, row: 1 }) === null);
+  wd.noteWedgeBreak(w, { room: 586, col: 18, row: 18, doing: 'travelling', to: 586 }, 0);
+  const a = wd.wedgeAdvice(w, { room: 586, col: 19, row: 18 }, 5000);
+  ok('one break here: vary, with the count and how long this has gone on',
+     a?.verdict === 'vary' && a.repeats === 1 && a.cap === CAP && a.wedged_for_ms === 5000 && a.to === 586);
+  ok('asked from somewhere else: null, and the record is untouched — the function is pure',
+     wd.wedgeAdvice(w, { room: 586, col: 18 + R + 1, row: 18 }) === null && w.wedgeBreak.repeats === 1);
+  for (let i = 1; i < CAP; i++) wd.noteWedgeBreak(w, { room: 586, col: 18, row: 18 }, i * 1000);
+  const g = wd.wedgeAdvice(w, { room: 586, col: 18, row: 18 });
+  ok(`at the cap (${CAP}): give_up`, g?.verdict === 'give_up' && g.repeats === CAP);
+  ok('the cap is read from the environment with a default, not hard-wired',
+     /WEDGE_REPEAT_CAP = Number\(process\.env\.M59_WEDGE_REPEAT_CAP \|\| [\d_]+\)/.test(WATCHDOG));
+}
+
+// ------------------------------------------------------------------ 2. the arm records it
+
+// A host shaped like m59-watchdog-test's, pinned and healthy: doing travelling, blocked
+// for longer than the handbrake, full health, standing on one square.
+function host({ hp = 20, max = 20, blockedMs = 9000, doing = 'travelling', room = 586,
+                col = 18, row = 18 } = {}) {
+  const notes = [];
+  let cancelled = 0;
+  const self = { col, row };
+  const h = {
+    doing, hold: null, inert: null, passes: 1, tally: {},
+    passStartedAt: Date.now() - blockedMs, lastFrameAt: 0,
+    s: { client: { vitals: () => ({ health: { value: hp, max } }), self, room: { id: 9001 }, state: 'game' },
+         world: { room: { num: room } },
+         live: true,
+         cancelMovement: () => { cancelled++; return { cancelled: true, interrupted: 1 }; } },
+    safety: () => ({ fleeAt: 0.4 }),
+    recordFrame(why) { this.lastFrameAt = Date.now(); },
+    note: (what, detail) => notes.push({ what, detail }),
+    progress: () => {},
+    wedgeTarget: () => 586,
+    notes, self, get cancels() { return cancelled; },
+  };
+  h.watch = wd.freshState();
+  return h;
+}
+
+// One pinned episode: pulse twice on the square, tick once to anchor, age the anchor past
+// WATCHDOG_PINNED_MS, tick again so the arm fires.
+function pinAndBreak(h) {
+  const t = Date.now();
+  wd.pulse(h, t - 2000, h.s.client.vitals().health);
+  wd.pulse(h, t - 1000, h.s.client.vitals().health);
+  h.passes += 1;
+  wd.tick(h);
+  h.watch.pinnedSince = Date.now() - wd.WATCHDOG_PINNED_MS - 1000;
+  h.passes += 1;
+  wd.tick(h);
+}
+
+console.log('\nthe module arm — every break at the same place is one more repeat');
+{
+  const h = host();
+  pinAndBreak(h);
+  const b = h.watch.wedgeBreak;
+  ok('the arm cancelled once and recorded the break where the anchor was',
+     h.cancels === 1 && b && b.repeats === 1 && b.room === 586 && b.col === 18 && b.row === 18,
+     JSON.stringify(b));
+  ok('...with what the body was doing and where it was going', b?.doing === 'travelling' && b?.to === 586);
+  const note = h.notes.find(n => n.what.startsWith('WATCHDOG — broke a wedge'));
+  ok('the note carries the count and the cap', note?.detail.repeats_here === 1 && note?.detail.cap === CAP);
+  ok('a first break says nothing about what comes next', note?.detail.note === undefined);
+  h.notes.length = 0;
+  pinAndBreak(h);
+  ok('a second episode at the same square is repeat 2, not a fresh record',
+     h.cancels === 2 && h.watch.wedgeBreak === b && b.repeats === 2);
+  const note2 = h.notes.find(n => n.what.startsWith('WATCHDOG — broke a wedge'));
+  ok('...and the note now says the next pass will sidestep', /sidesteps/.test(note2?.detail.note ?? ''));
+  h.self.col = 18 + R + 3;
+  h.watch.pulses.length = 0;
+  pinAndBreak(h);
+  ok('breaking one somewhere else starts a new record', h.watch.wedgeBreak !== b && h.watch.wedgeBreak.repeats === 1);
+  ok('the pinned interrupt tally still climbs as before', h.tally.watchdog_pinned_interrupts === 3);
+}
+{
+  const h = host();
+  for (let i = 0; i < CAP; i++) pinAndBreak(h);
+  const last = h.notes.filter(n => n.what.startsWith('WATCHDOG — broke a wedge')).pop();
+  ok(`at the cap the arm's own note says the next pass gives up`, h.watch.wedgeBreak.repeats === CAP
+     && /gives up/.test(last?.detail.note ?? ''));
+  ok('the arm still decided nothing — it cancelled, once per episode, and that is all',
+     h.cancels === CAP);
+}
+ok('the autopilot\'s own copy of the arm records the same way',
+   /watchdog\.noteWedgeBreak\(w, \{ room: place\.room, col: place\.col, row: place\.row/.test(AUTOPILOT));
+
+// ------------------------------------------------------------------ 3. the pass's half
+
+// A keeper stripped to what answerWedge / wedgedInPlace / tradeInPlaceIfWedged touch.
+function keeper({ col = 18, row = 18, room = 586, hp = 3, max = 22, fleeAt = 0.7 } = {}) {
+  const notes = [], walks = [], fights = [];
+  const ap = Object.create(Autopilot.prototype);
+  const self = { col, row };
+  ap.watch = wd.freshState();
+  ap.wedgeHold = null;
+  ap.tally = {};
+  ap.policy = {};
+  ap.inert = null;
+  ap.hold = null;
+  ap.holdWorks = () => false;
+  ap.safety = () => ({ fleeAt });
+  ap.who = () => null;                         // recordEvent writes nothing for a nameless keeper
+  ap.recordFrame = () => {};
+  ap.note = (what, detail) => notes.push({ what, detail });
+  ap.progress = () => {};
+  ap.weaponPriorityNow = () => null;
+  ap.fightInPlace = async (target, name) => { fights.push({ target, name }); return { killed: false }; };
+  ap.s = {
+    client: { self, room: { id: 9001 }, rsc: { get: id => ({ 1: 'centipede', 2: 'giant rat' })[id] ?? '' },
+              vitals: () => ({ health: { value: hp, max } }) },
+    world: { room: { num: room } },
+    // The fake mover MOVES the body, so "did the sidestep change the start square" is a
+    // real question with a real answer rather than a fixture agreeing with itself.
+    walkTo: async (c, r, opts) => { walks.push({ col: c, row: r, opts }); self.col = c; self.row = r; return { arrived: true }; },
+  };
+  return { ap, notes, walks, fights, self };
+}
+const breakAt = (ap, n, place = { room: 586, col: 18, row: 18 }, doing = 'travelling') => {
+  for (let i = 0; i < n; i++) wd.noteWedgeBreak(ap.watch, { ...place, doing, to: 586 }, Date.now() - (n - i) * 1000);
+};
+
+console.log('\nanswerWedge — nothing recorded, nothing changes');
+{
+  const { ap, walks } = keeper();
+  const r = await ap.answerWedge(586);
+  ok('no record: null, and the mover was not touched', r === null && walks.length === 0);
+}
+
+console.log('\nanswerWedge — below the cap, the walk starts from a different square');
+{
+  const { ap, notes, walks, self } = keeper();
+  breakAt(ap, 1);
+  const r1 = await ap.answerWedge(586);
+  ok('one break here: the body is sidestepped before the plan',
+     r1?.sidestepped === true && r1.moved === true && walks.length === 1, JSON.stringify(r1));
+  ok('...two squares, so the step clears the melee disc and the endpoint slide',
+     walks[0] && Math.max(Math.abs(walks[0].col - 18), Math.abs(walks[0].row - 18)) === 2);
+  ok('...and it is a short walk, not a journey', walks[0]?.opts?.maxSteps === 6);
+  const n1 = notes.find(n => n.what === 'wedge — sidestepping before re-planning');
+  ok('the note says where from, where to, and that it moved',
+     n1?.detail.from === '18,18' && n1.detail.moved === true && n1.detail.repeats === 1 && n1.detail.wanted === 586);
+  ok('the tally counts it', ap.tally.wedge_sidesteps === 1);
+  ok('the record is kept — a sidestep is inside the radius, so a further wedge counts on',
+     ap.watch.wedgeBreak?.repeats === 1);
+  // The same wedge again, one square over.
+  wd.noteWedgeBreak(ap.watch, { room: 586, col: self.col, row: self.row, doing: 'travelling' });
+  const r2 = await ap.answerWedge(586);
+  ok('the second break aims a DIFFERENT way', r2?.direction && r2.direction !== r1.direction
+     && walks.length === 2, `${r1?.direction} then ${r2?.direction}`);
+}
+
+console.log('\nanswerWedge — the body got somewhere, so the wedge is over');
+{
+  const { ap, walks, self } = keeper();
+  breakAt(ap, 2);
+  self.col = 18 + R + 1;
+  const r = await ap.answerWedge(586);
+  ok('a record about somewhere else answers null and is dropped', r === null && ap.watch.wedgeBreak === null && walks.length === 0);
+}
+{
+  const { ap, walks } = keeper();
+  breakAt(ap, 2);
+  ap.s.client.self = null;
+  const r = await ap.answerWedge(586);
+  ok('an unknown position is not evidence of having moved — the record is kept',
+     r === null && ap.watch.wedgeBreak?.repeats === 2 && walks.length === 0);
+}
+
+console.log('\nanswerWedge — at the cap the walk is refused, once, out loud, for a while');
+{
+  const { ap, notes, walks } = keeper();
+  breakAt(ap, CAP);
+  const r = await ap.answerWedge(586);
+  ok('at the cap: refused and gave up, no sidestep, no walk',
+     r?.refused === true && r.gave_up === true && r.repeats === CAP && walks.length === 0, JSON.stringify(r));
+  const g = notes.filter(n => n.what.startsWith('WATCHDOG — gave up'));
+  ok('one line, naming the square, the count and the destination',
+     g.length === 1 && g[0].detail.square === '18,18' && g[0].detail.room === 586 && g[0].detail.wanted === 586
+     && /went nowhere/.test(g[0].what));
+  ok('the hold is set from here, with an expiry', ap.wedgeHold && ap.wedgeHold.repeats === CAP
+     && ap.wedgeHold.until > Date.now() && ap.tally.wedge_giveups === 1);
+  const r2 = await ap.answerWedge(586);
+  ok('the next pass is refused fast — and does NOT write another line',
+     r2?.refused === true && notes.filter(n => n.what.startsWith('WATCHDOG — gave up')).length === 1);
+  ok('...the refusal says how long is left', /holding for \d+s more/.test(r2?.why ?? ''));
+  ok('while held, wedgedInPlace still says yes', !!ap.wedgedInPlace());
+  ap.wedgeHold.until = Date.now() - 1;
+  const r3 = await ap.answerWedge(586);
+  ok('the hold expiring drops the record: a fresh count, not a permanent refusal',
+     r3 === null && ap.wedgeHold === null && ap.watch.wedgeBreak === null);
+}
+{
+  const { ap, self } = keeper();
+  breakAt(ap, CAP);
+  await ap.answerWedge(586);
+  self.col = 18 + R + 1;
+  const r = await ap.answerWedge(586);
+  ok('moving away from a held place ends the hold', r === null && ap.wedgeHold === null);
+}
+ok('the hold length is read from the environment with a default',
+   /WEDGE_GIVEUP_HOLD_MS = Number\(process\.env\.M59_WEDGE_GIVEUP_HOLD_MS \|\| [\d_]+\)/.test(WATCHDOG));
+
+console.log('\nwedgedInPlace — four signals, because the arm only fires at full health');
+{
+  const { ap } = keeper();
+  ok('a fresh keeper is not wedged', ap.wedgedInPlace() === null);
+  breakAt(ap, 1);
+  ok('a break recorded here says so', /1 walk/.test(ap.wedgedInPlace()?.why ?? ''));
+  ap.watch.wedgeBreak = null;
+  ap.watch.wedged = { since: Date.now() - 5000 };
+  ok('the same square for five seconds is not a wedge yet', ap.wedgedInPlace() === null);
+  ap.watch.wedged = { since: Date.now() - wd.WATCHDOG_PINNED_MS - 1000 };
+  ok('the same square past WATCHDOG_PINNED_MS is — with no arm having fired',
+     /same square/.test(ap.wedgedInPlace()?.why ?? ''));
+  ap.watch.wedged = null;
+  ap.watch.pinnedSince = Date.now() - wd.WATCHDOG_PINNED_MS - 1000;
+  ok('so is an anchor that old', /no ground/.test(ap.wedgedInPlace()?.why ?? ''));
+}
+
+console.log('\ntradeInPlaceIfWedged — hurt, wedged, something in reach: swing, do not walk');
+{
+  const near = [{ id: 8, col: 17, row: 17, nameRsc: 2 }, { id: 9, col: 19, row: 18, nameRsc: 1 }];
+  const v = { health: { value: 3, max: 22 } };
+  {
+    const { ap, notes, fights } = keeper();
+    ap.watch.wedged = { since: Date.now() - wd.WATCHDOG_PINNED_MS - 1000 };
+    const r = await ap.tradeInPlaceIfWedged({ near, v });
+    ok('fires: 3 of 22, wedged, two in reach', r === true && fights.length === 1);
+    ok('...at the NEAREST one, by name and by id', fights[0].target.id === 9 && fights[0].name === 'centipede');
+    const n = notes.find(x => x.what === 'wedged and hurt with something in reach — trading in place');
+    ok('...and says why in the trail', !!n && n.detail.target === 'centipede' && n.detail.in_reach === 2
+       && n.detail.health === '3/22');
+    ok('...counted', ap.tally.wedge_trades === 1);
+  }
+  {
+    const { ap, fights } = keeper();
+    ok('not wedged: not this rung', await ap.tradeInPlaceIfWedged({ near, v }) === false && fights.length === 0);
+  }
+  {
+    const { ap, fights } = keeper();
+    ap.watch.wedged = { since: Date.now() - wd.WATCHDOG_PINNED_MS - 1000 };
+    ok('nothing in reach: nothing to trade with', await ap.tradeInPlaceIfWedged({ near: [], v }) === false && fights.length === 0);
+    ok('above the flee line: the ordinary fight rung owns it',
+       await ap.tradeInPlaceIfWedged({ near, v: { health: { value: 20, max: 22 } } }) === false && fights.length === 0);
+    ap.holdWorks = () => true;
+    ok('behind a working wall: the rest rung owns it', await ap.tradeInPlaceIfWedged({ near, v }) === false);
+    ap.holdWorks = () => false;
+    ap.policy.tradeInPlaceWhenWedged = false;
+    ok('switched off per character: off', await ap.tradeInPlaceIfWedged({ near, v }) === false);
+  }
+  {
+    const { ap, fights } = keeper();
+    ap.watch.wedged = { since: Date.now() - wd.WATCHDOG_PINNED_MS - 1000 };
+    ap.fightInPlace = async () => { throw new Error('socket went away'); };
+    const r = await ap.tradeInPlaceIfWedged({ near, v });
+    ok('a swing that throws is handled, not a pass that dies', r === true && fights.length === 0);
+  }
+  const fip = AUTOPILOT.slice(AUTOPILOT.indexOf('  fightInPlace(target, name = null) {'));
+  ok('the swing holds position and never disengages — moving is the thing that is not working',
+     /holdPosition: true/.test(fip.slice(0, 600)) && /disengageAt: 0/.test(fip.slice(0, 600)));
+}
+
+// ------------------------------------------------------------------ 4. the call sites
+
+console.log('\nthe call sites — a rung that is never reached is the second incident');
+{
+  const travel = AUTOPILOT.indexOf('  async travel(room, opts) {');
+  const answer = AUTOPILOT.indexOf('await this.answerWedge(Number(room))', travel);
+  const restFirst = AUTOPILOT.indexOf('await this.restBeforeSettingOut()', travel);
+  ok('travel() asks answerWedge at the single gate, before setting out',
+     travel > 0 && answer > travel && restFirst > answer);
+  const refused = AUTOPILOT.indexOf('wedged: true, gave_up: true', answer);
+  ok('...and a give-up refuses the journey the way the confinement does', refused > answer && refused < restFirst);
+
+  const ladder = AUTOPILOT.indexOf('  async passFleeAndRest(ctx) {');
+  const trade = AUTOPILOT.indexOf('await this.tradeInPlaceIfWedged({ near, v })', ladder);
+  const town = AUTOPILOT.indexOf('hurt in the open — running for a town rather than playing dead', ladder);
+  const heal = AUTOPILOT.indexOf('not waiting this out — moving to somewhere I can heal', ladder);
+  const exit = AUTOPILOT.indexOf('const mustLeaveForHealth = belowRoomRetreatHealth', ladder);
+  ok('the ladder trades in place BEFORE running for a town', ladder > 0 && trade > ladder && town > trade);
+  ok('...before "moving to somewhere I can heal"', heal > trade);
+  ok('...and before taking the nearest exit', exit > trade);
+
+  const arm = WATCHDOG.indexOf('WATCHDOG — broke a wedge that was not hurting anybody');
+  ok('the module arm records the break before it writes the note', WATCHDOG.lastIndexOf('noteWedgeBreak(w,', arm) > 0);
+  ok('the status snapshot exposes the wedge, so one poll shows the loop', /^\s+wedge: this\.watch\?\.wedgeBreak \? \{/m.test(AUTOPILOT));
+}
+
+console.log(`\n${passed} passed, ${failed} failed`);
+process.exit(failed ? 1 : 0);

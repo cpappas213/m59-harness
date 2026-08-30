@@ -118,6 +118,64 @@ Split out of [`CLAUDE.md`](../CLAUDE.md). Postmortems, the watchdog, the yield c
   exactly the same restart reason), so a row honestly reading `134` and `0` is not a
   contradiction: the two columns are on different clocks and neither is the other's rate.
 
+## A wedge broken by a cancel is a wedge re-issued
+
+The second arm of the watchdog — "wedged while perfectly healthy" — has exactly one action,
+`cancelMovement()`, and its own comment says why: "so the next pass can decide with real
+numbers — this keeper does not decide anything itself". That is the right division of
+labour and it had a hole in it. **The numbers were not real. They were identical**: the
+next pass re-decided from the same square, in the same room, with the same destination and
+the same policy, so it emitted the same walk, which wedged on the same server-side
+condition, and the arm broke it again. Measured on `acba925`, one character, two
+incidents (issue #37):
+
+| | where | how long | what the record showed |
+|---|---|---|---|
+| transit stall | room 575, assigned to 586 | 93 minutes, 217 passes | 589 wedge-breaks, 28 placement failures all reading `movement cancelled by a newer command`, zero rooms entered |
+| death | square 18,18 of room 586 | 18.5 minutes | seven threats in the room, health 22 → 3, `squares_per_second: 0` across 46 frames, every decision-trail entry a variant of "moving to somewhere I can heal", killed by a centipede mid-"travel" |
+
+The second is the worse one, and it is a second hole rather than the same one. Below the
+flee line with something adjacent, every rung the ladder had was **movement-shaped** —
+run for a town, a route-adjacent spot, "somewhere I can heal", the nearest exit — and the
+in-place rungs each refused for their own correct reason ("a freeze recovers no health").
+Movement was the thing that was not happening, so the ladder chose it eighteen minutes
+running, from a square the body never left. At 3 of 22 with a mace, one swing at the
+adjacent centipede had more expected value than the eighteenth minute of "moving".
+
+Three changes, one per hole and one for the bound, and none of them moves a decision
+into the watchdog:
+
+- **The break records where it happened and counts.** Both copies of the arm — the module's
+  `tick` and the autopilot's `watchdogTick` — call `noteWedgeBreak` with the pinned anchor
+  (where the wedge *started*, which a pocket-wanderer's newest pulse is not), and
+  consecutive breaks within the pinned radius are one wedge with a climbing `repeats`.
+  The note carries `repeats_here` and the `status` snapshot carries `wedge`, so one poll
+  shows the loop instead of 217 identical trail entries.
+- **`travel()` reads it at the single gate, before setting out** — the same gate the
+  confinement is enforced at, for the same reason: the loop is a property of re-issuing,
+  not of any one caller. Below `WEDGE_REPEAT_CAP` (5) the body is **sidestepped two squares
+  in a rotating direction first**, so the plan starts from the one input the planner cannot
+  get from the map. At the cap the pass **gives up out loud, once** — `WATCHDOG — gave up:
+  5 walks from the same square went nowhere` — and every walk from that place is refused
+  fast, without a new line, until `WEDGE_GIVEUP_HOLD_MS` (2 minutes) expires. Then the
+  record is dropped and the count starts fresh: a transient wedge earns another try, a
+  permanent one earns another single line two minutes later, which is a cadence an operator
+  can read and `m59-recordjam.mjs` can be pointed at. Moving away drops the record too; an
+  unknown position does not, because "I do not know where I am" is not evidence of having
+  moved.
+- **Wedged, hurt and something in reach trades in place**, ahead of every rung that answers
+  being hurt with distance. `tradeInPlaceIfWedged` is gated on being below the flee line
+  with no working wall, and `wedgedInPlace` answers from four signals — a recorded break,
+  a hold, the pulse's same-square episode past `WATCHDOG_PINNED_MS`, or an anchor that old
+  — because the arm itself only fires at full health and the character in the second
+  incident was being eaten. The swing holds position and never disengages: disengaging is
+  what was already not working. `trade_in_place_when_wedged: false` switches it off per
+  character.
+
+`node tools/m59-wedge-test.mjs` (66) is the guard, and it pins the call sites by source as
+well as the methods by driving them — a rung that exists and is never reached is what the
+second incident was made of.
+
 ## Being spoken for, and earning nothing
 
 - **A CHARACTER CAN BE SPOKEN FOR, AND THE BOARD HAS TO SAY SO.** A loot run, a

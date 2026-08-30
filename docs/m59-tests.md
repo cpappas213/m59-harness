@@ -284,6 +284,27 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   a broker too old to send `in_roster`, because reading undefined as "not mine" would report
   an empty fleet, which is the louder bug. The rule itself is in `m59-agent-name.mjs`
   precisely so it can be asked a question without starting a broker) and
+  `node tools/m59-wedge-test.mjs` (66 — **a wedge broken by a cancel is a wedge re-issued**.
+  The watchdog's second arm breaks a healthy wedge with `cancelMovement()` "so the next
+  pass can decide with real numbers", and the numbers were identical — same square, same
+  room, same destination — so the next pass issued the same walk and the arm broke it
+  again: 589 times in 93 minutes on one character, then 18 minutes on one square with
+  seven threats in the room and every decision-trail entry a variant of "moving to
+  somewhere I can heal", dead to a centipede mid-"travel" (issue #37). Pins that both
+  arms record WHERE they broke a wedge and count consecutive breaks at that place with the
+  pinned radius (`noteWedgeBreak`), that `travel()` reads the record at its single gate
+  before setting out (`answerWedge`) — below `WEDGE_REPEAT_CAP` the body is sidestepped two
+  squares in a rotating direction so the plan starts from a square that has not wedged, at
+  the cap the walk is refused once out loud and every walk from that place is refused fast
+  until `WEDGE_GIVEUP_HOLD_MS` expires, after which the count starts fresh rather than the
+  refusal becoming permanent; that moving away drops the record and an unknown position
+  does not; that `wedgedInPlace` answers from four signals because the arm only fires at
+  full health; that `tradeInPlaceIfWedged` swings at the nearest thing in reach when hurt,
+  wedged and unsheltered — and not otherwise — holding position and never disengaging; and,
+  by source, that the ladder reaches it BEFORE every rung that answers being hurt with
+  distance, because a rung that exists and is never reached is what the second incident
+  was made of. The fake mover MOVES the body, so "did the sidestep change the start
+  square" has a real answer) and
   `node tools/m59-lasterror-test.mjs` (28 — **`last_error` is the field the status snapshot
   calls "the one field worth reading before anything else", and it was write-once for the
   life of the process**. Set in two places, cleared in one: the constructor. So it meant

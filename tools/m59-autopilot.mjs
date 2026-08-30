@@ -784,6 +784,16 @@ const WATCHDOG_FRAME_MS = Number(process.env.M59_WATCHDOG_FRAME_MS || 8_000);
 // from one place now, so they cannot disagree on top of everything else.
 const WATCHDOG_PINNED_MS = watchdog.WATCHDOG_PINNED_MS;
 const WATCHDOG_PINNED_SQUARES = watchdog.WATCHDOG_PINNED_SQUARES;
+// WHERE A WEDGED BODY IS MOVED BEFORE THE WALK IS RE-PLANNED, indexed by how many times the
+// watchdog has broken a wedge at that place. Two squares, because one is inside the melee
+// disc and the slide the client does on a blocked endpoint, and eight headings so that
+// consecutive attempts never aim the same way. See `answerWedge`.
+const WEDGE_SIDESTEPS = [
+  { name: 'east',       dc:  2, dr:  0 }, { name: 'west',       dc: -2, dr:  0 },
+  { name: 'south',      dc:  0, dr:  2 }, { name: 'north',      dc:  0, dr: -2 },
+  { name: 'south-east', dc:  2, dr:  2 }, { name: 'north-west', dc: -2, dr: -2 },
+  { name: 'north-east', dc:  2, dr: -2 }, { name: 'south-west', dc: -2, dr:  2 },
+];
 // HOW LONG BETWEEN TWO BLOWS STILL COUNTS AS ONE ATTACK. Damage lands about once a second
 // and misses are ordinary, so a single quiet second is not the end of a fight; six of them
 // is. Only the fight-back edict reads this — see `fightBackCheck`.
@@ -1653,6 +1663,8 @@ export class Autopilot {
     // wound without a second poll.
     this.lastError = null;
     this.lastErrorAt = null;
+    // Where the pass last gave up walking from, and until when. See `answerWedge`.
+    this.wedgeHold = null;
     // Was the session live when it threw? `false` during a breakout window is the
     // self-inflicted, self-healing kind; `true` is a real one. One boolean in the journal
     // is the difference between a five-second check and an afternoon's investigation.
@@ -5670,6 +5682,20 @@ export class Autopilot {
                why: `room ${room} is outside the confinement ${confine.join('/')}` };
     }
 
+    // AND NOT FROM A SQUARE THE WATCHDOG HAS ALREADY BROKEN A WALK ON. Here, at the same
+    // single gate, for the same reason the confinement is: every keeper journey passes
+    // through it, and the loop this closes — cancel, re-issue the identical walk, cancel —
+    // is a property of re-issuing, not of any one caller. Below the cap the body is moved
+    // a couple of squares first so the plan starts somewhere new; at the cap the journey
+    // is refused the way the confinement refuses one, and the pass falls through. See
+    // `answerWedge` and WEDGE_REPEAT_CAP in m59-watchdog.mjs.
+    const wedge = await this.answerWedge(Number(room)).catch(e => {
+      this.note('wedge check failed', { why: e.message }); return null;
+    });
+    if (wedge?.refused) {
+      return { arrived: false, refused: true, wedged: true, gave_up: true, why: wedge.why };
+    }
+
     // AND SET OUT FIT, IF THIS IS SOMEWHERE FIT CAN BE HAD FOR FREE. Above the journey
     // rather than inside it, because the question is about LEAVING: once the first boundary
     // is crossed the character is on the road and the mid-journey hold owns the decision.
@@ -7927,6 +7953,20 @@ export class Autopilot {
       // How many passes in a row have failed. 1 is a blip; a climbing number is a keeper
       // that is not going to get out of it on its own.
       failing_passes: this.consecutivePassFailures || 0,
+      // WHETHER THE WATCHDOG IS BREAKING THE SAME WEDGE OVER AND OVER, which used to be
+      // visible only as a climbing `watchdog_pinned_interrupts` and 217 identical notes.
+      // `repeats` climbing at one square is the loop; `gave_up` is the pass declining to
+      // feed it. Null when nothing is recorded.
+      wedge: this.watch?.wedgeBreak ? {
+        room: this.watch.wedgeBreak.room,
+        square: `${this.watch.wedgeBreak.col},${this.watch.wedgeBreak.row}`,
+        repeats: this.watch.wedgeBreak.repeats, cap: watchdog.WEDGE_REPEAT_CAP,
+        doing: this.watch.wedgeBreak.doing, to: this.watch.wedgeBreak.to,
+        for_s: Math.round((Date.now() - this.watch.wedgeBreak.first_at) / 1000),
+        gave_up: !!(this.wedgeHold && Date.now() < this.wedgeHold.until),
+        hold_left_s: this.wedgeHold && Date.now() < this.wedgeHold.until
+          ? Math.round((this.wedgeHold.until - Date.now()) / 1000) : null,
+      } : null,
       // The one field worth reading before anything else, and it now means what it says:
       // the most recent error THAT HAS NOT SINCE BEEN RECOVERED FROM. A completed pass on
       // a live session clears it (see loop()). Everything this keeper got
@@ -9151,7 +9191,10 @@ export class Autopilot {
                    pulses: [], lastPulseAt: 0, wedged: null, wedges: 0,
                    // Where the body was when it last stopped covering ground, and how many
                    // times that has had to be broken. See THE SECOND ARM in watchdogTick.
-                   pinnedSince: null, pinnedAnchor: null, pinnedInterrupts: 0 };
+                   pinnedSince: null, pinnedAnchor: null, pinnedInterrupts: 0,
+                   // Where the arm last broke a wedge and how many times running it has
+                   // broken one there. See WEDGE_REPEAT_CAP in m59-watchdog.mjs.
+                   wedgeBreak: null };
     this.watchTimer = setInterval(() => {
       try { this.watchdogTick(); } catch (e) { this.watch.lastError = e.message; }
     }, WATCHDOG_MS);
@@ -9585,23 +9628,42 @@ export class Autopilot {
       if (pinnedFor < WATCHDOG_PINNED_MS) return;
       w.interruptedPass = this.passes;
       w.pinnedInterrupts = (w.pinnedInterrupts ?? 0) + 1;
+      // The anchor is where the wedge STARTED, which is the place to remember it by: a
+      // pocket-wanderer's newest pulse moves and its anchor does not.
+      const place = w.pinnedAnchor ?? spot ?? null;
       w.pinnedSince = null; w.pinnedAnchor = null;
       this.tally.watchdog_pinned_interrupts = (this.tally.watchdog_pinned_interrupts || 0) + 1;
       const broke = (() => {
         try { return this.s.cancelMovement(); }
         catch (e) { return { cancelled: false, why: e.message }; }
       })();
+      // AND THE RECORD THAT MAKES THE NEXT DECISION DIFFERENT. "The next pass can decide
+      // with real numbers" was the claim, and the numbers were identical — same square,
+      // same room, same destination — so the next pass re-issued the same walk and this arm
+      // broke it again: 589 times in 93 minutes on one character, and 18 minutes on one
+      // square with seven threats in the room on the same character, who then died mid-
+      // "travel". `answerWedge` reads this before the next walk is issued. See
+      // WEDGE_REPEAT_CAP in m59-watchdog.mjs.
+      const record = place ? watchdog.noteWedgeBreak(w, { room: place.room, col: place.col, row: place.row,
+                                                          doing: this.doing ?? null,
+                                                          to: this.wedgeTarget() }, now) : null;
       this.note('WATCHDOG — broke a wedge that was not hurting anybody', {
         health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
         doing: this.doing ?? null,
         penned_for_s: Math.round(pinnedFor / 1000),
         pass_blocked_for_s: Math.round(blockedFor / 1000),
-        square: spot ? `${spot.col},${spot.row}` : null, room: spot?.room ?? null,
+        square: place ? `${place.col},${place.row}` : null, room: place?.room ?? null,
         interrupted: broke.interrupted ?? null,
+        repeats_here: record?.repeats ?? null, cap: watchdog.WEDGE_REPEAT_CAP,
         why: 'covering no ground for ' + Math.round(pinnedFor / 1000) + 's while ' +
              (this.doing ?? 'going somewhere') + ', and full health meant nothing else here ' +
              'would ever interrupt it. The walk is cancelled so the next pass can decide ' +
              'with real numbers — this keeper does not decide anything itself',
+        note: record && record.repeats >= watchdog.WEDGE_REPEAT_CAP
+          ? 'broken ' + record.repeats + ' times at this place — the next pass gives up rather than re-issuing the walk'
+          : record && record.repeats > 1
+            ? 'broken ' + record.repeats + ' times at this place — the next pass sidesteps before re-planning'
+            : undefined,
       });
       this.progress('watchdog broke a healthy wedge');
       return;
@@ -9654,6 +9716,208 @@ export class Autopilot {
            'anything itself',
     });
     this.progress('watchdog interrupted a blind walk');
+  }
+
+  // ------------------------------------------------------------ the wedge, answered
+  //
+  // THE PASS'S HALF OF THE WEDGE-BREAK. The second arm above records where it broke a
+  // wedge and how many times running it has broken one at that place; nothing in the
+  // watchdog decides anything, and that is still true. These are what the PASS does with
+  // the record, which is the part that was missing: without it the next pass re-decided
+  // from the same square with the same destination, issued the same walk, and the arm
+  // broke it again, for hours. The argument and the two incidents are beside
+  // WEDGE_REPEAT_CAP in m59-watchdog.mjs; the guard is m59-wedge-test.mjs.
+
+  // The objective, for the record: a journey's destination if one is in flight.
+  wedgeTarget() { return this.travelling?.to ?? null; }
+
+  // Where the body is, in the terms the record is kept in. Null when nobody knows.
+  wedgePlace() {
+    const c = this.s?.client, me = c?.self;
+    const room = this.s?.world?.room?.num ?? c?.room?.id ?? null;
+    if (!me || room == null || me.col == null || me.row == null) return null;
+    return { room, col: me.col, row: me.row };
+  }
+
+  // The record, if it is about HERE. A record about somewhere else means the body has got
+  // somewhere since, so the wedge is over, and it is dropped so the next one counts from
+  // one. A record with no known position is left alone: "I do not know where I am" is not
+  // evidence of having moved.
+  wedgeHere(now = Date.now()) {
+    const w = this.watch;
+    if (!w?.wedgeBreak) return null;
+    const here = this.wedgePlace();
+    if (!here) return null;
+    const advice = watchdog.wedgeAdvice(w, here, now);
+    if (!advice) { w.wedgeBreak = null; this.wedgeHold = null; }
+    return advice;
+  }
+
+  // IS THE BODY WEDGED WHERE IT STANDS — asked by the ladder, which needs a yes before it
+  // will spend a rung on something other than movement. Any of four signals says yes: the
+  // arm has broken a walk at this place, the pass has given up walking from it, the pulse
+  // has seen the same square for WATCHDOG_PINNED_MS, or the pinned anchor has aged that
+  // long. The last two are here because the first two need the arm to have FIRED, and the
+  // arm is gated on full health: a character being eaten on one square for eighteen
+  // minutes never tripped it, and that is the incident this exists for.
+  wedgedInPlace(now = Date.now()) {
+    const w = this.watch;
+    if (!w) return null;
+    const here = this.wedgePlace();
+    const b = w.wedgeBreak;
+    if (b && here && watchdog.sameWedgePlace(b, here))
+      return { why: b.repeats + ' walk(s) cancelled here', for_ms: now - b.first_at, repeats: b.repeats };
+    const h = this.wedgeHold;
+    if (h && here && watchdog.sameWedgePlace(h, here) && now < h.until)
+      return { why: 'gave up walking from here', for_ms: now - h.at, repeats: h.repeats };
+    if (w.wedged && now - w.wedged.since >= WATCHDOG_PINNED_MS)
+      return { why: 'same square for ' + Math.round((now - w.wedged.since) / 1000) + 's',
+               for_ms: now - w.wedged.since, repeats: 0 };
+    if (w.pinnedSince && now - w.pinnedSince >= WATCHDOG_PINNED_MS)
+      return { why: 'covered no ground for ' + Math.round((now - w.pinnedSince) / 1000) + 's',
+               for_ms: now - w.pinnedSince, repeats: 0 };
+    return null;
+  }
+
+  // ASKED BY `travel()` BEFORE IT SETS OUT, so a walk issued from a place the arm has
+  // already broken one at starts from somewhere else — or is not issued at all.
+  //
+  //   null                       nothing recorded here; plan as before
+  //   { sidestepped }            the body was moved a couple of squares first — proceed,
+  //                              the planner now starts from a square that has not wedged
+  //   { refused, gave_up }       the cap was reached; the caller refuses the journey the
+  //                              way the confinement gate does, and the pass falls through
+  //                              to what it does when it cannot travel
+  //
+  // The sidestep rotates through eight directions on `repeats`, so two consecutive
+  // attempts never aim the same way, and a step the map refuses simply does not move the
+  // body — the next break then counts, and the cap still bounds the whole episode.
+  //
+  // THE HOLD OUTLIVES THE RECORD. Giving up sets `wedgeHold`, and every `travel()` from
+  // that place is refused fast until it expires, without a new note per pass — the
+  // decision trail was already 217 identical entries long once, and that was the problem.
+  // Moving away, or the hold expiring, drops both so the next episode starts a fresh
+  // count: a wedge that was genuinely transient earns another try, and one that was not
+  // earns another single line, two minutes later, which is the cadence an operator can
+  // read.
+  async answerWedge(to = null) {
+    const now = Date.now();
+    const w = this.watch;
+    const hold = this.wedgeHold;
+    if (hold) {
+      const here = this.wedgePlace();
+      if (here && watchdog.sameWedgePlace(hold, here) && now < hold.until) {
+        this.progress('wedged here — holding in place rather than re-issuing the walk');
+        return { refused: true, gave_up: true, held_for_ms: hold.until - now,
+                 why: `gave up walking from ${hold.col},${hold.row} in room ${hold.room} ` +
+                      `${Math.round((now - hold.at) / 1000)}s ago — ${hold.repeats} walks from it went ` +
+                      `nowhere; holding for ${Math.round((hold.until - now) / 1000)}s more` };
+      }
+      this.wedgeHold = null;
+      if (w) w.wedgeBreak = null;
+    }
+    const advice = this.wedgeHere(now);
+    if (!advice) return null;
+    const square = `${advice.col},${advice.row}`;
+    if (advice.verdict === 'give_up') {
+      this.wedgeHold = { room: advice.room, col: advice.col, row: advice.row,
+                         repeats: advice.repeats, to, at: now,
+                         until: now + watchdog.WEDGE_GIVEUP_HOLD_MS };
+      this.tally.wedge_giveups = (this.tally.wedge_giveups || 0) + 1;
+      this.note('WATCHDOG — gave up: ' + advice.repeats + ' walks from the same square went nowhere', {
+        room: advice.room, square, wanted: to, doing: advice.doing,
+        wedged_for_s: Math.round(advice.wedged_for_ms / 1000),
+        hold_s: Math.round(watchdog.WEDGE_GIVEUP_HOLD_MS / 1000),
+        why: 'the watchdog broke a wedge here ' + advice.repeats + ' times and every pass ' +
+             're-issued the same walk from the same square. Cancelling changes nothing when ' +
+             'the inputs do not, so this converts an unbounded loop into a bounded one: no ' +
+             'walk is issued from this place until the hold expires, and the pass falls ' +
+             'through to whatever it does when it cannot travel',
+        note: 'the objective is not thrown away — the hold expires and the next attempt ' +
+              'starts a fresh count. If this line repeats at the same square, the square ' +
+              'is the problem: record it with m59-recordjam.mjs',
+      });
+      recordEvent(this.who(), 'wedge_gave_up', {
+        room: advice.room, col: advice.col, row: advice.row, to, repeats: advice.repeats,
+        wedged_for_ms: advice.wedged_for_ms,
+      });
+      this.recordFrame('gave up a wedge');
+      return { refused: true, gave_up: true, repeats: advice.repeats,
+               why: `${advice.repeats} walks from ${square} in room ${advice.room} went nowhere` };
+    }
+    // vary: start the next plan from a different square.
+    const from = this.wedgePlace();
+    if (!from) return null;
+    const d = WEDGE_SIDESTEPS[(advice.repeats - 1) % WEDGE_SIDESTEPS.length];
+    const aim = { col: from.col + d.dc, row: from.row + d.dr };
+    let out;
+    try { out = await this.s.walkTo(aim.col, aim.row, { maxSteps: 6 }); }
+    catch (e) { out = { arrived: false, reason: e.message }; }
+    const after = this.wedgePlace();
+    const moved = !!after && (after.room !== from.room || after.col !== from.col || after.row !== from.row);
+    this.tally.wedge_sidesteps = (this.tally.wedge_sidesteps || 0) + 1;
+    this.note('wedge — sidestepping before re-planning', {
+      repeats: advice.repeats, cap: advice.cap, direction: d.name,
+      from: `${from.col},${from.row}`, aimed: `${aim.col},${aim.row}`,
+      now: after ? `${after.col},${after.row}` : null, moved,
+      arrived: out?.arrived ?? null, reason: out?.reason ?? out?.why ?? null,
+      wanted: to,
+      why: 'the watchdog broke a wedge here and the next walk would start from the same ' +
+           'square with the same destination. The one input the planner cannot get from ' +
+           'the map is where it starts, so change that first',
+    });
+    return { sidestepped: true, moved, direction: d.name };
+  }
+
+  // WEDGED, HURT, AND SOMETHING IN REACH: TRADE IN PLACE. Asked by the ladder ahead of
+  // every movement-shaped rung. The post-mortem this answers had the ladder rejecting
+  // freeze and rest each for its own correct reason — "a freeze recovers no health" — and
+  // then choosing "moving to somewhere I can heal" eighteen minutes running from a square
+  // the body never left, at 3 of 22 with a mace and a centipede adjacent. Every rung it
+  // had was movement-shaped, and movement was the thing that was not happening. A swing
+  // at what is hitting us is the only rung that changes anything from here, and it is
+  // strictly better than standing still being hit.
+  //
+  // Gated on being BELOW THE FLEE LINE with something in swing range and no working wall,
+  // because above it the ordinary fight rung is the right one and behind a wall the rest
+  // rung is. `trade_in_place_when_wedged: false` switches it off per character.
+  async tradeInPlaceIfWedged({ near = [], v = null } = {}) {
+    if (this.policy?.tradeInPlaceWhenWedged === false) return false;
+    if (!near.length || this.hold || this.holdWorks()) return false;
+    const frac = pct(v?.health);
+    if (frac === null || frac >= this.safety().fleeAt) return false;
+    const wedge = this.wedgedInPlace();
+    if (!wedge) return false;
+    const c = this.s.client, me = c?.self;
+    if (!me) return false;
+    const dist = o => Math.hypot((o.col ?? 0) - me.col, (o.row ?? 0) - me.row);
+    const target = [...near].sort((a, b) => dist(a) - dist(b))[0];
+    const name = target.name ?? c?.rsc?.get?.(target.nameRsc) ?? null;
+    this.tally.wedge_trades = (this.tally.wedge_trades || 0) + 1;
+    this.note('wedged and hurt with something in reach — trading in place', {
+      target: name, target_id: target.id ?? null, in_reach: near.length,
+      health: v?.health ? `${v.health.value}/${v.health.max}` : null,
+      flee_at: Math.round(this.safety().fleeAt * 100) + '%',
+      wedged: wedge.why, wedged_for_s: Math.round(wedge.for_ms / 1000),
+      why: 'every rung from here is movement-shaped and the body has not moved. A freeze ' +
+           'recovers no health and a rest is refused with something in swing range, so a ' +
+           'swing at the thing hitting us is the only rung left that changes anything',
+    });
+    const f = await this.fightInPlace(target, name).catch(e => ({ killed: false, note: e.message }));
+    if (f?.killed) this.note('killed it from the square we were wedged on', { target: name });
+    this.progress('traded blows in place while wedged');
+    return true;
+  }
+
+  // The swing itself, separated so the rung can be driven without a socket. `holdPosition`
+  // is the whole point — we are not going anywhere — and `disengageAt: 0` because the
+  // caller has already established that disengaging is what is not working.
+  fightInPlace(target, name = null) {
+    return skills.fight(this.s, {
+      ...(name ? { target: name } : {}), exactTargetId: target.id,
+      rounds: 3, disengageAt: 0, loot: false, holdPosition: true, reach: REACH,
+      weaponPriority: this.weaponPriorityNow(),
+    });
   }
 
   // THE TWO HALVES OF `last_error`'s LIFECYCLE, NAMED, so that the rule can be driven
@@ -11795,6 +12059,13 @@ export class Autopilot {
     // looking. Most of this fleet's deaths were logged as happening while resting.
     const hostiles = [...c.room.objects.values()].filter(o =>
       o.id !== c.selfId && (o.flags & OF.ATTACKABLE) && !(o.flags & OF.PLAYER));
+
+    // WEDGED, HURT, AND SOMETHING IN REACH — BEFORE ANY RUNG THAT MOVES. Every rung
+    // below answers being hurt with distance: run for a town, a route-adjacent spot,
+    // "somewhere I can heal", the nearest exit. On a body that cannot move they are all
+    // the same non-answer, repeated once a pass until the character dies, which is what
+    // happened on square 18,18 of room 586 for eighteen minutes. See `tradeInPlaceIfWedged`.
+    if (await this.tradeInPlaceIfWedged({ near, v }).catch(() => false)) return HANDLED;
 
     // ABOUT TO DIE. Below two hits of margin with something adjacent, withdrawing is
     // a gamble — the walk takes seconds during which it keeps swinging, and losing

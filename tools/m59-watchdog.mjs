@@ -111,6 +111,75 @@ export const WATCHDOG_PINNED_MS = Number(process.env.M59_WATCHDOG_PINNED_MS || 2
 // anywhere, and the cost of being wrong is one cancelled walk that the next pass re-decides.
 export const WATCHDOG_PINNED_SQUARES = Number(process.env.M59_WATCHDOG_PINNED_SQUARES || 8);
 
+// A WEDGE BROKEN BY A CANCEL IS A WEDGE RE-ISSUED. The second arm's whole action is
+// `cancelMovement()`, "so the next pass can decide with real numbers" — and the numbers
+// are not real, they are IDENTICAL: same square, same room, same destination, same policy.
+// So the next pass emits the same walk, which wedges on the same server-side condition,
+// and the arm breaks it again. Measured on `acba925`, one character, two incidents:
+//
+//   93 minutes in room 575 assigned to 586 — 217 passes, 589 wedge-breaks, 28 placement
+//   failures all reading "movement cancelled by a newer command", zero rooms entered.
+//
+//   18.5 minutes on square 18,18 of room 586 — seven threats in the room, health 22 -> 3,
+//   `squares_per_second: 0` across 46 post-mortem frames, every decision-trail entry a
+//   variant of "moving to somewhere I can heal", and dead to a centipede mid-"travel".
+//
+// A cancel is only useful if the re-decision is CONSTRAINED TO DIFFER. So the arm now
+// records where it broke the wedge and how many times running it has broken one at the
+// same place, the pass reads that before setting out again, and the record has a cap:
+//
+//   repeats 1..CAP-1  the pass sidesteps in a rotating direction BEFORE re-planning, so
+//                     the walk it issues starts from a different square than the one
+//                     that wedged — the one input the planner cannot get from the map;
+//   repeats >= CAP    the pass gives the objective up out loud, once, and holds in place
+//                     for WEDGE_GIVEUP_HOLD_MS, which turns an unbounded loop into a
+//                     bounded, observable failure with a single line an operator can act
+//                     on. The record is dropped when the hold expires, so a wedge that
+//                     was genuinely transient gets a fresh cycle rather than a permanent
+//                     refusal.
+//
+// The place is compared with the same radius as the pinned anchor, for the same reason:
+// a wedge that wanders a pocket is one wedge.
+export const WEDGE_REPEAT_CAP = Number(process.env.M59_WEDGE_REPEAT_CAP || 5);
+export const WEDGE_GIVEUP_HOLD_MS = Number(process.env.M59_WEDGE_GIVEUP_HOLD_MS || 120_000);
+
+export function sameWedgePlace(a, b) {
+  if (!a || !b || a.room == null || b.room == null || a.room !== b.room) return false;
+  return Math.abs((a.col ?? 0) - (b.col ?? 0)) <= WATCHDOG_PINNED_SQUARES
+      && Math.abs((a.row ?? 0) - (b.row ?? 0)) <= WATCHDOG_PINNED_SQUARES;
+}
+
+// Called by the second arm, once per break, with where the body was when the wedge was
+// broken and what it was doing. Returns the record so the note can carry `repeats`.
+export function noteWedgeBreak(w, { room, col, row, doing = null, to = null } = {}, now = Date.now()) {
+  const here = { room, col, row };
+  const prev = w.wedgeBreak;
+  if (prev && sameWedgePlace(prev, here)) {
+    prev.repeats += 1;
+    prev.at = now;
+    prev.doing = doing ?? prev.doing;
+    if (to != null) prev.to = to;
+    return prev;
+  }
+  w.wedgeBreak = { room: room ?? null, col: col ?? null, row: row ?? null,
+                   doing: doing ?? null, to: to ?? null,
+                   repeats: 1, first_at: now, at: now };
+  return w.wedgeBreak;
+}
+
+// What the pass should do differently, asked from where it is about to decide. Pure: a
+// record for somewhere else answers null and is the caller's to drop, because only the
+// caller knows whether "somewhere else" means the wedge is over or the pulse is stale.
+export function wedgeAdvice(w, here, now = Date.now()) {
+  const b = w?.wedgeBreak;
+  if (!b || !here || !sameWedgePlace(b, here)) return null;
+  const base = { repeats: b.repeats, cap: WEDGE_REPEAT_CAP,
+                 room: b.room, col: b.col, row: b.row, doing: b.doing, to: b.to,
+                 wedged_for_ms: now - b.first_at, since_break_ms: now - b.at };
+  if (b.repeats >= WEDGE_REPEAT_CAP) return { verdict: 'give_up', ...base };
+  return { verdict: 'vary', ...base };
+}
+
 const pct = v => (v && v.max ? v.value / v.max : null);
 
 // PENNED IN: the newest three samples, in one room, within a square of each other.
@@ -148,7 +217,10 @@ export function freshState() {
            pulses: [], lastPulseAt: 0, wedged: null, wedges: 0,
            // When the body was first penned in while supposedly going somewhere, and how
            // many times that has had to be broken. See THE SECOND ARM in tick().
-           pinnedSince: null, pinnedAnchor: null, pinnedInterrupts: 0 };
+           pinnedSince: null, pinnedAnchor: null, pinnedInterrupts: 0,
+           // Where the second arm last broke a wedge and how many times running it has
+           // broken one there. See WEDGE_REPEAT_CAP.
+           wedgeBreak: null };
 }
 
 // start/stop own the timer. `unref` so a watchdog never holds a process open.
@@ -426,12 +498,19 @@ export function tick(host) {
     if (pinnedFor < WATCHDOG_PINNED_MS) return;
     w.interruptedPass = host.passes;
     w.pinnedInterrupts++;
+    // The anchor is where the wedge STARTED, which is the place to remember it by: a
+    // pocket-wanderer's newest pulse moves and its anchor does not.
+    const spot = w.pinnedAnchor ?? w.pulses[w.pulses.length - 1] ?? null;
     w.pinnedSince = null; w.pinnedAnchor = null;
     host.tally.watchdog_pinned_interrupts = (host.tally.watchdog_pinned_interrupts || 0) + 1;
     const broke = (() => {
       try { return s.cancelMovement(); } catch (e) { return { cancelled: false, why: e.message }; }
     })();
-    const spot = w.pulses[w.pulses.length - 1];
+    // AND THE RECORD THAT MAKES THE NEXT DECISION DIFFERENT. See WEDGE_REPEAT_CAP: a
+    // cancel alone hands the next pass the same inputs, which is a loop.
+    const record = spot ? noteWedgeBreak(w, { room: spot.room, col: spot.col, row: spot.row,
+                                              doing: host.doing ?? null,
+                                              to: host.wedgeTarget?.() ?? null }, now) : null;
     host.note('WATCHDOG — broke a wedge that was not hurting anybody', {
       health: `${hp.value}/${hp.max}`, at_fraction: Math.round(frac * 100) + '%',
       doing: host.doing ?? null,
@@ -439,10 +518,16 @@ export function tick(host) {
       pass_blocked_for_s: Math.round(blockedFor / 1000),
       square: spot ? `${spot.col},${spot.row}` : null, room: spot?.room ?? null,
       interrupted: broke.interrupted ?? null,
+      repeats_here: record?.repeats ?? null, cap: WEDGE_REPEAT_CAP,
       why: 'covering no ground for ' + Math.round(pinnedFor / 1000) + 's while ' +
            (host.doing ?? 'going somewhere') + ', and full health meant nothing else here ' +
            'would ever interrupt it. The walk is cancelled so the next pass can decide ' +
            'with real numbers — this keeper does not decide anything itself',
+      note: record && record.repeats >= WEDGE_REPEAT_CAP
+        ? 'broken ' + record.repeats + ' times at this place — the next pass gives up rather than re-issuing the walk'
+        : record && record.repeats > 1
+          ? 'broken ' + record.repeats + ' times at this place — the next pass sidesteps before re-planning'
+          : undefined,
     });
     host.progress('watchdog broke a healthy wedge');
     return;
