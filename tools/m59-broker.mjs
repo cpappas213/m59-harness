@@ -1773,7 +1773,9 @@ class KeeperProxy {
     return this.view();
   }
 
-  // Mutation methods — proxy to keeper
+  // Mutation methods — proxy to keeper.
+  // COORDINATE CONTRACT: square movement is `(col,row)`; fine movement is named
+  // `(x,y)` in 64-units-per-square kod wire space.
   async walkTo(col, row, opts = {}) {
     return keeperAction(this.name, this._index, 'walk', { col, row, ...opts });
   }
@@ -2193,6 +2195,7 @@ class KeeperProxy {
   leaveViaAny() { throw new Error(`${this.name}: leaveViaAny is the keeper's; travel through /action`); }
   async rest(opts = {}) { return keeperAction(this.name, this._index, 'rest', opts); }
   setPolicy() { return null; }
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in kod wire units.
   async stepFine(x, y) { return keeperAction(this.name, this._index, 'step_fine', { x, y }); }
   async walkFine(x, y, opts = {}) { return keeperAction(this.name, this._index, 'walk_fine', { x, y, ...opts }); }
 }
@@ -2322,7 +2325,7 @@ const BROKER_ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 // Which rooms generate which creatures. Built by: node tools/m59-spawns.mjs
 // The Grand Museum of Raza. The map labels it "Tutorial Exit Inside"; the portal is
-// at (11,2) and takes two touches. This is THE way out of the newbie zone.
+// at {col:11,row:2} and takes two touches. This is THE way out of the newbie zone.
 const MUSEUM_ROOM = Number(process.env.M59_MUSEUM_ROOM || 1018);
 
 // The two items in the game whose IsCursed returns TRUE. See lootFloor.
@@ -4435,7 +4438,8 @@ const TOOLS = [
       'are standing, joined into one state: your position and facing; health/mana/vigor; every object ' +
       'with its id, name, square, distance, and a "can" list of what the server will actually accept ' +
       'for it; whether each is reachable and how many steps away; every exit and which square to stand ' +
-      'on to use it. Re-reads from the server unless cached=true.\n' +
+      'on to use it. Square coordinates are named `col` and `row`; JSON property order is not a tuple ' +
+      'convention. Re-reads from the server unless cached=true.\n' +
       'PASS minimap:true FOR THE ROOM PICTURE — the walkability grid and wall map the human client ' +
       'draws. It is the only thing that answers "is that behind a wall" and "which way is out", but ' +
       'it is also two full ASCII renderings and runs to several thousand tokens in a big outdoor ' +
@@ -5528,7 +5532,8 @@ const TOOLS = [
     description: 'Run off a DECLARED ledge and land on the far side. This is the one move that ' +
       'cannot be expressed as a step — the mover gates climbing on MAX_STEP_HEIGHT, so a fall is ' +
       'refused by every ordinary walk — and it exists as its own verb so a jump can be attempted, ' +
-      'measured and retried on purpose rather than only as a side effect of following a rail.',
+      'measured and retried on purpose rather than only as a side effect of following a rail. ' +
+      '`to_col` and `to_row` are named 1-based square fields; do not pass a positional tuple.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       to_col: { type: 'number', description: 'landing column; must be a DECLARED landing from where you stand' },
@@ -5619,7 +5624,8 @@ const TOOLS = [
   {
     name: 'walk_to',
     description: 'Walk to a square, routing around walls through the room geometry, one step per ' +
-      'second — the pace a human client moves at. Coordinates are the col/row that look reports. ' +
+      'second — the pace a human client moves at. Pass the named `col` and `row` fields returned by ' +
+      '`look` unchanged; do not transpose them to match KOD/geometry positional `(row,col)` APIs. ' +
       'Replans if a step lands somewhere unexpected, and returns arrived:false with a reason if the ' +
       'geometry says the square cannot be reached at all, which is cheaper than finding out by walking.\n' +
       'If it answers "no route through the geometry" for somewhere you can SEE a way to — a ledge, a ' +
@@ -5628,21 +5634,23 @@ const TOOLS = [
       'client BSP at fine resolution. Fine movement locally clips every endpoint against walls, ' +
       'steps, ceilings, slopes, and the player radius before sending it.',
     schema: { type: 'object', properties: {
-      agent: { type: 'string' }, col: { type: 'number' }, row: { type: 'number' },
+      agent: { type: 'string' },
+      col: { type: 'number', description: 'destination column (x/east-west axis), copied from look.col' },
+      row: { type: 'number', description: 'destination row (y/north-south axis), copied from look.row' },
       max_steps: { type: 'number' },
       control_token: { type: 'string', description: 'optional owner token that can invalidate stale movement' },
       fine: { type: 'boolean',
               description: 'use locally validated fine BSP movement for this one call' },
-      stride: { type: 'number', description: 'fine units to reach per step, default 48 of 64' },
-      x: { type: 'number', description: 'fine x to walk to, instead of a square. See below.' },
-      y: { type: 'number', description: 'fine y to walk to, instead of a square' },
+      stride: { type: 'number', description: 'kod fine units to reach per step, default 48 of 64 units per square' },
+      x: { type: 'number', description: 'fine x/column-axis destination in kod units, instead of a square; x/y take precedence' },
+      y: { type: 'number', description: 'fine y/row-axis destination in kod units, instead of a square; x/y take precedence' },
     }, required: ['agent'] },
     run: async (a) => {
       const s = session(a.agent);
       // A SQUARE IS A PLACE THE BODY MAY NEVER OCCUPY, AND ON A LEDGE IT USUALLY IS NOT.
       //
       // `col`/`row` aims at the square's CENTRE, which is right in a room and wrong on a
-      // ledge: the walkable part of 40,52 in 579 is 21 of 49 sampled points and the centre
+      // ledge: the walkable part of r40c52 in room 579 is 21 of 49 sampled points and the centre
       // is not one of them. Walking a derived ledge route square by square therefore aims
       // repeatedly at the drop — measured, a character walked nine waypoints of the Ancient
       // Place climb and then stepped off, ending eight columns away with a third of its
@@ -6117,15 +6125,15 @@ const TOOLS = [
     name: 'move_intent',
     description:
       'Start a same-room RTS movement as a background session job and return immediately. The ' +
-      'stated room and destination square are revalidated against the local ROO geometry before ' +
+      'stated room and named 1-based `{col,row}` destination square are revalidated against the local ROO geometry before ' +
       'acceptance and endpoint, keeper, room, ownership, cancellation, and the next walkable step are ' +
       'rechecked inside every turn/move pacer callback. Use cancel_action with the same control_token ' +
       'to stop after the current step.',
     schema: { type: 'object', properties: {
       agent: { type: 'string' },
       room: { type: 'number' },
-      col: { type: 'number' },
-      row: { type: 'number' },
+      col: { type: 'number', description: 'destination column (x/east-west axis)' },
+      row: { type: 'number', description: 'destination row (y/north-south axis)' },
       max_steps: { type: 'number', description: 'hard movement budget, default 120, maximum 400' },
       control_token: { type: 'string', description: 'opaque owner token required for cancellation' },
       lease_token: { type: 'string', description: 'active commander lease that owns this exact agent' },
@@ -11412,7 +11420,7 @@ const TOOLS = [
       }
       return { left: out, log, now: arrivalReport(s),
                note: out ? 'one-way — you cannot walk back into Raza'
-                         : 'still inside; the portal is in the Grand Museum at (11,2) and needs two touches' };
+                         : 'still inside; the portal is in the Grand Museum at (11,2) [col,row; r2c11] and needs two touches' };
     },
   },
   {

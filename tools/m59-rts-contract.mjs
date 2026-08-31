@@ -3,6 +3,11 @@
 // The broker remains the authority and session owner. This module only reduces
 // its fleet and cached look responses into a stable snapshot that a renderer can
 // consume without learning account credentials or depending on MCP envelopes.
+//
+// COORDINATE CONTRACT. Snapshot squares use named 1-based KOD `col` and `row`
+// fields (JSON property order has no tuple meaning). Fine positions use named `x`
+// and `y` in protocol/KOD units (64 per square). Positional native AGENT, ENTITY,
+// and EXIT records preserve col before row as part of their versioned wire contract.
 
 import { rtsSafeSpellRule } from './m59-rts-safety.mjs';
 

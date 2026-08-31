@@ -4,6 +4,9 @@
 //   node tools/m59-jumpfinder.mjs 108 --from 36,27 --to 21,37
 //   node tools/m59-jumpfinder.mjs 579 --from 40,52 --to 51,30 --declare
 //
+// CLI CONTRACT: `--from` and `--to` are `row,col` (KOD/RoomGeometry order),
+// so the first example searches from r40c52 to r51c30.
+//
 // THE WHOLE ALGORITHM IS ONE SENTENCE OF THE OPERATOR'S: A FALL IS A WALL.
 //
 // A ledge is not something to detect. It is what REMAINS when descending is forbidden. Run a
@@ -22,7 +25,7 @@
 // the mana node" a breadth-first search over it, bounded by how many jumps you will accept.
 //
 // EVERYTHING IS FINE COORDINATES. A square is a summary and on this ground it is a false one:
-// 40,52 is `walkable: true` with no floor at its centre, and 40,33 spans 3520 to 10880 — the
+// r40c52 is `walkable: true` with no floor at its centre, and r40c33 spans 3520 to 10880 — the
 // valley floor and the high ledge, one square, one number. A search on square centres cannot
 // see the first Ancient Place jump at all, because both its ends are inside one square. See
 // docs/m59-routing.md.
@@ -54,6 +57,7 @@ if (has('help') || !argv.length) {
 }
 
 const ROOM = Number(argv.find(a => /^\d+$/.test(a)));
+// CLI ADAPTER: parse the documented `row,col` pair into named fields immediately.
 const pair = s => { const [r, c] = String(s).split(',').map(Number); return { row: r, col: c }; };
 const FROM = flag('from') ? pair(flag('from')) : null;
 const TO = flag('to') ? pair(flag('to')) : null;

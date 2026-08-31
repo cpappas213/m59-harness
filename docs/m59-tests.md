@@ -33,6 +33,40 @@ The registry lives in `m59-repro.mjs` and is imported by the test, so the list y
 the thing that reproduces it cannot drift apart. `m59-repro.mjs` is **not** an offline test —
 every case joins characters and relocates bodies, and it refuses a non-loopback host.
 
+## Coordinate compatibility
+
+```bash
+node tools/m59-coordinate-contract-test.mjs
+```
+
+This is the asymmetric contract test from issue #44 (18 assertions). It pins
+movement-wire Y-then-X encoding and decoding plus the normalized named
+`{x,y,col,row}` result, confirms room 563 is 34 rows by 76 columns, and proves
+that geometry's `walkable(row,col)` sees valid `r34c65` and floorless `r30c61`
+as two different squares. It also pins the existing route-pivot `[row,col]`,
+edge-stage `[col,row]`, and safe-spot `"col,row"` encodings. It reads the
+checked-in map; it does not regenerate or rewrite an artifact. The human
+notation and all stable exceptions are documented in
+[`m59-coordinates.md`](m59-coordinates.md).
+
+For a coordinate-context change, also run the existing routing, geometry,
+collision, and fixture contracts. They protect the positional APIs, parser
+normalization, movement behavior, serialized route tuples, and command grammars
+that documentation must not redefine:
+
+```bash
+node tools/m59-routing-test.mjs
+node tools/m59-roo-bounded-test.mjs
+node tools/m59-collision-test.mjs
+node tools/m59-recordjam-test.mjs
+node tools/m59-rts-broker-read-test.mjs
+```
+
+A coordinate-labeling change must not rewrite map geometry, route or fall-jump
+records, fixtures, history, recordings, commissions, or fleet state. Human-only
+underscore metadata such as `_coordinates` may be corrected without changing
+the records it describes.
+
 - Offline tests, safe to run any time: `node tools/m59-safespot-test.mjs` (187 — pins, among
   the rest, that **the safe walls are the red squares in the debug client**: `safeWalls()` is
   one function for the picture and the keeper's choice, `safeSpots()` iterates it with no
@@ -175,8 +209,9 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   for the length of the walk; the keeper walked him out of the Underworld into an inn at 11
   of 37 and the journey walked him straight back out; six things ate him over twenty-two
   seconds at 27% health against a 70% flee threshold. The old rescue could not fire because
-  it ALSO demanded four seconds of stillness, and his last pulses read 23,3 / 25,5 / 26,5 /
-  25,5 — a two-square shuffle that reset that timer on every sample. So this pins two
+  it ALSO demanded four seconds of stillness, and his last pulses read `r3c23` / `r5c25` /
+  `r5c26` / `r5c25` — a two-square shuffle that reset that timer on every sample. So this
+  pins two
   things: that a journey takes `goTravelling` and an errand still takes `goInert`, and that
   none of the four mid-hop triggers asks whether the body is moving. The `flee` pair needs a
   character below the flee line and NOT inside two hits of death — 41 of 60, in the
@@ -418,7 +453,8 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   without taking the fleet lock and starting rejoin timers) and
   `node tools/m59-describe-test.mjs` (52) and
   `node tools/m59-recordjam-test.mjs` (43 — **turning a live traffic jam into a fixture**:
-  that `m59-recordjam.mjs` reads a region col,row like every square here, collapses a run of
+  that `m59-recordjam.mjs` reads its documented region grammar as `col,row` (one of the
+  repository's stable legacy positional encodings), collapses a run of
   samples to what stood still and what wiggled (a trace of position CHANGES with when each
   was first seen), counts a player once however many observers saw it while keeping two
   same-named rats apart by id, redacts our names to `player A…` and other people's to

@@ -59,8 +59,9 @@ export const FORMAT = 'm59-jam/1';
 
 // ---------------------------------------------------------------- the region
 //
-// Squares are written col,row everywhere in this repository ("square: 7,42"), so a region
-// is "c1,r1-c2,r2", inclusive both ends, in either order.
+// CLI CONTRACT: this tool defines `--region` as `c1,r1-c2,r2` and `--around` as
+// `col,row`. That is recordjam's movement-facing order, not a repository-wide convention.
+// A region is inclusive at both ends and accepts either corner first.
 export function parseRegion(text) {
   const m = String(text ?? '').trim().match(/^(\d+)\s*,\s*(\d+)\s*-\s*(\d+)\s*,\s*(\d+)$/);
   if (!m) return null;

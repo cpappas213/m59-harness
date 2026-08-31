@@ -6,6 +6,9 @@
 //   node tools/m59-provewall.mjs --room 575 --sweep 6        the top fortress squares
 //   node tools/m59-provewall.mjs --book                      what has been proven so far
 //
+// CLI CONTRACT: `--at` and `--open` square pairs are `row,col`
+// (KOD/RoomGeometry order).
+//
 // THE TEST IS A/B/A AND THAT IS THE WHOLE POINT. The recorded safe-spot book asks one
 // question — "did anything land while I stood here" — over a single window, and measured
 // across the whole book that window has a median of SIXTEEN SECONDS with ONE attacker,

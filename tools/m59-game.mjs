@@ -2401,6 +2401,7 @@ class Session {
     return c.self ?? null;
   }
 
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in 64-units-per-square kod wire space.
   // A FALL IS PLANNED IN FALL MODE AND MUST BE ATTEMPTED IN FALL MODE — see `fall` below.
   validateFineTarget(x, y, { slide = false, fall = false } = {}) {
     const c = this.need();
@@ -2739,6 +2740,7 @@ class Session {
     }
   }
 
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in kod wire units, not a grid tuple.
   async queueValidatedMove(x, y, { speed = 18, slide = true, fall = false, beforeMutation = null,
                                     minGap = MOVE_INTERVAL_MS, expectedRoomId = null,
                                     offMap = false } = {}) {
@@ -2998,6 +3000,7 @@ class Session {
    * Returns [] when nothing is there, when the session has no room, or when the objects
    * carry no fine position — and an empty list means "aim exactly as you always did".
    */
+  // COORDINATE CONTRACT: positional grid arguments follow geometry order `(row,col)`.
   bodiesInSquare(row, col, spread = 0) {
     const c = this.client;
     if (!c?.room?.objects) return [];
@@ -3015,6 +3018,8 @@ class Session {
     return out;
   }
 
+  // COORDINATE CONTRACT: the square is `(row,col)`; `from` and the returned aim
+  // carry named `{x,y}` values in kod wire units.
   aimInto(from, row, col) {
     const geo = this.world?.geometry;
     const half = KOD_FINENESS >> 1;
@@ -3335,6 +3340,8 @@ class Session {
     };
   }
 
+  // COORDINATE CONTRACT: the square is `(row,col)`; `step` and returned `{x,y}`
+  // points are in kod wire units.
   _fineLattice(row, col, step) {
     const out = [];
     const x0 = col * KOD_FINENESS, y0 = row * KOD_FINENESS, half = Math.max(1, step >> 1);
@@ -3360,6 +3367,7 @@ class Session {
   // IS THERE ANYWHERE IN THAT SQUARE TO STAND, FROM HERE? Early-exits on the first one found:
   // this is a yes/no about a pocket, not a request for the best point, and asking it as a
   // request is how a lookahead becomes too expensive to keep.
+  // COORDINATE CONTRACT: the square is `(row,col)`; fine points and `step` use kod units.
   _canEnter(from, row, col, step) {
     const geo = this.world?.geometry;
     if (!geo) return true;                              // no geometry is not a refusal
@@ -3382,6 +3390,8 @@ class Session {
    * was found — in which case `aim` is still the ordinary one, labelled `unproved`, because
    * refusing to aim is how a step stops being attempted and this must never be that.
    */
+  // COORDINATE CONTRACT: the square is `(row,col)`; `from`, `aim`, and `vias`
+  // use named `{x,y}` points in kod wire units.
   threadInto(from, row, col) {
     const aim = this.aimInto(from, row, col);
     if (!from || !Number.isFinite(from.x) || !Number.isFinite(from.row)) return { aim };
@@ -4027,6 +4037,8 @@ class Session {
     } catch { return target; }
   }
 
+  // COORDINATE CONTRACT: this movement API is `(col,row)`; geometry calls inside
+  // it deliberately adapt to `(row,col)`.
   async step(col, row, { confirm = false, beforeMutation = null, fall = false } = {}) {
     const c = this.need();
     const roomId = c.room.id;
@@ -4575,6 +4587,7 @@ class Session {
   //    rock, not that the way is shut. Fanning the heading out to either side is
   //    what "hugging the wall" actually is, and it is how a human gets along a
   //    ledge without falling off it.
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in kod wire units.
   async stepFine(x, y) {
     const c = this.need();
     const startRoom = c.room.id;
@@ -4746,6 +4759,8 @@ class Session {
   // direction: a nearer wall is reached more reliably — 88% at four squares against 83% at
   // ten — but is found so much less often that the share of characters that end up on a
   // wall at all falls from 68% to 51%. `travel_hold_within` stays at ten.)
+  // COORDINATE CONTRACT: the destination square is `(col,row)`; optional `toX/toY`
+  // are a named fine point in kod wire units.
   async approachFine(col, row, { toX = null, toY = null, maxSteps = 60, stride = 48,
                                  movementGeneration = this.movementGeneration,
                                  controlToken = null } = {}) {
@@ -4817,6 +4832,7 @@ class Session {
              ...(landed ? {} : { reason: r?.reason ?? 'fine approach ended off the square' }) };
   }
 
+  // COORDINATE CONTRACT: `(destX,destY)` is a fine point in kod wire units.
   async walkFine(destX, destY, {
     // SQUARES THIS WALK MAY NOT ENTER, as `row,col` strings. The coarse walker has honoured
     // these since the split-boundary fix; the FINE walker never saw them, and it is the one
@@ -5288,6 +5304,8 @@ class Session {
     return null;
   }
 
+  // COORDINATE CONTRACT: this public movement API is `(col,row)`. Named position
+  // objects remain `{ col, row }`; geometry adapters below reverse positional calls.
   async walkTo(col, row, {
     maxSteps = 120,
     hardCap = 400,
@@ -5579,7 +5597,7 @@ class Session {
       const destX = col * KOD_FINENESS + half;
       const destY = row * KOD_FINENESS + half;
       if (process.env.M59_EXIT_DEBUG !== '0')
-        console.error(`[walkTo] ${this.name ?? '?'} coarse grid failed (${plan.reason}), trying fine grid to (${destX},${destY})`);
+        console.error(`[walkTo] ${this.name ?? '?'} coarse grid failed (${plan.reason}), trying fine grid to (${destX},${destY}) [fine x,y in kod units; requested square r${row}c${col}]`);
       const fine = await this.walkFine(destX, destY, {
         maxSteps: Math.max(60, Math.ceil(Math.hypot(col - from.col, row - from.row) * 2)), stride: 48, arriveWithin: 100,
         movementGeneration, controlToken,
@@ -5601,7 +5619,7 @@ class Session {
           const dist = Math.hypot(dx, dy);
           if (dist > 1) {
             const deg = Math.atan2(dy, dx) * 180 / Math.PI;
-            console.error(`[walkTo] ${this.name ?? '?'} raw walk fallback: both grids failed, walking raw toward (${col},${row}) dist=${dist.toFixed(1)}`);
+            console.error(`[walkTo] ${this.name ?? '?'} raw walk fallback: both grids failed, walking raw toward (${col},${row}) dist=${dist.toFixed(1)} [col,row; r${row}c${col}]`);
             const rawSteps = Math.min(Math.ceil(dist), 8);
             const speed = c.moveSpeed?.() ?? 1;
             for (let i = 0; i < rawSteps; i++) {
@@ -5614,7 +5632,7 @@ class Session {
                 await new Promise(r => setTimeout(r, 250));
                 const newSelf = c.self;
                 if (newSelf && (newSelf.col !== self.col || newSelf.row !== self.row)) {
-                  console.error(`[walkTo] ${this.name ?? '?'} raw walk moved to (${newSelf.col},${newSelf.row})`);
+                  console.error(`[walkTo] ${this.name ?? '?'} raw walk moved to (${newSelf.col},${newSelf.row}) [col,row; r${newSelf.row}c${newSelf.col}]`);
                   return { arrived: false, reason: 'raw walk made progress', position: { col: newSelf.col, row: newSelf.row }, raw_walk: true };
                 }
               } catch { break; }
@@ -7334,6 +7352,8 @@ class Session {
   // What that gives up, deliberately: the M59_EXIT_DEBUG traces and the distToStaging
   // fine-direct approach (whose `> 0` condition never matched its own comment), and
   // the raw-grid fallback, which was a beeline in a 50-second loop around an await.
+  // COORDINATE CONTRACT: exit squares are named `{col,row}`; `fine_stand_on`,
+  // `edge_target`, and fine-path points are named `{x,y}` in kod wire units.
   async leaveVia(exit, { movementGeneration = this.movementGeneration, controlToken } = {}) {
     // ROUTE AROUND THE PART OF THIS BOUNDARY THAT LEADS SOMEWHERE ELSE.
     //
@@ -8842,6 +8862,7 @@ class Session {
   }
 
 
+  // COORDINATE CONTRACT: every candidate follows leaveVia's named square/fine schema.
   async leaveViaAny(candidates, { movementGeneration = this.movementGeneration, controlToken,
                                   exact = false } = {}) {
     // WHEN THIS CROSSING BEGAN, because `stuck_ms` is the only thing standing between a
@@ -8971,7 +8992,7 @@ class Session {
       spread.unshift({ ...e, stand_on: { col: anchor.col, row: anchor.row },
                        steps_away: me ? Math.max(Math.abs(anchor.row - me.row), Math.abs(anchor.col - me.col)) : 0,
                        alternates: undefined, from_anchor: true });
-      anchorTrace.push(`injected ${anchor.row},${anchor.col} for ${e.to}`);
+      anchorTrace.push(`injected ${anchor.row},${anchor.col} for ${e.to} [row,col; r${anchor.row}c${anchor.col}]`);
     }
     if (process.env.M59_EXIT_DEBUG !== '0' && anchorTrace.length)
       console.error(`[exit] room ${this.world?.room?.num}: ${anchorTrace.join('; ')}`);
@@ -9985,6 +10006,8 @@ class Session {
         // record could not say whether those four squares were blocked by a body, refused by
         // collision, unreachable from where the character stood, or never walked to at all.
         // Four different bugs, one sentence, and no way to tell them apart after the fact.
+        // SERIALIZED CONTRACT: travel-ledger `refusals[].square` is a legacy
+        // `"row,col"` string. Do not transpose or relabel the stored value.
         ...(r.tried?.length ? { refusals: r.tried.slice(0, 8).map(t => ({
               square: t.stand_on ? `${t.stand_on.row},${t.stand_on.col}` : null,
               stage: t.stage ?? null,

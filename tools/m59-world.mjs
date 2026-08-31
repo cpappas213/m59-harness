@@ -17,6 +17,10 @@
 // and renders the join as a minimap with everything placed on it, which is the same
 // picture the human client draws in its corner and the densest single artifact either
 // a person or an agent can look at.
+//
+// COORDINATE CONTRACT: public/perception squares use named 1-based `{col,row}`;
+// positional RoomGeometry calls use `(row,col)`. Object and exit `{x,y}` fields
+// are 64-units-per-square kod wire points unless explicitly labelled client/BSP.
 
 import { sharedRoomGeometry, roomHasDeclaredFallJump } from './m59-roo.mjs';
 import { exitsOf, findPath, inferredExits, codeExits, edgeExitsOf, edgeCandidatesOf, LEAVE,
@@ -322,6 +326,8 @@ export class World {
   // Can we get there, and in how many steps? This is the question the raw protocol
   // cannot answer and an agent most needs answered, because the cost of finding out
   // by walking is one second per step and a wrong guess is a wasted minute.
+  // COORDINATE CONTRACT: this movement-facing API is `(col,row)`; the call to
+  // RoomGeometry.path below deliberately adapts it to geometry `(row,col)`.
   reach(toCol, toRow) {
     const me = this.origin(), geo = this.geometry;
     if (!me) return { reachable: null, why: 'own position unknown' };
@@ -364,6 +370,8 @@ export class World {
 
   // Adjacent to a target rather than on top of it: the square next to it that is
   // cheapest to reach. Melee needs this — you cannot stand where the monster is.
+  // COORDINATE CONTRACT: this movement-facing API is `(col,row)`; returned square
+  // positions use named `{col,row}` fields.
   approachSquare(toCol, toRow) {
     const me = this.origin(), geo = this.geometry;
     if (!me || !geo) return null;
@@ -722,8 +730,8 @@ export class World {
         ...(alternates.length ? { alternates } : {}),
         ...(viableCount ? { standable_on_this_boundary: viableCount } : {}),
         how: approach
-          ? `walk_to (${approach.col},${approach.row}), fine-position at ` +
-            `(${approach.fine_stand_on.x},${approach.fine_stand_on.y}), then cross ${e.leaveName}` +
+          ? `walk_to {"col":${approach.col},"row":${approach.row}} (r${approach.row}c${approach.col}), fine-position at ` +
+            `x=${approach.fine_stand_on.x}, y=${approach.fine_stand_on.y} in KOD units, then cross ${e.leaveName}` +
             (alternates.length ? ` — ${alternates.length} other square(s) on that boundary also cross` : '')
           : `walk ${e.leaveName} past the room edge`,
         condition: e.condition ? `${e.condition.name}${e.condition.threshold}` : null,
@@ -807,7 +815,7 @@ export class World {
           ...(target.approach_on ? { approach_on: target.approach_on } : {}),
         })) } : {}),
         how: best?.reachable
-          ? `walk_to (${best.col},${best.row}) — the room moves you across as you arrive`
+          ? `walk_to {"col":${best.col},"row":${best.row}} (r${best.row}c${best.col}) — the room moves you across as you arrive`
           : ce.how,
         trigger: ce.when.map(x => `${x.axis} ${x.op} ${x.value}`).join(' and '),
       });
@@ -827,8 +835,8 @@ export class World {
         // and that is correct. It must never be read as "do not offer this door".
         verified: rr.verified ?? null,
         how: g.locked
-          ? `locked door at (${g.col},${g.row})`
-          : `walk_to EXACTLY (${g.col},${g.row}) then act go — the match is on that one square`,
+          ? `locked door at r${g.row}c${g.col} (row=${g.row}, col=${g.col})`
+          : `walk_to EXACTLY {"col":${g.col},"row":${g.row}} (r${g.row}c${g.col}), then act go — the match is on that one square`,
       });
     }
     // Portal objects, which are neither an edge exit nor a `go` exit. The room graph
@@ -854,7 +862,7 @@ export class World {
         // change their destination on a timer, and the only way to find out is to
         // look at it — the description names the place in prose.
         destination_known: false,
-        how: `walk_to (${o.col},${o.row}) — stepping onto this square teleports you. ` +
+        how: `walk_to {"col":${o.col},"row":${o.row}} (r${o.row}c${o.col}) — stepping onto this square teleports you. ` +
              `Use look_at first: a shifting portal describes where it currently leads.`,
       });
     }
@@ -1058,7 +1066,7 @@ export class World {
       // signal available to a client is the name. Flagged as a GUESS, because that
       // is what it is; walking onto the square is how you find out.
       if (o.teleporter) {
-        o.how = `walk_to (${o.col},${o.row}) — stepping onto this square teleports you elsewhere.`;
+        o.how = `walk_to {"col":${o.col},"row":${o.row}} (r${o.row}c${o.col}) — stepping onto this square teleports you elsewhere.`;
       }
     }
 
@@ -1079,6 +1087,7 @@ export class World {
       objects,
       ...(scenery.length ? { scenery: summariseScenery(scenery) } : {}),
       exits,
+      // SERIALIZED CONTRACT: these legacy square strings are `"col,row"`.
       ...(locked.length ? { locked_doors: {
         count: locked.length,
         squares: locked.map(e => `${e.stand_on.col},${e.stand_on.row}`),
@@ -1171,6 +1180,7 @@ export class World {
    * nothing on an ordinary boundary.
    */
   wrongExitSquares(exit, { includeInland = false } = {}) {
+    // SERIALIZED CONTRACT: this legacy Set contains `"row,col"` geometry keys.
     const out = new Set();
     const room = this.room && this.map?.rooms?.[this.room.num];
     const dir = exit?.direction ?? exit?.leaveName;

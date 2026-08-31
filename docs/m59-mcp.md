@@ -124,6 +124,24 @@ resource table.
 
 ---
 
+## Coordinate arguments
+
+Tool JSON uses named coordinate fields. `look` reports square `col` and `row`,
+and `walk_to` accepts those same named square fields; fine positions use named
+`x` and `y`, where X selects the column and Y selects the row. Named JSON
+properties have no positional order.
+
+Inside the repository, movement helpers retain their historical `(col,row)`
+order, while `RoomGeometry` and KOD grid operations retain `(row,col)`. The
+movement wire payload writes Y before X, but that is an adapter detail: decode it
+to named fields before comparing it with an MCP result. KOD/protocol fine points
+use 64 units per square; stock-client/BSP points use 1024. In prose use `r30c61`
+or `row=30, col=61`; `rNcM` is not accepted by existing tool arguments. The full
+contract, including stable artifact exceptions, is in
+[`m59-coordinates.md`](m59-coordinates.md).
+
+---
+
 ## The tools
 
 ### Start here if you are a small model

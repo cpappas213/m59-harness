@@ -20,6 +20,10 @@
 //   node tools/m59-tracks.mjs                what has been learned
 //   node tools/m59-tracks.mjs --room 599     one room in detail
 //   node tools/m59-tracks.mjs --save         write substrate/m59-tracks.json
+//
+// COORDINATE CONTRACT. Input samples and persisted waypoint x/y fields use
+// protocol/KOD fine units (64 per square), as do MAX_JUMP_WIRE and other point
+// distances. BSP collision checks alone convert them to client units.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -265,6 +269,9 @@ export function comb(crossingList, geoFor = () => null) {
     const safeAt = [];
     if (geo && typeof geo.walkable === 'function') {
       points.forEach((p, i) => {
+        // LEGACY COMPATIBILITY ANOMALY: like trails.squareOf(), this adds one to
+        // an already-KOD point. Persisted shelter indexes depend on the existing
+        // result; see docs/m59-coordinates.md before changing it.
         const row = Math.floor(p.y / 64) + 1, col = Math.floor(p.x / 64) + 1;
         let refused = 0;
         for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[-1,1],[1,-1],[1,1]]) {

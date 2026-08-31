@@ -138,6 +138,14 @@ Requests are scarce — four per second, spent by the broker on your behalf. Rea
 A room is a grid of `piRows` × `piCols` squares, 1-based. Positions are reported
 as `col`/`row` squares; distances are in squares.
 
+Coordinate order changes at legacy subsystem boundaries. MCP movement uses named
+`col`/`row` fields (and movement helpers are column first), while room geometry
+and KOD grids use `(row,col)`; movement coordinate bytes are serialized Y then X.
+In human-facing text, write `r30c61` or `row=30, col=61`, not an unlabeled pair.
+`rNcM` is prose notation, not a command argument. See
+[`m59-coordinates.md`](m59-coordinates.md) for units and the stable serialized
+exceptions.
+
 **The server does not check walls for player movement.** `UserMove`
 (`user.kod:2914`) calls `Room.SomethingMoved` directly, which records the new
 position and never consults room geometry. The geometry check
@@ -394,7 +402,7 @@ takes `preferId` for exactly this; pass back the `foe_id` it returns.
 ### Leaving the newbie zone: walk through the portal twice
 
 The way out of Raza is a **portal inside the Grand Museum of Raza** — the map labels
-the building "Tutorial Exit Inside". Walk onto the portal at (11,2). **The first
+the building "Tutorial Exit Inside". Walk onto the portal at `r2c11`. **The first
 touch only warns you and bounces you off; the second one takes you.** That is the
 entire mechanism. It is one-way, and `leave_raza` does it for you.
 
@@ -940,7 +948,7 @@ look                                     position, vitals, ids, exits, the minim
   ↓
 wait_for_event  (pass back the cursor)   listen if anyone is around
   ↓
-travel <room>                            or walk_to <col,row> inside this one
+travel <room>                            or walk_to {"col": C, "row": R} inside this one
 approach <id> distance:1                 walks AND turns; both are required
 attack <id> swings:3                     paced one per second, faces each swing
   ↓

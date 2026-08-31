@@ -33,6 +33,12 @@
 // Walking from A to B does not put you where the return trip starts, and the edge back
 // to A can be most of a room away from where you arrive. So the leg is recomputed from
 // scratch on every room change rather than reversed, inverted, or remembered.
+//
+// COORDINATE CONTRACT. Router positional destinations and callbacks use public
+// 1-based (col,row); named square records carry `col` and `row` fields with no
+// property-order meaning. RoomGeometry positional methods use (row,col), so calls
+// into geometry intentionally swap them. Fine BSP trace points are client (x,y);
+// Mover owns the conversion from square destinations to protocol/KOD (x,y).
 import { loadMap, findPath } from './m59-map.mjs';
 import { objIdToNum } from './m59-hunt-room.mjs';
 import { Mover } from './m59-mover.mjs';
@@ -277,7 +283,8 @@ export class Router {
     } catch { return null; }
   }
 
-  // Is a single step from (c1,r1) to the adjacent (c2,r2) allowed by the FINE model?
+  // Is a single step between adjacent 1-based public squares (c1,r1) and (c2,r2)
+  // allowed by the FINE model?
   // This is a CHEAP check (a single traceFineMoveClient, ~1ms) unlike finePathProtocol
   // (a full A*, ~1.8s per blocked square). It is what the Mover effectively enforces
   // step-by-step, so an approach point found with this oracle is one the Mover can

@@ -6,6 +6,9 @@
 //   node tools/m59-falljump.mjs --profile 599 36,16 38,10   the terrain and the fall curve
 //   node tools/m59-falljump.mjs --json
 //
+// CLI CONTRACT: square pairs passed to `--profile` are `row,col`
+// (KOD/RoomGeometry order), not movement-facing `col,row`.
+//
 // OFFLINE. Reads the baked geometry; no server, no broker.
 //
 // WHY THIS EXISTS. There are places in this world joined only by running off a high ledge,

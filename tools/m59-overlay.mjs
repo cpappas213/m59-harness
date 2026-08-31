@@ -8,6 +8,9 @@
 //   node tools/m59-overlay.mjs --legend            what the colours mean
 //   node tools/m59-overlay.mjs --list              which rooms have anything to show
 //
+// CLI CONTRACT: `--route` and `--mark` square pairs are `row,col`
+// (KOD/RoomGeometry order).
+//
 // OFFLINE. No server, no broker, no logins — this reads the same baked geometry the
 // broker plans on and writes a text file. The client reads it (clientd3d/m59dbg.c) and
 // paints it under the walls of its own minimap.

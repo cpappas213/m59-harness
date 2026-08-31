@@ -28,6 +28,11 @@
 // ReferenceError that fires only on the branch that reaches it — `floorHeightAt` and
 // `MAX_STEP_HEIGHT` were both found that way, by two suites, after everything else passed.
 // If you move another method in, re-derive this list rather than adding to it by hand.
+//
+// COORDINATE CONTRACT. Methods that take squares positionally use 1-based (row,col),
+// matching RoomGeometry. finePathProtocol takes and returns protocol/KOD (x,y), with
+// 64 units per square; BSP traces and floor heights use client units, 1024 per square.
+// Conversions change scale and origin only--they never exchange the axes.
 import {
   RoomGeometry, KOD_FINENESS, CLIENT_FINENESS, MAX_STEP_HEIGHT, PLAYER_RADIUS,
   floorHeightAt, protocolToClient, clientToProtocol,
@@ -35,9 +40,10 @@ import {
 
 const NAV = {
   /**
-   * Floor height (fine units) at the CENTER of a square, from the BSP sector under it.
-   * kod-style 1-based. Returns null if no sector covers the square center (rare — a
-   * square whose center falls in a zero-area gap between polygons, or outside the room).
+   * Floor height (client/BSP units) at the CENTER of a square, from the BSP sector
+   * under it. Inputs are KOD-style 1-based (row,col). Returns null if no sector
+   * covers the square center (rare — a square whose center falls in a zero-area gap
+   * between polygons, or outside the room).
    *
    * This is the source of truth for height: the sector a leaf occupies has a floorHeight
    * (and possibly a slope). Two adjacent squares with a floor-height difference greater
@@ -330,8 +336,10 @@ const NAV = {
     return { found: true, waypoints, expanded };
   },
 
-  // A bounded local A* for sub-square approaches that need to round a corner. This
-  // is deliberately not the room router: the coarse grid gets us near the exit,
+  // A bounded local A* for sub-square approaches that need to round a corner.
+  // Arguments, step/margin distances, and returned waypoints are protocol/KOD
+  // (x,y), 64 units/square. This is deliberately not the room router: the coarse
+  // grid gets us near the exit,
   // then this resolves only the final BSP-scale gap with locally validated segments.
   finePathProtocol(fromX, fromY, toX, toY, {
     step = 8,

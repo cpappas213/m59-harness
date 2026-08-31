@@ -8,6 +8,8 @@
 //   node tools/m59-safewalk.mjs --list                 the proven squares, no server
 //   node tools/m59-safewalk.mjs --clear                delete everything this spawned
 //
+// CLI CONTRACT: `--at` is `row,col` (KOD/RoomGeometry order).
+//
 // THE SAFE WALL IS THE ONE THING IN THIS REPOSITORY THAT CANNOT BE READ OFF A MAP.
 // `safeSpots()` nominates squares from geometry and it is a MODEL; the book records what
 // actually held when something swung. Between those two sits a claim nobody has ever

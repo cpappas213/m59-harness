@@ -1487,7 +1487,7 @@ export async function turnInPlace(s, { degrees = null, verify = true } = {}) {
 // Go back to an EXACT position, to the fine unit.
 //
 // moveToSquare aims at the centre of a square (col*64+32). A safe spot that works by
-// hugging a wall can be most of a square off that centre, so "walk back to (25,23)"
+// hugging a wall can be most of a square off that centre, so "walk back to r23c25"
 // is not the same request as "stand where I was standing", and the difference is the
 // difference between a wall at your back and a wall nearby. Fine movement is the only
 // way to say the second one.
@@ -2288,7 +2288,9 @@ const escapeBudget = steps => Math.max(150, (steps ?? 0) * 3 + 60);
 // The plan was right and the walk diverged, which is exactly the case fine movement
 // exists to rescue.
 //
-// One extra attempt against a permanent trap.
+// One extra attempt against a permanent trap. col/row are 1-based KOD squares in
+// public (col,row) order; the fine fallback converts their centre to protocol x/y
+// at 64 units per square.
 async function walkOntoSquare(s, col, row, { maxSteps = 80 } = {}) {
   const walk = await s.walkTo(col, row, { maxSteps });
   if (walk.arrived || isTerminalMovementReason(walk.reason)) return walk;

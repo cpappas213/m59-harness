@@ -97,6 +97,8 @@ try {
   const tools = (await listed.json()).result.tools;
   const attackIntent = tools.find(tool => tool.name === 'attack_intent');
   const moveIntent = tools.find(tool => tool.name === 'move_intent');
+  const jump = tools.find(tool => tool.name === 'jump');
+  const walkTo = tools.find(tool => tool.name === 'walk_to');
   const contextIntent = tools.find(tool => tool.name === 'context_intent');
   const cancelAction = tools.find(tool => tool.name === 'cancel_action');
   const commanderLease = tools.find(tool => tool.name === 'commander_lease');
@@ -108,6 +110,15 @@ try {
     ['agent', 'room', 'target', 'control_token', 'lease_token', 'server_host', 'server_port']);
   assert.deepEqual(moveIntent.inputSchema.required,
     ['agent', 'room', 'col', 'row', 'control_token', 'lease_token', 'server_host', 'server_port']);
+  assert.deepEqual(jump.inputSchema.required, ['agent', 'to_col', 'to_row']);
+  assert.equal(jump.inputSchema.properties.to_col.type, 'number');
+  assert.equal(jump.inputSchema.properties.to_row.type, 'number');
+  assert.equal(walkTo.inputSchema.properties.col.type, 'number');
+  assert.equal(walkTo.inputSchema.properties.row.type, 'number');
+  assert.match(walkTo.inputSchema.properties.col.description, /column.*x\/east-west/i);
+  assert.match(walkTo.inputSchema.properties.row.description, /row.*y\/north-south/i);
+  assert.match(moveIntent.inputSchema.properties.col.description, /column.*x\/east-west/i);
+  assert.match(moveIntent.inputSchema.properties.row.description, /row.*y\/north-south/i);
   assert.deepEqual(contextIntent.inputSchema.required,
     ['agent', 'room', 'action', 'control_token', 'lease_token', 'server_host', 'server_port']);
   assert.deepEqual(contextIntent.inputSchema.properties.action.enum,

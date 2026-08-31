@@ -29,6 +29,11 @@
 // The straight-line + brute-force fan from the previous revision is gone.
 // The raw-move fallback remains as a last resort for stale geometry where
 // the fine model says "wall" but the server says "floor".
+//
+// COORDINATE CONTRACT. Public destinations and confirmed positions are 1-based
+// (col,row) squares. Plans, reports, and packet destinations are protocol/KOD (x,y),
+// 64 units per square; dead-reckoned drX/drY are client/BSP units, 1024 per square.
+// Calls into RoomGeometry intentionally swap square arguments to positional (row,col).
 
 import { protocolToClient, clientToProtocol, KOD_FINENESS, PLAYER_RADIUS } from './m59-roo.mjs';
 import './m59-navgeom.mjs';   // installs the height model + lenient fine path onto RoomGeometry
@@ -104,8 +109,8 @@ export class Mover {
   }
 
   /**
-   * Set the destination. col/row are protocol square coordinates
-   * (the same space as client.self.col/.row).
+   * Set the destination. col/row are 1-based KOD square coordinates in public
+   * (col,row) order (the same space as client.self.col/.row).
    */
   to(col, row) {
     // A NEW destination (different from the current one) resets the lazy-report gate so the
@@ -160,8 +165,8 @@ export class Mover {
   get active() { return this.dest != null; }
 
   /**
-   * Plan a path from the current position to the destination using
-   * finePathProtocol. Returns the path or a reason string.
+   * Plan from protocol/KOD (x,y) to the destination using finePathProtocol.
+   * Returned waypoints remain in protocol units. Returns the path or a reason string.
    */
   _plan(fromProtoX, fromProtoY) {
     const geo = this.session?.world?.geometry;
@@ -778,7 +783,7 @@ export class Mover {
   }
 
   /**
-   * Sync dead reckoning from a confirmed position.
+   * Sync client-unit dead reckoning from a confirmed 1-based (col,row) square.
    */
   syncPosition(col, row) {
     this.drX = protocolToClient(col * KOD_FINENESS + HALF);

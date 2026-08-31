@@ -5,6 +5,9 @@
 //   node tools/m59-jumptest.mjs --agent shadow03 --from 34,19 --to 2
 //   node tools/m59-jumptest.mjs --report
 //
+// CLI CONTRACT: `--from`, `--takeoff`, and `--landing` square pairs are `row,col`
+// (KOD/RoomGeometry order).
+//
 // WHY THIS EXISTS. A full lap is fifty minutes and the jump is four seconds of it. Three
 // rounds were spent changing code, waiting an hour, and reading a number that turned out to
 // be about the other forty-nine minutes. The operator's suggestion is the right one: put the

@@ -3,6 +3,14 @@
 Written 2026-08-06. This is the working plan for replacing grid-stepping with movement
 against the game's own `.roo` geometry. It is meant to be picked up cold — start here.
 
+**Coordinate note for this historical plan:** MCP tools use named `col`/`row`
+fields, positional movement helpers use `(col,row)`, `RoomGeometry` and KOD grids
+use `(row,col)`, and movement bytes are serialized Y then X. Human-facing square
+examples use `rNcM`; named fine points use `{x,y}`, with X→column and Y→row.
+This notation clarification does not change any method, command, wire, or
+artifact contract. See
+[`m59-coordinates.md`](m59-coordinates.md).
+
 ## The premise, in one line
 
 **We are the client, and the client is the collision detector.** Everything slow or wrong
@@ -174,7 +182,8 @@ Found 2026-08-06 while clearing the `cant_go` failures, and it is a much better 
 the Limping Toad because a character is **actually stuck in it right now**.
 
 Camilla sits in the Brownestone Inn (`barinn.roo`, room 106) and cannot leave. The exit to
-North Barloque has `stand_on` = (12,17). **The entire row 17 is walkable floor and entirely
+North Barloque has `stand_on={col:12,row:17}` (`r17c12`). **The entire row 17 is walkable
+floor and entirely
 unreachable in the coarse grid** — 37 of 198 walkable squares are cut off, and they are the
 doorway. Every `go` answers "You are unable to go anywhere." because
 `Room.SomethingTryGo` matches on the server's `piRow`, and we are on row 16.
@@ -201,8 +210,9 @@ The test for task 1: Camilla leaves the Brownestone Inn. The existing `stepFine`
 probably most of the machinery; what it lacked was any way to know the step was climbable.
 
 #### 1a. Trace contract: "move as far along this heading as I can"
-Against the wall segments, in fine coordinates (`KOD_FINENESS` = 64/square; the client's own
-is `CLIENT_FINENESS` = 1024 — mind the conversion). Clip at the first intersection, respect
+Against the wall segments, in named fine `{x,y}` coordinates, where X selects `col` and Y
+selects `row` (`KOD_FINENESS` = 64/square; the client's own is `CLIENT_FINENESS` = 1024 —
+mind the conversion). Clip at the first intersection, respect
 the Z step limit. Returns a point, not a square. This is the primitive everything else sits
 on, and it is the direct answer to "why isn't it just pythagoras".
 

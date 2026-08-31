@@ -35,8 +35,8 @@ export const VIGOR_RUN_THRESHOLD = 10;   // below this, running is snapped back
 /**
  * step(client, session, { col, row, waitMs })
  *
- * Sends one move to the centre of square (col,row) and confirms arrival by
- * reading our own position back. Returns:
+ * Sends one move to the centre of a 1-based KOD square in public (col,row) order
+ * and confirms arrival by reading our own position back. Returns:
  *
  *   { sent, reason, arrived, from:{col,row}, to:{col,row}, at:{col,row}, terminal }
  *

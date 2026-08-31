@@ -219,6 +219,8 @@ export function extractDLighting(r) {
   return { flags, intensity: r.u8(), color: r.u16() };
 }
 
+// COORDINATE CONTRACT: the wire tuple is (y,x); this adapter returns named
+// `{ x, y, col, row }` fields so no positional order escapes the protocol boundary.
 // ExtractCoordinates (server.c:176). Y FIRST, then X — both in kod fine units,
 // where a value is row * 64 + offset_within_square and rows are 1-based. The C
 // client converts to its own 0-based 1024-unit space; we keep the wire units,
@@ -975,7 +977,7 @@ export function describeObject(o, lookup) {
   const name = lookup ? lookup(o.nameRsc) : `rsc ${o.nameRsc}`;
   const bits = [];
   if (o.amount) bits.push(`x${o.amount}`);
-  if (o.x !== undefined) bits.push(`at (${o.col},${o.row})`);
+  if (o.x !== undefined) bits.push(`at (${o.col},${o.row}) [col,row; r${o.row}c${o.col}]`);
   if (o.degrees !== undefined && o.x !== undefined) bits.push(`facing ${o.degrees}°`);
   if (o.flags & OF.PLAYER) bits.push('player');
   const can = affordances(o.flags).filter(x => x !== 'look');

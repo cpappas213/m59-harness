@@ -5,6 +5,9 @@
 //   node tools/m59-patrol.mjs --agents arena1 --waypoints 8,8 8,18 18,18 18,8
 //   node tools/m59-patrol.mjs --agents arena1,arena2,arena3 --radius 9 --laps 3
 //
+// CLI CONTRACT: `--centre` and `--waypoints` are `col,row`
+// (movement-facing order).
+//
 // A test bed needs characters that are DOING something ordinary while the thing under
 // test happens around them — moving targets, bodies in the way, a room that is not
 // static. The keeper cannot provide that: `survive` stands still by design and `farm`
@@ -59,6 +62,8 @@ export async function rpc(port, name, args, timeoutMs = 120000) {
 // kod grid — 1-based, integral — so the circle is rounded onto it and any duplicate
 // that rounding produces is dropped: two identical consecutive waypoints are a step
 // that never moves, and a ring made of those spins on the spot.
+// COORDINATE CONTRACT: `centre` and every returned waypoint are positional
+// `[col,row]` arrays for movement callers.
 
 export function ring({ centre = [13, 13], radius = 9, points = 8, rows = null, cols = null } = {}) {
   const [cc, cr] = centre;
@@ -148,6 +153,7 @@ function parseArgs(argv) {
   return a;
 }
 
+// CLI ADAPTER: pairs remain `[col,row]` for calls to movement APIs.
 const pair = s => String(s).split(',').map(Number);
 
 async function main(argv) {

@@ -23,6 +23,10 @@
 // finer than the 248-unit player radius, which is the width that decides whether a gap is
 // passable at all — anything coarser cannot see a gap a body fits through, and anything
 // finer costs time without finding new gaps.
+//
+// COORDINATE CONTRACT. Fine point objects and fine-distance thresholds here use
+// client/BSP (x,y), 1024 units per square with a zero-based room origin. Named square
+// records are 1-based {row,col}; positional square helpers take (row,col).
 import { KOD_FINENESS, CLIENT_FINENESS } from './m59-roo.mjs';
 
 // Client units per square, and how many lattice points we lay across one.
@@ -153,7 +157,7 @@ export function pullFine(geo, from, points) {
   return out;
 }
 
-/** The stand point of a square, in client units — what a square-planner would aim at. */
+/** The stand point of a 1-based (row,col) square, returned in client/BSP (x,y). */
 export const pointOfSquare = (geo, row, col) => geo.standPoint?.(row, col)
   ?? { x: (col - 0.5) * CLIENT_PER_SQUARE, y: (row - 0.5) * CLIENT_PER_SQUARE };
 
