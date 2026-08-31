@@ -92,11 +92,14 @@ export function record(book, { at = Date.now(), room = null, roomName = null,
                                // (4 tried)" would stop being opaque, and four more of those
                                // rows were written tonight with the detail dropped on this
                                // line. No error, no warning, just an empty column.
-                               refusals = null, believed = null } = {}) {
+                               refusals = null, believed = null,
+                               outcome = null, skipped = null } = {}) {
   const t = { at, room, room_name: roomName, to, to_name: toName,
               ms, walk_ms: walkMs, ok, tried,
               ...(reason ? { reason } : {}),
+              ...(outcome ? { outcome } : {}),
               ...(refusals?.length ? { refusals } : {}),
+              ...(skipped?.length ? { skipped } : {}),
               ...(believed ? { believed } : {}),
               journey, hop, destination };
   book.transits.push(t);
@@ -125,7 +128,7 @@ export function byRoom(books, { since = 0, failuresOnly = false } = {}) {
       r.name ??= t.room_name;
       r.crossings++;
       r.times.push(t.ms);
-      r.tried += t.tried || 1;
+      r.tried += t.tried ?? 1;
       if (!t.ok) r.fails++;
       if (!r.worst || t.ms > r.worst.ms) r.worst = t;
     }

@@ -477,12 +477,6 @@ function atEdgeOpening(position, opening, direction) {
 }
 
 const BARRED_ON_ENTRY = /guardian angel holds you back/i;
-// A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
-// never got there. `leaveViaAny` has already tried every square the room publishes for
-// that destination, so this is the room saying "not from here", and the answer is another
-// door rather than another attempt at this one.
-const UNREACHABLE_EXIT =
-  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
 // Fine-positioning at a boundary opening before the outward step that actually crosses.
 // Both are deliberately small: this is a nudge onto the opening, and the crossing does
 // not depend on hitting it exactly. See leaveVia's edge branch.

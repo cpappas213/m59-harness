@@ -549,7 +549,9 @@ console.log('\nthe wiring — the parts a rename would silently break');
      /keeper && typeof keeper[.]travel === 'function'[)][\s\S]{0,40}outcome = await keeper[.]travel[(]/
        .test(BROKER_SRC));
   ok('and a journey that ended short keeps its destination for the resume',
-     /suspendedJourney = [{][\s\S]{0,240}the travel job ended short/.test(BROKER_SRC));
+     /keeper[.]suspendedJourney = [{]\s*to: Number[(]dest[)]/.test(BROKER_SRC));
+  ok('and a stable executor outcome survives into the operator-visible suspension',
+     /trigger: outcome[?][.]outcome \?\? 'the travel job ended short/.test(BROKER_SRC));
   ok('while one that ARRIVED does not',
      /const arrived = outcome[?][.]arrived === true/.test(BROKER_SRC)
      && /if [(]!arrived && dest != null/.test(BROKER_SRC));

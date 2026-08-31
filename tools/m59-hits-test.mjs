@@ -207,6 +207,10 @@ const T0 = 1_700_000_000_000;   // a fixed clock; Date.now() has no place in a t
                     ms: 114000,  walkMs: 110000, ok: true,  tried: 9, journey: 'j2', hop: 0 });
   tr.record(book, { at: T0 + 20000, room: 562, roomName: 'The sandy shores', to: 552,
                     ms: 62000,   walkMs: 61000,  ok: false, tried: 10, journey: 'j3', hop: 1,
+                    outcome: 'exit_candidates_exhausted',
+                    refusals: [{ square: '1,4', stage: 'edge', crossing_packet_sent: true,
+                                 why: 'stepping past the edge did nothing' }],
+                    skipped: [{ stand_on: { col: 5, row: 1 }, why: 'not tried — budget spent' }],
                     reason: 'every square for that exit refused (10 tried)' });
 
   const rooms = tr.byRoom([book]);
@@ -224,6 +228,12 @@ const T0 = 1_700_000_000_000;   // a fixed clock; Date.now() has no place in a t
   ok('and counted as a failure', shores.failed === 1);
   ok('with the reason kept verbatim',
      /every square for that exit refused/.test(shores.worst.reason));
+  ok('with the stable outcome and exact refusal stage kept too',
+     shores.worst.outcome === 'exit_candidates_exhausted' &&
+     shores.worst.refusals?.[0]?.stage === 'edge' &&
+     shores.worst.refusals?.[0]?.crossing_packet_sent === true &&
+     shores.worst.skipped?.length === 1,
+     JSON.stringify(shores.worst));
   ok('rooms come back worst-first', rooms[0].room === 544, String(rooms[0].room));
 
   // `ms` is time in the room; `walk_ms` is only the part inside leaveViaAny. The gap

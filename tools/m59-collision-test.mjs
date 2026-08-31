@@ -1855,6 +1855,7 @@ console.log('\nterminal movement propagation and edge packet authority');
       // for a fixture with no routes table behind it.
       railAcross() { return null; },
       async followRail() { return { railed: false, reason: 'no rail in this fixture' }; },
+      async standBeforeGo() {},
       async walkTo() { return { arrived: false, reason: 'room_security_unknown' }; },
       async walkFine() { throw new Error('terminal movement must not fall through'); },
       // THE STEP INTO THE DOORWAY, REFUSED BY DEFAULT. `leaveVia` closes the last square
@@ -1877,6 +1878,41 @@ console.log('\nterminal movement propagation and edge packet authority');
       stand_on: { col: 2, row: 2 }, fine_stand_on: { x: 160, y: 160 },
       edge_target: { x: 192, y: 160 }, fine_path: [{ x: 160, y: 160 }],
     };
+
+    // RESTING SETS PFLAG_NO_MOVE. Standing at the final packet is too late: both a rail
+    // boarding walk and the ordinary approach have already been refused by then. Model the
+    // live room-563 reproduction directly — movement is locked until stand is sent — and
+    // pin the ordering at the public leaveVia boundary.
+    let seated = true, standCalls = 0, walkedWhileSeated = false;
+    const seatedSession = {
+      ...terminalSession,
+      async standBeforeGo() { standCalls++; seated = false; },
+      async walkTo() {
+        walkedWhileSeated ||= seated;
+        return { arrived: true };
+      },
+    };
+    const seatedEdge = await leaveVia.call(seatedSession, exit, {});
+    ok('edge travel stands before trying its approach movement',
+       standCalls === 1 && walkedWhileSeated === false,
+       JSON.stringify({ standCalls, walkedWhileSeated, seatedEdge }));
+    ok('so a seated boundary crossing reaches its outward packet and leaves',
+       seatedEdge.left === true, JSON.stringify(seatedEdge));
+
+    const silentEdgeSession = {
+      ...terminalSession,
+      client: { ...client,
+        async waitFor() { return { events: [] }; } },
+      async walkTo() { return { arrived: true }; },
+      async queueValidatedMove() { return { sent: true, eventSeq: 40 }; },
+    };
+    const silentEdge = await leaveVia.call(silentEdgeSession, exit, {});
+    ok('an outward packet with no room change is classified at the edge stage',
+       silentEdge.left === false && silentEdge.stage === 'edge' &&
+       silentEdge.crossing_packet_sent === true,
+       JSON.stringify(silentEdge));
+
+    edgePackets = 0;                    // the next assertion owns this counter
     const terminal = await leaveVia.call(terminalSession, exit, {});
     ok('leaveVia propagates terminal approach and emits no edge packet',
        terminal.reason === 'room_security_unknown' && terminal.stage === 'walk' &&
@@ -2248,15 +2284,55 @@ console.log('\nterminal movement propagation and edge packet authority');
       _blinkPointHere() { return null; },
       async leaveVia() {
         attempts++;
-        return { left: false, reason: 'collision_geometry_unavailable' };
+        return { left: false, stage: 'edge', crossing_packet_sent: false,
+                 reason: 'collision_geometry_unavailable' };
       },
     };
     const result = await leaveViaAny.call(session,
       [{ kind: 'edge', stand_on: { col: 1, row: 1 } },
        { kind: 'edge', stand_on: { col: 2, row: 2 } }], {});
     ok('leaveViaAny stops after the first terminal candidate',
-       result.reason === 'collision_geometry_unavailable' && attempts === 1,
+       result.reason === 'collision_geometry_unavailable' && attempts === 1 &&
+       result.attempts === 1 && result.tried?.length === 1 &&
+       result.tried[0].stage === 'edge' && result.tried[0].crossing_packet_sent === false,
        JSON.stringify({ result, attempts }));
+
+    // THREE CALLS ARE THREE ATTEMPTS. A fourth candidate rejected by the room-walk budget
+    // is useful evidence, but it was never asked and must not inflate `tried` (or acquire a
+    // phantom successful attempt when travel writes the transit row).
+    const priorBudget = process.env.M59_EXIT_CANDIDATES;
+    process.env.M59_EXIT_CANDIDATES = '3';
+    let calls = 0;
+    const budgeted = {
+      movementGeneration: 0,
+      movementWasCancelled() { return false; },
+      async _askStrategies() { return null; },
+      _blockingBodies() { return []; },
+      _blinkPointHere() { return null; },
+      async leaveVia() {
+        calls++;
+        return { left: false, stage: 'walk', crossing_packet_sent: false,
+                 reason: 'geometry_blocked' };
+      },
+    };
+    let counted;
+    try {
+      counted = await leaveViaAny.call(budgeted,
+        [1, 2, 3, 4].map(col => ({ kind: 'edge', to: 2,
+          stand_on: { col, row: 1 }, fine_stand_on: { x: col * 64, y: 96 } })),
+        { exact: true });
+    } finally {
+      if (priorBudget == null) delete process.env.M59_EXIT_CANDIDATES;
+      else process.env.M59_EXIT_CANDIDATES = priorBudget;
+    }
+    ok('candidate accounting counts calls and keeps an unattempted budget skip separate',
+       calls === 3 && counted.attempts === 3 && counted.tried?.length === 3 &&
+       counted.skipped?.length === 1 && !counted.tried.some(t => /not tried/.test(t.why)),
+       JSON.stringify({ calls, counted }));
+    ok('candidate failures preserve their exact stage and wire authority',
+       counted.outcome === 'exit_candidates_exhausted' &&
+       counted.tried.every(t => t.stage === 'walk' && t.crossing_packet_sent === false) &&
+       /\(3 tried\)/.test(counted.reason), JSON.stringify(counted));
   }
 
   // A STEP A MONSTER REFUSED IS NOT A STEP THE ROUTE SPENT.
@@ -2479,7 +2555,8 @@ console.log('\nterminal movement propagation and edge packet authority');
       };
       const result = await leaveViaAny.call(session, oneSquare, {});
       ok('a one-square doorway does not wait or back off while we are being hit in it',
-         result.left !== true && attempts <= 3 && retreats === 0,
+         result.left !== true && attempts <= 3 && retreats === 0 &&
+         result.attempts === attempts && result.tried?.length === attempts,
          JSON.stringify({ left: result.left, attempts, retreats }));
     }
     delete process.env.M59_NARROW_WAIT_MS;

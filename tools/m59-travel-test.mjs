@@ -34,6 +34,7 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
     name: 'test',
     at: startAt,
     routeAvoids: [],
+    routeBlockedHops: [],
     movementGeneration: 0,
     reads: 0,
     noteTransit: () => {},
@@ -49,8 +50,9 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
         const n = rooms[s.at];
         return n == null ? null : { num: n, name: `room ${n}` };
       },
-      route(to, { avoid } = {}) {
+      route(to, { avoid, blockedHops } = {}) {
         s.routeAvoids.push(avoid ? [...avoid] : null);
+        s.routeBlockedHops.push(blockedHops ? [...blockedHops] : null);
         const here = rooms[s.at];
         if (here == null) return { found: false, reason: 'start is outside the room grid' };
         const idx = rooms.indexOf(to);
@@ -59,7 +61,8 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
         let next = rooms[s.at + (idx > s.at ? 1 : -1)];
         // A detour that exists only when the direct neighbour is barred, so the test can
         // tell "routed around it" from "gave up on it".
-        if (avoid?.has(Number(next)) && detour != null) next = detour;
+        if ((avoid?.has(Number(next)) || blockedHops?.has(`${here}>${next}`)) && detour != null)
+          next = detour;
         return { found: true, hops: [{ to: next, to_name: `room ${next}` }] };
       },
       exits: () => {
@@ -81,8 +84,12 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
       // time, whatever we do first — which is the point of the barring.
       const to = candidates?.[0]?.to;
       if (barred && barred.has(Number(to)))
-        return { left: false,
-                 reason: 'Your guardian angel holds you back and prevents you from entering here.' };
+        return { left: false, outcome: 'exit_candidates_exhausted', attempts: 2,
+                 tried: [{ stage: 'walk', crossing_packet_sent: false,
+                           why: 'geometry_blocked' },
+                         { stage: 'edge', crossing_packet_sent: true,
+                           why: 'Your guardian angel holds you back and prevents you from entering here.' }],
+                 reason: 'every square for that exit refused (2 tried)' };
       const outcome = script.length ? script.shift() : true;
       if (outcome === 'vanish') { s.at = null; return { left: false, reason: 'coordinates went off grid' }; }
       // A CROSSING THAT LANDS SOMEWHERE ELSE, which is an ordinary outcome rather than an
@@ -130,10 +137,8 @@ ok('and it is a whole method', travelSrc.trim().endsWith('}'));
 // has fallen behind rather than quietly testing something else. `BARRED_ON_ENTRY` is the
 // real regex, not a stub, because what it matches IS the behaviour under test.
 const BARRED_ON_ENTRY = /guardian angel holds you back/i;
-const UNREACHABLE_EXIT =
-  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
-const travel = new Function('orderExits', 'BARRED_ON_ENTRY', 'UNREACHABLE_EXIT',
-  `return ({ ${travelSrc} }).travel`)((c) => c, BARRED_ON_ENTRY, UNREACHABLE_EXIT);
+const travel = new Function('orderExits', 'BARRED_ON_ENTRY',
+  `return ({ ${travelSrc} }).travel`)((c) => c, BARRED_ON_ENTRY);
 
 
 // ---------------------------------------------------------------------------
@@ -215,6 +220,20 @@ console.log('cancellation still wins, because it is the survival path');
   ok('and it does not report arrival', r.arrived !== true);
 }
 
+{
+  const s = fakeSession({ rooms: [1, 2, 3] });
+  s.leaveViaAny = async () => ({
+    left: false, cancelled: true, cancelled_by: 'test',
+    tried: [{ stage: 'edge', crossing_packet_sent: true,
+              why: 'Your guardian angel holds you back and prevents you from entering here.' }],
+  });
+  const r = await travel.call(s, 3, {});
+  ok('a mid-batch cancellation outranks an earlier guardian refusal',
+     r.cancelled === true && !(s.barredRooms?.size) &&
+     !(r.log ?? []).some(e => e.barred || e.blocked_hop),
+     JSON.stringify({ result: r, barred: [...(s.barredRooms ?? [])] }));
+}
+
 // ---------------------------------------------------------------------------
 // A DOOR THAT WILL NEVER OPEN IS NOT A STICKY DOORWAY.
 //
@@ -233,8 +252,13 @@ console.log('a room the server bars is routed around, not retried');
   const rooms9 = [1, 2, 9, 4];
   const s2 = fakeSession({ rooms: rooms9, detour: null });
   const r = await travel.call(s, 4, {});
-  ok('the barred room is recorded on the journey log',
-     (r.log || []).some(e => e.barred === 3), JSON.stringify(r.log));
+  ok('the barred room and its server refusal are recorded on the journey log',
+     (r.log || []).some(e => e.barred === 3 && BARRED_ON_ENTRY.test(e.reason ?? '')),
+     JSON.stringify(r.log));
+  ok('a structured exhausted aggregate cannot disguise the server access bar as a bad hop',
+     !(r.log || []).some(e => e.blocked_hop === '2>3') &&
+     !s.routeBlockedHops.some(a => a && a.includes('2>3')),
+     JSON.stringify({ log: r.log, blocked: s.routeBlockedHops }));
   ok('and the very next plan is asked to avoid it',
      s.routeAvoids.some(a => a && a.includes(3)), JSON.stringify(s.routeAvoids));
   // The barring itself must not be charged to patience — asserted against the LOG rather
@@ -256,9 +280,12 @@ console.log('a room the server bars is routed around, not retried');
   // enter, the honest answer is to fail, not to route around the place it was sent to.
   const dest = fakeSession({ rooms: [1, 2, 3], barred: new Set([3]) });
   const rd = await travel.call(dest, 3, {});
-  ok('being sent INTO a barred room fails rather than barring the destination',
-     rd.arrived !== true && !(dest.barredRooms?.has?.(3)),
-     JSON.stringify({ arrived: rd.arrived, barred: [...(dest.barredRooms ?? [])] }));
+  ok('being sent INTO a barred room preserves the refusal rather than blocking the hop',
+     rd.arrived !== true && BARRED_ON_ENTRY.test(rd.reason ?? '') &&
+     rd.outcome !== 'route_progressing_exits_exhausted' &&
+     !(dest.barredRooms?.has?.(3)) && !(rd.blocked_hops ?? []).includes('2>3'),
+     JSON.stringify({ arrived: rd.arrived, reason: rd.reason, outcome: rd.outcome,
+                      barred: [...(dest.barredRooms ?? [])], blocked: rd.blocked_hops }));
 }
 
 // ---------------------------------------------------------------------------
@@ -273,19 +300,33 @@ console.log('a doorway this side of the room cannot reach is replanned around');
 {
   // Every attempt on the 2 -> 3 doorway reports the walk never got there.
   const s = fakeSession({ rooms: [1, 2, 3, 4] });
+  let failedBatches = 0;
   s.leaveViaAny = async (candidates) => {
-    if (Number(candidates?.[0]?.to) === 3)
-      return { left: false, reason: 'every square for that exit refused (4 tried)' };
+    if (Number(candidates?.[0]?.to) === 3) {
+      failedBatches++;
+      return { left: false, outcome: 'exit_candidates_exhausted', attempts: 3,
+               tried: [{ stage: 'walk', crossing_packet_sent: false, why: 'geometry_blocked' }],
+               skipped: [{ stand_on: { col: 4, row: 1 }, why: 'not tried — budget spent' }],
+               reason: 'every square for that exit refused (3 tried)' };
+    }
     s.at += 1; return { left: true, used_exit: { stand_on: { col: 1, row: 1 } } };
   };
   const r = await travel.call(s, 4, {});
   ok('the unreachable doorway is named on the log',
      (r.log || []).some(e => e.unreachable_exit === 3), JSON.stringify(r.log).slice(0, 300));
-  ok('and the next plan is asked to avoid it',
-     s.routeAvoids.some(a => a && a.includes(3)), JSON.stringify(s.routeAvoids));
+  ok('and the next plan blocks the exact directed hop, not the destination room',
+     s.routeBlockedHops.some(a => a && a.includes('2>3')) &&
+     !s.routeAvoids.some(a => a && a.includes(3)),
+     JSON.stringify({ blocked: s.routeBlockedHops, avoids: s.routeAvoids }));
   ok('it is recorded once, not once per attempt',
      (r.log || []).filter(e => e.unreachable_exit === 3).length === 1,
      JSON.stringify((r.log || []).filter(e => e.unreachable_exit)));
+  ok('a permissive route fallback cannot buy the same full boundary walk twice',
+     failedBatches === 1 && r.outcome === 'route_progressing_exits_exhausted' &&
+     r.blocked_hops?.includes('2>3'), JSON.stringify({ failedBatches, result: r }));
+  ok('the stable terminal result preserves exact attempt and stage evidence',
+     r.attempts === 3 && r.refusals?.[0]?.stage === 'walk' && r.skipped?.length === 1,
+     JSON.stringify({ attempts: r.attempts, refusals: r.refusals, skipped: r.skipped }));
 
   // AND IT IS PER JOURNEY, NEVER PER SESSION. "I cannot reach that door from where I am
   // standing" stops being true the moment the character stands somewhere else; remembering
@@ -296,12 +337,48 @@ console.log('a doorway this side of the room cannot reach is replanned around');
 
   // The destination itself is never avoided — asked to walk INTO a room whose doorway we
   // cannot reach, the honest answer is to fail rather than to route around the target.
-  const dest = fakeSession({ rooms: [1, 2, 3] });
-  dest.leaveViaAny = async () => ({ left: false, reason: 'every square for that exit refused (4 tried)' });
+  const dest = fakeSession({ rooms: [1, 2, 3], startAt: 1 });
+  dest.leaveViaAny = async () => ({ left: false, outcome: 'exit_candidates_exhausted',
+    attempts: 1, tried: [{ stage: 'walk', why: 'geometry_blocked' }],
+    reason: 'geometry_blocked' });
   const rd = await travel.call(dest, 3, {});
-  ok('being sent to a room whose doorway is unreachable fails honestly',
-     rd.arrived !== true && !dest.routeAvoids.some(a => a && a.includes(3)),
-     JSON.stringify({ arrived: rd.arrived, avoids: dest.routeAvoids }));
+  ok('the exact-hop circuit breaker also works when the failed hop is the destination',
+     rd.arrived !== true && rd.outcome === 'route_progressing_exits_exhausted' &&
+     rd.blocked_hops?.includes('2>3') && !dest.routeAvoids.some(a => a && a.includes(3)),
+     JSON.stringify({ result: rd, avoids: dest.routeAvoids }));
+
+  // A blocked hop is a search instruction, not an automatic failure. If a strict
+  // alternative exists, take it and complete the journey without retrying the first door.
+  const detour = fakeSession({ rooms: [1, 2, 3, 4], detour: 4 });
+  let directBatches = 0, detourBatches = 0;
+  detour.world.exits = () => {
+    const here = detour.world.room?.num;
+    if (here === 1) return [{ to: 2, kind: 'edge', stand_on: { col: 1, row: 1 } }];
+    if (here === 2) return [
+      { to: 3, kind: 'edge', stand_on: { col: 1, row: 1 } },
+      { to: 4, kind: 'edge', stand_on: { col: 2, row: 1 } },
+    ];
+    return [];
+  };
+  detour.leaveViaAny = async candidates => {
+    const to = Number(candidates?.[0]?.to);
+    if (to === 3) {
+      directBatches++;
+      return { left: false, outcome: 'exit_candidates_exhausted', attempts: 2,
+               tried: [{ stage: 'walk', why: 'geometry_blocked' }],
+               reason: 'every square for that exit refused (2 tried)' };
+    }
+    if (to === 4) {
+      detourBatches++; detour.at = 3;
+      return { left: true, attempts: 1, used_exit: candidates[0] };
+    }
+    detour.at += 1;
+    return { left: true, attempts: 1, used_exit: candidates[0] };
+  };
+  const around = await travel.call(detour, 4, {});
+  ok('an available alternate exact hop is taken and the journey still arrives',
+     around.arrived === true && directBatches === 1 && detourBatches === 1,
+     JSON.stringify({ around, directBatches, detourBatches }));
 }
 
 
