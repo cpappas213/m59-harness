@@ -84,10 +84,12 @@ function fakeSession({ rooms = [1, 2, 3, 4], script = [], startAt = 0,
       // time, whatever we do first — which is the point of the barring.
       const to = candidates?.[0]?.to;
       if (barred && barred.has(Number(to)))
-        return { left: false, outcome: 'exit_candidates_exhausted', attempts: 1,
-                 tried: [{ stage: 'edge', crossing_packet_sent: true,
+        return { left: false, outcome: 'exit_candidates_exhausted', attempts: 2,
+                 tried: [{ stage: 'walk', crossing_packet_sent: false,
+                           why: 'geometry_blocked' },
+                         { stage: 'edge', crossing_packet_sent: true,
                            why: 'Your guardian angel holds you back and prevents you from entering here.' }],
-                 reason: 'Your guardian angel holds you back and prevents you from entering here.' };
+                 reason: 'every square for that exit refused (2 tried)' };
       const outcome = script.length ? script.shift() : true;
       if (outcome === 'vanish') { s.at = null; return { left: false, reason: 'coordinates went off grid' }; }
       // A CROSSING THAT LANDS SOMEWHERE ELSE, which is an ordinary outcome rather than an
@@ -236,8 +238,9 @@ console.log('a room the server bars is routed around, not retried');
   const rooms9 = [1, 2, 9, 4];
   const s2 = fakeSession({ rooms: rooms9, detour: null });
   const r = await travel.call(s, 4, {});
-  ok('the barred room is recorded on the journey log',
-     (r.log || []).some(e => e.barred === 3), JSON.stringify(r.log));
+  ok('the barred room and its server refusal are recorded on the journey log',
+     (r.log || []).some(e => e.barred === 3 && BARRED_ON_ENTRY.test(e.reason ?? '')),
+     JSON.stringify(r.log));
   ok('a structured exhausted aggregate cannot disguise the server access bar as a bad hop',
      !(r.log || []).some(e => e.blocked_hop === '2>3') &&
      !s.routeBlockedHops.some(a => a && a.includes('2>3')),
@@ -263,9 +266,12 @@ console.log('a room the server bars is routed around, not retried');
   // enter, the honest answer is to fail, not to route around the place it was sent to.
   const dest = fakeSession({ rooms: [1, 2, 3], barred: new Set([3]) });
   const rd = await travel.call(dest, 3, {});
-  ok('being sent INTO a barred room fails rather than barring the destination',
-     rd.arrived !== true && !(dest.barredRooms?.has?.(3)),
-     JSON.stringify({ arrived: rd.arrived, barred: [...(dest.barredRooms ?? [])] }));
+  ok('being sent INTO a barred room preserves the refusal rather than blocking the hop',
+     rd.arrived !== true && BARRED_ON_ENTRY.test(rd.reason ?? '') &&
+     rd.outcome !== 'route_progressing_exits_exhausted' &&
+     !(dest.barredRooms?.has?.(3)) && !(rd.blocked_hops ?? []).includes('2>3'),
+     JSON.stringify({ arrived: rd.arrived, reason: rd.reason, outcome: rd.outcome,
+                      barred: [...(dest.barredRooms ?? [])], blocked: rd.blocked_hops }));
 }
 
 // ---------------------------------------------------------------------------

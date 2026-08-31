@@ -10144,12 +10144,26 @@ class Session {
         // guardian-angel refusal is character/session policy, not evidence about this
         // approach or hop. Preserve the long-standing room-level avoidance for an
         // intermediate hall; the destination exception remains an honest failure below.
-        if (BARRED_ON_ENTRY.test(why) && nextHop.to != null && nextHop.to !== toRoomNum) {
+        // `leaveViaAny` reports its aggregate reason at the top level, so the useful
+        // server refusal can live only on the individual candidate that reached the
+        // crossing. Do not let that evidence disappear behind generic exhaustion prose.
+        const barredWhy = BARRED_ON_ENTRY.test(why) ? why :
+          (r.tried ?? []).map(t => t?.why ?? t?.reason ?? t?.note ?? '')
+            .find(candidateWhy => BARRED_ON_ENTRY.test(String(candidateWhy)));
+        if (barredWhy && nextHop.to != null && Number(nextHop.to) !== Number(toRoomNum)) {
           (this.barredRooms ??= new Set()).add(Number(nextHop.to));
-          log.push({ barred: nextHop.to, name: nextHop.to_name, reason: why,
+          log.push({ barred: nextHop.to, name: nextHop.to_name, reason: barredWhy,
                      note: 'the server refuses this character entry, so it is off the map ' +
                            'for this session and the route is being replanned around it' });
           continue;
+        }
+        if (barredWhy && nextHop.to != null && Number(nextHop.to) === Number(toRoomNum)) {
+          return arrivedIfHere({ arrived: false, log, reason: barredWhy,
+                   ...(r.attempts != null ? { attempts: r.attempts } : {}),
+                   ...(r.tried?.length ? { refusals: r.tried } : {}),
+                   ...(r.skipped?.length ? { skipped: r.skipped } : {}),
+                   stumbles: totalStumbles,
+                   ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
         }
         // Only the structured aggregate proves that the bounded candidate budget was attempted.
         // Prose such as "no floor" can describe one transient walk and must keep the ordinary
