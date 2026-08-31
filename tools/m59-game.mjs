@@ -1107,13 +1107,6 @@ const RAIL_STALL_JUMP = Number(process.env.M59_RAIL_STALL_JUMP || 3);
 
 const RAIL_STALL_WAYPOINTS = Number(process.env.M59_RAIL_STALL_WAYPOINTS || 3);
 
-// A DOORWAY THIS SIDE OF THE ROOM CANNOT REACH. Not a refusal by the server — the walk
-// never got there. `leaveViaAny` has already tried every square the room publishes for
-// that destination, so this is the room saying "not from here", and the answer is another
-// door rather than another attempt at this one.
-const UNREACHABLE_EXIT =
-  /every square for that exit refused|no floor anywhere on the \w+ boundary|no BSP-valid crossing/i;
-
 // HOW MANY STEPS A WALK MAY TAKE WITHOUT EVER GETTING CLOSER. Generous enough to go round a
 // building — the Streets of Tos crossing is 24 squares and its worst legitimate detour is a
 // handful — and far short of the sixty-odd squares of oscillation that prompted it.
@@ -1762,7 +1755,10 @@ class Session {
           } else if (!arrived && dest != null && here !== Number(dest)) {
             keeper.suspendedJourney = {
               to: Number(dest), why: `travelling to ${where}`, at: Date.now(),
-              trigger: 'the travel job ended short of the destination',
+              // Keep a stable executor diagnosis visible to status/polling callers. This
+              // field is reporting metadata, not retry policy; the generic sentence remains
+              // the backward-compatible fallback for every older failure shape.
+              trigger: outcome?.outcome ?? 'the travel job ended short of the destination',
               attempts: (keeper.inert?.attempts ?? 0) + 1,
               deaths_at: Number.isFinite(deathsAtStart) ? deathsAtStart
                                                         : (keeper.tally?.deaths ?? 0),
@@ -7350,6 +7346,17 @@ class Session {
     const c = this.need();
     if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
 
+    // RESTING IS A MOVEMENT LOCK, SO CLEAR IT BEFORE THE APPROACH, NOT AT THE DOOR.
+    //
+    // Player.ResetFlags sets PFLAG_NO_MOVE while seated. The server then refuses every
+    // ordinary move on the way to an exit, which means a stand sent immediately before
+    // `go` is too late and an edge crossing never reaches its outward packet at all. The
+    // same ordering matters for a baked rail: boarding it is movement too. `stand` is safe
+    // and deliberately unconditional (see standBeforeGo), and the shared pacer/socket keeps
+    // it ordered ahead of every movement branch below.
+    await this.standBeforeGo();
+    if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement();
+
     // Budget every walk by the ROUTE length, never by a fixed cap. Outdoor rooms here
     // are up to 80x80, so a boundary square can be well over a hundred steps away —
     // and a cap turns a perfectly good exit into a hop that "fails" for no stated
@@ -7875,7 +7882,6 @@ class Session {
                    note: correction.note ?? 'local collision could not place the character on the exact exit square' };
         leaned = true;
       }
-      await this.standBeforeGo();
       // Wait for the ROOM CHANGE specifically. A door announces itself first —
       // "You open the door and walk through." arrives as a message a beat before
       // BP_PLAYER reports the new room — and waitFor returns on the first match of
@@ -7920,7 +7926,8 @@ class Session {
         if (enriched) exit = { ...exit, ...enriched };
       }
       if (!exit.stand_on || !exit.fine_stand_on || !exit.edge_target)
-        return { left: false, reason: `no BSP-valid crossing on the ${exit.direction} boundary` };
+        return { left: false, stage: 'walk',
+                 reason: `no BSP-valid crossing on the ${exit.direction} boundary` };
       const edgeStartRoom = c.room.id;
       // No reachable boundary square, says the square grid — the same verdict it
       // gives for a cliff ledge, and wrong for the same reason. Pick the nearest
@@ -8200,6 +8207,7 @@ class Session {
                  note: 'the room changed before the final edge packet was needed' };
       if (!edgeMove.sent) return {
         left: false, stage: 'edge',
+        crossing_packet_sent: false,
         reason: edgeMove.validation?.reason ?? 'geometry_blocked',
         note: edgeMove.validation?.note ??
           'the outward edge packet could not be sent at all — not a collision refusal',
@@ -8252,11 +8260,13 @@ class Session {
         // else keeps routing through a boundary that does not exist.
         if (exit.inferred && this.world?.room?.num != null && exit.to != null) {
           forgetInferredExit(this.world.room.num, exit.to);
-          return { left: false, reason: 'stepping past the edge did nothing',
+          return { left: false, stage: 'edge', crossing_packet_sent: true,
+                   reason: 'stepping past the edge did nothing',
                    note: 'this exit was inferred from the other room declaring an edge into here, and the ' +
                          'server refused it — the inference is now dropped and routes will avoid it' };
         }
-        return { left: false, reason: 'stepping past the edge did nothing',
+        return { left: false, stage: 'edge', crossing_packet_sent: true,
+                 reason: 'stepping past the edge did nothing',
                  note: 'that boundary may have no plEdge_Exits entry, or a condition on it excludes where we crossed' };
       }
       return { left: true, arrived_in: entered.roomName };
@@ -8317,7 +8327,6 @@ class Session {
         // A genuine region fires merely by arriving. Asking to go is retained as one
         // bounded compatibility probe for map entries that are really doors in disguise.
         askGo: async () => {
-          await this.standBeforeGo();
           await this.pacer.submit('move', () => c.go(), DOOR_SETTLE_MS);
         },
       });
@@ -8383,7 +8392,7 @@ class Session {
 
   /**
    * THE LAST RESORT AT A DOORWAY THE MODEL CANNOT DESCRIBE — bounded, counted, and only
-   * ever reached once the ordinary path has refused every square it could offer.
+   * ever reached once the ordinary path has spent its bounded candidate budget.
    *
    * #18 made the harness enforce collision the way the stock client does, which was right:
    * the server accepts whatever coordinates you send, so nothing else was enforcing it and
@@ -8392,7 +8401,7 @@ class Session {
    * twenty-one characters could not reach a bank, which is the same blockage that starves
    * the whole fleet of reagents.
    *
-   * So where the model has refused EVERY square it offered, take the one step it would
+   * So where the model has refused every square the bounded budget attempted, take the one step it would
    * not, onto a square IT ITSELF published as crossing that boundary. That is far narrower
    * than "movement without validation": the target is the model's own answer, and every
    * step up to it was fully validated.
@@ -8851,6 +8860,20 @@ class Session {
     // repository has paid for before (`purpose` missing from a schema, every audit off).
     this._crossingStartedAt = Date.now();
     const tried = [];
+    const skipped = [];
+    let attempts = 0;
+    // `tried` contains evidence about calls that happened. Keep candidates rejected by the
+    // room-walk budget separate, and carry the actual invocation count on every result so a
+    // caller never has to reconstruct it from a mixture of failures, successes and skips.
+    const finish = result => ({ ...result, attempts,
+      ...(skipped.length ? { skipped } : {}) });
+    const refusal = (exit, result, extra = {}) => ({
+      stand_on: exit?.stand_on,
+      stage: result?.stage ?? null,
+      crossing_packet_sent: result?.crossing_packet_sent ?? null,
+      why: result?.reason || result?.note || 'no reason reported',
+      ...extra,
+    });
     // Captured before the first attempt, because a successful crossing changes the room out
     // from under us and the book has to be told which room the door was IN.
     const roomBefore = Number(this.world?.room?.num ?? this.client?.room?.id ?? NaN);
@@ -8994,13 +9017,16 @@ class Session {
     const ordered = orderExits(spread);
     for (let index = 0; index < ordered.length; index++) {
       const exit = ordered[index];
-      if (++spent > budget) {
-        tried.push({ stand_on: exit.stand_on,
-                     why: `not tried — this boundary had already cost ${budget} walks across the room` });
+      if (spent >= budget) {
+        skipped.push({ stand_on: exit.stand_on,
+                       why: `not tried — this boundary had already cost ${budget} walks across the room` });
         break;
       }
-      if (this.movementWasCancelled(movementGeneration, controlToken)) return this.cancelledMovement({ tried });
+      spent++;
+      if (this.movementWasCancelled(movementGeneration, controlToken))
+        return finish(this.cancelledMovement({ tried }));
       const askedAt = Date.now();
+      attempts++;
       const r = await this.leaveVia(exit, { movementGeneration, controlToken });
 
       // WE ARE THROUGH. STOP. DO NOT RUN A RECOVERY.
@@ -9027,8 +9053,9 @@ class Session {
                        ms: Date.now() - askedAt,
                        note: 'the room changed while the crossing reported failure — ' +
                              'stopped rather than recovering back through the door' });
-        return { left: true, late: true, used_exit: exit,
-                 stood_on: this.lastExitStand ?? null, ...(tried.length ? { tried } : {}) };
+        return finish({ left: true, late: true, used_exit: exit,
+                        stood_on: this.lastExitStand ?? null,
+                        ...(tried.length ? { tried } : {}) });
       }
       if (r.left) {
         // THE DOOR HAS NOT MOVED, SO IT SHOULD BE WRITTEN DOWN — AND THIS IS NOT YET THE
@@ -9057,9 +9084,9 @@ class Session {
           recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore ?? null,
                          tactic: 'needle_backoff', trigger: 'door_refused', worked: true,
                          ms: Date.now() - askedAt,
-                         note: `crossed on attempt ${tried.length + 1}` });
-        return { ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
-                 ...(tried.length ? { tried } : {}) };
+                         note: `crossed on attempt ${attempts}` });
+        return finish({ ...r, used_exit: exit, stood_on: this.lastExitStand ?? null,
+                        ...(tried.length ? { tried } : {}) });
       }
       // AN ANIMATING DOOR IS A TEMPORARY OBSTACLE WEARING A TERMINAL REASON'S CLOTHES.
       //
@@ -9083,11 +9110,12 @@ class Session {
         const gap = Number.isFinite(r.animation?.expires_in_ms)
           ? Math.min(ANIMATION_WAIT_MS, Math.max(250, r.animation.expires_in_ms + 250))
           : ANIMATION_WAIT_MS;
-        tried.push({ stand_on: exit.stand_on, why: r.reason,
-                     waited_for_the_animation_ms: gap,
-                     ...(r.animation ? { animation: r.animation } : {}),
-                     note: `a live animation holds this doorway — waiting at it rather than ` +
-                           `walking the room again (${animationWaits}/${ANIMATION_MAX_WAITS})` });
+        tried.push(refusal(exit, r, {
+          waited_for_the_animation_ms: gap,
+          ...(r.animation ? { animation: r.animation } : {}),
+          note: `a live animation holds this doorway — waiting at it rather than ` +
+                `walking the room again (${animationWaits}/${ANIMATION_MAX_WAITS})`,
+        }));
         recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore,
                        tactic: 'animation_wait', trigger: 'door_refused', worked: false,
                        ms: gap, note: r.animation?.sector != null
@@ -9096,8 +9124,10 @@ class Session {
         index--;                        // the same door, one cycle later
         continue;
       }
-      if (isTerminalMovementReason(r.reason))
-        return { ...r, left: false, used_exit: exit, ...(tried.length ? { tried } : {}) };
+      if (isTerminalMovementReason(r.reason)) {
+        tried.push(refusal(exit, r));
+        return finish({ ...r, left: false, used_exit: exit, tried });
+      }
       // BLOCKED BY A BODY AT A ONE-SQUARE DOOR: the next candidate is this candidate, so
       // waiting is the only thing that can change the answer. It does not consume the
       // budget, because it is not another square — it is the same square, later.
@@ -9105,12 +9135,13 @@ class Session {
         || (Array.isArray(r.blocked_by_bodies_at) && r.blocked_by_bodies_at.length > 0)
         || r.reason === 'object_blocked';
       if (isNeedle && bodyBlocked && waited < narrowWaits) {
-        waited++; spent--;
-        tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported',
-                     waited_for_the_doorway_ms: narrowWaitMs,
-                     note: `one-square doorway held by a body — waiting rather than asking the same square again (${waited}/${narrowWaits})`,
-                     ...(r.monster_blocked ? { monster_blocked: r.monster_blocked } : {}),
-                     ...(r.damage_while_blocked ? { damage_while_blocked: r.damage_while_blocked } : {}) });
+        const bodyRefusal = refusal(exit, r, {
+          waited_for_the_doorway_ms: narrowWaitMs,
+          note: `one-square doorway held by a body — waiting rather than asking the same square again (${waited + 1}/${narrowWaits})`,
+          ...(r.monster_blocked ? { monster_blocked: r.monster_blocked } : {}),
+          ...(r.damage_while_blocked ? { damage_while_blocked: r.damage_while_blocked } : {}),
+        });
+        tried.push(bodyRefusal);
         // A CHARACTER BEING HIT IN A DOORWAY DOES NOT STAND THERE COUNTING. The whole
         // reason to wait is that the blocker is expected to wander off; taking damage says
         // it has noticed us instead, and this repository has already paid for confusing
@@ -9137,11 +9168,12 @@ class Session {
         // up quickly is the survival answer, and it is the case that kills characters in
         // the Western border of the Twisted Wood.
         if (r.damage_while_blocked) {
-          tried[tried.length - 1].note = 'one-square doorway, and we are being hit in it — not waiting';
+          bodyRefusal.note = 'one-square doorway, and we are being hit in it — not waiting';
         } else {
+          waited++; spent--;
           const backed = await this.retreatAlongBreadcrumbs(
             { maxCrumbs: narrowBackoffCrumbs, movementGeneration, controlToken }).catch(() => null);
-          tried[tried.length - 1].backed_off = backed?.steps ?? 0;
+          bodyRefusal.backed_off = backed?.steps ?? 0;
           recordTactic({ character: this.client?.me?.name ?? this.name ?? null, room: roomBefore,
                          tactic: 'needle_backoff', trigger: 'body_blocked',
                          // Not known to have worked yet — the NEXT attempt says that, and a
@@ -9154,8 +9186,11 @@ class Session {
           index--;                      // the same square, later — that is the whole point
           continue;
         }
+        // This call is already represented by bodyRefusal. Move to the next candidate
+        // without appending the same failure a second time below.
+        continue;
       }
-      tried.push({ stand_on: exit.stand_on, why: r.reason || r.note || 'no reason reported' });
+      tried.push(refusal(exit, r));
     }
     // EVERY SQUARE REFUSED. Normal travel reports the refusal and replans. An operator may
     // explicitly enable the unvalidated diagnostic below to test a known model gap, but
@@ -9167,7 +9202,7 @@ class Session {
     // Every word of that argument is about GEOMETRY.
     //
     // It said nothing about bodies, and `object_blocked` is not terminal — so a doorway held
-    // by players refused every square, fell through here, and forced a crossing anyway. That
+    // by players refused every attempted square, fell through here, and forced a crossing anyway. That
     // is walking through a person: the one thing the whole collision subsystem exists to
     // stop, arriving through the door reserved for admitting the subsystem is wrong.
     //
@@ -9181,18 +9216,19 @@ class Session {
     const everyRefusalWasABody = tried.length > 0 &&
       tried.every(t => /object_blocked|body_blocked/i.test(String(t.why ?? '')));
     if (everyRefusalWasABody)
-      return { left: false, tried, blocked_by_bodies: true,
-               reason: 'object_blocked',
-               note: 'every square on this boundary had somebody standing on it. Not using ' +
-                     'the explicit diagnostic override: a person is not a hole in the map' };
+      return finish({ left: false, tried, blocked_by_bodies: true,
+                      reason: 'object_blocked',
+                      note: 'every attempted square on this boundary had somebody standing on it. Not using ' +
+                            'the explicit diagnostic override: a person is not a hole in the map' });
     if (tried.length && process.env.M59_EXIT_FALLBACK === '1') {
       const best = ordered[0] ?? null;
       if (best) {
+        attempts++;
         const forced = await this.leaveViaUnvalidated(best, { movementGeneration });
-        if (forced.left) return { ...forced, used_exit: best, fallback: true, tried };
+        if (forced.left) return finish({ ...forced, used_exit: best, fallback: true, tried });
+        tried.push(refusal(best, forced, { fallback: true }));
       }
     }
-    const last = tried[tried.length - 1];
     // LAST, AND ONLY WITH SOMETHING PRIVATE LOADED. Every ordinary answer has now been
     // tried: each candidate square, the queue behind a player, the fine lane past a body,
     // the sidestep, the retreat. This is the moment the crossing is about to be reported
@@ -9236,24 +9272,29 @@ class Session {
         // One more go at the SAME boundary from where we now stand. Not a recursion into
         // leaveViaAny -- that would re-ask the strategy from the new position and could
         // blink twice -- just the best candidate, once.
+        if (bestExit) attempts++;
         const again = bestExit ? await this.leaveVia(bestExit, { movementGeneration, controlToken })
-                              : null;
-        if (again?.left) return { ...again, used_exit: bestExit, after_blink: true, tried };
+                               : null;
+        if (again?.left)
+          return finish({ ...again, used_exit: bestExit, after_blink: true, tried });
+        if (again) tried.push(refusal(bestExit, again, { after_blink: true }));
       }
     }
     // THE EVIDENCE FOR A GAP REPORT, carried out rather than filed here. What makes a
     // refusal actionable is not that it happened but WHAT THE MODEL BELIEVED — the best
     // square it could offer — so that it can be set against the square a character is
     // standing on when the same door works. See m59-exitgap.mjs.
+    const last = tried[tried.length - 1];
     const offered = ordered[0] ?? null;
-    return { left: false, tried,
-             gap: { believed: offered?.stand_on
-                      ? { col: offered.stand_on.col, row: offered.stand_on.row } : null,
-                    direction: offered?.direction ?? candidates?.[0]?.direction ?? null,
-                    offered: tried.length },
-             reason: tried.length > 1
-               ? `every square for that exit refused (${tried.length} tried)`
-               : (last ? last.why : 'no exit to try') };
+    return finish({ left: false, outcome: 'exit_candidates_exhausted', tried,
+                    gap: { believed: offered?.stand_on
+                             ? { col: offered.stand_on.col, row: offered.stand_on.row } : null,
+                           direction: offered?.direction ?? candidates?.[0]?.direction ?? null,
+                           offered: attempts,
+                           ...(skipped.length ? { skipped: skipped.length } : {}) },
+                    reason: attempts > 1
+                      ? `every square for that exit refused (${attempts} tried)`
+                      : (last ? last.why : 'no exit to try') });
   }
 
   // One paced round of swings, facing the target before each. Split out from the
@@ -9559,11 +9600,14 @@ class Session {
     // the destination would hand every arrival the same approach, which is the mistake
     // `anchorFor` exists to make inexpressible. Null on the first hop: we did not walk in.
     let cameFromRoom = null;
-    // Doors this journey has already found it cannot reach from where it was standing.
-    // See the note on UNREACHABLE_EXIT below for why this is per-journey and the barred
-    // set is per-session.
-    const avoidThisJourney = new Set();
-    // A JOURNEY DOES NOT BAN ITS OWN HOPS. THAT IS THE OPERATOR'S CALL, NOT THE WALKER'S.
+    // Exact directed hops this journey has already exhausted. A room number is too broad:
+    // failing A->B says nothing about reaching B from C, and says nothing about another
+    // character. World.route accepts this exact `from>to` unit and may relax it only when
+    // there is no other graph route; if that permissive pass hands the same hop back, the
+    // loop below reports one stable terminal result instead of walking the same boundary
+    // again. Nothing here is persisted beyond this journey.
+    const exhaustedHops = new Map();
+    // A WRONG-ROOM LANDING DOES NOT BAN THE HOP IT AIMED FOR.
     //
     // This kept a journey-scoped set and added to it whenever a crossing landed in the wrong
     // room. It cascaded exactly as the operator warned it would: in one leg, ten wrong-room
@@ -9581,10 +9625,9 @@ class Session {
     // instead of ours. Deleting the door to work around a drift is how a movement bug
     // becomes a map that shrinks every time a character stumbles.
     //
-    // `route()` still TAKES a blockedHops set, because banning a hop is a real thing to want
-    // — a road somebody is being hunted on, an exit under a guard. It comes from whoever is
-    // driving, explicitly and temporarily. It is not something the walker discovers about
-    // itself mid-journey.
+    // `exhaustedHops` above is narrower evidence: leaveViaAny has actually spent its bounded
+    // candidate set without leaving the room. That exact executor result may steer this one
+    // journey; an unplanned landing, a guessed cause, or a remembered map opinion may not.
 
     // Let the position settle and the room re-publish itself, then try again from
     // wherever we actually are. Returns false when the patience is spent.
@@ -9715,6 +9758,33 @@ class Session {
       return fallback;
     };
 
+    const exhaustedRouteResult = (here, preferredHop = null) => {
+      const exhaustedHere = [...exhaustedHops.entries()]
+        .filter(([, detail]) => Number(detail.from) === Number(here?.num));
+      if (!exhaustedHere.length) return null;
+      const [blockedHop, blockedDetail] = exhaustedHere.find(([hop]) => hop === preferredHop)
+        ?? exhaustedHere[0];
+      const exhausted = exhaustedHere.map(([hop, detail]) => ({ hop, ...detail }));
+      log.push({ outcome: 'route_progressing_exits_exhausted', room: here.num,
+                 blocked_hop: blockedHop, exhausted_hops: exhausted,
+                 note: 'the router has no untried route-progressing exit from this room' });
+      return arrivedIfHere({
+        arrived: false,
+        outcome: 'route_progressing_exits_exhausted',
+        reason: 'route_progressing_exits_exhausted',
+        note: `the remaining route reuses ${blockedHop}, whose exit candidates ` +
+              'were already exhausted in this journey',
+        room: { num: here.num, name: here.name },
+        destination: toRoomNum,
+        blocked_hops: exhaustedHere.map(([hop]) => hop),
+        exhausted_hops: exhausted,
+        attempts: blockedDetail.attempts ?? null,
+        refusals: blockedDetail.refusals ?? [],
+        skipped: blockedDetail.skipped ?? [],
+        hops, stumbles: totalStumbles, log,
+      });
+    };
+
     const stumble = async (why) => {
       // The Underworld is not a room to re-plan in; it is a room to leave.
       if (/no route from 1 to|The Underworld/i.test(String(why)) || Number(this.world?.room?.num) === 1) {
@@ -9743,11 +9813,12 @@ class Session {
         return { arrived: true, room: { num: here.num, name: here.name }, hops, stumbles: totalStumbles, log };
 
       const route = this.world.route(toRoomNum, {
-        avoid: avoidThisJourney.size || this.barredRooms?.size
-          ? new Set([...(this.barredRooms ?? []), ...avoidThisJourney])
-          : null,
+        avoid: this.barredRooms?.size ? new Set(this.barredRooms) : null,
+        blockedHops: exhaustedHops.size ? new Set(exhaustedHops.keys()) : null,
       });
       if (!route.found) {
+        const exhausted = exhaustedRouteResult(here);
+        if (exhausted) return exhausted;
         // SAFE-WALL POCKET ESCAPE, FOR THE FIRST HOP. A character parked on a safe wall is
         // standing in one of the 17,402 collision pockets the router cannot plan out of to its
         // own room's exits — a safe wall IS the coarse grid and the BSP disagreeing (see the
@@ -9767,8 +9838,8 @@ class Session {
           const escaped = await this.retreatAlongBreadcrumbs({
             movementGeneration, controlToken,
             until: () => this.world.route(toRoomNum, {
-              avoid: avoidThisJourney.size || this.barredRooms?.size
-                ? new Set([...(this.barredRooms ?? []), ...avoidThisJourney]) : null,
+              avoid: this.barredRooms?.size ? new Set(this.barredRooms) : null,
+              blockedHops: exhaustedHops.size ? new Set(exhaustedHops.keys()) : null,
             }).found,
           }).catch(() => null);
           if (escaped?.cancelled) return this.cancelledMovement({ log });
@@ -9806,6 +9877,14 @@ class Session {
                  ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
       }
       const nextHop = route.hops[0];
+
+      // findPath deliberately relaxes a blocked hop when no strict route exists. That is
+      // the right fail-open rule for an offline model; it is the wrong instruction for an
+      // executor that has already watched this exact candidate set fail. Detect the relaxed
+      // first hop before paying for the same room walk again and expose a stable result a
+      // caller can act on.
+      const nextHopKey = `${here.num}>${nextHop.to}`;
+      if (exhaustedHops.has(nextHopKey)) return exhaustedRouteResult(here, nextHopKey);
 
       // A room often publishes SEVERAL squares for the same doorway — the Royal
       // Bank of Jasper lists two, and the first has a brazier standing on it.
@@ -9898,10 +9977,14 @@ class Session {
       (this.pendingExitGaps ??= []).push({
         room: here?.num ?? null,
         direction: r?.gap?.direction ?? r?.used_exit?.direction ?? null,
-        left: !!r.left, reason: r.reason ?? null,
+        left: !!r.left, reason: r.reason ?? null, outcome: r.outcome ?? null,
+        attempts: r.attempts ?? null,
         believed: r?.gap?.believed ?? null,
         stood_on: r.stood_on ?? null,
-        tried: (r.tried ?? []).slice(0, 8).map(t => ({ ...(t.stand_on ?? {}), why: t.why })),
+        tried: (r.tried ?? []).slice(0, 8).map(t => ({ ...(t.stand_on ?? {}),
+          stage: t.stage ?? null, crossing_packet_sent: t.crossing_packet_sent ?? null,
+          why: t.why })),
+        skipped: (r.skipped ?? []).slice(0, 8),
       });
       // Never log an empty reason: a hop that fails without saying why is exactly the
       // silent failure this whole broker exists to avoid, so surface whatever stage
@@ -9973,7 +10056,9 @@ class Session {
         ...(wrongRoom ? { landed_in: landedNow } : {}),
         // The one that worked plus the ones that did not. Above 1 means squares are being
         // refused, which is the suspicion this exists to confirm or kill.
-        tried: (r.tried?.length ?? 0) + 1,
+        tried: r.attempts ?? ((r.tried?.length ?? 0) + 1),
+        ...(r.outcome ? { outcome: r.outcome } : {}),
+        ...(r.skipped?.length ? { skipped: r.skipped } : {}),
         // WHAT EACH SQUARE ACTUALLY SAID, AND NOT JUST HOW MANY THERE WERE.
         //
         // `leaveViaAny` computes a `why` per candidate square and this line dropped all of
@@ -9988,6 +10073,7 @@ class Session {
         ...(r.tried?.length ? { refusals: r.tried.slice(0, 8).map(t => ({
               square: t.stand_on ? `${t.stand_on.row},${t.stand_on.col}` : null,
               stage: t.stage ?? null,
+              crossing_packet_sent: t.crossing_packet_sent ?? null,
               why: String(t.why ?? t.reason ?? '?').slice(0, 90),
             })) } : {}),
         // The best square the model could offer, so a refusal can be set against the square
@@ -10005,7 +10091,7 @@ class Session {
         journey: journeyId, hop: hops, destination: toRoomNum,
       });
       // A REFUSED DOORWAY IS THE ORDINARY CASE, NOT THE END OF THE JOURNEY. leaveViaAny has
-      // already tried every square this room publishes for that destination; re-settling and
+      // already spent its bounded candidate budget for that destination; re-settling and
       // re-planning is what turns the second attempt into the one that works.
       if (!r.left) {
         // A DOOR THAT WILL NEVER OPEN FOR THIS CHARACTER IS NOT A STICKY DOORWAY, AND
@@ -10043,28 +10129,21 @@ class Session {
         // artifact, it is a wall of rock. The room graph says 545 connects to 556 and it
         // does; it just does not connect to it FROM HERE.
         //
-        // The right algorithm is to plan over exits rather than rooms, where an edge exists
-        // between the door you came in and the door you want only if the two are in the
-        // same region. That is a change to the most load-bearing function in the
-        // repository and the regions are already baked for it. Until then this is the
-        // cheap half that recovers the journey: the door we could not reach is avoided for
-        // the REST OF THIS JOURNEY ONLY and the route is replanned, so the character
-        // leaves 545 by a door it can actually walk to instead of failing at this one.
+        // The route planner already accepts exact directed `blockedHops`. Record the one
+        // candidate set the executor watched fail, then replan. If no strict alternative
+        // exists, findPath's permissive pass returns that same hop and the guard above stops
+        // with a stable result before a second full boundary walk.
         //
         // JOURNEY-SCOPED, NOT SESSION-SCOPED, and that is the difference from the bar
         // above. "This character may never enter a guild hall" is true tomorrow; "I cannot
         // reach that door from where I am standing" stops being true the moment it stands
         // somewhere else, and a session-long memory of it would delete good doors from the
         // map for ever.
-        if (UNREACHABLE_EXIT.test(why) && nextHop.to != null && nextHop.to !== toRoomNum
-            && !avoidThisJourney.has(Number(nextHop.to))) {
-          avoidThisJourney.add(Number(nextHop.to));
-          log.push({ unreachable_exit: nextHop.to, name: nextHop.to_name, reason: why,
-                     note: 'cannot reach that doorway from this side of the room — replanning ' +
-                           'a way out that does not use it' });
-          if (await stumble(why)) continue;
-          return arrivedIfHere({ arrived: false, log, reason: why, stumbles: totalStumbles });
-        }
+        // A SERVER ACCESS BAR OUTRANKS THE GENERIC CANDIDATE AGGREGATE. `leaveViaAny`
+        // attaches `exit_candidates_exhausted` after trying a barred doorway too, but a
+        // guardian-angel refusal is character/session policy, not evidence about this
+        // approach or hop. Preserve the long-standing room-level avoidance for an
+        // intermediate hall; the destination exception remains an honest failure below.
         if (BARRED_ON_ENTRY.test(why) && nextHop.to != null && nextHop.to !== toRoomNum) {
           (this.barredRooms ??= new Set()).add(Number(nextHop.to));
           log.push({ barred: nextHop.to, name: nextHop.to_name, reason: why,
@@ -10072,8 +10151,34 @@ class Session {
                            'for this session and the route is being replanned around it' });
           continue;
         }
+        // Only the structured aggregate proves that the bounded candidate budget was attempted.
+        // Prose such as "no floor" can describe one transient walk and must keep the ordinary
+        // stumble/retry behaviour below.
+        const candidatesExhausted = r.outcome === 'exit_candidates_exhausted';
+        if (candidatesExhausted && nextHop.to != null && !exhaustedHops.has(nextHopKey)) {
+          exhaustedHops.set(nextHopKey, {
+            from: here.num, to: Number(nextHop.to), to_name: nextHop.to_name,
+            reason: why, outcome: r.outcome ?? 'legacy_unreachable_exit',
+            attempts: r.attempts ?? null,
+            refusals: r.tried ?? [], skipped: r.skipped ?? [],
+          });
+          log.push({ unreachable_exit: nextHop.to, blocked_hop: nextHopKey,
+                     name: nextHop.to_name, reason: why,
+                     note: 'that exact route-progressing exit is exhausted for this journey — ' +
+                           'replanning without it' });
+          if (await stumble(why)) continue;
+          return arrivedIfHere({ arrived: false, log, reason: why,
+                   outcome: r.outcome ?? 'exit_candidates_exhausted',
+                   attempts: r.attempts ?? null, refusals: r.tried ?? [], skipped: r.skipped ?? [],
+                   blocked_hops: [...exhaustedHops.keys()], stumbles: totalStumbles });
+        }
         if (await stumble(why)) continue;
-        return arrivedIfHere({ arrived: false, log, reason: why, stumbles: totalStumbles,
+        return arrivedIfHere({ arrived: false, log, reason: why,
+                 ...(r.outcome ? { outcome: r.outcome } : {}),
+                 ...(r.attempts != null ? { attempts: r.attempts } : {}),
+                 ...(r.tried?.length ? { refusals: r.tried } : {}),
+                 ...(r.skipped?.length ? { skipped: r.skipped } : {}),
+                 stumbles: totalStumbles,
                  ...(this.barredRooms?.size ? { barred_rooms: [...this.barredRooms] } : {}) });
       }
       // A ROOM CHANGE IS NOT THE ROOM WE ASKED FOR.

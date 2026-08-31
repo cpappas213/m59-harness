@@ -684,6 +684,22 @@ answer there is still to move, not to thread.
   The map graph records that A and B connect; it does not record that the two ends are
   in the same place, and they usually are not.
 
+- **AN EXIT REFUSAL IS NOT PROOF THAT THE EXIT REFUSED.** Resting sets `PFLAG_NO_MOVE`, so
+  a seated character can fail every ordinary approach step without ever sending the one
+  off-map packet that asks the server to cross a declared edge. `Session.leaveVia` therefore
+  stands before rail boarding or any other approach movement. The failure record keeps
+  `stage` (`walk` or `edge`) and `crossing_packet_sent`; only `stage: edge` with
+  `crossing_packet_sent: true` means the crossing packet was actually sent.
+
+  When the bounded candidate budget is spent, `leaveViaAny` returns
+  `outcome: exit_candidates_exhausted` with separate `attempts`, `tried`, and `skipped`.
+  Travel may block that exact directed hop (`from>to`) for the rest of the current journey.
+  It never persists a declared edge as bad, and it never blocks the destination room as a
+  whole. If the router has no strict alternative and offers the same exhausted hop again,
+  travel stops before another boundary walk with
+  `outcome: route_progressing_exits_exhausted`. That is a bounded executor result, not a
+  claim that the map has no door.
+
 
 - **A BODY IN THE WAY IS NOT A WALL, AND IT IS NOT A CLEARANCE EITHER — IT IS A SLIDE.**
   `clientd3d/move.c:666-697` is the whole rule, and three separate models of it shipped here

@@ -1195,14 +1195,15 @@ console.log('A HOP CAN BE BANNED — BUT ONLY BY WHOEVER IS DRIVING');
        JSON.stringify(viaRe));
     // THE POINT: there is another way of the same length — 596 — so blocking the bad hop
     // costs nothing. A journey that has watched the crossing fail takes it immediately.
-    // AND THE WALKER NEVER PUTS ANYTHING IN THAT SET ITSELF.
+    // AND A WRONG-ROOM LANDING NEVER PUTS ANYTHING IN THAT SET ITSELF. Candidate-set
+    // exhaustion now blocks one exact hop for one journey; this older `badHops` mechanism
+    // learned from landing somewhere unexpected and poisoned good crossings.
     // BOTH SIDES OF THE SPLIT. The journey loop moved to m59-game.mjs, so reading only
-    // m59-broker.mjs made the positive assertion below fail and the NEGATIVE one
-    // ('no longer learns hop bans of its own') pass on an empty haystack.
+    // m59-broker.mjs made this negative assertion pass on an empty haystack.
     const walker = [new URL('./m59-game.mjs', import.meta.url),
                     new URL('./m59-broker.mjs', import.meta.url)]
       .map(u => { try { return readFileSync(u, 'utf8'); } catch { return ''; } }).join('\n');
-    ok('the journey loop no longer learns hop bans of its own',
+    ok('the journey loop no longer learns hop bans from wrong-room landings',
        !/badHops/.test(walker), 'badHops');
     ok('while route() still accepts them from a caller', /blockedHops/.test(walker));
     ok('it goes by the Outskirts of Tos instead, which is the same number of hops',

@@ -126,12 +126,14 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   is defensible, was the rule for as long as the file existed, and left 578 The Cragged
   Mountains 31% ridable — nothing noticed, because a track that cannot be sent still looks
   exactly like a track) and
-  `node tools/m59-travel-test.mjs` (24 — **one call is the whole journey**: that a refused
+  `node tools/m59-travel-test.mjs` (61 — **one call is the whole journey**: that a refused
   doorway and an off-grid instant are re-settled and retried rather than returned, that a
   stumble is not a hop so re-settling cannot eat the room budget, that patience is bounded
   and the reason survives to the caller, that a journey whose last hop is also its last
-  permitted hop reports arrival rather than "gave up", and that a cancelled movement still
-  wins. It lifts the real method out of `m59-broker.mjs` by brace-matching rather than
+  permitted hop reports arrival rather than "gave up", that exhausted candidate sets block
+  only their exact directed hop and cannot be re-walked by the permissive route fallback,
+  and that a cancelled movement still wins. It lifts the real method out of
+  `m59-broker.mjs` by brace-matching rather than
   reimplementing it, because that file cannot be imported without taking the fleet lock) and
   `node tools/m59-travelguard-test.mjs` (32 — **one character has one body**: that a second
   travel call is REFUSED while the first is in flight, and that both arms of the tool claim
