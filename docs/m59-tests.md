@@ -126,7 +126,7 @@ every case joins characters and relocates bodies, and it refuses a non-loopback 
   is defensible, was the rule for as long as the file existed, and left 578 The Cragged
   Mountains 31% ridable — nothing noticed, because a track that cannot be sent still looks
   exactly like a track) and
-  `node tools/m59-travel-test.mjs` (61 — **one call is the whole journey**: that a refused
+  `node tools/m59-travel-test.mjs` (62 — **one call is the whole journey**: that a refused
   doorway and an off-grid instant are re-settled and retried rather than returned, that a
   stumble is not a hop so re-settling cannot eat the room budget, that patience is bounded
   and the reason survives to the caller, that a journey whose last hop is also its last

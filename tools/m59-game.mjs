@@ -10094,6 +10094,11 @@ class Session {
       // already spent its bounded candidate budget for that destination; re-settling and
       // re-planning is what turns the second attempt into the one that works.
       if (!r.left) {
+        // CANCELLATION OUTRANKS EVIDENCE FROM AN EARLIER CANDIDATE IN THE SAME BATCH.
+        // `leaveViaAny` keeps `tried` when a newer command interrupts it. One candidate may
+        // therefore contain a real guardian refusal even though the batch's final outcome
+        // is cancellation. That history must not turn a survival command into a room ban.
+        if (r.cancelled) return this.cancelledMovement({ log });
         // A DOOR THAT WILL NEVER OPEN FOR THIS CHARACTER IS NOT A STICKY DOORWAY, AND
         // RETRYING IT IS THE WHOLE FAILURE.
         //

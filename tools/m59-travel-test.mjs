@@ -220,6 +220,20 @@ console.log('cancellation still wins, because it is the survival path');
   ok('and it does not report arrival', r.arrived !== true);
 }
 
+{
+  const s = fakeSession({ rooms: [1, 2, 3] });
+  s.leaveViaAny = async () => ({
+    left: false, cancelled: true, cancelled_by: 'test',
+    tried: [{ stage: 'edge', crossing_packet_sent: true,
+              why: 'Your guardian angel holds you back and prevents you from entering here.' }],
+  });
+  const r = await travel.call(s, 3, {});
+  ok('a mid-batch cancellation outranks an earlier guardian refusal',
+     r.cancelled === true && !(s.barredRooms?.size) &&
+     !(r.log ?? []).some(e => e.barred || e.blocked_hop),
+     JSON.stringify({ result: r, barred: [...(s.barredRooms ?? [])] }));
+}
+
 // ---------------------------------------------------------------------------
 // A DOOR THAT WILL NEVER OPEN IS NOT A STICKY DOORWAY.
 //
