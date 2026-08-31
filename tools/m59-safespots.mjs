@@ -32,9 +32,14 @@
 // three open neighbours instead of eight cuts the number of things that can be
 // hitting you at any moment by more than half, with no mechanic beyond geometry.
 //
-// The reference case: Varuka, standing untouched in a swarm at (25,23) of the Main
+// The reference case: Varuka, standing untouched in a swarm at r23c25 of the Main
 // Gate to the City of Tos. That square has five open neighbours — west, east and
 // south — and the ENTIRE north arc is wall. Back to the wall, exactly as described.
+//
+// COORDINATE CONTRACT. Geometry-analysis functions take 1-based positional (row,col),
+// and named geometry records carry {row,col}. Selector callbacks and SafeSpotBook
+// methods use public (col,row); persisted book keys are "col,row". A book record's
+// optional x/y is the exact protocol/KOD fine position, 64 units per square.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { RoomGeometry } from './m59-roo.mjs';
@@ -1049,6 +1054,8 @@ export function geometryFor(mapRoom) {
 }
 
 // ---------------------------------------------------------------- the book
+//
+// Persistent square keys use the public, 1-based "col,row" order.
 
 const key = (col, row) => `${col},${row}`;
 

@@ -26,6 +26,7 @@ covers what you are about to touch, before you touch it. Comments across `tools/
 | change a threshold, a posture, an area or a tactic | [`docs/m59-policy.md`](docs/m59-policy.md) |
 | hand a bot a character, or take one back | [`docs/m59-boundary.md`](docs/m59-boundary.md) |
 | read a ledger, or land a commit that changes how the fleet moves | [`docs/m59-evidence.md`](docs/m59-evidence.md) |
+| interpret, log, serialize, or compare a coordinate | [`docs/m59-coordinates.md`](docs/m59-coordinates.md) |
 | run or extend the offline tests | [`docs/m59-tests.md`](docs/m59-tests.md) |
 
 ## The one-liner
@@ -282,7 +283,7 @@ on row 27 of the Sewers of Barloque, columns 39–41 exactly one square wide, an
 characters oscillating in the gaps for seventy seconds. `tools/fixtures/spidertrap1.json`
 is the second, built from a single snapshot rather than a run: a character crossing the
 Cragged Mountains (578) south to north on a journey to Barloque, held for twenty minutes
-at 16,45 by a black spider at 13,44 — boarding the baked line from the west anchor and
+at `r45c16` by a black spider at `r44c13` — boarding the baked line from the west anchor and
 slipping at the same index every seventy seconds, aiming an undeclared fall two rows north
 with the spider on the line and never taking it, vigor falling four a minute — with its
 vitals, load and policy under `subject` and the ledger's own rows under `trap`. A jam
@@ -294,7 +295,7 @@ the room the way the mover sees it — the coarse grid, the BSP floor, the step 
 .roo walls — with the baked route, the packets the rail actually sends, the declared
 fall-jumps and the tactics ledger's failures plotted on top of it. Hovering a square says
 what every predicate thinks of it. **Its first run answered a question that had cost two
-sessions**: square 5,65 in Ukgoth is walkable, has seven of eight mover steps out and zero
+sessions**: square `r5c65` in Ukgoth is walkable, has seven of eight mover steps out and zero
 refused approaches, and 84 boarding failures happen on it — so the geometry is not what is
 refusing, and `no_ground_gained` is firing on a walk the map supports.
 
@@ -446,7 +447,8 @@ What to fight — [`docs/m59-combat.md`](docs/m59-combat.md):
 
 Movement — [`docs/m59-routing.md`](docs/m59-routing.md):
 
-- **THE FINE GRID IS THE REALITY. A SQUARE IS A SUMMARY, AND ON INTERESTING GROUND IT IS A FALSE ONE.** Ask the coarse grid where the floor is and it answers per square; ask it about a ledge and it lies. 40,52 in the Ancient Place is `walkable: true` with NO FLOOR AT ITS CENTRE — 21 of 49 sampled points inside it are standable and the middle is not one. 38,30 is `walkable: false` and you jump onto it anyway, because the footing is a sliver. 40,33 spans 3520 to 10880: the valley floor and the high ledge, one square, one number. Every movement decision that matters — where to stand, whether a step lands, whether a jump clears — has to be asked of the BSP at fine resolution. Three separate failures in one day came from forgetting it: a walker aimed at square centres stepped off the ledge after thirteen waypoints, a jump finder could not see 40,33 → 40,32 because both halves are one square, and a height profile read off single fine points swung ±7000 because one unit either side of a ledge edge is a different sector. Use squares to talk to humans and to index the bake; use fine coordinates when the rubber hits the road.
+- **A COORDINATE NEEDS ITS SPACE AND AXIS ORDER.** MCP tools use named `col`/`row` fields, positional movement helpers use `(col,row)`, geometry/KOD grids use `(row,col)`, and the movement payload is serialized Y then X. Use `rNcM` or named fields in human-facing text and read [`docs/m59-coordinates.md`](docs/m59-coordinates.md) before changing a boundary; existing command and artifact encodings are compatibility contracts.
+- **THE FINE GRID IS THE REALITY. A SQUARE IS A SUMMARY, AND ON INTERESTING GROUND IT IS A FALSE ONE.** Ask the coarse grid where the floor is and it answers per square; ask it about a ledge and it lies. `r40c52` in the Ancient Place is `walkable: true` with NO FLOOR AT ITS CENTRE — 21 of 49 sampled points inside it are standable and the middle is not one. `r38c30` is `walkable: false` and you jump onto it anyway, because the footing is a sliver. `r40c33` spans 3520 to 10880: the valley floor and the high ledge, one square, one number. Every movement decision that matters — where to stand, whether a step lands, whether a jump clears — has to be asked of the BSP at fine resolution. Three separate failures in one day came from forgetting it: a walker aimed at square centres stepped off the ledge after thirteen waypoints, a jump finder could not see `r40c33` → `r40c32` because both halves are one square, and a height profile read off single fine points swung ±7000 because one unit either side of a ledge edge is a different sector. Use squares to talk to humans and to index the bake; use fine coordinates when the rubber hits the road.
 - A body in the way is not a wall and not a clearance — the client tests the move's ENDPOINT, lets you end inside the zone while moving away, and SLIDES. Two spiders 25 apart are passable; a clearance model says they are not.
 - "One square wide" is a fact about the coarse grid. The .roo under Twisted Wood's one-wide corridor is 82–110 fine units, not 64.
 - Melee reach is a disc of radius 2–3 SQUARES, and fine coordinates do not exist to it.

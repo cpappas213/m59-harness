@@ -56,6 +56,10 @@
 // one character; a forty-step route is forty bytes rather than forty coordinate pairs. The
 // squares are recovered by walking the string from the known start.
 //
+// SERIALIZED COORDINATE CONTRACT: route/reach keys are `row,col>row,col`,
+// pivot arrays are `[row,col]`, and step deltas are `(dr,dc)`. This is the writer
+// for that existing machine format, not a movement-facing `(col,row)` API.
+//
 // A SIBLING FILE, NOT substrate/m59-map.json. That file is already 27 MB and is the
 // checked map with its own manifest; this is derived from it and regenerable, and mixing
 // the two would mean rebaking geometry to change a routing decision.
@@ -115,7 +119,10 @@ export const STEP_DIRS = [
 ];
 const BY_LETTER = new Map(STEP_DIRS.map(([ch, dr, dc]) => [ch, { dr, dc }]));
 
-/** Walk a stored direction string back into squares. */
+/**
+ * Walk a stored direction string back into squares.
+ * COORDINATE CONTRACT: the positional start is `(row,col)`; results are named.
+ */
 export function replay(fromRow, fromCol, path) {
   const out = [];
   let r = fromRow, c = fromCol;
@@ -224,6 +231,8 @@ function clearanceProbe(geo, cap = 512, cell = 512) {
  * drifts next door and the step lands there. Furthest-from-the-edge, counting outside the
  * square as edge, stays exactly as it was.
  */
+// COORDINATE CONTRACT: the square is `(row,col)`; the result is named `{x,y}`
+// in RoomGeometry's 1024-unit client BSP space.
 function bodyStandPoint(geo, clearance, row, col, N = 9) {
   const x0 = (col - 1) * CLIENT_FINENESS, y0 = (row - 1) * CLIENT_FINENESS;
   const half = CLIENT_FINENESS / 2;
@@ -977,6 +986,7 @@ export function bakeRoom(room, { collision = true, preferCoarseFloor = true } = 
         // calls every square standable, and those are exactly the rooms this fleet dies
         // in. See RoomGeometry.stringPull for the measurement.
         const pulled = geometry.stringPull(pts, { onWalkable: true });
+        // SERIALIZED CONTRACT: route-table pivot arrays are `[row,col]`.
         pivots[pair] = {
           squares: pulled.points.map(pt => [Math.round(pt.y / CLIENT_FINENESS - 0.5) + 1,
                                             Math.round(pt.x / CLIENT_FINENESS - 0.5) + 1]),

@@ -499,6 +499,8 @@ export class M59Client {
   // rather than where we now are — must ask for a real read. `predicted` is set so the
   // difference is visible to anything that cares, and cleared the moment the server says
   // anything about this object, which BP_MOVE and BP_ROOM_CONTENTS both do.
+  // COORDINATE CONTRACT: `col/row` are named 1-based squares; optional `x/y`
+  // are the same point in 64-units-per-square kod wire space.
   predictSelf({ col, row, x, y } = {}) {
     const me = this.self;
     if (!me) return null;
@@ -891,6 +893,8 @@ export class M59Client {
   // That trade is worth taking outdoors and not indoors. Vigor sets the health
   // regeneration rate, so burning it in a safe town is pure loss, while crossing a
   // field of groundworms slowly is how you arrive dead.
+  // COORDINATE CONTRACT: arguments are fine `(x,y)` in 64-units-per-square kod
+  // wire space; BP_REQ_MOVE serializes the same point as Y then X below.
   moveTo(x, y, speed = 18, room = this.room.id) {
     if (!Number.isInteger(x) || x < 0 || x > 0xffff
         || !Number.isInteger(y) || y < 0 || y > 0xffff)
@@ -918,7 +922,8 @@ export class M59Client {
                  name: this.character ?? null, by: this.character ?? null,
                  player: true, sent: true, x, y });
   }
-  // Grid-square convenience: centre of square (col,row).
+  // COORDINATE CONTRACT: the movement API is `(col,row)`; this is the adapter to
+  // fine `(x,y)` kod wire coordinates. Do not reorder this legacy public signature.
   moveToSquare(col, row, speed = 18, room = this.room.id) {
     const half = KOD_FINENESS >> 1;
     return this.moveTo(col * KOD_FINENESS + half, row * KOD_FINENESS + half, speed, room);

@@ -33,6 +33,10 @@
 //
 // Destinations are room NUMBERS (piRoom_num), not object ids, so the graph survives
 // `save game` and restarts — which object ids do not (see NEXT-STEPS trap 8).
+//
+// COORDINATE CONTRACT: KOD exit tuples are positional `(row,col)`. This module
+// normalizes them immediately into named `{row,col}` fields; movement callers use
+// named `{col,row}` and must adapt by name rather than copying a bare tuple.
 
 import net from 'node:net';
 import { isMutableGeometry, MUTABLE_TRANSIT_PENALTY } from './m59-mutable.mjs';
@@ -215,6 +219,8 @@ export function bakeRoomGeometry(byNum, {
     if (!edgeDirections.has(roomNum)) edgeDirections.set(roomNum, new Set());
     edgeDirections.get(roomNum).add(direction);
   };
+  // COORDINATE CONTRACT: positional arrival arguments mirror KOD `(row,col)` and
+  // are normalized to named fields at this boundary.
   const addArrival = (to, row, col) => {
     if (!byNum[to] || !Number.isInteger(row) || !Number.isInteger(col)) return;
     if (!arrivals.has(to)) arrivals.set(to, []);
@@ -597,10 +603,14 @@ export function exitsOf(room) {
     });
   }
   for (const g of room.goExits) {
-    if (g.locked) { out.push({ kind: 'locked', to: null, row: g.row, col: g.col, how: `locked door at (${g.col},${g.row})` }); continue; }
+    if (g.locked) {
+      out.push({ kind: 'locked', to: null, row: g.row, col: g.col,
+                 how: `locked door at r${g.row}c${g.col} (row=${g.row}, col=${g.col})` });
+      continue;
+    }
     out.push({
       kind: 'go', to: g.to, row: g.row, col: g.col,
-      how: `stand exactly on (${g.col},${g.row}) then go`,
+      how: `stand exactly on r${g.row}c${g.col} (row=${g.row}, col=${g.col}) then go`,
       arriveRow: g.arriveRow, arriveCol: g.arriveCol,
     });
   }

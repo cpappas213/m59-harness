@@ -4,9 +4,9 @@ Read this if you are Codex, or any agent that does not read `CLAUDE.md`. The two
 files carry the same instructions; `CLAUDE.md` is the fuller version, the subject
 files under `docs/` (`m59-routing.md`, `m59-combat.md`, `m59-keeper.md`,
 `m59-economy.md`, `m59-guilds.md`, `m59-protocol-traps.md`, `m59-boards.md`,
-`m59-operations.md`, `m59-policy.md`, `m59-boundary.md`, `m59-tests.md`) are where
-the traps are actually written down, and [`docs/INSTALL.md`](docs/INSTALL.md) is the
-manual with troubleshooting.
+`m59-operations.md`, `m59-policy.md`, `m59-boundary.md`, `m59-coordinates.md`,
+`m59-tests.md`) are where the traps are actually written down, and
+[`docs/INSTALL.md`](docs/INSTALL.md) is the manual with troubleshooting.
 
 This repository lets an agent play Meridian 59 as a real player character.
 
@@ -127,6 +127,13 @@ the checkpoints went; do not delete old ones unasked.
 
 ## Traps
 
+- **Coordinates have several stable legacy spellings.** MCP tools use named
+  `col`/`row` fields, positional movement helpers use `(col,row)`, geometry/KOD
+  grid APIs use `(row,col)`, and movement bytes go over the wire Y then X. In
+  prose use `r34c65` or named `row`/`col`; never infer a pair's order from
+  appearance. Read [`docs/m59-coordinates.md`](docs/m59-coordinates.md) before
+  interpreting, logging, or changing one. Existing commands and serialized tuples
+  keep their documented grammar.
 - **`create automated` makes a character with ZERO in every attribute.** They are
   fixed at creation and never move, and stamina *is* the max-health ceiling
   (`101 + stamina`), so it is capped at 102 max health for ever. Unrepairable;

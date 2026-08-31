@@ -990,6 +990,11 @@ const server = createServer(async (req, res) => {
     // The keeper is the right place for this. It holds the real Session, the real World and
     // the real geometry; the broker holds a cached snapshot. So an order arrives here as a
     // name and is executed by the thing that owns the body.
+    //
+    // ACTION COORDINATES. Square destinations are 1-based KOD coordinates in public
+    // (col,row) order. walk_fine and step_fine carry protocol/KOD (x,y), 64 units per
+    // square, and stride uses that same unit. Geometry checks below intentionally swap
+    // public (col,row) into RoomGeometry's positional (row,col) convention.
     if (req.method === 'POST' && path === '/action') {
       let body = '';
       for await (const chunk of req) body += chunk;

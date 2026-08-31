@@ -5,6 +5,9 @@
 //   node tools/m59-ping.mjs --list                             what is currently out there
 //   node tools/m59-ping.mjs --clear                            remove every ping
 //
+// CLI CONTRACT: each `--at` pair is `col,row` (movement-facing order); this tool
+// adapts it by name before calling the KOD/DM `(row,col)` relocation boundary.
+//
 // The smallest possible tool, and it exists because the expensive part of every geometry
 // question this session has been getting a person to the exact square the argument is
 // about. A number in a terminal is not a place. A torch on the floor is.

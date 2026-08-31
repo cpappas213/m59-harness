@@ -67,6 +67,7 @@ export const LEARNED_CROSSINGS_FILE = process.env.M59_CROSSINGS_LEARNED ||
  * door, a teleport, a death) and is not evidence about an edge.
  */
 export function insideOf({ row, col }, { rows, cols }) {
+  // COORDINATE CONTRACT: both inputs and the result are named; no tuple order is implied.
   let r = row, c = col;
   if (col < 1) c = 1; else if (col > cols) c = cols;
   if (row < 1) r = 1; else if (row > rows) r = rows;
@@ -75,6 +76,8 @@ export function insideOf({ row, col }, { rows, cols }) {
 }
 
 export function harvest({ walksDir = WALKS_DIR, mapFile = movementMapFile() } = {}) {
+  // SERIALIZED CONTRACT: crossing evidence keys encode squares as `"row,col"`;
+  // decoded public values use named `{row,col}` fields.
   const map = JSON.parse(readFileSync(mapFile, 'utf8'));
   const byObj = new Map();
   for (const [n, r] of Object.entries(map.rooms)) if (r.objId) byObj.set(r.objId, Number(n));

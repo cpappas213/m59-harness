@@ -1303,6 +1303,7 @@ export function reachableFightFloor(floor, maxVigor = 200, foodVigor = 0) {
 //
 // Measured 2026-08-26, Castle Victoria: six fleet characters converged on one corner and
 // stood in each other's way, two of them on the same square, all "NOT MOVING".
+// The returned exclusion keys are serialized 1-based public squares: "col,row".
 export function crowdedSquares(objects, selfId, { radius = 1, playersOnline = null } = {}) {
   const out = new Set();
   const list = objects instanceof Map ? [...objects.values()] : (objects || []);
@@ -6649,6 +6650,9 @@ export class Autopilot {
   // meant to be hemmed in — that is what makes it safe — and demanding room to manoeuvre
   // would refuse the good ones along with the fatal ones. A square with ZERO ways out is a
   // different thing from a tight one, and it is the only thing refused here.
+  //
+  // exitTest and reachTest return selector callbacks in public 1-based (col,row) order.
+  // Their RoomGeometry calls intentionally swap those arguments to positional (row,col).
   exitTest() {
     const geo = this.s?.world?.geometry;
     if (!geo || typeof geo.moverStepLands !== 'function') return null;
@@ -6686,6 +6690,7 @@ export class Autopilot {
   // trail: "could not reach the safe spot" / "will not rest in the open here" / "leaving the
   // room to recover safely" / "could not leave" — then it died. Nothing recorded the failure,
   // so every pass made the identical choice, and the crossing was never allowed to proceed.
+  // Per-room exclusion keys below preserve the selector's 1-based "col,row" order.
   noteUnreachableSpot(room, col, row) {
     if (room == null) return;
     const per = (this.unreachableSpots ??= new Map());

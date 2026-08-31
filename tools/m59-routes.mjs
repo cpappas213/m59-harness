@@ -14,6 +14,10 @@
 // the bake ran. So the table carries the geometry manifest it was built from, and it is
 // refused outright unless that matches the map in play. Absent means "work it out", which
 // is exactly what the router did before any of this existed.
+//
+// SERIALIZED COORDINATE CONTRACT: m59-routes/1 route/reach keys are
+// `row,col>row,col`, pivot arrays are `[row,col]`, and direction deltas are
+// `(dr,dc)`. Readers restore named `{row,col}` objects; do not migrate by swapping.
 
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
@@ -173,6 +177,8 @@ export function regionsOf(table, roomNum) {
 export function bakedPath(table, roomNum, from, to) {
   const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
   if (!r) return null;
+  // SERIALIZED CONTRACT: route keys and pivot pairs are `row,col`; callers and
+  // results use named `{row,col}` objects. Do not transpose this persisted format.
   const key = `${from.row},${from.col}>${to.row},${to.col}`;
   // THE PIVOTS, WHEN THEY ARE THERE. THEY ALWAYS WERE, AND NOTHING EVER READ THEM.
   //
@@ -315,6 +321,7 @@ export function anchorFor(table, roomNum, toRoom) {
 export function anchorReach(table, roomNum, from, to) {
   const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
   if (!r) return null;
+  // SERIALIZED CONTRACT: reach-map keys are `row,col>row,col`.
   if (!r.reach) return bakedPath(table, roomNum, from, to) ? true : null;
   return !!r.reach[`${from.row},${from.col}>${to.row},${to.col}`];
 }
@@ -368,6 +375,8 @@ export function anchorReachVia(table, roomNum, from, to) {
  */
 export function bakedPivots(table, roomNum, from, to) {
   const r = table?.rooms?.[roomNum] ?? table?.rooms?.[String(roomNum)];
+  // SERIALIZED CONTRACT: keys and stored pivot arrays are `row,col`; the return
+  // value restores named `{row,col}` objects.
   const p = r?.pivots?.[`${from.row},${from.col}>${to.row},${to.col}`];
   if (!p?.squares?.length) return null;
   return { squares: p.squares.map(([row, col]) => ({ row, col })),

@@ -22,7 +22,7 @@ const ok = (what, cond, extra = '') => {
 
 console.log('\nthe region');
 {
-  ok('c1,r1-c2,r2 is read col,row like every square in this repository',
+  ok('c1,r1-c2,r2 is read col,row as the recordjam CLI contract',
      JSON.stringify(parseRegion('38,25-48,29')) === JSON.stringify({ c1: 38, r1: 25, c2: 48, r2: 29 }));
   ok('and either corner may come first', JSON.stringify(parseRegion('48,29-38,25')) === JSON.stringify({ c1: 38, r1: 25, c2: 48, r2: 29 }));
   ok('a malformed region is refused, not guessed', parseRegion('27,42') === null && parseRegion('') === null);

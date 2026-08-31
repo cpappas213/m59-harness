@@ -6,6 +6,9 @@
 //   node tools/m59-roo.mjs path <room> <c1,r1> <c2,r2>  route through the geometry
 //   node tools/m59-roo.mjs stats                        parse every room, report
 //
+// CLI CONTRACT: `path` pairs are `col,row` (movement-facing order); the command
+// adapts them to RoomGeometry's positional `(row,col)` contract.
+//
 // Why this matters even though the server does not enforce walls for players
 // (UserMove goes straight to Room.SomethingMoved; ReqSomethingMoved is only called
 // for monsters and dropped items): an agent that cannot see geometry has to discover
@@ -43,9 +46,16 @@
 // which is why both grids are needed to answer one question.
 //
 // Rows and cols here are 0-BASED. kod is 1-based and ccode.c subtracts one on the
-// way in (blakserv/ccode.c:1504), so a kod row R is grid row R-1. Everything this
-// file exposes publicly uses kod's 1-based convention, because that is what the
-// protocol speaks and what an agent will have in hand from perception.
+// way in (blakserv/ccode.c:1504), so a kod row R is grid row R-1. Every public
+// square-index method uses kod's 1-based convention, because that is what the
+// protocol speaks and what an agent will have in hand from perception. Fine-point
+// methods use the units and origin stated in their own contracts below.
+//
+// COORDINATE CONTRACT: positional square arguments in RoomGeometry are always
+// `(row,col)`. Fine-point units belong to each method or field contract; `{x,y}`
+// names axes, not scale. BSP/collision primitives consume 1024-unit client points,
+// while edge-crossing `fine_stand_on`, `edge_target`, and `finePathProtocol`
+// results use 64-unit KOD/protocol points. Adapters convert explicitly.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -183,6 +193,9 @@ const SIDE_BELOW = 0x08;
 const CLIENT_PER_KOD = CLIENT_FINENESS / KOD_FINENESS;
 const GEOMETRY_EPSILON = 1e-6;
 const f32 = Math.fround;
+// COORDINATE CONTRACT: these convert one scalar axis only—there is no X/Y swap.
+// KOD/protocol space is 64 units per square with its 1-based square offset;
+// client/BSP space is 1024 units per square with a 0-based origin.
 export const protocolToClient = value => (value - KOD_FINENESS) * CLIENT_PER_KOD;
 export const clientToProtocol = value => value / CLIENT_PER_KOD + KOD_FINENESS;
 
@@ -779,6 +792,7 @@ export class RoomGeometry {
   // leaves, and a one-way ledge is expressible in that graph. This is the question the
   // safe-spot chooser has to ask and never did: it asked whether WE could reach the
   // square, which on a cliff is exactly the wrong end.
+  // COORDINATE CONTRACT: both square pairs are `(row,col)`.
   monsterCanReach(fromRow, fromCol, toRow, toCol, { los = 0, maxNodes = 200000 } = {}) {
     const fine = RoomGeometry.monsterUsesFine(los);
     const r = this.path(fromRow, fromCol, toRow, toCol, { fine, maxNodes });
@@ -787,6 +801,7 @@ export class RoomGeometry {
              ...(r.found ? {} : { why: r.reason }) };
   }
 
+  // COORDINATE CONTRACT: square arguments are `(row,col)`.
   inBounds(row, col) { return row >= 1 && row <= this.rows && col >= 1 && col <= this.cols; }
 
   // Fine movement is allowed only with the complete, versioned collision payload.
@@ -820,6 +835,7 @@ export class RoomGeometry {
     return ready;
   }
 
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in 1024-unit client BSP space.
   leafAtClient(x, y, { preferSectorNum = null } = {}) {
     // BSPFindLeafByPoint (drawbsp.c) deliberately chooses the positive child on a
     // separator tie. Polygon containment cannot reproduce that rule on shared edges,
@@ -856,6 +872,7 @@ export class RoomGeometry {
       ?? hits.sort((a, b) => (a.node ?? 0) - (b.node ?? 0))[0];
   }
 
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in 1024-unit client BSP space.
   floorBaseAtClient(x, y, leaf = null, { roomFlags = 0, overrideDepths = null } = {}) {
     leaf = leaf ?? this.leafAtClient(x, y);
     if (!leaf?.sector) return null;
@@ -1466,6 +1483,9 @@ export class RoomGeometry {
 
     const baked = this.edgeApproaches?.[name];
     if (Array.isArray(baked)) {
+      // SERIALIZED CONTRACT: each legacy entry is
+      // `[fineX,fineY,edgeX,edgeY,stages,graph]`; the first four values are
+      // x/y KOD/protocol units and every stage is `[col,row]`.
       const restored = baked.map(entry => Object.freeze({
         fine_stand_on: Object.freeze({ x: entry[0], y: entry[1] }),
         edge_target: Object.freeze({ x: entry[2], y: entry[3] }),
@@ -1633,6 +1653,8 @@ export class RoomGeometry {
   // moment it is cheap — once, offline, per leg. Callers that are not baking a route keep
   // the old behaviour, because a live caller asking "can I aim here" has the mover behind
   // it and does not need the pull to be conservative as well.
+  // COORDINATE CONTRACT: input/output `{x,y}` points and the distance options are
+  // all in 1024-units-per-square client/BSP space.
   stringPull(points, { arriveWithin = 64, maxProbe = 64, onWalkable = false } = {}) {
     if (!Array.isArray(points) || points.length < 2)
       return { points: points ?? [], unverified: 0, legs: 0 };
@@ -1683,7 +1705,8 @@ export class RoomGeometry {
 
 
 
-  // Is there floor on this square? kod-style 1-based.
+  // COORDINATE CONTRACT: square arguments are `(row,col)`, kod-style 1-based.
+  // Is there floor on this square?
   walkable(row, col) {
     if (!this.inBounds(row, col)) return false;
     return (this.flags[(row - 1) * this.cols + (col - 1)] & ROOM_FLAG_WALKABLE) !== 0;
@@ -1757,6 +1780,7 @@ export class RoomGeometry {
    * `ceilingHeightAt`/`floorHeightAt` rather than the raw sector fields, because both can
    * be sloped and a slope is exactly where the two could cross.
    */
+  // COORDINATE CONTRACT: `(x,y)` is a fine point in client/BSP units.
   _occupiable(x, y) {
     const leaf = this.leafAtClient(x, y);
     if (!leaf?.sector) return false;
@@ -1833,6 +1857,7 @@ export class RoomGeometry {
    *
    * The grid's YES is always honoured, so nothing that worked before can stop working.
    */
+  // COORDINATE CONTRACT: square arguments are `(row,col)`.
   standable(row, col) {
     if (!this.inBounds(row, col)) return false;
     if (this.walkable(row, col)) return true;
@@ -1879,6 +1904,8 @@ export class RoomGeometry {
    * there, still slides, and still has to land in this square, so a point this returns
    * that the mover cannot reach costs a refused step and authorises nothing.
    */
+  // COORDINATE CONTRACT: square arguments are `(row,col)`; the named result is
+  // `{x,y}` in 1024-unit client BSP space.
   standPoint(row, col) {
     if (!this.inBounds(row, col)) return null;
     const i = (row - 1) * this.cols + (col - 1);
@@ -1934,6 +1961,8 @@ export class RoomGeometry {
    * which is the integer every caller used to compute inline — so ordinary movement is
    * unchanged to the byte, and only the squares a wall cuts in half move at all.
    */
+  // COORDINATE CONTRACT: square arguments are `(row,col)`; the named result is
+  // `{x,y}` in 64-unit kod wire space.
   standPointWire(row, col) {
     const p = this.standPoint(row, col);
     if (!p) return null;
@@ -1941,6 +1970,7 @@ export class RoomGeometry {
              y: Math.round(p.y / CLIENT_PER_KOD + KOD_FINENESS) };
   }
 
+  // COORDINATE CONTRACT: square arguments are `(row,col)`.
   // The eight direction bits of the square you are standing on.
   openDirections(row, col, { fine = true } = {}) {
     if (!this.inBounds(row, col)) return [];
@@ -1951,6 +1981,7 @@ export class RoomGeometry {
   // CanMoveInRoom, faithfully — including its two surprising allowances: a move to
   // a square OUTSIDE the grid is not rejected here (that is how you leave a room),
   // and a jump of more than one square is waved through as a teleport.
+  // COORDINATE CONTRACT: both square pairs are `(row,col)`.
   canMove(fromRow, fromCol, toRow, toCol, { fine = true } = {}) {
     const toInside = this.inBounds(toRow, toCol);
     if (toInside && !this.walkable(toRow, toCol)) return false;
@@ -1982,6 +2013,7 @@ export class RoomGeometry {
    * NO GEOMETRY MEANS NO OPINION, not "refused". A room whose collision could not be baked
    * still has a usable coarse grid, and this must not be the thing that makes it unroutable.
    */
+  // COORDINATE CONTRACT: both square pairs are `(row,col)`.
   stepAllowedByCollision(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
     const cache = (this._stepCollisionCache ??= new Map());
@@ -2083,6 +2115,7 @@ export class RoomGeometry {
    * cross it by accident. An entry that fails either check is dropped rather than trusted,
    * and an entry with no landing square yet (`to: null`) is inert by construction.
    */
+  // COORDINATE CONTRACT: square arguments are `(row,col)`; results use named fields.
   declaredFallJumps(row, col, options = null) {
     if (!this._declaredJumps) {
       this._declaredJumps = new Map();
@@ -2139,6 +2172,7 @@ export class RoomGeometry {
       : (this._declaredJumps.get(`${row},${col}`) ?? []);
   }
 
+  // COORDINATE CONTRACT: square arguments are `(row,col)`; results use named fields.
   fallTargets(row, col, { maxDistance = FALL_MAX_SQUARES } = {}) {
     if (!this.collisionReady || !this.standable(row, col)) return [];
     const cache = (this._fallCache ??= new Map());
@@ -2192,6 +2226,7 @@ export class RoomGeometry {
     return out;
   }
 
+  // COORDINATE CONTRACT: both square pairs are `(row,col)`.
   moverStepLands(fromRow, fromCol, toRow, toCol) {
     if (!this.collisionReady || typeof this.traceFineMoveClient !== 'function') return true;
     if (!this.inBounds(toRow, toCol)) return false;
@@ -2251,6 +2286,7 @@ export class RoomGeometry {
 
   // `validateFineTarget`'s arithmetic, with the live half (obstacles, room flags, vertical
   // motion) left out — see moverStepLands. Kept separate so the memo above stays a lookup.
+  // COORDINATE CONTRACT: both square pairs are `(row,col)`.
   _traceMoverStep(fromRow, fromCol, toRow, toCol) {
     // AIMED AT THE SQUARE'S STAND POINT, WHICH IS ITS CENTRE FOR EVERY ORDINARY SQUARE.
     // See standPoint: a square a diagonal wall cuts in half has its centre in the wall, so
@@ -2343,6 +2379,7 @@ export class RoomGeometry {
   // mover refuses — see walkTo in m59-broker.mjs. It is an edge and not a square on
   // purpose: a step is refused by the wall BETWEEN two squares, and blaming the square
   // removes a perfectly good place to stand that other neighbours can still reach.
+  // COORDINATE CONTRACT: square arguments are `(row,col)`; results use named fields.
   neighbors(row, col, { fine = true, collision = false, blockedEdges = null,
                         allowInto = null, fineWiden = false } = {}) {
     const out = [];
@@ -2514,6 +2551,7 @@ export class RoomGeometry {
   // positions were authored slightly apart. From such a square NOTHING is reachable,
   // because every route starts by leaving it, so a caller that cannot get off it is
   // stuck for good.
+  // COORDINATE CONTRACT: square arguments are `(row,col)`; the result is named.
   nearestWalkable(row, col, { maxRadius = 12 } = {}) {
     if (this.walkable(row, col)) return { row, col, distance: 0 };
     for (let r = 1; r <= maxRadius; r++) {
@@ -2637,6 +2675,8 @@ export class RoomGeometry {
     return (r, c) => pen[(r - 1) * this.cols + (c - 1)] ?? 0;
   }
 
+  // COORDINATE CONTRACT: both square pairs are `(row,col)`; returned steps are
+  // named `{row,col}` objects. Movement callers must adapt their `(col,row)` API.
   path(fromRow, fromCol, toRow, toCol,
        { fine = true, maxNodes = 200000, avoid = null, threats = null, threatCost = null,
          blockedEdges = null, extraCost = null, fineNav = false,
@@ -3083,8 +3123,11 @@ export class RoomGeometry {
       out.edgeOpenings = Object.fromEntries(['north', 'south', 'west', 'east']
         .map(direction => [direction, bakedDirections.has(direction)
           ? this.edgeCrossingRanges(direction).map(range => [...range]) : []]));
-      // Compact tuple: inside x/y, minimum out-of-bounds x/y, then the coarse
-      // staging squares with a direct stock-collision-safe approach to the opening.
+      // SERIALIZED CONTRACT: edgeApproaches is
+      // `[fineX,fineY,edgeX,edgeY,stages,graph]`; its first four values are x/y
+      // KOD/protocol units and stages are `[col,row]`. Compact tuple: inside x/y,
+      // minimum out-of-bounds x/y, then the coarse staging squares with a direct
+      // stock-collision-safe approach to the opening.
       let graphReachable = null;
       if (Array.isArray(graphEntrySquares) && graphEntrySquares.length) {
         graphReachable = new Set();
@@ -4113,6 +4156,7 @@ if (import.meta.filename === process.argv[1]) {
     const hit = viaMap(needle);
     const geo = hit ? hit.geo : loadRoo(needle);
     if (!geo) { console.error(`could not load geometry for "${needle}"`); process.exit(1); }
+    // CLI CONTRACT: `path` accepts `<col,row>` while RoomGeometry.path is `(row,col)`.
     const [c1, r1] = from.split(',').map(Number);
     const [c2, r2] = to.split(',').map(Number);
     const res = geo.path(r1, c1, r2, c2);

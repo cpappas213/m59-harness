@@ -178,6 +178,8 @@ export class Actuator {
 
   // -- movement.
   //
+  // Both movement entry points take 1-based KOD squares in public (col,row) order.
+  //
   // `step` is a RAW square request: it goes to the wire as-is, and the server is the
   // collision authority. Right for a short hop you have already reasoned about.
   step(col, row, { minGapMs = 250 } = {}) {

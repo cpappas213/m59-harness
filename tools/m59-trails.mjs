@@ -36,6 +36,12 @@
 // The straightened result is checked, not assumed: every leg it keeps was proved by a
 // raycast against the same BSP the mover enforces, so a track cannot be a shortcut through
 // a wall even if the body that made it was pushed through one by lag.
+//
+// LEDGER COORDINATES. Recorded point fields x/y are protocol/KOD fine coordinates,
+// 64 units per square. Optional named col/row fields are 1-based squares; object
+// property order has no tuple meaning.
+// Geometry raycasts temporarily convert points to client/BSP units; persisted and
+// returned trail points remain in protocol units.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -100,6 +106,8 @@ let buffer = [], timer = null, lastOf = new Map();
  * await and never allocate much. Samples that repeat a position are dropped HERE rather
  * than at read time, because the server re-reports a standing body indefinitely and a
  * ledger of somebody standing still is most of the file.
+ *
+ * The input and stored schema uses protocol/KOD x/y; optional col/row are 1-based.
  */
 // WHAT IS WORTH WRITING DOWN. Monsters are recorded only if somebody asks for them.
 //
@@ -165,7 +173,7 @@ export function flushTrails(fleet = FLEET()) {
   } catch { return 0; }
 }
 
-/** Read a jsonl of samples — ours, or a proxy walk log, which is the same shape. */
+/** Read samples with protocol/KOD x/y and optional 1-based col/row from either ledger shape. */
 export function readSamples(file) {
   let text = '';
   try { text = fs.readFileSync(file, 'utf8'); } catch { return []; }
@@ -347,6 +355,12 @@ export function resolveRoom(index, sampleOrRoom) {
   return index.byObj?.get(Number(sampleOrRoom)) ?? null;
 }
 
+// LEGACY COMPATIBILITY ANOMALY: trail points are already KOD/protocol values, whose
+// canonical square conversion is floor(axis / 64) with no offset (see
+// extractCoordinates). This historical adapter adds one and therefore shifts the
+// derived `entered`/`left` squares written to track records. Preserve it until those
+// records receive a versioned migration; do not use it as a general point-to-square
+// conversion.
 export const squareOf = p => ({ row: Math.floor(p.y / KOD_FINENESS) + 1,
                                 col: Math.floor(p.x / KOD_FINENESS) + 1 });
 

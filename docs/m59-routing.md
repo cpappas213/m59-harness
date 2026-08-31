@@ -2,6 +2,14 @@
 
 Split out of [`CLAUDE.md`](../CLAUDE.md). Read this before touching `m59-movement.mjs`, `m59-routes.mjs`, `m59-roo.mjs`, `m59-routebake.mjs` or the mover inside `m59-broker.mjs`.
 
+**Coordinate legend:** MCP tools use named `col`/`row` fields; positional
+movement helpers use `(col,row)`; `RoomGeometry`, KOD grids, and route-grid
+calculations use `(row,col)`; fine `{x,y}` means X→column and Y→row; movement
+bytes are serialized Y then X. Human-facing locations below use `rNcM`. Quoted
+logs and commands retain their legacy positional spelling. Read
+[`m59-coordinates.md`](m59-coordinates.md) before comparing or changing a
+coordinate boundary.
+
 ## The collision map is EVIDENCE ABOUT A SERVER, NEVER AUTHORITY OVER ONE
 
 `substrate/m59-map.json` carries baked BSP, sidedefs, sector heights and wall chains, and
@@ -19,7 +27,7 @@ rest. They propagate instead of looping, which is what stops a bad route being l
 The mover validates against the client's BSP; the router planned on the server's coarse
 one-byte-a-square grid. A router planning on a different map from the one the mover
 enforces does not produce a wrong route — **it produces a character sliding along a wall,
-replanning into the same wall, and giving up.** The trail reads
+replanning into the same wall, and giving up.** The legacy `row,col` trail strings read
 `4,15->5,15=5,15` / `5,15->4,16=4,15`, over and over, eight times, then "kept ending up
 somewhere other than the planned square". Measured offline against the twelve boundaries
 `m59-exitgap.mjs` complains about most, **that killed 59% of all walks to an exit**; on
@@ -133,7 +141,7 @@ split by a row or column condition. Western border of the Twisted Wood declares
 `east -> 586 row<19` **and** `east -> 597 row>20`: the same boundary, and which room you
 reach depends on where along it you step off. `exitAnchors` asked
 `edgeApproachCandidates(dir)` — the per-DIRECTION question — took the first square offered
-and gave **both** exits the anchor `9,67`, which satisfies `row<19`. So a character asked
+and gave **both** exits the anchor `r9c67`, which satisfies `row<19`. So a character asked
 to walk to The Twisted Wood was routed to a square that puts it in Main gate to the city of
 Tos. Every leg reported success. Nothing downstream compares where a walk MEANT to go with
 where it went, so this is invisible from the trail, from the board and from the logs — it
@@ -281,7 +289,7 @@ GEOMETRY. When the anchor-SELECTION code changes, a table baked by the older cod
 every check here and is confidently wrong about where a doorway is. That is not
 hypothetical: Ukgoth's north anchor to Outside Castle Victoria was baked at row 1, col 62 —
 five grid-walkable squares with no coarse-grid connection to the room's other 1,679 — while
-the current code answers 2,26, the operator's real doorway. Rebake after touching
+the current code answers `r2c26`, the operator's real doorway. Rebake after touching
 `exitAnchors`, `edgeCandidatesOf` or `neighbors`; nothing will remind you.
 
 Three more offline tools, and each answers a question the others cannot:
@@ -303,6 +311,9 @@ offline, on demand, with no server:
 ```bash
 node tools/m59-walksim.mjs --room 598 --from 19,8 --to 64,19 --trace
 ```
+
+That command's existing `--from`/`--to` grammar is `row,col` (`r19c8` to
+`r64c19`). The command is intentionally not rewritten to accept `rNcM`.
 
 `m59-clipsweep.mjs` counts where the collision view is more permissive than the coarse grid
 — the invariant running backwards, 30,878 steps and, before the bake learned to prefer a
@@ -355,6 +366,17 @@ First full sweep, 2026-08-20: **1341 anchors, 1313 exact, 5 displaced by at most
 (rooms 853 and 702), 23 landing in another room** — the last are `go` anchors on portal
 squares, where being moved is the point. So the monorail terminals are sound, and an anchor
 is not where to look when a fleet stalls.
+
+**Issue #44 is the asymmetric coordinate test.** Room 563 is 34 rows by 76
+columns. Protocol fine `{x:3936,y:1952}` decodes to `col=61,row=30`, or
+`r30c61`, and that square genuinely has no floor. The diagnostic
+`[exit] injected 34,65` and the travel-ledger square `"34,65"` are legacy
+`row,col`, however: both mean the valid south anchor `r34c65`, whose 64-unit
+fine centre is `{x:4192,y:2208}`. The east anchor `r27c76` centres at
+`{x:4896,y:1760}`. Comparing the unlabeled strings made floorless `r30c61`
+look like evidence against valid `r34c65`; labeling the coordinate spaces shows
+that no floor or anchor calculation contradicts the other. See
+[`m59-coordinates.md`](m59-coordinates.md).
 
 `node tools/m59-routing-test.mjs` (38) pins all of it, offline.
 
@@ -537,10 +559,10 @@ Measured in room 579, An ancient place, its origin forgotten:
 
 | square | what the coarse grid says | what is actually there |
 |---|---|---|
-| 40,52 | `walkable: true` | **no floor at its centre.** 21 of 49 sampled interior points are standable; the middle is not one of them |
-| 38,30 | `walkable: false` | a sliver at 8000 you deliberately jump onto — 14 of 49 points |
-| 40,33 | one height | spans **3520 to 10880** — the valley floor and the high ledge, in one square |
-| 47,40 | one height | a ramp, 7600 to 10752 |
+| `r40c52` | `walkable: true` | **no floor at its centre.** 21 of 49 sampled interior points are standable; the middle is not one of them |
+| `r38c30` | `walkable: false` | a sliver at 8000 you deliberately jump onto — 14 of 49 points |
+| `r40c33` | one height | spans **3520 to 10880** — the valley floor and the high ledge, in one square |
+| `r47c40` | one height | a ramp, 7600 to 10752 |
 
 Three failures in one day came from forgetting this, and they look nothing alike:
 
@@ -549,7 +571,7 @@ Three failures in one day came from forgetting this, and they look nothing alike
    walked thirteen waypoints of the Ancient Place climb and then walked into the air.
    `walk_to` now takes fine `x`/`y` for exactly this.
 2. **A jump finder could not see the first jump.** Searching for cross-region hops on the
-   coarse grid cannot find `40,33 -> 40,32`, because both the take-off and the landing are
+   coarse grid cannot find `r40c33` → `r40c32`, because both the take-off and the landing are
    inside squares the grid gives a single height to. The whole jump is sub-square.
 3. **A height profile read off single fine points swung by 7000 units.** One unit either side
    of a ledge edge is a different sector, so sampling the exact point a client asked to move
@@ -588,18 +610,19 @@ under the ceiling it is standing beneath. `canCrossWall` already implements the 
 faithfully, gating on `!sd.aboveType`; the standing test was a second, invented one.
 
 **What it cost: the 52 -> 110 and 2 -> 110 legs, permanently.** Room 108's jump take-off at
-29,43 is entered by a sewer pipe at col 47, rows 35-42 — eight squares of dead-flat floor,
+`r29c43` is entered by a sewer pipe at col 47, rows 35-42 — eight squares of dead-flat floor,
 961 of 961 fine points standable at one uniform height, with 704 units of headroom. All eight
 were refused, `standPoint` returned null for every one, and the only way in vanished. The
 take-off was stranded on a 12-square island no anchor reached, the bake wrote *"no baked line
-to the anchor 21,37"* 91 times, and those two legs never completed once in any run. The jump
-itself was never the problem: placed on the ledge, `m59-jumptest.mjs` clears it 3 for 3.
+to the anchor 21,37"* 91 times (`row,col`, or `r21c37`), and those two legs never completed
+once in any run. The jump itself was never the problem: placed on the ledge,
+`m59-jumptest.mjs` clears it 3 for 3.
 
 Removing the invented rule returns 1.15% of the world — 3961 squares over 74 rooms — and
 joins the take-off to room 108's body (578 -> 604 squares, 66 fragmented regions -> 29).
 
 **HEIGHT DOES NOT SORT WALKABLE FROM UNWALKABLE, which is why no threshold is the answer.**
-The rule was introduced on one counter-example: The Queen's Way 22,10, 512 units of headroom,
+The rule was introduced on one counter-example: The Queen's Way `r22c10`, 512 units of headroom,
 found on inspection to be the inside of a locked tower. But the distribution under 768 is a
 continuum, and most of it is ground people walk on daily — the General Store of Jasper is
 672, East Ende is 640 across 354 squares, The Hungry Vaults 592 across 308. There is no

@@ -7,6 +7,9 @@
 //   node tools/m59-walksim.mjs --cycle                    the operator's Tos->Victoria->Cor Noth->Barloque lap
 //   node tools/m59-walksim.mjs --room 598 --clip 0,2,8    sweep a routing knob
 //
+// CLI CONTRACT: `--from` and `--to` are `row,col` (KOD/RoomGeometry order),
+// so `--from 19,8 --to 64,19` means r19c8 to r64c19.
+//
 // OFFLINE. Reads the same baked geometry and the same routing table the broker plans on;
 // no server, no broker, no character.
 //
@@ -29,9 +32,9 @@
 // bodies in the way, no packet loss. So an arrival here is "the geometry allows it" and a
 // failure here is a failure the geometry causes, which is the half that is reproducible.
 //
-// IT PREDICTED THE LIVE FAULT. Room 598, 19,8 -> 64,19: this reports a bounce between 23,16
-// and 23,17 for ever — from 23,17 the plan says south to 24,17 and the mover slides
-// BACKWARDS into 23,16; from 23,16 the plan says east to 23,17 and it slides forward again.
+// IT PREDICTED THE LIVE FAULT. Room 598, r19c8 -> r64c19: this reports a bounce between r23c16
+// and r23c17 for ever — from r23c17 the plan says south to r24c17 and the mover slides
+// BACKWARDS into r23c16; from r23c16 the plan says east to r23c17 and it slides forward again.
 // Watched live on the arena server at the same time, Aaaa did exactly that at col 8, rows
 // 17-19, and reported "kept ending up somewhere other than the planned square".
 //
@@ -297,6 +300,7 @@ function anchorsOf(table, g, num) {
 if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
   const argv = process.argv.slice(2);
   const arg = (n, d = null) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] ? argv[i + 1] : d; };
+  // CLI ADAPTER: parse the documented `row,col` pair into named fields immediately.
   const pair = v => { const [a, b] = String(v).split(',').map(Number); return { row: a, col: b }; };
 
   const map = await loadMap();
@@ -327,12 +331,12 @@ if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import
     const from = pair(arg('--from')), to = pair(arg('--to'));
     for (const a of axis) {
       const r = simulateWalk(g, from.row, from.col, to.row, to.col, { ...a.opts, trace: true });
-      console.log(`room ${num}  ${from.row},${from.col} -> ${to.row},${to.col}  ` +
+      console.log(`room ${num}  r${from.row}c${from.col} -> r${to.row}c${to.col}  ` +
                   `clip ${a.opts.clipCost}, clearance ${a.opts.clearance}`);
-      console.log(`  ${r.arrived ? 'ARRIVED' : 'FAILED — ' + r.why + (r.bounce_at ? ' on ' + r.bounce_at : '')}` +
+      console.log(`  ${r.arrived ? 'ARRIVED' : 'FAILED — ' + r.why + (r.bounce_at ? ' on ' + r.bounce_at + ' [row,col]' : '')}` +
                   `   plan ${r.planLen ?? '-'} steps, walked ${r.steps}, ${r.offPlan ?? 0} off-plan, ` +
                   `${r.detours ?? 0} fine detour(s), ${r.learned ?? 0} edge(s) learned`);
-      if (argv.includes('--trace')) console.log('  trail: ' + (r.trail ?? []).join(' '));
+      if (argv.includes('--trace')) console.log('  trail [row,col]: ' + (r.trail ?? []).join(' '));
     }
     process.exit(0);
   }

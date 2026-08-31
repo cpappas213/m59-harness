@@ -79,6 +79,9 @@ function gridsFor(geo, rows, cols) {
 // slipped at 37". Both name a PLACE and neither is machine-readable until somebody reads it.
 // Parsing prose is ugly; leaving the only record of where a crossing broke unplottable is
 // worse.
+// SERIALIZED CONTRACT: the first note's numeric pair is `row,col`, and this exact
+// legacy wording is parsed below. Human diagnostics should add labels elsewhere,
+// not rewrite historical ledger notes without versioning this reader.
 function parseTactics(rows, routes) {
   const boarding = {}, slips = [], other = {};
   for (const t of rows) {

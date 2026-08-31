@@ -6,6 +6,7 @@
 //   node tools/m59-dm.mjs kit TESTER --stats 50 --health 151 --karma -60 --spells 99
 //   node tools/m59-dm.mjs heal TESTER,Alpha
 //   node tools/m59-dm.mjs exec "set object 7124 piKarma INT -6000"
+// CLI CONTRACT: `relocate --at` is `row,col` (KOD/RoomGeometry order).
 //
 // This exists because setting a test scenario up by PLAYING it does not scale. Walking
 // six characters from the newbie island to the Tos arena is twenty minutes of travel
@@ -376,6 +377,8 @@ export async function money(obj, amount, opts = {}) {
 
 // ------------------------------------------------------------------ relocate
 
+// COORDINATE CONTRACT: positional square arguments here are `(row,col)`, matching
+// KOD and RoomGeometry; returned positions use named `{row,col}` fields.
 // Room coordinates are the kod grid — 1-based, bounded by the room's own rows and cols.
 // UtilGoNearSquare searches OUTWARD from the square it is given until it finds one that
 // will hold the object, so an out-of-bounds target does not fail, it silently lands
@@ -393,6 +396,7 @@ export const relocateCmd = (obj, roomObj, row, col) =>
 // the room is resolved through the server rather than from substrate/m59-map.json,
 // because that file records the object id a room had when the index was built.
 export async function relocate(names, roomNum, { row, col, verify = false } = {}, opts = {}) {
+  // COORDINATE CONTRACT: relocation accepts a named `{row,col}` square.
   const list = Array.isArray(names) ? names : [names];
   const ids = await resolve(list, opts);
   const roomObj = await roomObject(roomNum, opts);
@@ -463,6 +467,7 @@ export function roomGeometry(num) {
 // it always did.
 let WALKABLE_CACHE = null;
 export function walkableSquare(num, row, col, { maxRadius = 8 } = {}) {
+  // COORDINATE CONTRACT: positional square arguments are `(row,col)`.
   if (MAP === null) roomGeometry(num);
   const room = MAP?.[String(num)];
   if (!room?.roo) return { row, col, checked: false };
